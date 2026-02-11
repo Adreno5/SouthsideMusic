@@ -1,0 +1,21 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# other
+*.zip
+favorites.json
+temp
+.ruff_cache
+LDDC-main
+main.build
+main.dist
+main.onefile-build
+res.json

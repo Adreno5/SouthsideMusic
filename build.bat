@@ -1,0 +1,8 @@
+@echo off
+title Building
+
+nuitka src/main.py --standalone --enable-plugin=pyside6 --windows-console-mode=disable --output-filename=SouthsideMusic --include-data-dir="./icons=./icons"
+
+echo Done!
+title Done
+pause

@@ -1,0 +1,14 @@
+[project]
+name = "SouthsideMusic"
+version = "v1"
+description = "Call NetEaseCloudMusic api to get musics and save!"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "darkdetect>=0.8.0",
+    "nuitka>=4.0",
+    "pygame>=2.6.1", # play music
+    "pyside6>=6.10.2", # gui base
+    "pyside6-fluent-widgets>=1.11.1", # modern widgets
+    "requests>=2.32.5", # request the api
+]

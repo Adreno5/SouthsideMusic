@@ -437,6 +437,7 @@ class PlayingController(QWidget):
 
         if self.expanded:
             mwindow.resize(mwindow.width() + 205, mwindow.height())
+            mwindow.move(mwindow.x() - 102, mwindow.y())
             dp.lst.show()
 
             self.expand_btn.setText('Collapse')
@@ -444,6 +445,7 @@ class PlayingController(QWidget):
         else:
             dp.lst.hide()
             mwindow.resize(mwindow.width() - 205, mwindow.height())
+            mwindow.move(mwindow.x() + 103, mwindow.y())
 
             self.expand_btn.setText('Playlist')
             self.expand_btn.setIcon(QIcon(f'icons/pl_expand_{'dark' if theme() == Theme.DARK else 'light'}.svg'))
@@ -454,7 +456,6 @@ class PlayingController(QWidget):
             if self.playing_time > dp.total_length:
                 self.playing_time = dp.total_length
                 self.songFinished.emit()
-                self.toggle()
 
         if dp.cur:
             # Highlight the currently playing song in the playlist
@@ -508,6 +509,8 @@ class PlayingController(QWidget):
         return super().mouseMoveEvent(event)
 
     def toggle(self):
+        print('toggle')
+
         self.playing = not self.playing
 
         if self.playing_time >= dp.total_length:
@@ -774,7 +777,7 @@ class PlayingPage(QWidget):
 
     def onPlayButtonClicked(self):
         # If no song is currently loaded, start playlist
-        if self.cur is None and not self.controller.playing:
+        if self.cur is None:
             self.startPlaylist()
 
     def playNext(self):
@@ -872,22 +875,8 @@ class PlayingPage(QWidget):
         self.controller.first = True
 
     def startPlaylist(self):
-        global favs
-        # If playlist is empty, use first favorite folder
-        if not self.playlist:
-            if dp and dp.playlist:
-                self.playlist = dp.playlist.copy()
-            elif favs and favs[0]['songs']:
-                self.playlist = favs[0]['songs'].copy()
-            else:
-                InfoBar.warning(
-                    'No songs', 'No songs available to play', parent=mwindow
-                )
-                return
-
-        if not self.playlist:
-            InfoBar.warning('Empty playlist', 'Playlist is empty', parent=mwindow)
-            return
+        fp.folder_selector.setCurrentRow(0)
+        fp.addFolderToPlaylist()
 
         # Start playing first song
         self.current_index = 0
@@ -1054,7 +1043,7 @@ class FavoritesPage(QWidget):
             )
 
     def addFolderToPlaylist(self):
-        global favs, pp
+        global favs
         selected_folder = self.folder_selector.currentItem()
         if not selected_folder:
             InfoBar.warning(

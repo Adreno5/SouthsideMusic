@@ -1,6 +1,6 @@
 [project]
 name = "SouthsideMusic"
-version = "v1"
+version = "v2"
 description = "Call NetEaseCloudMusic api to get musics and save!"
 readme = "README.md"
 requires-python = ">=3.12"

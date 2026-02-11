@@ -15,6 +15,7 @@ import pygame
 
 pygame.init()
 
+from utils.dialog_util import get_text_lineedit
 from utils.lyrics.base_util import FolderInfo, SongInfo, SongStorable
 from functools import cache, lru_cache
 from utils.lyrics.base_util import SongDetail
@@ -555,9 +556,13 @@ class PlayingController(QWidget):
         self.time_label.setText(
             f'{str(cur_time['minutes']).zfill(2)}:{str(cur_time['seconds']).zfill(2)}'
         )
-
-        dp.lyric_label.setText(mgr.getCurrentLyric(self.playing_time)['content'])
-        dp.transl_label.setText(transmgr.getCurrentLyric(self.playing_time)['content'])
+        
+        yw = mgr.getCurrentLyric(self.playing_time)['content']
+        dp.lyric_label.setText(yw)
+        if not yw.strip():
+            dp.transl_label.setText('')
+        else:
+            dp.transl_label.setText(transmgr.getCurrentLyric(self.playing_time)['content'])
 
         painter.end()
 
@@ -910,6 +915,9 @@ class FavoritesPage(QWidget):
         self.deletefolder_btn = PushButton(FluentIcon.DELETE, 'Delete Folder')
         self.deletefolder_btn.clicked.connect(self.deleteFolder)
         top_layout.addWidget(self.deletefolder_btn)
+        self.renamefolder_btn = PushButton(FluentIcon.EDIT, 'Rename Folder')
+        self.renamefolder_btn.clicked.connect(self.renameFolder)
+        top_layout.addWidget(self.renamefolder_btn)
         global_layout.addLayout(top_layout)
         bottom_layout = QHBoxLayout()
 
@@ -940,6 +948,20 @@ class FavoritesPage(QWidget):
         global_layout.addLayout(bottom_layout)
 
         self.setLayout(global_layout)
+
+    def renameFolder(self):
+        got = get_text_lineedit('Rename Folder', 'Enter new folder name:', self.folder_selector.selectedItems()[0].text(), mwindow)
+
+        if got:
+            global favs
+
+            for i, folder in enumerate(favs):
+                if folder['folder_name'] == self.folder_selector.selectedItems()[0].text():
+                    favs[i]['folder_name'] = got
+                    break
+            saveFavorites(favs)
+
+            self.refresh()
 
     def viewSongs(self, i: QListWidgetItem):
         def _view():

@@ -19,13 +19,11 @@ class LineinputDialog(MessageBoxBase):
         self.viewLayout.addWidget(self.desc_label)
         self.viewLayout.addWidget(self.inputer)
 
-        self.cancelButton.hide()
-
 def get_text_lineedit(title: str, desc: str, place: str, parent: QWidget):
     dialog = LineinputDialog(parent, title, desc, place)
-    dialog.exec()
+    response = dialog.exec()
 
-    return dialog.inputer.text()
+    return dialog.inputer.text() if response else ''
 
 class TexteditDialog(MessageBoxBase):
     def __init__(self, parent, title: str, desc: str, place: str):

@@ -3161,6 +3161,7 @@ dependencies = [
     { name = "pyside6" },
     { name = "pyside6-fluent-widgets" },
     { name = "requests" },
+    { name = "scipy" },
     { name = "sounddevice" },
 ]
 
@@ -3175,6 +3176,7 @@ requires-dist = [
     { name = "pyside6", specifier = ">=6.10.2" },
     { name = "pyside6-fluent-widgets", specifier = ">=1.11.1" },
     { name = "requests", specifier = ">=2.32.5" },
+    { name = "scipy", specifier = ">=1.17.0" },
     { name = "sounddevice", specifier = ">=0.5.5" },
 ]
 

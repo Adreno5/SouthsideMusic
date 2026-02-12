@@ -2,7 +2,7 @@
 import random
 import sys
 import time
-from PySide6.QtGui import QKeyEvent, QMouseEvent, QPaintEvent
+from PySide6.QtGui import QKeyEvent, QMouseEvent, QPaintEvent, QShowEvent
 from PySide6.QtWidgets import *  # type: ignore
 from PySide6.QtCore import *  # type: ignore
 from PySide6.QtGui import *  # type: ignore
@@ -25,6 +25,7 @@ from utils.lyrics.base_util import SongDetail
 from utils.lyric_util import LRCLyricManager
 from utils.time_util import float2time
 from utils.favorite_util import loadFavorites, saveFavorites
+from utils.config_util import loadConfig, saveConfig, cfg
 
 
 class MusicCard(QWidget):
@@ -441,8 +442,13 @@ class PlayingController(QWidget):
 
         if self.expanded:
             if not mwindow.isMaximized():
-                mwindow.resize(mwindow.width() + 205, mwindow.height())
-                mwindow.move(mwindow.x() - 102, mwindow.y())
+                mwindow_anim = QPropertyAnimation(mwindow, b'geometry', self)
+                mwindow_anim.setDuration(200)
+                mwindow_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+                mwindow_anim.setStartValue(mwindow.geometry())
+                mwindow_anim.setEndValue(QRect(mwindow.x() - 102, mwindow.y(), mwindow.width() + 205, mwindow.height()))
+                mwindow_anim.start()
+
             dp.expanded_widget.show()
 
             self.expand_btn.setText('Collapse')
@@ -450,8 +456,12 @@ class PlayingController(QWidget):
         else:
             dp.expanded_widget.hide()
             if not mwindow.isMaximized():
-                mwindow.resize(mwindow.width() - 205, mwindow.height())
-                mwindow.move(mwindow.x() + 103, mwindow.y())
+                mwindow_anim = QPropertyAnimation(mwindow, b'geometry', self)
+                mwindow_anim.setDuration(200)
+                mwindow_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+                mwindow_anim.setStartValue(mwindow.geometry())
+                mwindow_anim.setEndValue(QRect(mwindow.x() + 103, mwindow.y(), mwindow.width() - 205, mwindow.height()))
+                mwindow_anim.start()
 
             self.expand_btn.setText('Playlist')
             self.expand_btn.setIcon(QIcon(f'icons/pl_expand_{'dark' if theme() == Theme.DARK else 'light'}.svg'))
@@ -538,6 +548,11 @@ class PlayingController(QWidget):
                 QIcon(f'icons/playa_{'dark' if theme() == Theme.DARK else 'light'}.svg')
             )
             pygame.mixer.music.pause()
+    
+    def setPlaytime(self, time_value: float) -> None:
+        self.playing_time = time_value
+        pygame.mixer.music.set_pos(time_value)
+        self.start_time = time.perf_counter() - self.playing_time
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
@@ -686,7 +701,6 @@ class PlayingPage(QWidget):
 
         self.imageLoaded.connect(self.onImageLoaded)
 
-        # self.controller.play_pausebtn.click()
         self.controller.playLastSignal.connect(self.playLast)
         self.controller.playNextSignal.connect(lambda: self.playNext(True))
 
@@ -800,7 +814,7 @@ class PlayingPage(QWidget):
         def _write_file(bytes: bytes):
             if pygame.mixer.music.get_busy():
                 pygame.mixer.music.stop()
-                pygame.mixer.music.unload()
+            pygame.mixer.music.unload()
 
             with open('./temp', 'wb') as f:
                 f.write(bytes)
@@ -1010,10 +1024,10 @@ class FavoritesPage(QWidget):
         self.folder_selector.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.folder_selector.itemClicked.connect(self.viewSongs)
         left_layout.addWidget(self.folder_selector, 1)
-        self.addplaylist_btn = PushButton(QIcon(f'icons/pl_{'dark' if theme() == Theme.DARK else 'light'}.svg'), 'Add selected to playlist')
+        self.addplaylist_btn = PushButton(QIcon(f'icons/pl_{'dark' if theme() == Theme.DARK else 'light'}.svg'), 'Add selected folder to playlist')
         self.addplaylist_btn.clicked.connect(self.addFolderToPlaylist)
         left_layout.addWidget(self.addplaylist_btn)
-        self.addall_btn = PrimaryPushButton(QIcon(f'icons/pl_{'dark' if theme() == Theme.LIGHT else 'light'}.svg'), 'Add all to playlist')
+        self.addall_btn = PrimaryPushButton(QIcon(f'icons/pl_{'dark' if theme() == Theme.LIGHT else 'light'}.svg'), 'Add all folder to playlist')
         self.addall_btn.clicked.connect(self.addAllToPlaylist)
         left_layout.addWidget(self.addall_btn)
         bottom_layout.addLayout(left_layout, 3)
@@ -1312,6 +1326,177 @@ class FavoriteSelectionDialog(MessageBoxBase):
 
         return []
 
+class DynamicIslandPage(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName('dynamic_island_page')
+
+        self.delta = 1 / 60
+
+        self.island_x = cfg.island_x
+        self.island_y = cfg.island_y
+
+        self.show_island = cfg.island_checked
+
+        global_layout = QVBoxLayout()
+        global_layout.addWidget(TitleLabel('Lyric Island'))
+        
+        self.island_check = CheckBox('Enable Lyric Island')
+        self.island_check.checkStateChanged.connect(lambda state: self.__setattr__('show_island', state == Qt.CheckState.Checked))
+        global_layout.addWidget(self.island_check)
+
+        self.edit_btn = PrimaryPushButton(FluentIcon.EDIT, 'Edit island position')
+        self.edit_btn.clicked.connect(self.editIslandPosition)
+        global_layout.addWidget(self.edit_btn)
+
+        self.setLayout(global_layout)
+
+    def editIslandPosition(self):
+        if not self.show_island:
+            InfoBar.warning('Lyric Island', 'enable the lyric island first!', parent=mwindow, duration=2000)
+            return
+        
+        mwindow.hide()
+        island_editing_overlay.show()
+
+class EditingIslandOverlay(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.setFixedSize(QApplication.primaryScreen().size())
+        self.move(0, 0)
+
+        self.setMouseTracking(True)
+
+        self.dragging = False
+        self.dragging_pos = QPointF(0, 0)
+
+        self.mouse_pos = QPointF(0, 0)
+
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.X11BypassWindowManagerHint | Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.repaint)
+        self.timer.start(int(ip.delta * 1000))
+
+        InfoBar.info(
+            'Help',
+            'press ESC to quit',
+            isClosable=False,
+            duration=-1,
+            parent=self
+        )
+
+        self.hide()
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        self.mouse_pos = event.position()
+        if self.dragging:
+            ip.island_x = int(self.mouse_pos.x() - self.dragging_pos.x() + (island.island_width / 2))
+            if abs((self.width() / 2) - ip.island_x) < 30:
+                ip.island_x = int(self.width() / 2)
+            ip.island_y = int(self.mouse_pos.y() - self.dragging_pos.y())
+            if abs((self.height() / 2) - ip.island_y) < 30:
+                ip.island_y = int(self.height() / 2)
+        return super().mouseMoveEvent(event)
+    
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if self.dragging:
+            self.dragging = False
+        return super().mouseReleaseEvent(event)
+
+    def showEvent(self, event: QShowEvent) -> None:
+        self.raise_()
+        self.setFocus(Qt.FocusReason.OtherFocusReason)
+        return super().showEvent(event)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_Escape:
+            self.hide()
+            mwindow.show()
+            return
+        return super().keyPressEvent(event)
+    
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            if QRectF(ip.island_x - (island.island_width / 2), ip.island_y, island.island_width, island.island_height).contains(event.position()):
+                self.dragging = True
+                self.dragging_pos = event.position() - QPointF(ip.island_x - (island.island_width / 2), ip.island_y)
+        return super().mousePressEvent(event)
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        if not self.isVisible():
+            return
+
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 175))
+        painter.setPen(QPen(QColor(255, 255, 255, 100), 1))
+        painter.drawLines([
+            QLineF(self.mouse_pos.x(), 0, self.mouse_pos.x(), self.height()),
+            QLineF(0, self.mouse_pos.y(), self.width(), self.mouse_pos.y())
+        ])
+        painter.drawRoundedRect(ip.island_x - (island.island_width / 2), ip.island_y, island.island_width, island.island_height,  # type: ignore
+                                (island.island_height / 2), (island.island_height / 2))
+        
+        if ip.island_x == int(self.width() / 2) and self.dragging:
+            painter.setPen(QPen(QColor(255, 255, 255, 50), 1))
+            painter.drawLine(int(self.width() / 2), 0, int(self.width() / 2), self.height())
+        if ip.island_y == int(self.height() / 2) and self.dragging:
+            painter.setPen(QPen(QColor(255, 255, 255, 50), 1))
+            painter.drawLine(0, int(self.height() / 2), self.width(), int(self.height() / 2))
+        painter.end()
+
+class LyricIslandOverlay(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.X11BypassWindowManagerHint | Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        self.last_draw = time.perf_counter()
+        
+        self.ft = QFont(harmony_font_family, 14)
+        self.me = QFontMetricsF(self.ft)
+        self.island_height = self.me.height() + 5
+
+        self.island_width = 0
+        self.target_width = 0
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.repaint)
+        self.timer.start(int(ip.delta * 1000))
+
+        self.resize(QApplication.primaryScreen().size())
+        self.move(0, 0)
+
+        self.show()
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        lyric = mgr.getCurrentLyric(dp.controller.playing_time)['content']
+        txt = lyric if not island_editing_overlay.isVisible() or lyric else 'Example Lyric'
+
+        self.target_width = (self.me.horizontalAdvance(txt) + (10 if txt else 0)) if ip.island_check.isChecked() else 0
+        self.island_width += (self.target_width - self.island_width) * min(1, (time.perf_counter() - self.last_draw) * 5)
+
+        if not ip.island_check.isChecked() and self.island_width < 1:
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
+        self.last_draw = time.perf_counter()
+
+        path = QPainterPath()
+        path.addRoundedRect(ip.island_x - (self.island_width / 2), ip.island_y, self.island_width, self.island_height, self.island_height / 2, self.island_height / 2)
+        painter.setClipPath(path)
+        painter.fillPath(path, QColor(0, 0, 0, 175))
+        painter.setFont(self.ft)
+        painter.drawText((ip.island_x - (self.island_width / 2)) + 5, ip.island_y + self.me.height() - 2.5, txt) # type: ignore # 实际上这个函数可以提供浮点数数据，虽然类型标注为int...
+
+        self.resize(ip.island_x + (self.island_width / 2), ip.island_y + self.island_height) # type: ignore
+
+        painter.end()
+
 class MainWindow(FluentWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1334,6 +1519,12 @@ class MainWindow(FluentWindow):
             fp,
             QIcon(f'icons/fav_{'dark' if theme() == Theme.DARK else 'light'}.svg'),
             'Favorites',
+            NavigationItemPosition.BOTTOM,
+        )
+        self.addSubInterface(
+            ip,
+            QIcon(f'icons/island_{'dark' if theme() == Theme.DARK else 'light'}.svg'),
+            'Lyric Island',
             NavigationItemPosition.SCROLL,
         )
 
@@ -1355,6 +1546,19 @@ class MainWindow(FluentWindow):
         def _init():
             wy.init()
 
+            dp.play_method_box.setCurrentText(cfg.play_method)
+            ip.island_check.setChecked(cfg.island_checked)
+
+            if cfg.last_playing_song:
+                storable = cfg.last_playing_song
+                
+                dp.playlist.append(storable)
+                dp.lst.addItem(storable.name)
+
+                dp.playSongAtIndex(0)
+                dp.controller.setPlaytime(cfg.last_playing_time)
+                dp.controller.toggle()
+
         doWithMultiThreading(_init, (), self, 'Loading...')
 
         InfoBar.info(
@@ -1364,11 +1568,30 @@ class MainWindow(FluentWindow):
     def closeEvent(self, e):
         pygame.mixer.music.unload()
         pygame.quit()
+    
+        cfg.last_playing_song = dp.cur.storable if dp.cur else None
+        cfg.last_playing_time = dp.controller.playing_time
+        cfg.island_checked = ip.island_check.isChecked()
+        cfg.play_method = dp.play_method_box.currentText() # type: ignore
+        cfg.island_x = ip.island_x
+        cfg.island_y = ip.island_y
+
+        saveConfig()
+
+        island_editing_overlay.timer.stop()
+        island_editing_overlay.timer.deleteLater()
+        island_editing_overlay.deleteLater()
+        island.timer.stop()
+        island.timer.deleteLater()
+        island.deleteLater()
+
         sys.exit(0)
 
 
 if __name__ == '__main__':
     app = QApplication([])
+
+    harmony_font_family = QFontDatabase.applicationFontFamilies(QFontDatabase.addApplicationFont('fonts/HARMONYOS_SANS_SC_REGULAR.ttf'))[0]
 
     from utils.loading_util import doWithMultiThreading, downloadWithMultiThreading
 
@@ -1381,11 +1604,15 @@ if __name__ == '__main__':
     favs: list[FolderInfo] = loadFavorites()
 
     loadFavorites()
+    loadConfig()
 
     setTheme(Theme.AUTO)
     dp = PlayingPage()
     sp = SearchPage()
     fp = FavoritesPage()
+    ip = DynamicIslandPage()
+    island_editing_overlay = EditingIslandOverlay()
+    island = LyricIslandOverlay()
     mwindow = MainWindow()
 
     fp.refresh()

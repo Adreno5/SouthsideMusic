@@ -19,3 +19,4 @@ main.build
 main.dist
 main.onefile-build
 res.json
+config.json

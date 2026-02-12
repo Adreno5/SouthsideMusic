@@ -1,4 +1,5 @@
 
+import random
 import sys
 import time
 from PySide6.QtGui import QKeyEvent, QMouseEvent, QPaintEvent
@@ -12,6 +13,8 @@ import darkdetect
 import math
 
 import pygame
+
+from utils.random_util import RandomInstance
 
 pygame.init()
 
@@ -437,16 +440,18 @@ class PlayingController(QWidget):
         self.expanded = not self.expanded
 
         if self.expanded:
-            mwindow.resize(mwindow.width() + 205, mwindow.height())
-            mwindow.move(mwindow.x() - 102, mwindow.y())
-            dp.lst.show()
+            if not mwindow.isMaximized():
+                mwindow.resize(mwindow.width() + 205, mwindow.height())
+                mwindow.move(mwindow.x() - 102, mwindow.y())
+            dp.expanded_widget.show()
 
             self.expand_btn.setText('Collapse')
             self.expand_btn.setIcon(QIcon(f'icons/pl_collapse_{'dark' if theme() == Theme.DARK else 'light'}.svg'))
         else:
-            dp.lst.hide()
-            mwindow.resize(mwindow.width() - 205, mwindow.height())
-            mwindow.move(mwindow.x() + 103, mwindow.y())
+            dp.expanded_widget.hide()
+            if not mwindow.isMaximized():
+                mwindow.resize(mwindow.width() - 205, mwindow.height())
+                mwindow.move(mwindow.x() + 103, mwindow.y())
 
             self.expand_btn.setText('Playlist')
             self.expand_btn.setIcon(QIcon(f'icons/pl_expand_{'dark' if theme() == Theme.DARK else 'light'}.svg'))
@@ -470,7 +475,7 @@ class PlayingController(QWidget):
         if value == 0:
             volume = 0
         else:
-            volume = math.log10(value / 100 * 9 + 1)
+            volume = math.log(value / 100 * (math.e - 1) + 1)
         print(volume)
         pygame.mixer.music.set_volume(volume)
 
@@ -582,7 +587,7 @@ class PlayingPage(QWidget):
         self.current_index = -1
 
         self.controller = PlayingController()
-        self.controller.songFinished.connect(self.playNext)
+        self.controller.songFinished.connect(lambda: self.playNext(False))
         # Connect play button to start playlist if no song is loaded
         self.controller.play_pausebtn.clicked.connect(self.onPlayButtonClicked)
 
@@ -635,18 +640,68 @@ class PlayingPage(QWidget):
 
         global_layout.addLayout(contents_layout)
 
+        self.expanded_widget = QWidget()
+        expanded_layout = QVBoxLayout()
+        self.pivot = Pivot(self)
+        self.stacked_widget = QStackedWidget(self)
+
+        self.expanded_widget.setFixedWidth(200)
+
+        expanded_layout.addWidget(self.pivot)
+        expanded_layout.addWidget(self.stacked_widget)
+        expanded_layout.setContentsMargins(30, 0, 30, 30)
+
         self.lst = ListWidget()
         self.lst.setFixedWidth(200)
         self.lst.hide()
-        global_layout.addWidget(self.lst)
+        self.lst.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.lst.itemClicked.connect(self.onPlaylistItemClicked)
+
+        self.playing_interface = QWidget()
+        playing_layout = QVBoxLayout()
+
+        self.play_method_box = ComboBox()
+        self.play_method_box.addItems(['Repeat one', 'Repeat list', 'Shuffle', 'Play in order'])
+        self.play_method_box.setCurrentText('Repeat list')
+        playing_layout.addWidget(self.play_method_box)
+
+        self.song_randomer = RandomInstance()
+        self.song_randomer.init(self.playlist)
+
+        self.playing_interface.setLayout(playing_layout)
+
+        self.addSubInterface(self.lst, 'playlist_listwidget', 'Playlist')
+        self.addSubInterface(self.playing_interface, 'playing_interface', 'Playing')
+
+        self.stacked_widget.setCurrentWidget(self.lst)
+        self.pivot.setCurrentItem('playlist_listwidget')
+        self.pivot.currentItemChanged.connect(lambda k: self.stacked_widget.setCurrentWidget(self.findChild(QWidget, k))) # type: ignore
+
+        self.expanded_widget.setLayout(expanded_layout)
+        global_layout.addWidget(self.expanded_widget)
+
+        self.expanded_widget.hide()
 
         self.setLayout(global_layout)
 
         self.imageLoaded.connect(self.onImageLoaded)
 
-        self.controller.play_pausebtn.click()
+        # self.controller.play_pausebtn.click()
         self.controller.playLastSignal.connect(self.playLast)
-        self.controller.playNextSignal.connect(self.playNext)
+        self.controller.playNextSignal.connect(lambda: self.playNext(True))
+
+    def addSubInterface(self, widget: QWidget, objectName, text):
+        widget.setObjectName(objectName)
+        self.stacked_widget.addWidget(widget)
+        self.pivot.addItem(routeKey=objectName, text=text)
+
+    def onPlaylistItemClicked(self, item: QListWidgetItem):
+        for i, song in enumerate(self.playlist):
+            if song.name == item.text():
+                self.current_index = i
+                if self.controller.playing:
+                    self.controller.toggle()
+                self.playSongAtIndex(i)
 
     def init(self):
         if self.cur is None:
@@ -693,6 +748,10 @@ class PlayingPage(QWidget):
             mwindow.switchTo(dp)
         else:
             # Original network download
+            if pygame.mixer.music.get_busy():
+                pygame.mixer.music.stop()
+                pygame.mixer.music.unload()
+
             def _do():
                 img_bytes = requests.get(
                     self.cur.detail['image_url'], # type: ignore
@@ -728,7 +787,10 @@ class PlayingPage(QWidget):
                 mgr.parse()
                 transmgr.parse()
 
-            doWithMultiThreading(_real, (), mwindow, 'Parsing...', finished=lambda: self.controller.toggle())
+            def _fini():
+                self.controller.toggle()
+
+            doWithMultiThreading(_real, (), mwindow, 'Parsing...', finished=_fini)
 
         doWithMultiThreading(_parse, (), mwindow, 'Loading...')
 
@@ -736,8 +798,9 @@ class PlayingPage(QWidget):
         assert self.cur is not None
 
         def _write_file(bytes: bytes):
-            pygame.mixer.music.stop()
-            pygame.mixer.music.unload()
+            if pygame.mixer.music.get_busy():
+                pygame.mixer.music.stop()
+                pygame.mixer.music.unload()
 
             with open('./temp', 'wb') as f:
                 f.write(bytes)
@@ -777,7 +840,7 @@ class PlayingPage(QWidget):
             self.img_label.show()
             self.ring.hide()
 
-        if self.cur is None:
+        if not hasattr(self.cur, 'storable'):
             self.downloadMusic()
 
     def onPlayButtonClicked(self):
@@ -785,23 +848,40 @@ class PlayingPage(QWidget):
         if self.cur is None:
             self.startPlaylist()
 
-    def playNext(self):
-        if self.current_index < 0 or self.current_index >= len(self.playlist) - 1:
-            # No next song, reset and pause
-            self.controller.playing_time = 0
-            if self.controller.playing:
-                self.controller.toggle()
-            return
-        
+    def playNext(self, byuser: bool):
         if self.controller.playing:
             self.controller.toggle()
+
+        if self.current_index < 0 or self.current_index >= len(self.playlist) - 1:
+            if dp.play_method_box.currentText() == 'Play in order':
+                # No next song, reset and pause
+                InfoBar.warning('Warning', 'This song is the last song in the playlist.', parent=mwindow)
+                self.controller.playing_time = 0
+                return
+            elif dp.play_method_box.currentText() == 'Repeat list':
+                self.current_index = 0
+                self.playSongAtIndex(self.current_index)
+                return
+
+        if dp.play_method_box.currentText() == 'Repeat one' and not byuser:
+            self.playSongAtIndex(self.current_index)
+            return
+        elif dp.play_method_box.currentText() == 'Shuffle':
+            start_storable: SongStorable = self.playlist[self.current_index]
+            cur_storable: SongStorable = self.playlist[self.current_index]
+            while self.current_index == self.playlist.index(start_storable):
+                cur_storable = self.song_randomer.random()
+                self.current_index = self.playlist.index(cur_storable)
+            self.playSongAtIndex(self.current_index)
+            return
 
         self.current_index += 1
         self.playSongAtIndex(self.current_index)
 
     def playLast(self):
         if self.current_index < 1 or self.current_index >= len(self.playlist):
-            # No next song, reset and pause
+            # No last song, reset and pause
+            InfoBar.warning('Warning', 'This song is the first song in the playlist.', parent=mwindow)
             self.controller.playing_time = 0
             if self.controller.playing:
                 self.controller.toggle()
@@ -854,7 +934,10 @@ class PlayingPage(QWidget):
         self.loadMusicFromBase64(song_storable.content_base64)
 
         mgr.cur = song_storable.lyric
-        transmgr.cur = song_storable.translated_lyric
+        if song_storable.translated_lyric:
+            transmgr.cur = song_storable.translated_lyric
+        else:
+            transmgr.cur = '[00:00.000]'
         try:
             mgr.parse()
             transmgr.parse()
@@ -927,9 +1010,12 @@ class FavoritesPage(QWidget):
         self.folder_selector.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.folder_selector.itemClicked.connect(self.viewSongs)
         left_layout.addWidget(self.folder_selector, 1)
-        self.addplaylist_btn = PushButton(QIcon(f'icons/pl_{'dark' if theme() == Theme.DARK else 'light'}.svg'), 'Add to playlist')
+        self.addplaylist_btn = PushButton(QIcon(f'icons/pl_{'dark' if theme() == Theme.DARK else 'light'}.svg'), 'Add selected to playlist')
         self.addplaylist_btn.clicked.connect(self.addFolderToPlaylist)
         left_layout.addWidget(self.addplaylist_btn)
+        self.addall_btn = PrimaryPushButton(QIcon(f'icons/pl_{'dark' if theme() == Theme.LIGHT else 'light'}.svg'), 'Add all to playlist')
+        self.addall_btn.clicked.connect(self.addAllToPlaylist)
+        left_layout.addWidget(self.addall_btn)
         bottom_layout.addLayout(left_layout, 3)
 
         # Separator
@@ -1117,6 +1203,24 @@ class FavoritesPage(QWidget):
                 parent=mwindow,
             )
 
+        dp.song_randomer.init(dp.playlist)
+
+    def addAllToPlaylist(self):
+        global favs
+
+        for folder in favs:
+            for song in folder['songs']:
+                if not any(s.name == song.name for s in dp.playlist):
+                    dp.playlist.append(song)
+                    dp.lst.addItem(song.name)
+        InfoBar.success(
+            'Songs added',
+            'Added all songs from favorites to playlist',
+            parent=mwindow,
+        )
+
+        dp.song_randomer.init(dp.playlist)
+
     def refresh(self):
         def _load():
             global favs
@@ -1207,84 +1311,6 @@ class FavoriteSelectionDialog(MessageBoxBase):
                         return [song]
 
         return []
-
-
-class PlayListPage(QWidget):
-    def __init__(self) -> None:
-        super().__init__()
-        self.setObjectName('playlist_page')
-
-        global_layout = QVBoxLayout(self)
-        self.playlist: list[SongStorable] = []
-
-        # Top FlowLayout with title and buttons
-        top_layout = FlowLayout()
-        top_layout.addWidget(TitleLabel('Playlist'))
-        self.remove_song_btn = PushButton(FluentIcon.DELETE, 'Remove Song')
-        self.remove_song_btn.clicked.connect(self.removeSong)
-        top_layout.addWidget(self.remove_song_btn)
-        self.add_songs_btn = PrimaryPushButton(QIcon(f'icons/pl_{'dark' if theme() == Theme.DARK else 'light'}.svg'), 'Add songs')
-        self.add_songs_btn.clicked.connect(self.addSongs)
-        top_layout.addWidget(self.add_songs_btn)
-        global_layout.addLayout(top_layout)
-
-        # Song list
-        self.lst = ListWidget()
-        self.lst.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-        global_layout.addWidget(self.lst)
-
-        self.setLayout(global_layout)
-
-    def removeSong(self):
-        selected = self.lst.currentItem()
-        if not selected:
-            InfoBar.warning(
-                'No selection', 'Please select a song to remove', parent=mwindow
-            )
-            return
-
-        song_name = selected.text()
-        # Find song in playlist
-        for i, song in enumerate(self.playlist):
-            if song.name == song_name:
-                del self.playlist[i]
-                self.lst.takeItem(self.lst.row(selected))
-                InfoBar.success(
-                    'Song removed',
-                    f'Song {song_name} removed from playlist',
-                    parent=mwindow,
-                )
-                return
-
-    def addSongs(self):
-        dialog = FavoriteSelectionDialog(mwindow)
-        result = dialog.exec()
-
-        if result == 1:  # Accepted
-            selected_songs = dialog.getSelectedSongs()
-            if not selected_songs:
-                InfoBar.warning(
-                    'No selection', 'Please select a song to add', parent=mwindow
-                )
-                return
-
-            for song in selected_songs:
-                # Check for duplicates
-                if not any(s.name == song.name for s in self.playlist):
-                    self.playlist.append(song)
-                    self.lst.addItem(song.name)
-                    InfoBar.success(
-                        'Song added',
-                        f'Song {song.name} added to playlist',
-                        parent=mwindow,
-                    )
-                else:
-                    InfoBar.warning(
-                        'Duplicate',
-                        f'Song {song.name} already in playlist',
-                        parent=mwindow,
-                    )
-
 
 class MainWindow(FluentWindow):
     def __init__(self, parent=None):

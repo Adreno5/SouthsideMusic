@@ -1,5 +1,6 @@
 
 from functools import lru_cache
+import logging
 from typing import TypedDict
 
 
@@ -71,6 +72,6 @@ class LRCLyricManager:
 
                     self.parsed.append(info)
             except Exception as e:
-                print(f'error parsing {line}: {e}')
+                logging.error(f'error parsing {line}: {e}')
 
-        print(f'parsed {len(self.parsed)} lines')
+        logging.info(f'parsed {len(self.parsed)} lines')

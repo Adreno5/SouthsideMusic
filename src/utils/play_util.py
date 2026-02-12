@@ -7,7 +7,7 @@ from typing import Optional
 import threading
 
 class AudioPlayer(QObject):
-    onSongFinish = Signal()
+    onFinished = Signal()
     positionChanged = Signal(float)
 
     def __init__(self, parent=None):
@@ -115,10 +115,11 @@ class AudioPlayer(QObject):
             )
         self.stream.start()
 
-    def _audio_callback(self, outdata, frames, time, status):
-        if status:
-            print(f'Callback status: {status}')
+    def set_gain_factor(self, gain: float):
+        with self._lock:
+            self.volume_gain = max(0.0, gain)
 
+    def _audio_callback(self, outdata, frames, time, status):
         with self._lock:
             start = self.current_index
             end = start + frames
@@ -137,5 +138,5 @@ class AudioPlayer(QObject):
             if self.current_index >= len(self.samples):
                 self.is_playing = False
                 self.is_paused = False
-                self.current_index = 0
+                self.onFinished.emit()
                 raise sd.CallbackStop

@@ -1,16 +1,20 @@
 
 import base64
 import io
-import os
+import logging
 import sys
+import threading
 import time
 from PySide6.QtGui import QKeyEvent, QMouseEvent, QPaintEvent, QShowEvent
 from PySide6.QtWidgets import *  # type: ignore
 from PySide6.QtCore import *  # type: ignore
 from PySide6.QtGui import *  # type: ignore
+import colorama
 import numpy as np
 from qfluentwidgets import *  # type: ignore
 import requests
+
+from colorama import Fore, Style
 
 from pydub import AudioSegment
 import darkdetect
@@ -28,6 +32,17 @@ from utils.favorite_util import loadFavorites, saveFavorites
 from utils.config_util import loadConfig, saveConfig, cfg
 from utils.loudness_balance_util import getAdjustedGainFactor
 from utils.play_util import AudioPlayer
+
+class DummyCard:
+    def __init__(self, storable):
+        self.info = SongInfo(
+            name=storable.name,
+            artists=storable.artists,
+            id=storable.id,
+            privilege=-1,
+        )
+        self.detail = SongDetail(image_url='')
+        self.storable = storable
 
 class MusicCard(QWidget):
     imageLoaded = Signal(bytes)
@@ -196,9 +211,8 @@ class MusicCard(QWidget):
                     break
             
             # Add song to target folder
-            from utils.lyrics.base_util import SongStorable
             
-            song_storable = SongStorable(self.info, image_bytes, music_bytes, lyric, translated_lyric)
+            song_storable = SongStorable(self.info, image_bytes, music_bytes, lyric, translated_lyric, getAdjustedGainFactor(-16, AudioSegment.from_file(io.BytesIO(music_bytes), format='mp3')))
             target_folder['songs'].append(song_storable) # type: ignore
 
             # Save favorites
@@ -307,7 +321,7 @@ class SearchPage(QWidget):
             viewport_rect = self.lst.viewport().rect()
 
             if viewport_rect.intersects(item_rect) and not card.load:
-                print(f'loading {card.info['name']}')
+                logging.debug(f'loading {card.info['name']}')
                 card.loadDetailAndImage()
 
     def setImage_(self, byte: bytes, ca: MusicCard):
@@ -334,7 +348,7 @@ class SearchPage(QWidget):
             nonlocal result
 
             for info in result:
-                print(info['name'], info['privilege'])
+                logging.debug(f'{info['name']} -> {info['privilege']}')
 
             self.search_btn.setEnabled(True)
 
@@ -354,6 +368,7 @@ class SearchPage(QWidget):
 
 
 class PlayingController(QWidget):
+    onSongFinish = Signal()
     playLastSignal = Signal()
     playNextSignal = Signal()
 
@@ -409,7 +424,7 @@ class PlayingController(QWidget):
             self.vol_slider,
             alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
         )
-        self.expand_btn = PushButton(QIcon(f'icons/pl_expand_{'dark' if theme() == Theme.DARK else 'light'}.svg'), 'Playlist')
+        self.expand_btn = PushButton(QIcon(f'icons/pl_expand_{'dark' if theme() == Theme.DARK else 'light'}.svg'), 'Menu')
         right_layout.addWidget(
             self.expand_btn,
             alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom,
@@ -425,7 +440,7 @@ class PlayingController(QWidget):
         self.timer.start(20)
 
         self.timelabel_updater = QTimer(self)
-        self.timelabel_updater.timeout.connect(self.updatePlayingtimeLabel)
+        self.timelabel_updater.timeout.connect(self.updateWidgets)
         self.timelabel_updater.start(50)
         self.playingtime_lastupdate = time.perf_counter()
 
@@ -455,10 +470,10 @@ class PlayingController(QWidget):
                 mwindow_anim.setEndValue(QRect(mwindow.x() + 103, mwindow.y(), mwindow.width() - 205, mwindow.height()))
                 mwindow_anim.start()
 
-            self.expand_btn.setText('Playlist')
+            self.expand_btn.setText('Menu')
             self.expand_btn.setIcon(QIcon(f'icons/pl_expand_{'dark' if theme() == Theme.DARK else 'light'}.svg'))
 
-    def updatePlayingtimeLabel(self):
+    def updateWidgets(self):
         if dp.cur:
             # Highlight the currently playing song in the playlist
             for i, song in enumerate(dp.playlist):
@@ -466,13 +481,18 @@ class PlayingController(QWidget):
                     dp.lst.setCurrentRow(i)
                     break
 
+        if player.get_busy():
+            if (player.get_position() > 5) and not dp._preload_triggered and dp.current_index < len(dp.playlist) - 1:
+                dp._preload_triggered = True
+                dp.preloadNextSong()
+
     def updateVol(self):
         value = self.vol_slider.value()
         if value == 0:
             volume = 0
         else:
             volume = math.log(value / 100 * (math.e - 1) + 1)
-        print(volume)
+        logging.debug(volume)
         player.set_volume(volume)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
@@ -505,7 +525,7 @@ class PlayingController(QWidget):
         return super().mouseMoveEvent(event)
 
     def toggle(self):
-        print('toggle')
+        logging.debug('toggle')
 
         if player.get_busy():
             player.pause()
@@ -560,12 +580,20 @@ class PlayingPage(QWidget):
 
         self.total_length = 0
 
+        self._preload_triggered = False
+
         # Playlist management
         self.playlist: list[SongStorable] = []
         self.current_index = -1
+        self.next_song_audio: AudioSegment | None = None
+        self.next_song_gain: float | None = None
+
+        # Caches
+        self._gain_cache: dict[str, float] = {}
 
         self.controller = PlayingController()
-        player.onSongFinish.connect(lambda: self.playNext(False))
+        player.onFinished.connect(self.controller.onSongFinish.emit)
+        self.controller.onSongFinish.connect(lambda: self.playNext(False))
         # Connect play button to start playlist if no song is loaded
         self.controller.play_pausebtn.clicked.connect(self.onPlayButtonClicked)
 
@@ -695,7 +723,7 @@ class PlayingPage(QWidget):
 
             image_bytes = base64.b64decode(self.cur.storable.image_base64)
             self.onImageLoaded(image_bytes)
-            self.loadMusicFromBase64(self.cur.storable.content_base64)
+            self.loadMusicFromBase64(self.cur.storable.content_base64, self.cur.storable.loudness_gain)
             
             # Use local lyrics if available
             if hasattr(self.cur.storable, 'lyric') and self.cur.storable.lyric:
@@ -735,6 +763,41 @@ class PlayingPage(QWidget):
             self.ring.show()
             doWithMultiThreading(_do, (), mwindow, 'Loading...')
 
+    def preloadNextSong(self):
+        try:
+            logging.info('preloading')
+
+            next_song = self.playlist[self.current_index + 1]
+
+            logging.debug(next_song)
+
+            if self.play_method_box.currentText() == 'Play in order':
+                if self.current_index + 1 >= len(self.playlist):
+                    return
+            elif self.play_method_box.currentText() == 'Repeat list':
+                if self.current_index + 1 >= len(self.playlist):
+                    next_song = self.playlist[0]
+                else:
+                    next_song = self.playlist[self.current_index + 1]
+            else:
+                next_song = self.playlist[self.current_index + 1]
+            if not (self.play_method_box.currentText() in ['Play in order', 'Repeat list']):
+                return
+
+            def _preload():
+                song_bytes = base64.b64decode(next_song.content_base64)
+                self.next_song_audio = AudioSegment.from_file(io.BytesIO(song_bytes), format='mp3')
+                if next_song.loudness_gain == 1.0 and isinstance(self.next_song_audio, AudioSegment):
+                    next_song.loudness_gain = getAdjustedGainFactor(-16, self.next_song_audio)
+                self.next_song_gain = next_song.loudness_gain
+
+                logging.info('preloaded')
+                logging.debug(f'(Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}')
+
+            threading.Thread(target=_preload, daemon=True).start()
+        finally:
+            logging.debug('started preload thread')
+
     def downloadLyric(self):
         assert self.cur is not None
 
@@ -766,18 +829,26 @@ class PlayingPage(QWidget):
     def downloadMusic(self):
         assert self.cur is not None
 
-        def _write_file(bytes: bytes):
+        def _downloaded(bytes: bytes):
             if player.get_busy():
                 player.stop()
 
             audio = AudioSegment.from_file(io.BytesIO(bytes), format='mp3')
-            player.load(audio)
-
-            gain = getAdjustedGainFactor(-16.0, audio)
-            audio = audio.apply_gain(20 * np.log10(gain))
 
             player.load(audio)
             self.total_length = player.get_length()
+            self.controller.toggle()
+
+            def computeGain():
+                try:
+                    gain = getAdjustedGainFactor(-16, audio)
+                    if self.cur:
+                        self._gain_cache[self.cur.info['id']] = gain
+                    player.set_gain_factor(gain)
+                except Exception as e:
+                    pass
+
+            threading.Thread(target=computeGain, daemon=True).start()
 
             self.downloadLyric()
 
@@ -790,7 +861,7 @@ class PlayingPage(QWidget):
             None,
             mwindow,
             'Loading...',
-            _write_file,
+            _downloaded,
         )
 
     def onImageLoaded(self, bytes):
@@ -816,6 +887,12 @@ class PlayingPage(QWidget):
             self.startPlaylist()
 
     def playNext(self, byuser: bool):
+        logging.debug(f'(Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}')
+        if isinstance(self.next_song_audio, AudioSegment) and isinstance(self.next_song_gain, float):
+            self.playPreloadedSong()
+            self.current_index += 1
+            return
+
         if self.current_index < 0 or self.current_index >= len(self.playlist) - 1:
             if dp.play_method_box.currentText() == 'Play in order':
                 # No next song, reset and pause
@@ -842,12 +919,60 @@ class PlayingPage(QWidget):
         self.current_index += 1
         self.playSongAtIndex(self.current_index)
 
+    def playPreloadedSong(self) -> None:
+        if (not isinstance(self.next_song_audio, AudioSegment)) or (not isinstance(self.next_song_gain, float)):
+            logging.error(f'cant play preloaded song: (Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}')
+            return
+        
+        logging.info('using preloaded song')
+
+        song_storable = self.playlist[self.current_index + 1]
+        self.cur = DummyCard(song_storable)
+
+        # Update UI
+        self.title_label.setText(song_storable.name)
+        self.artists_label.setText(song_storable.artists)
+        self.lyric_label.setText('Loading...')
+        self.transl_label.setText('')
+        QApplication.processEvents()
+
+        image_bytes = base64.b64decode(song_storable.image_base64)
+        self.onImageLoaded(image_bytes)
+        
+        audio = self.next_song_audio
+
+        logging.debug(f'applying gain {self.next_song_gain}')
+        audio = audio.apply_gain(20 * np.log10(self.next_song_gain))
+
+        player.load(audio)
+        self.total_length = player.get_length()
+
+        mgr.cur = song_storable.lyric
+        if song_storable.translated_lyric:
+            transmgr.cur = song_storable.translated_lyric
+        else:
+            transmgr.cur = '[00:00.000]'
+        try:
+            mgr.parse()
+            transmgr.parse()
+        finally:
+            if not player.get_busy():
+                self.controller.toggle()
+
+            self._preload_triggered = False
+            self.next_song_audio = None
+            self.next_song_gain = None
+
     def playLast(self):
         if self.current_index < 1 or self.current_index >= len(self.playlist):
             # No last song, reset and pause
             InfoBar.warning('Warning', 'This song is the first song in the playlist.', parent=mwindow)
             self.controller.setPlaytime(0)
             return
+        
+        self._preload_triggered = False
+        self.next_song_audio = None
+        self.next_song_gain = None
 
         self.current_index -= 1
         self.playSongAtIndex(self.current_index)
@@ -861,36 +986,20 @@ class PlayingPage(QWidget):
         self.playStorable(song)
 
     def playStorable(self, song_storable: SongStorable):
-        # Create dummy MusicCard with song info
-        from utils.lyrics.base_util import SongInfo, SongDetail
-
-        class DummyCard:
-            def __init__(self, storable):
-                self.info = SongInfo(
-                    name=storable.name,
-                    artists=storable.artists,
-                    id=storable.id,
-                    privilege=-1,
-                )
-                self.detail = SongDetail(image_url='')
-                self.storable = storable
-
         self.cur = DummyCard(song_storable)
 
         # Update UI
         self.title_label.setText(song_storable.name)
         self.artists_label.setText(song_storable.artists)
-        self.lyric_label.setText('')
+        self.lyric_label.setText('Loading...')
         self.transl_label.setText('')
-
-        # Load image from base64
-        import base64
+        QApplication.processEvents()
 
         image_bytes = base64.b64decode(song_storable.image_base64)
         self.onImageLoaded(image_bytes)
 
         # Load from base64
-        self.loadMusicFromBase64(song_storable.content_base64)
+        self.loadMusicFromBase64(song_storable.content_base64, song_storable.loudness_gain)
 
         mgr.cur = song_storable.lyric
         if song_storable.translated_lyric:
@@ -899,19 +1008,21 @@ class PlayingPage(QWidget):
             transmgr.cur = '[00:00.000]'
         try:
             mgr.parse()
+            transmgr.parse()
         finally:
-            try:
-                transmgr.parse()
-            finally:
-                # if not player.get_busy():
-                #     self.controller.toggle()
-                pass
+            if not player.get_busy():
+                self.controller.toggle()
 
-    def loadMusicFromBase64(self, content_base64: str):
+            self._preload_triggered = False
+            self.next_song_audio = None
+            self.next_song_gain = None
+
+    def loadMusicFromBase64(self, content_base64: str, gain: float):
         music_bytes = base64.b64decode(content_base64)
+        logging.debug(f'loading data {len(music_bytes)}')
         audio = AudioSegment.from_file(io.BytesIO(music_bytes), format='mp3')
 
-        gain = getAdjustedGainFactor(-16.0, audio)
+        logging.debug(f'applying gain {gain}')
         audio = audio.apply_gain(20 * np.log10(gain))
 
         player.load(audio)
@@ -1473,7 +1584,7 @@ class MainWindow(FluentWindow):
         self.init()
 
     def play(self, card: MusicCard):
-        print(card.info['id'])
+        logging.debug(card.info['id'])
 
         dp.lyric_label.setText('')
         dp.transl_label.setText('')
@@ -1497,6 +1608,7 @@ class MainWindow(FluentWindow):
 
                 dp.playSongAtIndex(0)
                 dp.controller.setPlaytime(cfg.last_playing_time)
+                dp.controller.toggle()
 
         doWithMultiThreading(_init, (), self, 'Loading...')
 
@@ -1515,6 +1627,7 @@ class MainWindow(FluentWindow):
         cfg.island_y = ip.island_y
 
         saveConfig()
+        saveFavorites(favs)
 
         island_editing_overlay.timer.stop()
         island_editing_overlay.timer.deleteLater()
@@ -1527,6 +1640,15 @@ class MainWindow(FluentWindow):
 
 
 if __name__ == '__main__':
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format=f'[%(asctime)s/{Style.BRIGHT}%(levelname)s{Style.RESET_ALL}] {Fore.LIGHTBLACK_EX}-{Style.RESET_ALL} %(message)s',
+        datefmt='%H:%M:%S',
+        handlers=[
+            logging.StreamHandler()
+        ]
+    )
+    
     app = QApplication([])
     app.setStyleSheet(f'QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}')
 

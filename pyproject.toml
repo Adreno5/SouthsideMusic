@@ -1,10 +1,11 @@
 [project]
 name = "SouthsideMusic"
-version = "v4"
-description = "Call NetEaseCloudMusic api to get musics!"
+version = "v5"
+description = "Advanced music player"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "colorama>=0.4.6",
     "darkdetect>=0.8.0",
     "nuitka>=4.0",
     "numpy>=2.4.2",

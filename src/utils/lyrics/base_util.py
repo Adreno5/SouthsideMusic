@@ -48,6 +48,20 @@ class SongStorable:
             'lyric': self.lyric,
             'translated_lyric': self.translated_lyric
         }
+    
+    @staticmethod
+    def fromObject(obj: SongStorableDict) -> 'SongStorable':
+        return SongStorable(
+            info={
+                'name': obj['name'],
+                'artists': obj['artists'],
+                'id': obj['id'],
+                'privilege': -1
+            },
+            image=base64.b64decode(obj['image_base64']),
+            music_bin=base64.b64decode(obj['content_base64']),
+            lyric=obj['lyric'],
+        )
 
 class FolderInfo(TypedDict):
     folder_name: str

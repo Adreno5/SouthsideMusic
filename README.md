@@ -14,3 +14,4 @@ just download the latest release and unzip it. And launch the `SouthsideMusic.ex
 
 ## Contributing
 Clone this repository and run `uv sync` to setup your environment.
+Install uv on: https://uv.doczh.com/getting-started/installation/

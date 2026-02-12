@@ -1,22 +1,22 @@
 
-import random
+import base64
+import io
+import os
 import sys
 import time
 from PySide6.QtGui import QKeyEvent, QMouseEvent, QPaintEvent, QShowEvent
 from PySide6.QtWidgets import *  # type: ignore
 from PySide6.QtCore import *  # type: ignore
 from PySide6.QtGui import *  # type: ignore
+import numpy as np
 from qfluentwidgets import *  # type: ignore
 import requests
 
+from pydub import AudioSegment
 import darkdetect
 import math
 
-import pygame
-
 from utils.random_util import RandomInstance
-
-pygame.init()
 
 from utils.dialog_util import get_text_lineedit
 from utils.lyrics.base_util import FolderInfo, SongInfo, SongStorable
@@ -26,7 +26,8 @@ from utils.lyric_util import LRCLyricManager
 from utils.time_util import float2time
 from utils.favorite_util import loadFavorites, saveFavorites
 from utils.config_util import loadConfig, saveConfig, cfg
-
+from utils.loudness_balance_util import getAdjustedGainFactor
+from utils.play_util import AudioPlayer
 
 class MusicCard(QWidget):
     imageLoaded = Signal(bytes)
@@ -353,21 +354,12 @@ class SearchPage(QWidget):
 
 
 class PlayingController(QWidget):
-    songFinished = Signal()
-
     playLastSignal = Signal()
     playNextSignal = Signal()
 
     def __init__(self):
         super().__init__()
-        self.playing = False
-        self.first = True
-
-        self.playing_time: float = 0
-        self.start_time: float = 0
-
         self.expanded = False
-
         self.dragging = False
 
         global_layout = QHBoxLayout()
@@ -432,9 +424,9 @@ class PlayingController(QWidget):
         self.timer.timeout.connect(self.repaint)
         self.timer.start(20)
 
-        self.playing_time_updater = QTimer(self)
-        self.playing_time_updater.timeout.connect(self.updatePlayingtime)
-        self.playing_time_updater.start(50)
+        self.timelabel_updater = QTimer(self)
+        self.timelabel_updater.timeout.connect(self.updatePlayingtimeLabel)
+        self.timelabel_updater.start(50)
         self.playingtime_lastupdate = time.perf_counter()
 
     def toggle_expand(self):
@@ -466,13 +458,7 @@ class PlayingController(QWidget):
             self.expand_btn.setText('Playlist')
             self.expand_btn.setIcon(QIcon(f'icons/pl_expand_{'dark' if theme() == Theme.DARK else 'light'}.svg'))
 
-    def updatePlayingtime(self):
-        if self.playing:
-            self.playing_time = time.perf_counter() - self.start_time
-            if self.playing_time > dp.total_length:
-                self.playing_time = dp.total_length
-                self.songFinished.emit()
-
+    def updatePlayingtimeLabel(self):
         if dp.cur:
             # Highlight the currently playing song in the playlist
             for i, song in enumerate(dp.playlist):
@@ -487,72 +473,50 @@ class PlayingController(QWidget):
         else:
             volume = math.log(value / 100 * (math.e - 1) + 1)
         print(volume)
-        pygame.mixer.music.set_volume(volume)
+        player.set_volume(volume)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.position().y() < 8:
             self.dragging = True
-            self.playing_time = min(
+            playing_time = min(
                 dp.total_length,
                 max(0, (event.position().x() / self.width()) * dp.total_length),
             )
-            if self.playing:
-                pygame.mixer.music.set_pos(self.playing_time)
-                self.start_time = time.perf_counter() - self.playing_time
+            player.set_position(playing_time)
         return super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self.dragging:
-            self.playing_time = min(
+            playing_time = min(
                 dp.total_length,
                 max(0, (event.position().x() / self.width()) * dp.total_length),
             )
-            if self.playing:
-                pygame.mixer.music.set_pos(self.playing_time)
-                self.start_time = time.perf_counter() - self.playing_time
+            player.set_position(playing_time)
             self.dragging = False
         return super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self.dragging:
-            self.playing_time = min(
+            playing_time = min(
                 dp.total_length,
                 max(0, (event.position().x() / self.width()) * dp.total_length),
             )
-            if self.playing:
-                pygame.mixer.music.set_pos(self.playing_time)
-                self.start_time = time.perf_counter() - self.playing_time
+            player.set_position(playing_time)
         return super().mouseMoveEvent(event)
 
     def toggle(self):
         print('toggle')
 
-        self.playing = not self.playing
-
-        if self.playing_time >= dp.total_length:
-            self.playing_time = 0
-
-        if self.playing:
-            self.play_pausebtn.setIcon(
-                QIcon(f'icons/pause_{'dark' if theme() == Theme.DARK else 'light'}.svg')
-            )
-            if self.first and dp.cur:
-                pygame.mixer.music.play()
-                self.first = False
-                self.start_time = time.perf_counter()
-            else:
-                pygame.mixer.music.unpause()
-                self.start_time = time.perf_counter() - self.playing_time
+        if player.get_busy():
+            player.pause()
+            self.play_pausebtn.setIcon(QIcon(f'icons/playa_{'dark' if darkdetect.isDark() else 'light'}.svg'))
         else:
-            self.play_pausebtn.setIcon(
-                QIcon(f'icons/playa_{'dark' if theme() == Theme.DARK else 'light'}.svg')
-            )
-            pygame.mixer.music.pause()
+            player.resume()
+            self.play_pausebtn.setIcon(QIcon(f'icons/pause_{'dark' if darkdetect.isDark() else 'light'}.svg'))
     
     def setPlaytime(self, time_value: float) -> None:
-        self.playing_time = time_value
-        pygame.mixer.music.set_pos(time_value)
-        self.start_time = time.perf_counter() - self.playing_time
+        playing_time = time_value
+        player.set_position(playing_time)
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
@@ -565,24 +529,23 @@ class PlayingController(QWidget):
                 )
             )
             painter.drawLine(
-                0, 0, int(self.width() * (self.playing_time / dp.total_length)), 0
+                0, 0, int(self.width() * (player.get_position() / dp.total_length)), 0
             )
 
-        cur_time = float2time(self.playing_time)
+        cur_time = float2time(player.get_position())
         # self.time_label.setText(
         #     f'{str(cur_time['minutes']).zfill(2)}:{str(cur_time['seconds']).zfill(2)}.{str(cur_time['millionsecs']).zfill(3)}'
         # )
-
         self.time_label.setText(
             f'{str(cur_time['minutes']).zfill(2)}:{str(cur_time['seconds']).zfill(2)}'
         )
         
-        yw = mgr.getCurrentLyric(self.playing_time)['content']
+        yw = mgr.getCurrentLyric(player.get_position())['content']
         dp.lyric_label.setText(yw)
         if not yw.strip():
             dp.transl_label.setText('')
         else:
-            dp.transl_label.setText(transmgr.getCurrentLyric(self.playing_time)['content'])
+            dp.transl_label.setText(transmgr.getCurrentLyric(player.get_position())['content'])
 
         painter.end()
 
@@ -602,7 +565,7 @@ class PlayingPage(QWidget):
         self.current_index = -1
 
         self.controller = PlayingController()
-        self.controller.songFinished.connect(lambda: self.playNext(False))
+        player.onSongFinish.connect(lambda: self.playNext(False))
         # Connect play button to start playlist if no song is loaded
         self.controller.play_pausebtn.clicked.connect(self.onPlayButtonClicked)
 
@@ -713,8 +676,6 @@ class PlayingPage(QWidget):
         for i, song in enumerate(self.playlist):
             if song.name == item.text():
                 self.current_index = i
-                if self.controller.playing:
-                    self.controller.toggle()
                 self.playSongAtIndex(i)
 
     def init(self):
@@ -724,13 +685,8 @@ class PlayingPage(QWidget):
         for label in self.findChildren(QLabel):
             label.setWordWrap(True)
 
-        if self.controller.playing:
-            self.controller.toggle()
-
         self.title_label.setText(self.cur.info['name'])
         self.artists_label.setText(self.cur.info['artists'])
-
-        self.controller.playing_time = 0
 
         # Check if cur has storable attribute (DummyCard from playlist)
         if hasattr(self.cur, 'storable'):
@@ -762,10 +718,9 @@ class PlayingPage(QWidget):
             mwindow.switchTo(dp)
         else:
             # Original network download
-            if pygame.mixer.music.get_busy():
-                pygame.mixer.music.stop()
-                pygame.mixer.music.unload()
-
+            if player.get_busy():
+                player.stop()
+            
             def _do():
                 img_bytes = requests.get(
                     self.cur.detail['image_url'], # type: ignore
@@ -812,19 +767,17 @@ class PlayingPage(QWidget):
         assert self.cur is not None
 
         def _write_file(bytes: bytes):
-            if pygame.mixer.music.get_busy():
-                pygame.mixer.music.stop()
-            pygame.mixer.music.unload()
+            if player.get_busy():
+                player.stop()
 
-            with open('./temp', 'wb') as f:
-                f.write(bytes)
+            audio = AudioSegment.from_file(io.BytesIO(bytes), format='mp3')
+            player.load(audio)
 
-            pygame.mixer.music.load('./temp')
+            gain = getAdjustedGainFactor(-16.0, audio)
+            audio = audio.apply_gain(20 * np.log10(gain))
 
-            sound = pygame.mixer.Sound('./temp')
-            self.total_length = sound.get_length()
-
-            self.controller.first = True
+            player.load(audio)
+            self.total_length = player.get_length()
 
             self.downloadLyric()
 
@@ -863,14 +816,11 @@ class PlayingPage(QWidget):
             self.startPlaylist()
 
     def playNext(self, byuser: bool):
-        if self.controller.playing:
-            self.controller.toggle()
-
         if self.current_index < 0 or self.current_index >= len(self.playlist) - 1:
             if dp.play_method_box.currentText() == 'Play in order':
                 # No next song, reset and pause
                 InfoBar.warning('Warning', 'This song is the last song in the playlist.', parent=mwindow)
-                self.controller.playing_time = 0
+                self.controller.setPlaytime(0)
                 return
             elif dp.play_method_box.currentText() == 'Repeat list':
                 self.current_index = 0
@@ -896,13 +846,8 @@ class PlayingPage(QWidget):
         if self.current_index < 1 or self.current_index >= len(self.playlist):
             # No last song, reset and pause
             InfoBar.warning('Warning', 'This song is the first song in the playlist.', parent=mwindow)
-            self.controller.playing_time = 0
-            if self.controller.playing:
-                self.controller.toggle()
+            self.controller.setPlaytime(0)
             return
-
-        if self.controller.playing:
-            self.controller.toggle()
 
         self.current_index -= 1
         self.playSongAtIndex(self.current_index)
@@ -954,27 +899,23 @@ class PlayingPage(QWidget):
             transmgr.cur = '[00:00.000]'
         try:
             mgr.parse()
-            transmgr.parse()
         finally:
-            self.controller.first = True
-            self.controller.toggle()
+            try:
+                transmgr.parse()
+            finally:
+                # if not player.get_busy():
+                #     self.controller.toggle()
+                pass
 
     def loadMusicFromBase64(self, content_base64: str):
-        import base64
-
         music_bytes = base64.b64decode(content_base64)
+        audio = AudioSegment.from_file(io.BytesIO(music_bytes), format='mp3')
 
-        pygame.mixer.music.stop()
-        pygame.mixer.music.unload()
+        gain = getAdjustedGainFactor(-16.0, audio)
+        audio = audio.apply_gain(20 * np.log10(gain))
 
-        with open('./temp', 'wb') as f:
-            f.write(music_bytes)
-
-        pygame.mixer.music.load('./temp')
-        sound = pygame.mixer.Sound('./temp')
-        self.total_length = sound.get_length()
-
-        self.controller.first = True
+        player.load(audio)
+        self.total_length = player.get_length()
 
     def startPlaylist(self):
         fp.folder_selector.setCurrentRow(0)
@@ -985,7 +926,7 @@ class PlayingPage(QWidget):
         self.playSongAtIndex(0)
 
         # Ensure playing state
-        if not self.controller.playing:
+        if not player.get_busy():
             self.controller.toggle()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
@@ -1284,8 +1225,6 @@ class FavoriteSelectionDialog(MessageBoxBase):
         # Connect signals
         self.folder_list.itemClicked.connect(self.onFolderSelected)
 
-        # Do NOT hide cancel button (keep default)
-
     def loadFolders(self):
         global favs
         self.folder_list.clear()
@@ -1430,7 +1369,7 @@ class EditingIslandOverlay(QWidget):
             return
 
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(0, 0, 0, 175))
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 120))
         painter.setPen(QPen(QColor(255, 255, 255, 100), 1))
         painter.drawLines([
             QLineF(self.mouse_pos.x(), 0, self.mouse_pos.x(), self.height()),
@@ -1473,7 +1412,7 @@ class LyricIslandOverlay(QWidget):
         self.show()
 
     def paintEvent(self, event: QPaintEvent) -> None:
-        lyric = mgr.getCurrentLyric(dp.controller.playing_time)['content']
+        lyric = mgr.getCurrentLyric(player.get_position())['content']
         txt = (lyric if not island_editing_overlay.isVisible() or lyric else 'Example Lyric') if ip.island_check.isChecked() else ''
 
         self.target_width = (self.me.horizontalAdvance(txt) + (10 if txt else 0)) if ip.island_check.isChecked() else 0
@@ -1558,7 +1497,6 @@ class MainWindow(FluentWindow):
 
                 dp.playSongAtIndex(0)
                 dp.controller.setPlaytime(cfg.last_playing_time)
-                dp.controller.toggle()
 
         doWithMultiThreading(_init, (), self, 'Loading...')
 
@@ -1567,11 +1505,10 @@ class MainWindow(FluentWindow):
         )
 
     def closeEvent(self, e):
-        pygame.mixer.music.unload()
-        pygame.quit()
-    
+        player.stop()
+
         cfg.last_playing_song = dp.cur.storable if dp.cur else None
-        cfg.last_playing_time = dp.controller.playing_time
+        cfg.last_playing_time = player.get_position()
         cfg.island_checked = ip.island_check.isChecked()
         cfg.play_method = dp.play_method_box.currentText() # type: ignore
         cfg.island_x = ip.island_x
@@ -1605,10 +1542,12 @@ if __name__ == '__main__':
     transmgr = LRCLyricManager()
     favs: list[FolderInfo] = loadFavorites()
 
-    loadFavorites()
     loadConfig()
 
     setTheme(Theme.AUTO)
+
+    player = AudioPlayer()
+
     dp = PlayingPage()
     sp = SearchPage()
     fp = FavoritesPage()

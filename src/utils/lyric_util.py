@@ -1,4 +1,5 @@
 
+from functools import lru_cache
 from typing import TypedDict
 
 
@@ -11,6 +12,7 @@ class LRCLyricManager:
         self.cur: str = ''
         self.parsed: list[LyricInfo] = []
 
+    @lru_cache(maxsize=1024)
     def getCurrentLyric(self, time: float) -> LyricInfo:
         if len(self.parsed) > 0:
             if self.parsed[0]['time'] > time:
@@ -19,6 +21,24 @@ class LRCLyricManager:
         for i, l in enumerate(self.parsed):
             if l['time'] > time:
                 return self.parsed[max(0, i - 1)]
+            
+        return LyricInfo(time=0, content='')
+    
+    @lru_cache(maxsize=1024)
+    def getOffsetedLyric(self, time: float, offset_index: int) -> LyricInfo:
+        if len(self.parsed) > 0:
+            if self.parsed[0]['time'] > time:
+                return LyricInfo(time=0, content='')
+
+        for i, l in enumerate(self.parsed):
+            if l['time'] > time:
+                target_index = i - 1 + offset_index
+                if target_index < 0:
+                    return LyricInfo(time=0, content='')
+                elif target_index >= len(self.parsed):
+                    return LyricInfo(time=0, content='')
+                else:
+                    return self.parsed[target_index]
             
         return LyricInfo(time=0, content='')
 

@@ -11,6 +11,7 @@ class Config:
     island_checked: bool = False
     island_x: int = 0
     island_y: int = 0
+    island_background_alpha: int = 120
 
     last_playing_song: SongStorable | None = None
     last_playing_time: float = 0

@@ -1474,7 +1474,7 @@ class LyricIslandOverlay(QWidget):
 
     def paintEvent(self, event: QPaintEvent) -> None:
         lyric = mgr.getCurrentLyric(dp.controller.playing_time)['content']
-        txt = lyric if not island_editing_overlay.isVisible() or lyric else 'Example Lyric'
+        txt = (lyric if not island_editing_overlay.isVisible() or lyric else 'Example Lyric') if ip.island_check.isChecked() else ''
 
         self.target_width = (self.me.horizontalAdvance(txt) + (10 if txt else 0)) if ip.island_check.isChecked() else 0
         self.island_width += (self.target_width - self.island_width) * min(1, (time.perf_counter() - self.last_draw) * 5)
@@ -1491,6 +1491,7 @@ class LyricIslandOverlay(QWidget):
         painter.setClipPath(path)
         painter.fillPath(path, QColor(0, 0, 0, 175))
         painter.setFont(self.ft)
+        painter.setPen(QColor(255, 255, 255))
         painter.drawText((ip.island_x - (self.island_width / 2)) + 5, ip.island_y + self.me.height() - 2.5, txt) # type: ignore # 实际上这个函数可以提供浮点数数据，虽然类型标注为int...
 
         self.resize(ip.island_x + (self.island_width / 2), ip.island_y + self.island_height) # type: ignore
@@ -1590,6 +1591,7 @@ class MainWindow(FluentWindow):
 
 if __name__ == '__main__':
     app = QApplication([])
+    app.setStyleSheet(f'QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}')
 
     harmony_font_family = QFontDatabase.applicationFontFamilies(QFontDatabase.addApplicationFont('fonts/HARMONYOS_SANS_SC_REGULAR.ttf'))[0]
 

@@ -13,7 +13,6 @@ class LRCLyricManager:
         self.cur: str = ''
         self.parsed: list[LyricInfo] = []
 
-    @lru_cache(maxsize=1024)
     def getCurrentLyric(self, time: float) -> LyricInfo:
         if len(self.parsed) > 0:
             if self.parsed[0]['time'] > time:
@@ -25,7 +24,6 @@ class LRCLyricManager:
             
         return LyricInfo(time=0, content='')
     
-    @lru_cache(maxsize=1024)
     def getOffsetedLyric(self, time: float, offset_index: int) -> LyricInfo:
         if len(self.parsed) > 0:
             if self.parsed[0]['time'] > time:

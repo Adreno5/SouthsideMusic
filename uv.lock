@@ -247,19 +247,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pyloudnorm"
-version = "0.2.0"
-source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
-dependencies = [
-    { name = "numpy" },
-    { name = "scipy" },
-]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/23/00/f915eaa75326f4209941179c2b93ac477f2040e4aeff5bb21d16eb8058f9/pyloudnorm-0.2.0.tar.gz", hash = "sha256:8bf597658ea4e1975c275adf490f6deb5369ea409f2901f939915efa4b681b16" }
-wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/aa/b6/65a49a05614b2548edbba3aab118f2ebe7441dfd778accdcdce9f6567f20/pyloudnorm-0.2.0-py3-none-any.whl", hash = "sha256:9bb69afb904f59d007a7f9ba3d75d16fb8aeef35c44d6df822a9f192d69cf13f" },
-]
-
-[[package]]
 name = "pyobjc"
 version = "12.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
@@ -3149,7 +3136,7 @@ wheels = [
 
 [[package]]
 name = "southsidemusic"
-version = "5"
+version = "6"
 source = { virtual = "." }
 dependencies = [
     { name = "colorama" },
@@ -3157,7 +3144,6 @@ dependencies = [
     { name = "nuitka" },
     { name = "numpy" },
     { name = "pydub" },
-    { name = "pyloudnorm" },
     { name = "pyside6" },
     { name = "pyside6-fluent-widgets" },
     { name = "requests" },
@@ -3172,7 +3158,6 @@ requires-dist = [
     { name = "nuitka", specifier = ">=4.0" },
     { name = "numpy", specifier = ">=2.4.2" },
     { name = "pydub", specifier = ">=0.25.1" },
-    { name = "pyloudnorm", specifier = ">=0.2.0" },
     { name = "pyside6", specifier = ">=6.10.2" },
     { name = "pyside6-fluent-widgets", specifier = ">=1.11.1" },
     { name = "requests", specifier = ">=2.32.5" },

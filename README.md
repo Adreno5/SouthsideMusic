@@ -20,5 +20,6 @@ Install uv on: https://uv.doczh.com/getting-started/installation/
 - PySide: GUI base
 - Fluent Widgets: Modern widgets
 - Nuitka: Package
-- numpy, pydub, pyloudnorm, sounddevice: play music
+- pydub, pyloudnorm, sounddevice: play music
 - request: send API request
+- numpy, scipy: Fast math support & FFT computing

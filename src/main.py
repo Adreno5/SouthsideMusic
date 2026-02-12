@@ -379,6 +379,10 @@ class PlayingController(QWidget):
 
         global_layout = QHBoxLayout()
 
+        self.cur_freqs: np.ndarray | None = None
+        self.cur_magnitudes: np.ndarray | None = None
+        self.smoothed_magnitudes: np.ndarray = np.zeros(513, dtype=np.float32)
+
         self.time_label = QLabel()
         global_layout.addWidget(
             self.time_label,
@@ -443,6 +447,12 @@ class PlayingController(QWidget):
         self.timelabel_updater.timeout.connect(self.updateWidgets)
         self.timelabel_updater.start(50)
         self.playingtime_lastupdate = time.perf_counter()
+
+        player.fftDataReady.connect(self.updateFFTData)
+
+    def updateFFTData(self, freqs: np.ndarray, magnitudes: np.ndarray) -> None:
+        self.cur_freqs = freqs
+        self.cur_magnitudes = magnitudes
 
     def toggle_expand(self):
         self.expanded = not self.expanded
@@ -540,6 +550,26 @@ class PlayingController(QWidget):
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
+        painter.setRenderHints(QPainter.RenderHint.Antialiasing)
+
+        if dp.enableFFT_box.isChecked() and self.cur_freqs is not None and self.cur_magnitudes is not None:
+            self.smoothed_magnitudes += (self.cur_magnitudes - self.smoothed_magnitudes) * 0.6
+            final_magnitudes = np.convolve(
+                self.smoothed_magnitudes,
+                np.ones(3) / 2,
+                mode='same'
+            )
+
+            path = QPainterPath(QPointF(0, 0))
+            total = self.cur_freqs.size
+            for i in range(total):
+                x = ((i + 1) / total) * self.width()
+                path.lineTo(QPointF(x, (final_magnitudes[i] * 1.25) * (1 + (i * 0.002))))
+            path.lineTo(QPointF(self.width(), 0))
+
+            painter.setPen(QPen(QColor(255, 255, 255, 120) if darkdetect.isDark() else QColor(0, 0, 0, 120), 1))
+            painter.drawPath(path)
+
         painter.setPen(QPen(QColor(120, 120, 120), 8))
         painter.drawLine(0, 0, self.width(), 0)
         if dp.total_length > 0:
@@ -568,7 +598,6 @@ class PlayingController(QWidget):
             dp.transl_label.setText(transmgr.getCurrentLyric(player.get_position())['content'])
 
         painter.end()
-
 
 class PlayingPage(QWidget):
     imageLoaded = Signal(bytes)
@@ -671,6 +700,11 @@ class PlayingPage(QWidget):
         self.play_method_box.setCurrentText('Repeat list')
         playing_layout.addWidget(self.play_method_box)
 
+        self.enableFFT_box = CheckBox('Enable\nFrequency\nGraphics')
+        self.enableFFT_box.checkStateChanged.connect(self.onFFTEnabledStateChanged)
+        playing_layout.addWidget(self.enableFFT_box)
+        self.enableFFT_box.setChecked(cfg.enable_fft)
+
         self.song_randomer = RandomInstance()
         self.song_randomer.init(self.playlist)
 
@@ -699,6 +733,11 @@ class PlayingPage(QWidget):
         widget.setObjectName(objectName)
         self.stacked_widget.addWidget(widget)
         self.pivot.addItem(routeKey=objectName, text=text)
+
+    def onFFTEnabledStateChanged(self, check_state: Qt.CheckState) -> None:
+        checked = check_state == Qt.CheckState.Checked
+        player.fft_enabled = checked
+        cfg.enable_fft = checked
 
     def onPlaylistItemClicked(self, item: QListWidgetItem):
         for i, song in enumerate(self.playlist):
@@ -1552,8 +1591,6 @@ class MainWindow(FluentWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.resize(QApplication.primaryScreen().size() * 0.65)
-
         self.setWindowTitle('Southside Music')
 
         self.addSubInterface(
@@ -1580,6 +1617,20 @@ class MainWindow(FluentWindow):
         )
 
         self.show()
+
+        if cfg.window_width == 0 and cfg.window_height == 0:
+            self.resize(QApplication.primaryScreen().size() * 0.65)
+
+            cfg.window_x = self.x()
+            cfg.window_y = self.y()
+            cfg.window_width = self.width()
+            cfg.window_height = self.height()
+        else:
+            if cfg.wiondow_maximized:
+                QTimer.singleShot(500, self.showMaximized)
+            else:
+                self.move(cfg.window_x, cfg.window_y)
+                self.resize(cfg.window_width, cfg.window_height)
 
         self.init()
 
@@ -1617,6 +1668,7 @@ class MainWindow(FluentWindow):
         )
 
     def closeEvent(self, e):
+        self.hide()
         player.stop()
 
         cfg.last_playing_song = dp.cur.storable if dp.cur else None
@@ -1625,6 +1677,11 @@ class MainWindow(FluentWindow):
         cfg.play_method = dp.play_method_box.currentText() # type: ignore
         cfg.island_x = ip.island_x
         cfg.island_y = ip.island_y
+        cfg.window_x = self.x() + (103 if dp.controller.expand_btn.text() == 'Collapse' else 0)
+        cfg.window_y = self.y()
+        cfg.window_width = self.width() - (205 if dp.controller.expand_btn.text() == 'Collapse' else 0)
+        cfg.window_height = self.height()
+        cfg.wiondow_maximized = self.isMaximized()
 
         saveConfig()
         saveFavorites(favs)

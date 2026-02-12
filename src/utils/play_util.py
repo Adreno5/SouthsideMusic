@@ -5,10 +5,12 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 from typing import Optional
 import threading
+from scipy.fft import rfft, rfftfreq
 
 class AudioPlayer(QObject):
     onFinished = Signal()
     positionChanged = Signal(float)
+    fftDataReady = Signal(np.ndarray, np.ndarray)  # (freqs, magnitudes)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -22,6 +24,11 @@ class AudioPlayer(QObject):
         self.is_paused: bool = False
         self.stream: Optional[sd.OutputStream] = None
         self.volume_gain: float = 1.0
+
+        self.fft_enabled = True
+        self.fft_size = 1024
+        self.fft_interval = 1
+        self._fft_counter = 0
 
         self._lock = threading.RLock()
 
@@ -140,3 +147,22 @@ class AudioPlayer(QObject):
                 self.is_paused = False
                 self.onFinished.emit()
                 raise sd.CallbackStop
+            
+            if self.fft_enabled:
+                self._fft_counter += 1
+                if self._fft_counter >= self.fft_interval:
+                    self._fft_counter = 0
+                    chunk_raw = self.samples[start:end]
+                    if len(chunk_raw) < self.fft_size:
+                        chunk_pad = np.zeros(self.fft_size, dtype=np.float32)
+                        chunk_pad[:len(chunk_raw)] = chunk_raw
+                    else:
+                        chunk_pad = chunk_raw[:self.fft_size]
+
+                    window = np.hanning(len(chunk_pad))
+                    chunk_windowed = chunk_pad * window
+                    
+                    fft_vals = np.abs(rfft(chunk_windowed)) # type: ignore
+                    fft_freqs = rfftfreq(len(chunk_pad), 1/self.sample_rate)
+                    
+                    self.fftDataReady.emit(fft_freqs, fft_vals)

@@ -564,7 +564,7 @@ class PlayingController(QWidget):
             total = self.cur_freqs.size
             for i in range(total):
                 x = ((i + 1) / total) * self.width()
-                path.lineTo(QPointF(x, (final_magnitudes[i] * 1.25) * (1 + (i * 0.002))))
+                path.lineTo(QPointF(x, final_magnitudes[i] * (1 + (i * 0.002))))
             path.lineTo(QPointF(self.width(), 0))
 
             painter.setPen(QPen(QColor(255, 255, 255, 120) if darkdetect.isDark() else QColor(0, 0, 0, 120), 1))

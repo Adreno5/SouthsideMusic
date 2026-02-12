@@ -556,15 +556,15 @@ class PlayingController(QWidget):
             self.smoothed_magnitudes += (self.cur_magnitudes - self.smoothed_magnitudes) * 0.6
             final_magnitudes = np.convolve(
                 self.smoothed_magnitudes,
-                np.ones(3) / 2,
+                np.ones(4) / 4,
                 mode='same'
             )
 
             path = QPainterPath(QPointF(0, 0))
-            total = self.cur_freqs.size
+            total = self.cur_magnitudes.size
             for i in range(total):
                 x = ((i + 1) / total) * self.width()
-                path.lineTo(QPointF(x, final_magnitudes[i] * (1 + (i * 0.002))))
+                path.lineTo(QPointF(x, final_magnitudes[i] * ((1 + (i * 0.0175)) - 0.3) + 3.5))
             path.lineTo(QPointF(self.width(), 0))
 
             painter.setPen(QPen(QColor(255, 255, 255, 120) if darkdetect.isDark() else QColor(0, 0, 0, 120), 1))
@@ -1669,6 +1669,7 @@ class MainWindow(FluentWindow):
 
     def closeEvent(self, e):
         self.hide()
+        island.hide()
         player.stop()
 
         cfg.last_playing_song = dp.cur.storable if dp.cur else None

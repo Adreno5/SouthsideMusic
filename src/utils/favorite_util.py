@@ -29,7 +29,8 @@ def loadFavorites() -> list[FolderInfo]:
                         image=base64.b64decode(song['image_base64']),
                         music_bin=base64.b64decode(song['content_base64']),
                         lyric=song.get('lyric', song.get('lyric_base64', '')),
-                        translated_lyric=song.get('translated_lyric', song.get('translated_lyric_base64', ''))
+                        translated_lyric=song.get('translated_lyric', song.get('translated_lyric_base64', '')),
+                        gain=song.get('gain', 1.0)
                     ) for song in folder['songs']
                 ]
             )

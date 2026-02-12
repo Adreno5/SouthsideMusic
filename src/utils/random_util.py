@@ -1,4 +1,5 @@
 
+import logging
 import random
 from typing import Any, Generic, TypeVar
 
@@ -18,7 +19,7 @@ class RandomInstance(Generic[T]):
         self.list_weight = [(1 / self.list_len) for _ in lst]
         self.randomed_times = [0 for _ in lst]
         self.target_lst = lst
-        print(f'inited {self.list_len} weights avg {self.list_weight[0]}')
+        logging.info(f'inited {self.list_len} weights avg {self.list_weight[0]}')
     
     def random(self) -> T:
         total_weight = 0
@@ -41,14 +42,14 @@ class RandomInstance(Generic[T]):
             if randomed <= current:
                 selected_item = self.target_lst[i]
                 self.randomed_times[i] += 1
-                print(f'randomed {selected_item} times {self.randomed_times[i]}')
-                print(self.randomed_times)
-                print(adjusted_weights)
+                logging.info(f'randomed {selected_item} times {self.randomed_times[i]}')
+                logging.debug(self.randomed_times)
+                logging.debug(adjusted_weights)
                 return selected_item
         
         selected_item = self.target_lst[-1]
         self.randomed_times[-1] += 1
-        print(f'randomed {selected_item} times {self.randomed_times[-1]}')
-        print(self.randomed_times)
-        print(adjusted_weights)
+        logging.info(f'randomed {selected_item} times {self.randomed_times[-1]}')
+        logging.debug(self.randomed_times)
+        logging.debug(adjusted_weights)
         return selected_item

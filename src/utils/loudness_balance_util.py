@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 import pyloudnorm as pyln
 from pydub import AudioSegment
@@ -13,5 +14,5 @@ def getAdjustedGainFactor(target_lufs: float, audio: AudioSegment) -> float:
     loudness = meter.integrated_loudness(samples)
 
     gain = 10 ** ((target_lufs - loudness) / 20.0)
-    print(f'loudness adjusted, {gain=}, {target_lufs=}')
+    logging.info(f'loudness adjusted, {gain=}, {target_lufs=}')
     return gain

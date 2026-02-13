@@ -23,6 +23,8 @@ class Config:
     wiondow_maximized: bool = False
 
     enable_fft: bool = True
+    fft_filtering_windowsize: int = 4
+    fft_factor: float = 0.4
 
 cfg = Config()
 
@@ -48,6 +50,8 @@ def loadConfig() -> None:
             cfg.wiondow_maximized = data.get('window_maximized', False)
 
             cfg.enable_fft = data.get('enable_fft', True)
+            cfg.fft_filtering_windowsize = data.get('fft_filtering_windowsize', 4)
+            cfg.fft_factor = data.get('fft_factor', 0.4)
 
 def saveConfig() -> None:
     with open('./config.json', 'w', encoding='utf-8') as f:
@@ -63,5 +67,7 @@ def saveConfig() -> None:
             'window_width': cfg.window_width,
             'window_height': cfg.window_height,
             'window_maximized': cfg.wiondow_maximized,
-            'enable_fft': cfg.enable_fft
+            'enable_fft': cfg.enable_fft,
+            'fft_filtering_windowsize': cfg.fft_filtering_windowsize,
+            'fft_factor': cfg.fft_factor
         }, f, indent=4)

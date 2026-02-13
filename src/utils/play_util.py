@@ -28,6 +28,8 @@ class AudioPlayer(QObject):
         self.fft_enabled = True
         self.fft_size = 1024
 
+        self.play_speed = 1.0
+
         self._lock = threading.RLock()
 
     def load(self, audio: AudioSegment) -> None:
@@ -115,7 +117,7 @@ class AudioPlayer(QObject):
                 samplerate=self.sample_rate,
                 channels=self.channels,
                 callback=self._audio_callback,
-                blocksize=2048,
+                blocksize=1024,
                 dtype='float32'
             )
         self.stream.start()
@@ -138,7 +140,7 @@ class AudioPlayer(QObject):
             if copy_len < frames:
                 outdata[copy_len:] = 0
 
-            self.current_index += copy_len
+            self.current_index += int(copy_len * self.play_speed)
 
             if self.current_index >= len(self.samples):
                 self.is_playing = False

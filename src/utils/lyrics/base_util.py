@@ -21,6 +21,7 @@ class SongStorable:
         lyric: str
         translated_lyric: str
         gain: float
+        target_lufs: int
 
     name: str
     artists: str
@@ -31,8 +32,9 @@ class SongStorable:
     translated_lyric: str
 
     loudness_gain: float
+    target_lufs: int
 
-    def __init__(self, info: SongInfo, image: bytes, music_bin: bytes, lyric: str = '', translated_lyric: str = '', gain: float=1.0) -> None:
+    def __init__(self, info: SongInfo, image: bytes, music_bin: bytes, lyric: str = '', translated_lyric: str = '', gain: float=1.0, target_lufs: int=-16) -> None:
         self.name = info['name']
         self.artists = info['artists']
         self.id = info['id']
@@ -41,6 +43,7 @@ class SongStorable:
         self.lyric = lyric
         self.translated_lyric = translated_lyric
         self.loudness_gain = gain
+        self.target_lufs = target_lufs
 
     def toObject(self) -> SongStorableDict:
         return {
@@ -51,7 +54,8 @@ class SongStorable:
             'content_base64': self.content_base64,
             'lyric': self.lyric,
             'translated_lyric': self.translated_lyric,
-            'gain': self.loudness_gain
+            'gain': self.loudness_gain,
+            'target_lufs': self.target_lufs,
         }
     
     @staticmethod
@@ -66,7 +70,8 @@ class SongStorable:
             image=base64.b64decode(obj['image_base64']),
             music_bin=base64.b64decode(obj['content_base64']),
             lyric=obj['lyric'],
-            gain=obj.get('gain', 1.0)
+            gain=obj.get('gain', 1.0),
+            target_lufs=obj.get('target_lufs', -16)
         )
 
 class FolderInfo(TypedDict):

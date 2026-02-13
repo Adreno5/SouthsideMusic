@@ -465,10 +465,7 @@ class PlayingController(QWidget):
     def toggleExpand(self):
         self.expanded = not self.expanded
 
-        dp.expanded_widget.show()
-
         if self.expanded:
-            group = QParallelAnimationGroup(self)
             if not mwindow.isMaximized():
                 mwindow_anim = QPropertyAnimation(mwindow, b'geometry', self)
                 mwindow_anim.setDuration(200)
@@ -706,7 +703,7 @@ class PlayingPage(QWidget):
         self.pivot = Pivot(self)
         self.stacked_widget = QStackedWidget(self)
 
-        self.expanded_widget.resize(0, self.expanded_widget.height())
+        self.expanded_widget.setFixedWidth(500)
 
         expanded_layout.addWidget(self.pivot)
         expanded_layout.addWidget(self.stacked_widget)
@@ -810,6 +807,8 @@ class PlayingPage(QWidget):
 
         self.expanded_widget.setLayout(expanded_layout)
         global_layout.addWidget(self.expanded_widget)
+
+        self.expanded_widget.hide()
 
         self.setLayout(global_layout)
 
@@ -1982,107 +1981,22 @@ class MainWindow(FluentWindow):
 
         sys.exit(0)
 
-    def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.key() == Qt.Key.Key_F3:
-            debug_window.setVisible(not debug_window.isVisible())
-        return super().keyPressEvent(event)
-
-class LoggingWindow(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle('Logging')
-
-        global_layout = QVBoxLayout()
-
-        self.logging_area = SmoothScrollArea()
-
-        self.lst_widget = QWidget()
-        self.lst_layout = QVBoxLayout()
-        self.logging_area.setWidget(self.lst_widget)
-        self.logging_area.setWidgetResizable(True)
-        self.lst_widget.setLayout(self.lst_layout)
-
-        global_layout.addWidget(self.logging_area)
-
-        self.cur_label = QLabel(f'{dp.cur=}')
-        self.ns_label = QLabel(f'{dp.next_song_audio=}')
-        self.ng_label = QLabel(f'{dp.next_song_gain=}')
-        self.ri_label = QLabel(f'{dp.song_randomer.randomed_times=}')
-        self.rw_label = QLabel(f'{dp.song_randomer.adjusted_weights=}')
-        self.ev_label = QLabel(f'{dp.expanded_widget.isVisible()=}')
-
-        global_layout.addWidget(self.cur_label)
-        global_layout.addWidget(self.ns_label)
-        global_layout.addWidget(self.ng_label)
-        global_layout.addWidget(self.ri_label)
-        global_layout.addWidget(self.rw_label)
-        global_layout.addWidget(self.ev_label)
-
-        self.setLayout(global_layout)
-
-        self.hide()
-
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.updateInfos)
-
-    def updateInfos(self):
-        if not self.isVisible():
-            return
-
-        self.cur_label.setText(f'{dp.cur=}')
-        self.ns_label.setText(f'{dp.next_song_audio=}')
-        self.ng_label.setText(f'{dp.next_song_gain=}')
-        self.ri_label.setText(f'{dp.song_randomer.randomed_times=}')
-        self.rw_label.setText(f'dp.song_randomer.adjusted_weights={[round(num, 2) for num in dp.song_randomer.adjusted_weights]}')
-        self.ev_label.setText(f'{dp.expanded_widget.isVisible()=}')
-
-    def addLog(self, record: logging.LogRecord):
-        if not self.isVisible():
-            return
-
-        l = QHBoxLayout()
-        l.addWidget(SubtitleLabel(record.levelname), 1)
-        l.addWidget(QLabel(record.message), 15)
-        self.lst_layout.addLayout(l)
-
-    def showEvent(self, event: QShowEvent) -> None:
-        self.resize(mwindow.size())
-        self.timer.start(16)
-        return super().showEvent(event)
-    
-    def hideEvent(self, event: QHideEvent) -> None:
-        self.timer.stop()
-        return super().hideEvent(event)
-
-    def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.key() == Qt.Key.Key_F3:
-            self.hide()
-        return super().keyPressEvent(event)
-    
-    def closeEvent(self, event: QCloseEvent) -> None:
-        event.ignore()
-        self.hide()
-
-class DebuggingLoggingHandler(logging.Handler):
-    def emit(self, record: logging.LogRecord) -> None:
-        debug_window.addLog(record)
 
 if __name__ == '__main__':
     hideFFmpegConsole()
-
-    app = QApplication([])
-    app.setStyleSheet(f'QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}')
 
     logging.basicConfig(
         level=logging.DEBUG,
         format=f'[%(asctime)s/{Style.BRIGHT}%(levelname)s{Style.RESET_ALL}] {Fore.LIGHTBLACK_EX}-{Style.RESET_ALL} %(message)s',
         datefmt='%H:%M:%S',
         handlers=[
-            logging.StreamHandler(),
-            DebuggingLoggingHandler()
+            logging.StreamHandler()
         ]
     )
     
+    app = QApplication([])
+    app.setStyleSheet(f'QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}')
+
     harmony_font_family = QFontDatabase.applicationFontFamilies(QFontDatabase.addApplicationFont('fonts/HARMONYOS_SANS_SC_REGULAR.ttf'))[0]
 
     from utils.loading_util import doWithMultiThreading, downloadWithMultiThreading
@@ -2109,8 +2023,6 @@ if __name__ == '__main__':
     ip = DynamicIslandPage()
     island_editing_overlay = EditingIslandOverlay()
     island = LyricIslandOverlay()
-
-    debug_window = LoggingWindow()
     mwindow = MainWindow()
 
     fp.refresh()

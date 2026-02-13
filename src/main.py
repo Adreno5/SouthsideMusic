@@ -191,7 +191,7 @@ class MusicCard(QWidget):
                 # User cancelled
                 return
             
-            selected_folder = selected[0]
+            selected_folder = selected
             
             # Handle new folder creation
             if selected_folder == 'Create new folder...':
@@ -201,13 +201,12 @@ class MusicCard(QWidget):
                     'My folder',
                     mwindow
                 )
-                
+
                 if not new_folder_name:
                     # User cancelled
                     return
                 
                 # Create new folder
-                from utils.lyrics.base_util import FolderInfo
                 new_folder = FolderInfo(folder_name=new_folder_name, songs=[])
                 favs.append(new_folder)
                 selected_folder = new_folder_name
@@ -236,6 +235,8 @@ class MusicCard(QWidget):
                 parent=mwindow,
                 duration=2000,
             )
+
+            fp.refresh()
 
         doWithMultiThreading(_download, (), mwindow, 'Downloading...', _on_finished)
 

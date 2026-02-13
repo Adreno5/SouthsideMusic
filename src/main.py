@@ -725,9 +725,12 @@ class PlayingPage(QWidget):
         self.add_btn.clicked.connect(self.addSong)
         self.insert_btn = TransparentPushButton(getQIcon('insert'), 'Insert')
         self.insert_btn.clicked.connect(self.insertSong)
+        self.removeall_btn = TransparentPushButton(getQIcon('clearall'), 'Remove All')
+        self.removeall_btn.clicked.connect(self.removeAllSongs)
         btn_layout.addWidget(self.delete_btn)
         btn_layout.addWidget(self.add_btn)
         btn_layout.addWidget(self.insert_btn)
+        btn_layout.addWidget(self.removeall_btn)
         self.lst_layout.addLayout(btn_layout)
 
         self.lst_interface.setLayout(self.lst_layout)
@@ -879,6 +882,12 @@ class PlayingPage(QWidget):
         self.refreshPlaylistWidget()
 
         self.preloadNextSong()
+    def removeAllSongs(self) -> None:
+        self.playlist.clear()
+        if isinstance(self.cur, DummyCard) and isinstance(self.cur.storable, SongStorable):
+            self.playlist.append(self.cur.storable)
+
+        self.refreshPlaylistWidget()
 
     def refreshPlaylistWidget(self):
         self.lst.clear()

@@ -34,19 +34,19 @@ from utils.play_util import AudioPlayer
 from utils.icon_util import getQIcon
 from utils.dialog_util import get_value_bylist, get_text_lineedit
 
-def hideConsoles():
-    original_popen = subprocess.Popen
+original_popen = subprocess.Popen
 
-    def patched_popen(*args, **kwargs):
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = subprocess.SW_HIDE
-        kwargs['startupinfo'] = startupinfo
-        kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
-        
-        return original_popen(*args, **kwargs)
+def patched_popen(*args, **kwargs):
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = subprocess.SW_HIDE
+    kwargs['startupinfo'] = startupinfo
+    kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+    
+    return original_popen(*args, **kwargs)
 
-    subprocess.Popen = patched_popen
+subprocess.Popen = patched_popen
+subprocess.call = patched_popen
 
 class DummyCard:
     def __init__(self, storable: SongStorable):
@@ -488,7 +488,7 @@ class PlayingController(QWidget):
             self.expand_btn.setIcon(getQIcon('pl_expand'))
 
     def updateWidgets(self):
-        if dp.cur:
+        if dp.cur and dp.lst_shoud_set:
             # Highlight the currently playing song in the playlist
             for i, song in enumerate(dp.playlist):
                 if dp.cur and hasattr(dp.cur, 'storable') and song.name == dp.cur.storable.name:
@@ -563,7 +563,7 @@ class PlayingController(QWidget):
                 self.cur_magnitudes = np.zeros(513, dtype=np.float32)
             window_size = cfg.fft_filtering_windowsize
 
-            self.smoothed_magnitudes += (self.cur_magnitudes - self.smoothed_magnitudes) * cfg.fft_factor
+            self.smoothed_magnitudes += (self.cur_magnitudes - self.smoothed_magnitudes) * (cfg.fft_factor if player.isPlaying() else 0.07)
             final_magnitudes = np.convolve(
                 self.smoothed_magnitudes,
                 np.ones(window_size) / window_size,
@@ -645,6 +645,8 @@ class PlayingPage(QWidget):
         # Connect play button to start playlist if no song is loaded
         self.controller.play_pausebtn.clicked.connect(self.onPlayButtonClicked)
 
+        self.lst_shoud_set: bool = True
+
         global_layout = QHBoxLayout()
 
         contents_layout = QVBoxLayout()
@@ -709,7 +711,8 @@ class PlayingPage(QWidget):
         self.lst_layout = QVBoxLayout()
         self.lst = ListWidget()
         self.lst.setFixedWidth(500)
-        # self.lst.hide()
+        self.lst.entered.connect(lambda: self.__setattr__('lst_shoud_set', False))
+        self.lst.leaveEvent = lambda e: self.__setattr__('lst_shoud_set', True)
         self.lst.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.lst.itemClicked.connect(self.onPlaylistItemClicked)
         self.lst_layout.addWidget(self.lst)
@@ -907,7 +910,7 @@ class PlayingPage(QWidget):
             self.target_lufs_label.setText(f'Target LUFS: {cfg.target_lufs}')
             player.setPosition(p)
 
-            self.preloadNextSong()
+            QTimer.singleShot(250, self.preloadNextSong)
 
         threading.Thread(target=_apply).start()
 
@@ -1979,8 +1982,6 @@ class MainWindow(FluentWindow):
 
 
 if __name__ == '__main__':
-    hideConsoles()
-
     logging.basicConfig(
         level=logging.DEBUG,
         format=f'[%(asctime)s/{Style.BRIGHT}%(levelname)s{Style.RESET_ALL}] {Fore.LIGHTBLACK_EX}-{Style.RESET_ALL} %(message)s',
@@ -2011,7 +2012,7 @@ if __name__ == '__main__':
 
     player = AudioPlayer()
 
-    lock = threading.RLock()
+    lock = threading.Lock()
 
     dp = PlayingPage()
     sp = SearchPage()

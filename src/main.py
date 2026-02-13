@@ -2,6 +2,7 @@
 import base64
 import io
 import logging
+import subprocess
 import sys
 import threading
 import time
@@ -19,11 +20,10 @@ from pydub import AudioSegment
 import darkdetect
 import math
 
-from utils.random_util import RandomInstance
+from utils.random_util import AdvancedRandom
 
-from utils.dialog_util import get_text_lineedit
-from utils.lyrics.base_util import FolderInfo, SongInfo, SongStorable
 from functools import cache, lru_cache
+from utils.lyrics.base_util import FolderInfo, SongInfo, SongStorable
 from utils.lyrics.base_util import SongDetail
 from utils.lyric_util import LRCLyricManager
 from utils.time_util import float2time
@@ -32,17 +32,36 @@ from utils.config_util import loadConfig, saveConfig, cfg
 from utils.loudness_balance_util import getAdjustedGainFactor
 from utils.play_util import AudioPlayer
 from utils.icon_util import getQIcon
+from utils.dialog_util import get_value_bylist, get_text_lineedit
+
+def hideFFmpegConsole():
+    original_popen = subprocess.Popen
+
+    def patched_popen(*args, **kwargs):
+        args_list = args[0] if args else kwargs.get('args', [])
+        if isinstance(args_list, (list, tuple)) and any('ffmpeg' in str(arg).lower() for arg in args_list):
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            kwargs['startupinfo'] = startupinfo
+            kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+
+        return original_popen(*args, **kwargs)
+
+    subprocess.Popen = patched_popen
+    subprocess.call = lambda *args, **kwargs: patched_popen(*args, **kwargs).wait()
+    subprocess.run = lambda *args, **kwargs: patched_popen(*args, **kwargs).wait()
 
 class DummyCard:
-    def __init__(self, storable):
-        self.info = SongInfo(
+    def __init__(self, storable: SongStorable):
+        self.info: SongInfo = SongInfo(
             name=storable.name,
             artists=storable.artists,
             id=storable.id,
             privilege=-1,
         )
-        self.detail = SongDetail(image_url='')
-        self.storable = storable
+        self.detail: SongDetail = SongDetail(image_url='')
+        self.storable: SongStorable = storable
 
 class MusicCard(QWidget):
     imageLoaded = Signal(bytes)
@@ -157,9 +176,6 @@ class MusicCard(QWidget):
             image_bytes, music_bytes, lyric, translated_lyric = result_container[0]
 
             # Load favorites
-            from utils.favorite_util import loadFavorites
-            from utils.dialog_util import get_values_bylist, get_text_lineedit
-            from PySide6.QtWidgets import QListWidget
 
             favs = loadFavorites()
             
@@ -168,12 +184,11 @@ class MusicCard(QWidget):
             folder_names.append('Create new folder...')
             
             # Let user select folder
-            selected = get_values_bylist(
+            selected = get_value_bylist(
                 mwindow,
                 'Select folder',
                 f'which folder do you want to add {self.info['name']} to?',
-                folder_names,
-                QListWidget.SelectionMode.SingleSelection
+                folder_names
             )
             
             if not selected:
@@ -210,8 +225,9 @@ class MusicCard(QWidget):
             
             # Add song to target folder
             
-            song_storable = SongStorable(self.info, image_bytes, music_bytes, lyric, translated_lyric, getAdjustedGainFactor(-16, AudioSegment.from_file(io.BytesIO(music_bytes), format='mp3')), cfg.target_lufs)
-            target_folder['songs'].append(song_storable) # type: ignore
+            with lock:
+                song_storable = SongStorable(self.info, image_bytes, music_bytes, lyric, translated_lyric, getAdjustedGainFactor(-16, AudioSegment.from_file(io.BytesIO(music_bytes), format='mp3')), cfg.target_lufs)
+                target_folder['songs'].append(song_storable) # type: ignore
 
             # Save favorites
             from utils.favorite_util import saveFavorites
@@ -425,7 +441,7 @@ class PlayingController(QWidget):
             self.expand_btn,
             alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom,
         )
-        self.expand_btn.clicked.connect(self.toggle_expand)
+        self.expand_btn.clicked.connect(self.toggleExpand)
 
         global_layout.addLayout(right_layout)
 
@@ -446,7 +462,7 @@ class PlayingController(QWidget):
         self.cur_freqs = freqs
         self.cur_magnitudes = magnitudes
 
-    def toggle_expand(self):
+    def toggleExpand(self):
         self.expanded = not self.expanded
 
         if self.expanded:
@@ -484,7 +500,7 @@ class PlayingController(QWidget):
                     break
 
         if player.get_busy():
-            if (player.get_position() > 5) and not dp._preload_triggered and dp.current_index < len(dp.playlist) - 1:
+            if not dp._preload_triggered and dp.current_index < len(dp.playlist) - 1:
                 dp._preload_triggered = True
                 dp.preloadNextSong()
 
@@ -556,7 +572,9 @@ class PlayingController(QWidget):
                 self.smoothed_magnitudes,
                 np.ones(window_size) / window_size,
                 mode='same'
-            ) * (3 / dp.cur.storable.loudness_gain) * 0.75 # type: ignore
+            )
+            if isinstance(dp.cur, DummyCard):
+                final_magnitudes *= (2 / dp.cur.storable.loudness_gain) * 0.75
 
             path = QPainterPath(QPointF(0, 0))
             total = int(self.cur_magnitudes.size / 1.5)
@@ -608,9 +626,11 @@ class PlayingPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName('studio_page')
-        self.cur = None  # Can be MusicCard or dummy object
+        self.cur: DummyCard | None = None
 
         self.total_length = 0
+
+        self.shoud_expand_when_show: bool = False
 
         self._preload_triggered = False
 
@@ -689,16 +709,33 @@ class PlayingPage(QWidget):
         expanded_layout.addWidget(self.stacked_widget)
         expanded_layout.setContentsMargins(30, 0, 30, 30)
 
+        self.lst_interface = QWidget()
+        self.lst_layout = QVBoxLayout()
         self.lst = ListWidget()
         self.lst.setFixedWidth(500)
-        self.lst.hide()
+        # self.lst.hide()
         self.lst.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.lst.itemClicked.connect(self.onPlaylistItemClicked)
+        self.lst_layout.addWidget(self.lst)
+        
+        btn_layout = QHBoxLayout()
+        self.delete_btn = TransparentPushButton(FluentIcon.DELETE, 'Remove')
+        self.delete_btn.clicked.connect(self.removeSong)
+        self.add_btn = TransparentPushButton(getQIcon('pl'), 'Add')
+        self.add_btn.clicked.connect(self.addSong)
+        self.insert_btn = TransparentPushButton(getQIcon('insert'), 'Insert')
+        self.insert_btn.clicked.connect(self.insertSong)
+        btn_layout.addWidget(self.delete_btn)
+        btn_layout.addWidget(self.add_btn)
+        btn_layout.addWidget(self.insert_btn)
+        self.lst_layout.addLayout(btn_layout)
+
+        self.lst_interface.setLayout(self.lst_layout)
 
         self.playing_scrollarea = SmoothScrollArea()
 
         self.playing_interface = QWidget()
-        self.playing_interface.setStyleSheet('background: #00000000')
+        self.playing_interface.setStyleSheet(f'background: #{'000000' if darkdetect.isDark() else 'FFFFFF'}')
         self.playing_layout = QGridLayout()
 
         self.addSeparateWidget(TitleLabel('Playing'))
@@ -741,7 +778,7 @@ class PlayingPage(QWidget):
         self.addSeparateWidget(TitleLabel('Loudness Balance'))
         
         self.target_lufs = Slider(Qt.Orientation.Horizontal)
-        self.target_lufs.setRange(-30, 0)
+        self.target_lufs.setRange(-60, 0)
         self.target_lufs.setSingleStep(1)
         self.target_lufs.valueChanged.connect(self.onTargetLUFSChanged)
         self.target_lufs.setValue(cfg.target_lufs)
@@ -749,19 +786,19 @@ class PlayingPage(QWidget):
         self.target_lufs_label = SubtitleLabel(f'Target LUFS: {cfg.target_lufs}')
         self.addSeparateWidget(self.target_lufs_label)
         self.addSeparateWidget(QLabel(
-            'Target LUFS Help:\nRange: -30(quietest)~0(loudest)\nRecommend: -16~-18'
+            'Target LUFS Help:\nRange: -60(quietest)~0(loudest)\nRecommend: -16~-18'
             '\nReference:\nYoutube > -14LUFS\nNetflix > -27LUFS\nTikTok / Instagram Reels > -13LUFS\nApple Music (Video) > -16LUFS'
             '\nSpotify (Video): -14LUFS / -16LUFS'
         ))
 
-        self.song_randomer = RandomInstance()
+        self.song_randomer = AdvancedRandom()
         self.song_randomer.init(self.playlist)
 
         self.playing_interface.setLayout(self.playing_layout)
         self.playing_scrollarea.setWidget(self.playing_interface)
         self.playing_scrollarea.setWidgetResizable(True)
 
-        self.addSubInterface(self.lst, 'playlist_listwidget', 'Playlist')
+        self.addSubInterface(self.lst_interface, 'playlist_listwidget', 'Playlist')
         self.addSubInterface(self.playing_scrollarea, 'playing_interface', 'Playing')
 
         self.stacked_widget.setCurrentWidget(self.lst)
@@ -784,16 +821,81 @@ class PlayingPage(QWidget):
 
         self.lufs_changed_timer = QTimer(self)
         self.lufs_changed_timer.timeout.connect(self.applyNewLUFS)
+    
+    def removeSong(self) -> None:
+        selected = get_value_bylist(mwindow, 'Remove Song', 'select a song to remove', [song.name for song in self.playlist])
+
+        if not selected:
+            return
+        
+        for i, storable in enumerate(self.playlist):
+            if storable.name == selected:
+                self.playlist.remove(self.playlist[i])
+
+                InfoBar.success(
+                    'Removed',
+                    f'{selected} has been removed',
+                    duration=1500,
+                    parent=mwindow
+                )
+                break
+
+        self.refreshPlaylistWidget()
+
+        if self.cur:
+            if selected == self.cur.storable.name:
+                self.playSongAtIndex(self.current_index)
+    def addSong(self) -> None:
+        selected = getFavoriteSong()
+
+        if not selected:
+            return
+        
+        self.playlist.append(selected)
+        InfoBar.success(
+            'Added',
+            f'Added {selected.name} to playlist',
+            duration=1500,
+            parent=mwindow
+        )
+
+        self.refreshPlaylistWidget()
+
+        self.preloadNextSong()
+    def insertSong(self) -> None:
+        selected = getFavoriteSong()
+
+        if not selected:
+            return
+        
+        self.playlist.insert(self.current_index + 1, selected)
+        InfoBar.success(
+            'Inserted',
+            f'Inserted {selected.name} to next song',
+            duration=1500,
+            parent=mwindow
+        )
+
+        self.refreshPlaylistWidget()
+
+        self.preloadNextSong()
+
+    def refreshPlaylistWidget(self):
+        self.lst.clear()
+
+        for song in self.playlist:
+            self.lst.addItem(song.name)
 
     def applyNewLUFS(self):
         self.lufs_changed_timer.stop()
 
         self.target_lufs_label.setText('Reapplying')
         def _apply():
-            if not self.cur:
+            if not isinstance(self.cur, DummyCard):
                 return
-            if not self.cur.storable:
+            if not hasattr(self.cur, 'storable'):
                 return
+        
             audio: AudioSegment = AudioSegment.from_file(io.BytesIO(base64.b64decode(self.cur.storable.content_base64)), format='mp3')
             logging.debug('new lufs -> applying gain')
             gain = getAdjustedGainFactor(cfg.target_lufs, audio)
@@ -920,6 +1022,11 @@ class PlayingPage(QWidget):
             doWithMultiThreading(_do, (), mwindow, 'Loading...')
 
     def preloadNextSong(self):
+        if len(dp.playlist) <= 1:
+            return
+        if dp.current_index >= len(dp.playlist) - 1:
+            return
+
         try:
             logging.info('preloading')
 
@@ -941,8 +1048,10 @@ class PlayingPage(QWidget):
                 return
 
             def _preload():
-                song_bytes = base64.b64decode(next_song.content_base64)
-                self.next_song_audio = AudioSegment.from_file(io.BytesIO(song_bytes), format='mp3')
+                with lock:
+                    song_bytes = base64.b64decode(next_song.content_base64)
+                    self.next_song_audio = AudioSegment.from_file(io.BytesIO(song_bytes), format='mp3')
+
                 if (next_song.loudness_gain == 1.0 or next_song.target_lufs != cfg.target_lufs) and isinstance(self.next_song_audio, AudioSegment):
                     next_song.loudness_gain = getAdjustedGainFactor(cfg.target_lufs, self.next_song_audio)
                     next_song.target_lufs = cfg.target_lufs
@@ -994,7 +1103,8 @@ class PlayingPage(QWidget):
             if player.get_busy():
                 player.stop()
 
-            audio = AudioSegment.from_file(io.BytesIO(bytes), format='mp3')
+            with lock:
+                audio = AudioSegment.from_file(io.BytesIO(bytes), format='mp3')
 
             player.load(audio)
             self.total_length = player.get_length()
@@ -1162,7 +1272,8 @@ class PlayingPage(QWidget):
         else:
             music_bytes = base64.b64decode(song_storable.content_base64)
             logging.debug(f'loading data {len(music_bytes)}')
-            audio = AudioSegment.from_file(io.BytesIO(music_bytes), format='mp3')
+            with lock:
+                audio = AudioSegment.from_file(io.BytesIO(music_bytes), format='mp3')
 
             song_storable.target_lufs = cfg.target_lufs
             song_storable.loudness_gain = getAdjustedGainFactor(cfg.target_lufs, audio)
@@ -1193,7 +1304,8 @@ class PlayingPage(QWidget):
     def loadMusicFromBase64(self, content_base64: str, gain: float):
         music_bytes = base64.b64decode(content_base64)
         logging.debug(f'loading data {len(music_bytes)}')
-        audio = AudioSegment.from_file(io.BytesIO(music_bytes), format='mp3')
+        with lock:
+            audio = AudioSegment.from_file(io.BytesIO(music_bytes), format='mp3')
 
         logging.debug(f'applying gain {gain} {cfg.target_lufs=}')
         audio = audio.apply_gain(20 * np.log10(gain))
@@ -1222,11 +1334,25 @@ class PlayingPage(QWidget):
         if self.enableFFT_box.isChecked():
             player.fft_enabled = True
             logging.debug('enabled FFT')
+
+        if self.shoud_expand_when_show:
+            self.controller.toggleExpand()
         return super().showEvent(event)
     
     def hideEvent(self, event: QHideEvent) -> None:
         player.fft_enabled = False
         logging.debug('disabled FFT')
+
+        if not globals().get('mwindow'):
+            return
+        if mwindow.closing:
+            return
+
+        if self.controller.expanded:
+            self.controller.toggleExpand()
+            self.shoud_expand_when_show = True
+        else:
+            self.shoud_expand_when_show = False
         return super().hideEvent(event)
 
 class FavoritesPage(QWidget):
@@ -1483,7 +1609,6 @@ class FavoritesPage(QWidget):
 
         doWithMultiThreading(_load, (), mwindow, 'Loading...')
 
-
 class FavoriteSelectionDialog(MessageBoxBase):
     def __init__(self, parent):
         super().__init__(parent)
@@ -1538,7 +1663,7 @@ class FavoriteSelectionDialog(MessageBoxBase):
                     self.song_list.addItem(song.name)
                 break
 
-    def getSelectedSongs(self):
+    def getSelectedSong(self):
         '''Return list of selected SongStorable objects'''
         global favs
 
@@ -1546,7 +1671,7 @@ class FavoriteSelectionDialog(MessageBoxBase):
         song_item = self.song_list.currentItem()
 
         if not folder_item or not song_item:
-            return []
+            return None
 
         folder_name = folder_item.text()
         song_name = song_item.text()
@@ -1555,9 +1680,19 @@ class FavoriteSelectionDialog(MessageBoxBase):
             if folder['folder_name'] == folder_name:
                 for song in folder['songs']:
                     if song.name == song_name:
-                        return [song]
+                        return song
 
-        return []
+        return None
+
+def getFavoriteSong() -> SongStorable | None:
+    box = FavoriteSelectionDialog(mwindow)
+    reply = box.exec()
+    selected = box.getSelectedSong()
+
+    if reply and selected:
+        return selected
+    else:
+        return None
 
 class DynamicIslandPage(QWidget):
     def __init__(self) -> None:
@@ -1735,6 +1870,8 @@ class MainWindow(FluentWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
 
+        self.closing = False
+
         self.setWindowTitle('Southside Music')
 
         self.addSubInterface(
@@ -1784,6 +1921,8 @@ class MainWindow(FluentWindow):
         dp.lyric_label.setText('')
         dp.transl_label.setText('')
 
+        dp.cur = None
+
         dp.cur = card # type: ignore
         self.switchTo(dp)
         dp.init()
@@ -1812,6 +1951,8 @@ class MainWindow(FluentWindow):
         )
 
     def closeEvent(self, e):
+        self.closing = True
+
         self.hide()
         island.hide()
         player.stop()
@@ -1842,6 +1983,8 @@ class MainWindow(FluentWindow):
 
 
 if __name__ == '__main__':
+    hideFFmpegConsole()
+
     logging.basicConfig(
         level=logging.DEBUG,
         format=f'[%(asctime)s/{Style.BRIGHT}%(levelname)s{Style.RESET_ALL}] {Fore.LIGHTBLACK_EX}-{Style.RESET_ALL} %(message)s',
@@ -1871,6 +2014,8 @@ if __name__ == '__main__':
     setTheme(Theme.AUTO)
 
     player = AudioPlayer()
+
+    lock = threading.RLock()
 
     dp = PlayingPage()
     sp = SearchPage()

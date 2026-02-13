@@ -49,25 +49,27 @@ def get_text_textedit(title: str, desc: str, place: str, parent: QWidget):
     return dialog.inputer.toPlainText()
 
 class ListDialog(MessageBoxBase):
-    def __init__(self, parent, title: str, desc: str, texts: list[str], selection: QListWidget.SelectionMode):
+    def __init__(self, parent, title: str, desc: str, texts: list[str]):
         super().__init__(parent)
 
         self.title_label = SubtitleLabel(title)
         self.desc_label = QLabel(desc)
 
         self.inputer = ListWidget(self)
+        self.inputer.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.inputer.addItems(texts)
-        self.inputer.setSelectionMode(selection)
         self.inputer.setFixedSize(parent.size() * 0.65)
 
         self.viewLayout.addWidget(self.title_label)
         self.viewLayout.addWidget(self.desc_label)
         self.viewLayout.addWidget(self.inputer)
 
-        self.cancelButton.hide()
+def get_value_bylist(parent: QWidget, title: str, desc: str, texts: list[str]) -> str | None:
+    dialog = ListDialog(parent, title, desc, texts)
+    reply = dialog.exec()
+    selected = dialog.inputer.selectedItems()[0].text()
 
-def get_values_bylist(parent: QWidget, title: str, desc: str, texts: list[str], selection: QListWidget.SelectionMode) -> list[str]:
-    dialog = ListDialog(parent, title, desc, texts, selection)
-    dialog.exec()
-
-    return [item.text() for item in dialog.inputer.selectedItems()]
+    if reply and selected:
+        return selected
+    else:
+        return None

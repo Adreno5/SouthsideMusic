@@ -26,6 +26,8 @@ class Config:
     fft_filtering_windowsize: int = 4
     fft_factor: float = 0.4
 
+    target_lufs: int = -16
+
 cfg = Config()
 
 def loadConfig() -> None:
@@ -53,6 +55,8 @@ def loadConfig() -> None:
             cfg.fft_filtering_windowsize = data.get('fft_filtering_windowsize', 4)
             cfg.fft_factor = data.get('fft_factor', 0.4)
 
+            cfg.target_lufs = data.get('target_lufs', -16)
+
 def saveConfig() -> None:
     with open('./config.json', 'w', encoding='utf-8') as f:
         json.dump({
@@ -69,5 +73,6 @@ def saveConfig() -> None:
             'window_maximized': cfg.wiondow_maximized,
             'enable_fft': cfg.enable_fft,
             'fft_filtering_windowsize': cfg.fft_filtering_windowsize,
-            'fft_factor': cfg.fft_factor
+            'fft_factor': cfg.fft_factor,
+            'target_lufs': cfg.target_lufs,
         }, f, indent=4)

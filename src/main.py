@@ -210,7 +210,7 @@ class MusicCard(QWidget):
             
             # Add song to target folder
             
-            song_storable = SongStorable(self.info, image_bytes, music_bytes, lyric, translated_lyric, getAdjustedGainFactor(-16, AudioSegment.from_file(io.BytesIO(music_bytes), format='mp3')))
+            song_storable = SongStorable(self.info, image_bytes, music_bytes, lyric, translated_lyric, getAdjustedGainFactor(-16, AudioSegment.from_file(io.BytesIO(music_bytes), format='mp3')), cfg.target_lufs)
             target_folder['songs'].append(song_storable) # type: ignore
 
             # Save favorites
@@ -556,7 +556,7 @@ class PlayingController(QWidget):
                 self.smoothed_magnitudes,
                 np.ones(window_size) / window_size,
                 mode='same'
-            )
+            ) * (3 / dp.cur.storable.loudness_gain) * 0.75 # type: ignore
 
             path = QPainterPath(QPointF(0, 0))
             total = int(self.cur_magnitudes.size / 1.5)
@@ -698,12 +698,24 @@ class PlayingPage(QWidget):
         self.playing_scrollarea = SmoothScrollArea()
 
         self.playing_interface = QWidget()
+        self.playing_interface.setStyleSheet('background: #00000000')
         self.playing_layout = QGridLayout()
+
+        self.addSeparateWidget(TitleLabel('Playing'))
 
         self.play_method_box = ComboBox()
         self.play_method_box.addItems(['Repeat one', 'Repeat list', 'Shuffle', 'Play in order'])
         self.play_method_box.setCurrentText('Repeat list')
         self.addSetting('Play order', self.play_method_box)
+
+        self.play_speed = DoubleSpinBox()
+        self.play_speed.setRange(0.1, 5)
+        self.play_speed.setSingleStep(0.1)
+        self.play_speed.valueChanged.connect(self.onPlaySpeedChanged)
+        self.play_speed.setValue(1)
+        self.addSetting('Play Speed(poor effect)', self.play_speed)
+
+        self.addSeparateWidget(TitleLabel('FFT'))
 
         self.enableFFT_box = CheckBox('Enable Frequency Graphics')
         self.enableFFT_box.checkStateChanged.connect(self.onFFTEnabledStateChanged)
@@ -725,6 +737,22 @@ class PlayingPage(QWidget):
         self.FFT_factor.setValue(cfg.fft_factor)
         self.FFT_factor.setEnabled(cfg.enable_fft)
         self.addSetting('FFT Smoothing Factor', self.FFT_factor)
+
+        self.addSeparateWidget(TitleLabel('Loudness Balance'))
+        
+        self.target_lufs = Slider(Qt.Orientation.Horizontal)
+        self.target_lufs.setRange(-30, 0)
+        self.target_lufs.setSingleStep(1)
+        self.target_lufs.valueChanged.connect(self.onTargetLUFSChanged)
+        self.target_lufs.setValue(cfg.target_lufs)
+        self.addSeparateWidget(self.target_lufs)
+        self.target_lufs_label = SubtitleLabel(f'Target LUFS: {cfg.target_lufs}')
+        self.addSeparateWidget(self.target_lufs_label)
+        self.addSeparateWidget(QLabel(
+            'Target LUFS Help:\nRange: -30(quietest)~0(loudest)\nRecommend: -16~-18'
+            '\nReference:\nYoutube > -14LUFS\nNetflix > -27LUFS\nTikTok / Instagram Reels > -13LUFS\nApple Music (Video) > -16LUFS'
+            '\nSpotify (Video): -14LUFS / -16LUFS'
+        ))
 
         self.song_randomer = RandomInstance()
         self.song_randomer.init(self.playlist)
@@ -753,6 +781,45 @@ class PlayingPage(QWidget):
         self.controller.playNextSignal.connect(lambda: self.playNext(True))
 
         self.onFFTEnabledStateChanged(self.enableFFT_box.checkState())
+
+        self.lufs_changed_timer = QTimer(self)
+        self.lufs_changed_timer.timeout.connect(self.applyNewLUFS)
+
+    def applyNewLUFS(self):
+        self.lufs_changed_timer.stop()
+
+        self.target_lufs_label.setText('Reapplying')
+        def _apply():
+            if not self.cur:
+                return
+            if not self.cur.storable:
+                return
+            audio: AudioSegment = AudioSegment.from_file(io.BytesIO(base64.b64decode(self.cur.storable.content_base64)), format='mp3')
+            logging.debug('new lufs -> applying gain')
+            gain = getAdjustedGainFactor(cfg.target_lufs, audio)
+            self.cur.storable.loudness_gain = gain
+            self.cur.storable.target_lufs = cfg.target_lufs
+
+            p = player.get_position()
+            playingnow = player.get_busy()
+            self.playStorable(self.cur.storable)
+            if not playingnow:
+                self.controller.toggle()
+
+            self.target_lufs_label.setText(f'Target LUFS: {cfg.target_lufs}')
+            player.set_position(p)
+
+            self.preloadNextSong()
+
+        threading.Thread(target=_apply).start()
+
+    def onPlaySpeedChanged(self, value: float):
+        player.play_speed = value
+
+    def onTargetLUFSChanged(self, value: int):
+        cfg.target_lufs = value
+        self.target_lufs_label.setText(f'Target LUFS: {value}')
+        self.lufs_changed_timer.start(1000)
 
     def addSetting(self, name: str, widget: QWidget) -> None:
         self.playing_layout.addWidget(QLabel(name), self.playing_layout.rowCount(), 0, Qt.AlignmentFlag.AlignVCenter)
@@ -809,7 +876,10 @@ class PlayingPage(QWidget):
 
             image_bytes = base64.b64decode(self.cur.storable.image_base64)
             self.onImageLoaded(image_bytes)
-            self.loadMusicFromBase64(self.cur.storable.content_base64, self.cur.storable.loudness_gain)
+            if self.cur.storable.target_lufs == cfg.target_lufs:
+                self.loadMusicFromBase64(self.cur.storable.content_base64, self.cur.storable.loudness_gain)
+            else:
+                self.applyNewLUFS()
             
             # Use local lyrics if available
             if hasattr(self.cur.storable, 'lyric') and self.cur.storable.lyric:
@@ -873,9 +943,14 @@ class PlayingPage(QWidget):
             def _preload():
                 song_bytes = base64.b64decode(next_song.content_base64)
                 self.next_song_audio = AudioSegment.from_file(io.BytesIO(song_bytes), format='mp3')
-                if next_song.loudness_gain == 1.0 and isinstance(self.next_song_audio, AudioSegment):
-                    next_song.loudness_gain = getAdjustedGainFactor(-16, self.next_song_audio)
+                if (next_song.loudness_gain == 1.0 or next_song.target_lufs != cfg.target_lufs) and isinstance(self.next_song_audio, AudioSegment):
+                    next_song.loudness_gain = getAdjustedGainFactor(cfg.target_lufs, self.next_song_audio)
+                    next_song.target_lufs = cfg.target_lufs
                 self.next_song_gain = next_song.loudness_gain
+
+                if isinstance(self.next_song_audio, AudioSegment):
+                    logging.debug(f'preload -> applying gain {self.next_song_gain} {cfg.target_lufs=}')
+                    self.next_song_audio = self.next_song_audio.apply_gain(20 * np.log10(self.next_song_gain))
 
                 logging.info('preloaded')
                 logging.debug(f'(Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}')
@@ -927,7 +1002,7 @@ class PlayingPage(QWidget):
 
             def computeGain():
                 try:
-                    gain = getAdjustedGainFactor(-16, audio)
+                    gain = getAdjustedGainFactor(cfg.target_lufs, audio)
                     if self.cur:
                         self._gain_cache[self.cur.info['id']] = gain
                     player.set_gain_factor(gain)
@@ -1027,9 +1102,6 @@ class PlayingPage(QWidget):
         
         audio = self.next_song_audio
 
-        logging.debug(f'applying gain {self.next_song_gain}')
-        audio = audio.apply_gain(20 * np.log10(self.next_song_gain))
-
         player.load(audio)
         self.total_length = player.get_length()
 
@@ -1085,7 +1157,22 @@ class PlayingPage(QWidget):
         self.onImageLoaded(image_bytes)
 
         # Load from base64
-        self.loadMusicFromBase64(song_storable.content_base64, song_storable.loudness_gain)
+        if song_storable.target_lufs == cfg.target_lufs:
+            self.loadMusicFromBase64(song_storable.content_base64, song_storable.loudness_gain)
+        else:
+            music_bytes = base64.b64decode(song_storable.content_base64)
+            logging.debug(f'loading data {len(music_bytes)}')
+            audio = AudioSegment.from_file(io.BytesIO(music_bytes), format='mp3')
+
+            song_storable.target_lufs = cfg.target_lufs
+            song_storable.loudness_gain = getAdjustedGainFactor(cfg.target_lufs, audio)
+            gain = song_storable.loudness_gain
+
+            logging.debug(f'applying gain {gain} {cfg.target_lufs=}')
+            audio = audio.apply_gain(20 * np.log10(gain))
+
+            player.load(audio)
+            self.total_length = player.get_length()
 
         mgr.cur = song_storable.lyric
         if song_storable.translated_lyric:
@@ -1108,7 +1195,7 @@ class PlayingPage(QWidget):
         logging.debug(f'loading data {len(music_bytes)}')
         audio = AudioSegment.from_file(io.BytesIO(music_bytes), format='mp3')
 
-        logging.debug(f'applying gain {gain}')
+        logging.debug(f'applying gain {gain} {cfg.target_lufs=}')
         audio = audio.apply_gain(20 * np.log10(gain))
 
         player.load(audio)
@@ -1729,7 +1816,7 @@ class MainWindow(FluentWindow):
         island.hide()
         player.stop()
 
-        cfg.last_playing_song = dp.cur.storable if dp.cur else None
+        cfg.last_playing_song = dp.cur.storable if isinstance(dp.cur, DummyCard) else None
         cfg.last_playing_time = player.get_position()
         cfg.island_checked = ip.island_check.isChecked()
         cfg.play_method = dp.play_method_box.currentText() # type: ignore

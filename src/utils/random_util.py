@@ -5,7 +5,7 @@ from typing import Any, Generic, TypeVar
 
 T = TypeVar('T')
 
-class RandomInstance(Generic[T]):
+class AdvancedRandom(Generic[T]):
     def __init__(self) -> None:
         self.list_len: int = 0
         self.list_weight: list[float] = []

@@ -5,11 +5,10 @@ import logging
 import sys
 import threading
 import time
-from PySide6.QtGui import QKeyEvent, QMouseEvent, QPaintEvent, QShowEvent
+from PySide6.QtGui import QHideEvent, QKeyEvent, QMouseEvent, QPaintEvent, QShowEvent
 from PySide6.QtWidgets import *  # type: ignore
 from PySide6.QtCore import *  # type: ignore
 from PySide6.QtGui import *  # type: ignore
-import colorama
 import numpy as np
 from qfluentwidgets import *  # type: ignore
 import requests
@@ -32,6 +31,7 @@ from utils.favorite_util import loadFavorites, saveFavorites
 from utils.config_util import loadConfig, saveConfig, cfg
 from utils.loudness_balance_util import getAdjustedGainFactor
 from utils.play_util import AudioPlayer
+from utils.icon_util import getQIcon
 
 class DummyCard:
     def __init__(self, storable):
@@ -80,9 +80,7 @@ class MusicCard(QWidget):
         global_layout.addWidget(self.playbtn)
         self.playbtn.clicked.connect(self.play)
 
-        self.favbtn = TransparentToolButton(
-            QIcon(f'icons/fav_{'dark' if theme() == Theme.DARK else 'light'}.svg')
-        )
+        self.favbtn = TransparentToolButton(getQIcon('fav'))
         self.favbtn.setEnabled(True)
         global_layout.addWidget(self.favbtn)
         self.favbtn.clicked.connect(self.addToFavorites)
@@ -389,18 +387,12 @@ class PlayingController(QWidget):
             alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
         )
 
-        self.last_btn = TransparentToolButton(
-            QIcon(f'icons/last_{'dark' if theme() == Theme.DARK else 'light'}.svg')
-        )
-        self.next_btn = TransparentToolButton(
-            QIcon(f'icons/next_{'dark' if theme() == Theme.DARK else 'light'}.svg')
-        )
+        self.last_btn = TransparentToolButton(getQIcon('last'))
+        self.next_btn = TransparentToolButton(getQIcon('next'))
         self.last_btn.clicked.connect(self.playLastSignal.emit)
         self.next_btn.clicked.connect(self.playNextSignal.emit)
 
-        self.play_pausebtn = TransparentToolButton(
-            QIcon(f'icons/playa_{'dark' if theme() == Theme.DARK else 'light'}.svg')
-        )
+        self.play_pausebtn = TransparentToolButton(getQIcon('playa'))
         self.play_pausebtn.setIconSize(QSize(30, 30))
         self.last_btn.setIconSize(QSize(30, 30))
         self.next_btn.setIconSize(QSize(30, 30))
@@ -428,7 +420,7 @@ class PlayingController(QWidget):
             self.vol_slider,
             alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
         )
-        self.expand_btn = PushButton(QIcon(f'icons/pl_expand_{'dark' if theme() == Theme.DARK else 'light'}.svg'), 'Menu')
+        self.expand_btn = PushButton(getQIcon('pl_expand'), 'Menu')
         right_layout.addWidget(
             self.expand_btn,
             alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom,
@@ -463,13 +455,13 @@ class PlayingController(QWidget):
                 mwindow_anim.setDuration(200)
                 mwindow_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
                 mwindow_anim.setStartValue(mwindow.geometry())
-                mwindow_anim.setEndValue(QRect(mwindow.x() - 102, mwindow.y(), mwindow.width() + 205, mwindow.height()))
+                mwindow_anim.setEndValue(QRect(mwindow.x() - 252, mwindow.y(), mwindow.width() + 505, mwindow.height()))
                 mwindow_anim.start()
 
             dp.expanded_widget.show()
 
             self.expand_btn.setText('Collapse')
-            self.expand_btn.setIcon(QIcon(f'icons/pl_collapse_{'dark' if theme() == Theme.DARK else 'light'}.svg'))
+            self.expand_btn.setIcon(getQIcon('pl_collapse'))
         else:
             dp.expanded_widget.hide()
             if not mwindow.isMaximized():
@@ -477,11 +469,11 @@ class PlayingController(QWidget):
                 mwindow_anim.setDuration(200)
                 mwindow_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
                 mwindow_anim.setStartValue(mwindow.geometry())
-                mwindow_anim.setEndValue(QRect(mwindow.x() + 103, mwindow.y(), mwindow.width() - 205, mwindow.height()))
+                mwindow_anim.setEndValue(QRect(mwindow.x() + 253, mwindow.y(), mwindow.width() - 505, mwindow.height()))
                 mwindow_anim.start()
 
             self.expand_btn.setText('Menu')
-            self.expand_btn.setIcon(QIcon(f'icons/pl_expand_{'dark' if theme() == Theme.DARK else 'light'}.svg'))
+            self.expand_btn.setIcon(getQIcon('pl_expand'))
 
     def updateWidgets(self):
         if dp.cur:
@@ -539,10 +531,10 @@ class PlayingController(QWidget):
 
         if player.get_busy():
             player.pause()
-            self.play_pausebtn.setIcon(QIcon(f'icons/playa_{'dark' if darkdetect.isDark() else 'light'}.svg'))
+            self.play_pausebtn.setIcon(getQIcon('playa'))
         else:
             player.resume()
-            self.play_pausebtn.setIcon(QIcon(f'icons/pause_{'dark' if darkdetect.isDark() else 'light'}.svg'))
+            self.play_pausebtn.setIcon(getQIcon('pause'))
     
     def setPlaytime(self, time_value: float) -> None:
         playing_time = time_value
@@ -552,30 +544,41 @@ class PlayingController(QWidget):
         painter = QPainter(self)
         painter.setRenderHints(QPainter.RenderHint.Antialiasing)
 
+        isDark = darkdetect.isDark()
+
         if dp.enableFFT_box.isChecked() and self.cur_freqs is not None and self.cur_magnitudes is not None:
-            self.smoothed_magnitudes += (self.cur_magnitudes - self.smoothed_magnitudes) * 0.6
+            if not player.get_busy():
+                self.cur_magnitudes = np.zeros(513, dtype=np.float32)
+            window_size = cfg.fft_filtering_windowsize
+
+            self.smoothed_magnitudes += (self.cur_magnitudes - self.smoothed_magnitudes) * cfg.fft_factor
             final_magnitudes = np.convolve(
                 self.smoothed_magnitudes,
-                np.ones(4) / 4,
+                np.ones(window_size) / window_size,
                 mode='same'
             )
 
             path = QPainterPath(QPointF(0, 0))
-            total = self.cur_magnitudes.size
+            total = int(self.cur_magnitudes.size / 1.5)
             for i in range(total):
                 x = ((i + 1) / total) * self.width()
-                path.lineTo(QPointF(x, final_magnitudes[i] * ((1 + (i * 0.0175)) - 0.3) + 3.5))
+                path.lineTo(QPointF(x, final_magnitudes[i] * ((1 + (i * 0.01)) - 0.1) + 3.5))
             path.lineTo(QPointF(self.width(), 0))
 
-            painter.setPen(QPen(QColor(255, 255, 255, 120) if darkdetect.isDark() else QColor(0, 0, 0, 120), 1))
+            painter.setPen(QPen(QColor(120, 120, 120), 1))
+            painter.setClipPath(path)
             painter.drawPath(path)
+            gradient = QLinearGradient(0, self.height(), 0, 0)
+            gradient.setColorAt(1, QColor(QColor(255, 255, 255, 150) if isDark else QColor(0, 0, 0, 150)))
+            gradient.setColorAt(0.5, QColor(0, 0, 0, 0))
+            painter.fillRect(0, 0, self.width(), self.height(), gradient)
 
         painter.setPen(QPen(QColor(120, 120, 120), 8))
         painter.drawLine(0, 0, self.width(), 0)
         if dp.total_length > 0:
             painter.setPen(
                 QPen(
-                    QColor(255, 255, 255) if darkdetect.isDark() else QColor(0, 0, 0), 8
+                    QColor(255, 255, 255) if isDark else QColor(0, 0, 0), 8
                 )
             )
             painter.drawLine(
@@ -680,38 +683,58 @@ class PlayingPage(QWidget):
         self.pivot = Pivot(self)
         self.stacked_widget = QStackedWidget(self)
 
-        self.expanded_widget.setFixedWidth(200)
+        self.expanded_widget.setFixedWidth(500)
 
         expanded_layout.addWidget(self.pivot)
         expanded_layout.addWidget(self.stacked_widget)
         expanded_layout.setContentsMargins(30, 0, 30, 30)
 
         self.lst = ListWidget()
-        self.lst.setFixedWidth(200)
+        self.lst.setFixedWidth(500)
         self.lst.hide()
         self.lst.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.lst.itemClicked.connect(self.onPlaylistItemClicked)
 
+        self.playing_scrollarea = SmoothScrollArea()
+
         self.playing_interface = QWidget()
-        playing_layout = QVBoxLayout()
+        self.playing_layout = QGridLayout()
 
         self.play_method_box = ComboBox()
         self.play_method_box.addItems(['Repeat one', 'Repeat list', 'Shuffle', 'Play in order'])
         self.play_method_box.setCurrentText('Repeat list')
-        playing_layout.addWidget(self.play_method_box)
+        self.addSetting('Play order', self.play_method_box)
 
-        self.enableFFT_box = CheckBox('Enable\nFrequency\nGraphics')
+        self.enableFFT_box = CheckBox('Enable Frequency Graphics')
         self.enableFFT_box.checkStateChanged.connect(self.onFFTEnabledStateChanged)
-        playing_layout.addWidget(self.enableFFT_box)
+        self.addSeparateWidget(self.enableFFT_box)
         self.enableFFT_box.setChecked(cfg.enable_fft)
+
+        self.FFT_filtering_windowsize = SpinBox()
+        self.FFT_filtering_windowsize.setRange(1, 200)
+        self.FFT_filtering_windowsize.setSingleStep(1)
+        self.FFT_filtering_windowsize.valueChanged.connect(self.onFFTWindowsizeChanged)
+        self.FFT_filtering_windowsize.setValue(cfg.fft_filtering_windowsize)
+        self.FFT_filtering_windowsize.setEnabled(cfg.enable_fft)
+        self.addSetting('FFT Filtering Window size', self.FFT_filtering_windowsize)
+
+        self.FFT_factor = DoubleSpinBox()
+        self.FFT_factor.setRange(0.01, 1.0)
+        self.FFT_factor.setSingleStep(0.05)
+        self.FFT_factor.valueChanged.connect(self.onFFTFactorChanged)
+        self.FFT_factor.setValue(cfg.fft_factor)
+        self.FFT_factor.setEnabled(cfg.enable_fft)
+        self.addSetting('FFT Smoothing Factor', self.FFT_factor)
 
         self.song_randomer = RandomInstance()
         self.song_randomer.init(self.playlist)
 
-        self.playing_interface.setLayout(playing_layout)
+        self.playing_interface.setLayout(self.playing_layout)
+        self.playing_scrollarea.setWidget(self.playing_interface)
+        self.playing_scrollarea.setWidgetResizable(True)
 
         self.addSubInterface(self.lst, 'playlist_listwidget', 'Playlist')
-        self.addSubInterface(self.playing_interface, 'playing_interface', 'Playing')
+        self.addSubInterface(self.playing_scrollarea, 'playing_interface', 'Playing')
 
         self.stacked_widget.setCurrentWidget(self.lst)
         self.pivot.setCurrentItem('playlist_listwidget')
@@ -729,6 +752,27 @@ class PlayingPage(QWidget):
         self.controller.playLastSignal.connect(self.playLast)
         self.controller.playNextSignal.connect(lambda: self.playNext(True))
 
+        self.onFFTEnabledStateChanged(self.enableFFT_box.checkState())
+
+    def addSetting(self, name: str, widget: QWidget) -> None:
+        self.playing_layout.addWidget(QLabel(name), self.playing_layout.rowCount(), 0, Qt.AlignmentFlag.AlignVCenter)
+        self.playing_layout.addWidget(widget, self.playing_layout.rowCount() - 1, 1, Qt.AlignmentFlag.AlignVCenter)
+
+    def addSeparateWidget(self, widget: QWidget) -> None:
+        self.playing_layout.addWidget(widget, self.playing_layout.rowCount(), 0, 1, 2)
+
+    def onFFTWindowsizeChanged(self, value: int):
+        if value < 1 or value > 200:
+            self.FFT_filtering_windowsize.setValue(max(1, min(self.FFT_filtering_windowsize.value(), 200)))
+
+        cfg.fft_filtering_windowsize = self.FFT_filtering_windowsize.value()
+
+    def onFFTFactorChanged(self, value: float):
+        if value < 0.01 or value > 1:
+            self.FFT_factor.setValue(max(0.01, min(self.FFT_filtering_windowsize.value(), 1.0)))
+
+        cfg.fft_factor = self.FFT_factor.value()
+
     def addSubInterface(self, widget: QWidget, objectName, text):
         widget.setObjectName(objectName)
         self.stacked_widget.addWidget(widget)
@@ -738,6 +782,9 @@ class PlayingPage(QWidget):
         checked = check_state == Qt.CheckState.Checked
         player.fft_enabled = checked
         cfg.enable_fft = checked
+
+        self.FFT_filtering_windowsize.setEnabled(checked)
+        self.FFT_factor.setEnabled(checked)
 
     def onPlaylistItemClicked(self, item: QListWidgetItem):
         for i, song in enumerate(self.playlist):
@@ -1083,7 +1130,17 @@ class PlayingPage(QWidget):
         if event.key() == Qt.Key.Key_Space:
             self.controller.toggle()
         return super().keyPressEvent(event)
-
+    
+    def showEvent(self, event: QShowEvent) -> None:
+        if self.enableFFT_box.isChecked():
+            player.fft_enabled = True
+            logging.debug('enabled FFT')
+        return super().showEvent(event)
+    
+    def hideEvent(self, event: QHideEvent) -> None:
+        player.fft_enabled = False
+        logging.debug('disabled FFT')
+        return super().hideEvent(event)
 
 class FavoritesPage(QWidget):
     def __init__(self) -> None:
@@ -1115,10 +1172,10 @@ class FavoritesPage(QWidget):
         self.folder_selector.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.folder_selector.itemClicked.connect(self.viewSongs)
         left_layout.addWidget(self.folder_selector, 1)
-        self.addplaylist_btn = PushButton(QIcon(f'icons/pl_{'dark' if theme() == Theme.DARK else 'light'}.svg'), 'Add selected folder to playlist')
+        self.addplaylist_btn = PushButton(getQIcon('pl'), 'Add selected folder to playlist')
         self.addplaylist_btn.clicked.connect(self.addFolderToPlaylist)
         left_layout.addWidget(self.addplaylist_btn)
-        self.addall_btn = PrimaryPushButton(QIcon(f'icons/pl_{'dark' if theme() == Theme.LIGHT else 'light'}.svg'), 'Add all folder to playlist')
+        self.addall_btn = PrimaryPushButton(getQIcon('pl', 'light'), 'Add all folder to playlist')
         self.addall_btn.clicked.connect(self.addAllToPlaylist)
         left_layout.addWidget(self.addall_btn)
         bottom_layout.addLayout(left_layout, 3)
@@ -1595,23 +1652,23 @@ class MainWindow(FluentWindow):
 
         self.addSubInterface(
             sp,
-            QIcon(f'icons/music_{'dark' if theme() == Theme.DARK else 'light'}.svg'),
+            getQIcon('music'),
             'Search',
         )
         self.addSubInterface(
             dp,
-            QIcon(f'icons/studio_{'dark' if theme() == Theme.DARK else 'light'}.svg'),
+            getQIcon('studio'),
             'Playing',
         )
         self.addSubInterface(
             fp,
-            QIcon(f'icons/fav_{'dark' if theme() == Theme.DARK else 'light'}.svg'),
+            getQIcon('fav'),
             'Favorites',
             NavigationItemPosition.BOTTOM,
         )
         self.addSubInterface(
             ip,
-            QIcon(f'icons/island_{'dark' if theme() == Theme.DARK else 'light'}.svg'),
+            getQIcon('island'),
             'Lyric Island',
             NavigationItemPosition.SCROLL,
         )
@@ -1678,9 +1735,9 @@ class MainWindow(FluentWindow):
         cfg.play_method = dp.play_method_box.currentText() # type: ignore
         cfg.island_x = ip.island_x
         cfg.island_y = ip.island_y
-        cfg.window_x = self.x() + (103 if dp.controller.expand_btn.text() == 'Collapse' else 0)
+        cfg.window_x = self.x() + (253 if dp.controller.expand_btn.text() == 'Collapse' else 0)
         cfg.window_y = self.y()
-        cfg.window_width = self.width() - (205 if dp.controller.expand_btn.text() == 'Collapse' else 0)
+        cfg.window_width = self.width() - (505 if dp.controller.expand_btn.text() == 'Collapse' else 0)
         cfg.window_height = self.height()
         cfg.wiondow_maximized = self.isMaximized()
 

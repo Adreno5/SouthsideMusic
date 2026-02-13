@@ -1,7 +1,7 @@
 @echo off
 title Building
 
-nuitka src/main.py --standalone --enable-plugin=pyside6,numpy --windows-console-mode=disable --output-filename=SouthsideMusic --include-data-dir="./icons=./icons" --include-data-dir="./fonts=./fonts"
+nuitka src/main.py --standalone --enable-plugin=pyside6,numpy --windows-console-mode=hide --output-filename=SouthsideMusic --include-data-dir="./icons=./icons" --include-data-dir="./fonts=./fonts"
 
 echo Done!
 title Done

@@ -1,5 +1,5 @@
 # Southside Music
-Southside Music is a music client of NetEaseCloudMusic for Windows.
+Advanced Modern Player
 
 ## Install
 just download the latest release and unzip it. And launch the `SouthsideMusic.exe`!

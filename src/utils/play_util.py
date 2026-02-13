@@ -6,6 +6,7 @@ from PySide6.QtCore import QObject, Signal
 from typing import Optional
 import threading
 from scipy.fft import rfft, rfftfreq
+from utils.config_util import cfg
 
 class AudioPlayer(QObject):
     onFinished = Signal()
@@ -135,7 +136,7 @@ class AudioPlayer(QObject):
 
             if copy_len > 0:
                 out = chunk * self.volume_gain
-                np.clip(out, -1.0, 1.0, out=out)
+                np.clip(out, -1.0, 31.0 + cfg.target_lufs, out=out)
                 outdata[:copy_len] = out.reshape(-1, 1)
             if copy_len < frames:
                 outdata[copy_len:] = 0

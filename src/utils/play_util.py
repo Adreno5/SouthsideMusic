@@ -51,11 +51,11 @@ class AudioPlayer(QObject):
             self.is_playing = False
             self.is_paused = False
 
-    def load_from_file(self, file_path: Path) -> None:
+    def loadFromFile(self, file_path: Path) -> None:
         audio = AudioSegment.from_file(str(file_path))
         self.load(audio)
 
-    def load_from_bytes(self, data: bytes) -> None:
+    def loadFromBytes(self, data: bytes) -> None:
         audio = AudioSegment.from_file(data, format='mp3')
         self.load(audio)
 
@@ -92,7 +92,7 @@ class AudioPlayer(QObject):
             self.is_playing = False
             self.is_paused = False
 
-    def set_position(self, seconds: float) -> None:
+    def setPosition(self, seconds: float) -> None:
         with self._lock:
             if len(self.samples) == 0:
                 return
@@ -100,16 +100,16 @@ class AudioPlayer(QObject):
             target_index = max(0, min(target_index, len(self.samples) - 1))
             self.current_index = target_index
 
-    def get_position(self) -> float:
+    def getPosition(self) -> float:
         return self.current_index / self.sample_rate if self.sample_rate > 0 else 0.0
 
-    def get_length(self) -> float:
+    def getLength(self) -> float:
         return len(self.samples) / self.sample_rate if self.sample_rate > 0 else 0.0
 
-    def set_volume(self, volume: float) -> None:
+    def setVolume(self, volume: float) -> None:
         self.volume_gain = max(0.0, min(1.0, volume))
 
-    def get_busy(self) -> bool:
+    def isPlaying(self) -> bool:
         return self.is_playing or (self.stream is not None and self.stream.active)
 
     def _start_stream(self):
@@ -123,7 +123,7 @@ class AudioPlayer(QObject):
             )
         self.stream.start()
 
-    def set_gain_factor(self, gain: float):
+    def setGain(self, gain: float):
         with self._lock:
             self.volume_gain = max(0.0, gain)
 

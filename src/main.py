@@ -2,6 +2,7 @@
 import base64
 import io
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -34,23 +35,19 @@ from utils.play_util import AudioPlayer
 from utils.icon_util import getQIcon
 from utils.dialog_util import get_value_bylist, get_text_lineedit
 
-def hideFFmpegConsole():
+def hideConsoles():
     original_popen = subprocess.Popen
 
     def patched_popen(*args, **kwargs):
-        args_list = args[0] if args else kwargs.get('args', [])
-        if isinstance(args_list, (list, tuple)) and any('ffmpeg' in str(arg).lower() for arg in args_list):
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-            kwargs['startupinfo'] = startupinfo
-            kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
-
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
+        kwargs['startupinfo'] = startupinfo
+        kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+        
         return original_popen(*args, **kwargs)
 
     subprocess.Popen = patched_popen
-    subprocess.call = lambda *args, **kwargs: patched_popen(*args, **kwargs).wait()
-    subprocess.run = lambda *args, **kwargs: patched_popen(*args, **kwargs).wait()
 
 class DummyCard:
     def __init__(self, storable: SongStorable):
@@ -499,7 +496,7 @@ class PlayingController(QWidget):
                     dp.lst.setCurrentRow(i)
                     break
 
-        if player.get_busy():
+        if player.isPlaying():
             if not dp._preload_triggered and dp.current_index < len(dp.playlist) - 1:
                 dp._preload_triggered = True
                 dp.preloadNextSong()
@@ -511,7 +508,7 @@ class PlayingController(QWidget):
         else:
             volume = math.log(value / 100 * (math.e - 1) + 1)
         logging.debug(volume)
-        player.set_volume(volume)
+        player.setVolume(volume)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.position().y() < 8:
@@ -520,7 +517,7 @@ class PlayingController(QWidget):
                 dp.total_length,
                 max(0, (event.position().x() / self.width()) * dp.total_length),
             )
-            player.set_position(playing_time)
+            player.setPosition(playing_time)
         return super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
@@ -529,7 +526,7 @@ class PlayingController(QWidget):
                 dp.total_length,
                 max(0, (event.position().x() / self.width()) * dp.total_length),
             )
-            player.set_position(playing_time)
+            player.setPosition(playing_time)
             self.dragging = False
         return super().mouseReleaseEvent(event)
 
@@ -539,13 +536,13 @@ class PlayingController(QWidget):
                 dp.total_length,
                 max(0, (event.position().x() / self.width()) * dp.total_length),
             )
-            player.set_position(playing_time)
+            player.setPosition(playing_time)
         return super().mouseMoveEvent(event)
 
     def toggle(self):
         logging.debug('toggle')
 
-        if player.get_busy():
+        if player.isPlaying():
             player.pause()
             self.play_pausebtn.setIcon(getQIcon('playa'))
         else:
@@ -554,7 +551,7 @@ class PlayingController(QWidget):
     
     def setPlaytime(self, time_value: float) -> None:
         playing_time = time_value
-        player.set_position(playing_time)
+        player.setPosition(playing_time)
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
@@ -563,7 +560,7 @@ class PlayingController(QWidget):
         isDark = darkdetect.isDark()
 
         if dp.enableFFT_box.isChecked() and self.cur_freqs is not None and self.cur_magnitudes is not None:
-            if not player.get_busy():
+            if not player.isPlaying():
                 self.cur_magnitudes = np.zeros(513, dtype=np.float32)
             window_size = cfg.fft_filtering_windowsize
 
@@ -600,10 +597,10 @@ class PlayingController(QWidget):
                 )
             )
             painter.drawLine(
-                0, 0, int(self.width() * (player.get_position() / dp.total_length)), 0
+                0, 0, int(self.width() * (player.getPosition() / dp.total_length)), 0
             )
 
-        cur_time = float2time(player.get_position())
+        cur_time = float2time(player.getPosition())
         # self.time_label.setText(
         #     f'{str(cur_time['minutes']).zfill(2)}:{str(cur_time['seconds']).zfill(2)}.{str(cur_time['millionsecs']).zfill(3)}'
         # )
@@ -611,12 +608,12 @@ class PlayingController(QWidget):
             f'{str(cur_time['minutes']).zfill(2)}:{str(cur_time['seconds']).zfill(2)}'
         )
         
-        yw = mgr.getCurrentLyric(player.get_position())['content']
+        yw = mgr.getCurrentLyric(player.getPosition())['content']
         dp.lyric_label.setText(yw)
         if not yw.strip():
             dp.transl_label.setText('')
         else:
-            dp.transl_label.setText(transmgr.getCurrentLyric(player.get_position())['content'])
+            dp.transl_label.setText(transmgr.getCurrentLyric(player.getPosition())['content'])
 
         painter.end()
 
@@ -799,7 +796,7 @@ class PlayingPage(QWidget):
         self.playing_scrollarea.setWidgetResizable(True)
 
         self.addSubInterface(self.lst_interface, 'playlist_listwidget', 'Playlist')
-        self.addSubInterface(self.playing_scrollarea, 'playing_interface', 'Playing')
+        self.addSubInterface(self.playing_scrollarea, 'playing_interface', 'Options')
 
         self.stacked_widget.setCurrentWidget(self.lst)
         self.pivot.setCurrentItem('playlist_listwidget')
@@ -902,14 +899,14 @@ class PlayingPage(QWidget):
             self.cur.storable.loudness_gain = gain
             self.cur.storable.target_lufs = cfg.target_lufs
 
-            p = player.get_position()
-            playingnow = player.get_busy()
+            p = player.getPosition()
+            playingnow = player.isPlaying()
             self.playStorable(self.cur.storable)
             if not playingnow:
                 self.controller.toggle()
 
             self.target_lufs_label.setText(f'Target LUFS: {cfg.target_lufs}')
-            player.set_position(p)
+            player.setPosition(p)
 
             self.preloadNextSong()
 
@@ -1004,7 +1001,7 @@ class PlayingPage(QWidget):
             mwindow.switchTo(dp)
         else:
             # Original network download
-            if player.get_busy():
+            if player.isPlaying():
                 player.stop()
             
             def _do():
@@ -1100,14 +1097,14 @@ class PlayingPage(QWidget):
         assert self.cur is not None
 
         def _downloaded(bytes: bytes):
-            if player.get_busy():
+            if player.isPlaying():
                 player.stop()
 
             with lock:
                 audio = AudioSegment.from_file(io.BytesIO(bytes), format='mp3')
 
             player.load(audio)
-            self.total_length = player.get_length()
+            self.total_length = player.getLength()
             self.controller.toggle()
 
             def computeGain():
@@ -1115,7 +1112,7 @@ class PlayingPage(QWidget):
                     gain = getAdjustedGainFactor(cfg.target_lufs, audio)
                     if self.cur:
                         self._gain_cache[self.cur.info['id']] = gain
-                    player.set_gain_factor(gain)
+                    player.setGain(gain)
                 except Exception as e:
                     pass
 
@@ -1213,7 +1210,7 @@ class PlayingPage(QWidget):
         audio = self.next_song_audio
 
         player.load(audio)
-        self.total_length = player.get_length()
+        self.total_length = player.getLength()
 
         mgr.cur = song_storable.lyric
         if song_storable.translated_lyric:
@@ -1224,7 +1221,7 @@ class PlayingPage(QWidget):
             mgr.parse()
             transmgr.parse()
         finally:
-            if not player.get_busy():
+            if not player.isPlaying():
                 self.controller.toggle()
 
             self._preload_triggered = False
@@ -1283,7 +1280,7 @@ class PlayingPage(QWidget):
             audio = audio.apply_gain(20 * np.log10(gain))
 
             player.load(audio)
-            self.total_length = player.get_length()
+            self.total_length = player.getLength()
 
         mgr.cur = song_storable.lyric
         if song_storable.translated_lyric:
@@ -1294,7 +1291,7 @@ class PlayingPage(QWidget):
             mgr.parse()
             transmgr.parse()
         finally:
-            if not player.get_busy():
+            if not player.isPlaying():
                 self.controller.toggle()
 
             self._preload_triggered = False
@@ -1311,7 +1308,7 @@ class PlayingPage(QWidget):
         audio = audio.apply_gain(20 * np.log10(gain))
 
         player.load(audio)
-        self.total_length = player.get_length()
+        self.total_length = player.getLength()
 
     def startPlaylist(self):
         fp.folder_selector.setCurrentRow(0)
@@ -1322,7 +1319,7 @@ class PlayingPage(QWidget):
         self.playSongAtIndex(0)
 
         # Ensure playing state
-        if not player.get_busy():
+        if not player.isPlaying():
             self.controller.toggle()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
@@ -1841,7 +1838,7 @@ class LyricIslandOverlay(QWidget):
         self.show()
 
     def paintEvent(self, event: QPaintEvent) -> None:
-        lyric = mgr.getCurrentLyric(player.get_position())['content']
+        lyric = mgr.getCurrentLyric(player.getPosition())['content']
         txt = (lyric if not island_editing_overlay.isVisible() or lyric else 'Example Lyric') if ip.island_check.isChecked() else ''
 
         self.target_width = (self.me.horizontalAdvance(txt) + (10 if txt else 0)) if ip.island_check.isChecked() else 0
@@ -1958,7 +1955,7 @@ class MainWindow(FluentWindow):
         player.stop()
 
         cfg.last_playing_song = dp.cur.storable if isinstance(dp.cur, DummyCard) else None
-        cfg.last_playing_time = player.get_position()
+        cfg.last_playing_time = player.getPosition()
         cfg.island_checked = ip.island_check.isChecked()
         cfg.play_method = dp.play_method_box.currentText() # type: ignore
         cfg.island_x = ip.island_x
@@ -1983,7 +1980,7 @@ class MainWindow(FluentWindow):
 
 
 if __name__ == '__main__':
-    hideFFmpegConsole()
+    hideConsoles()
 
     logging.basicConfig(
         level=logging.DEBUG,

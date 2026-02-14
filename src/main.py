@@ -35,7 +35,7 @@ from utils.icon_util import getQIcon
 from utils.dialog_util import get_value_bylist, get_text_lineedit
 from utils.websocket_util import ws_server, ws_handler
 
-ws_handler.onConnected.connect(lambda: mwindow.onWebsocketConnected)
+ws_handler.onConnected.connect(lambda: mwindow.onWebsocketConnected())
 ws_handler.onDisconnected.connect(lambda: InfoBar.warning(
     'SouthsideClient connection',
     'SouthsideMusic was been disconnected from SouthsidClient',
@@ -947,7 +947,6 @@ class PlayingPage(QWidget):
 
     def applyNewLUFS(self):
         self.lufs_changed_timer.stop()
-        self.target_lufs.setEnabled(False)
 
         self.target_lufs_label.setText('Reapplying')
         def _apply():
@@ -972,7 +971,6 @@ class PlayingPage(QWidget):
             player.setPosition(p)
 
             QTimer.singleShot(250, self.preloadNextSong)
-            QTimer.singleShot(250, lambda: self.target_lufs.setEnabled(True))
 
         threading.Thread(target=_apply).start()
 
@@ -1231,7 +1229,7 @@ class PlayingPage(QWidget):
 
     def playNext(self, byuser: bool):
         logging.debug(f'(Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}')
-        if isinstance(self.next_song_audio, AudioSegment) and isinstance(self.next_song_gain, float):
+        if isinstance(self.next_song_audio, AudioSegment) and isinstance(self.next_song_gain, float) and not (dp.play_method_box.currentText() in ['Play in order', 'Repeat list']):
             self.playPreloadedSong()
             self.current_index += 1
             return
@@ -2058,7 +2056,7 @@ class MainWindow(FluentWindow):
             duration=5000,
             parent=self
         )
-        QTimer.singleShot(200, lambda: ws_handler.send(json.dumps({'option': f'{'disable' if not dp.enableFFT_box.isChecked() else 'enable'}_fft'})))
+        ws_handler.send(json.dumps({'option': f'{'disable' if not dp.enableFFT_box.isChecked() else 'enable'}_fft'}))
 
 if __name__ == '__main__':
     logging.basicConfig(

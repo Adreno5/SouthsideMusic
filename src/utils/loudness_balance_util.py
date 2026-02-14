@@ -1,3 +1,4 @@
+from functools import lru_cache
 import logging
 from pydub import AudioSegment
 from textwrap import dedent
@@ -438,6 +439,10 @@ class Meter(object):
             raise ValueError("Invalid filter class:", self._filter_class)
 
 def getAdjustedGainFactor(target_lufs: float, audio: AudioSegment) -> float:
+    return getAdjustedGainFactor_impl(target_lufs, audio)
+
+@lru_cache(maxsize=1024)
+def getAdjustedGainFactor_impl(target_lufs: float, audio: AudioSegment) -> float:
     samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
     dtype_map = {1: np.int8, 2: np.int16, 4: np.int32}
     dtype = dtype_map[audio.sample_width]

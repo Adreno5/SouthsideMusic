@@ -947,7 +947,6 @@ class PlayingPage(QWidget):
 
     def applyNewLUFS(self):
         self.lufs_changed_timer.stop()
-        player.stop()
 
         self.target_lufs_label.setText('Reapplying')
         def _apply():
@@ -961,14 +960,15 @@ class PlayingPage(QWidget):
             gain = getAdjustedGainFactor(cfg.target_lufs, audio)
             self.cur.storable.loudness_gain = gain
             self.cur.storable.target_lufs = cfg.target_lufs
-            audio = audio.apply_gain(gain)
 
             p = player.getPosition()
-            player.load(audio)
-            player.play()
-            player.setPosition(p)
+            playingnow = player.isPlaying()
+            self.playStorable(self.cur.storable)
+            if not playingnow:
+                self.controller.toggle()
 
             self.target_lufs_label.setText(f'Target LUFS: {cfg.target_lufs}')
+            player.setPosition(p)
 
             QTimer.singleShot(250, self.preloadNextSong)
 

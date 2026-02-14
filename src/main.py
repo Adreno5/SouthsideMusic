@@ -406,6 +406,7 @@ class PlayingController(QWidget):
 
         self.cur_freqs: np.ndarray | None = None
         self.cur_magnitudes: np.ndarray | None = None
+        self.final_magnitudes: np.ndarray = np.zeros(513, dtype=np.float32)
         self.smoothed_magnitudes: np.ndarray = np.zeros(513, dtype=np.float32)
         self.last_lyric: str = ''
 
@@ -594,19 +595,24 @@ class PlayingController(QWidget):
             window_size = cfg.fft_filtering_windowsize
 
             self.smoothed_magnitudes += (self.cur_magnitudes - self.smoothed_magnitudes) * (cfg.fft_factor if player.isPlaying() else 0.07)
-            final_magnitudes = np.convolve(
+            self.final_magnitudes = np.convolve(
                 self.smoothed_magnitudes,
                 np.ones(window_size) / window_size,
                 mode='same'
             )
             if isinstance(dp.cur, DummyCard):
-                final_magnitudes *= (2 / dp.cur.storable.loudness_gain) * 0.75
+                self.final_magnitudes *= (2 / dp.cur.storable.loudness_gain) * 0.75
+
+            ws_handler.send(json.dumps({
+                'option': 'update_fft',
+                'magnitudes': self.final_magnitudes.tolist()
+            }))
 
             path = QPainterPath(QPointF(0, 0))
             total = int(self.cur_magnitudes.size / 1.5)
             for i in range(total):
                 x = ((i + 1) / total) * self.width()
-                path.lineTo(QPointF(x, final_magnitudes[i] * ((1 + (i * 0.01)) - 0.1) + 3.5))
+                path.lineTo(QPointF(x, self.final_magnitudes[i] * ((1 + (i * 0.01)) - 0.1) + 3.5))
             path.lineTo(QPointF(self.width(), 0))
 
             painter.setPen(QPen(QColor(120, 120, 120), 1))
@@ -1001,6 +1007,10 @@ class PlayingPage(QWidget):
         if hasattr(self, 'FFT_filtering_windowsize'):
             self.FFT_filtering_windowsize.setEnabled(checked)
             self.FFT_factor.setEnabled(checked)
+
+        ws_handler.send(json.dumps({
+            'option': f'{'disable' if not checked else 'enable'}_fft'
+        }))
 
     def onPlaylistItemClicked(self, item: QListWidgetItem):
         for i, song in enumerate(self.playlist):

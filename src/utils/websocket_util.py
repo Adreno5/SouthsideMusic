@@ -11,6 +11,13 @@ class QObjectHandler(QObject):
     onDisconnected = Signal()
     onMessage = Signal(str)
     onSend = Signal(str)
+
+    is_open: bool = False
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.onConnected.connect(lambda: self.__setattr__('is_open', True))
+        self.onDisconnected.connect(lambda: self.__setattr__('is_open', False))
     
     def send(self, msg: str):
         self.onSend.emit(msg)
@@ -39,7 +46,6 @@ class WebSocketServer(threading.Thread):
         self.app = tornado.web.Application([(r'/', WebSocketHandler)])
         self.server: tornado.httpserver.HTTPServer | None = None
         self.ioloop = None
-        self.handler: WebSocketHandler
 
     def run(self):
         self.server = tornado.httpserver.HTTPServer(self.app)
@@ -58,4 +64,4 @@ class WebSocketServer(threading.Thread):
         logging.info('closed websocket')
 
 ws_handler = QObjectHandler()
-ws_server = WebSocketServer(port=12513)
+ws_server = WebSocketServer(port=15489)

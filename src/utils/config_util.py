@@ -25,6 +25,8 @@ class Config:
     enable_fft: bool = True
     fft_filtering_windowsize: int = 4
     fft_factor: float = 0.4
+    cfft_multiple: float = 1.0
+    sfft_multiple: float = 1.0
 
     target_lufs: int = -16
 
@@ -54,6 +56,8 @@ def loadConfig() -> None:
             cfg.enable_fft = data.get('enable_fft', True)
             cfg.fft_filtering_windowsize = data.get('fft_filtering_windowsize', 4)
             cfg.fft_factor = data.get('fft_factor', 0.4)
+            cfg.cfft_multiple = data.get('cfft_multiple', 1.0)
+            cfg.sfft_multiple = data.get('sfft_multiple', 1.0)
 
             cfg.target_lufs = data.get('target_lufs', -16)
 
@@ -75,4 +79,6 @@ def saveConfig() -> None:
             'fft_filtering_windowsize': cfg.fft_filtering_windowsize,
             'fft_factor': cfg.fft_factor,
             'target_lufs': cfg.target_lufs,
+            'cfft_multiple': cfg.cfft_multiple,
+            'sfft_multiple': cfg.sfft_multiple,
         }, f, indent=4)

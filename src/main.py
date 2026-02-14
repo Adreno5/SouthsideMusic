@@ -33,6 +33,20 @@ from utils.loudness_balance_util import getAdjustedGainFactor
 from utils.play_util import AudioPlayer
 from utils.icon_util import getQIcon
 from utils.dialog_util import get_value_bylist, get_text_lineedit
+from utils.websocket_util import ws_server, ws_handler
+
+ws_handler.onConnected.connect(lambda: InfoBar.success(
+    'SouthsideClient connection',
+    'SouthsideMusic was connected to SouthsidClient',
+    duration=5000,
+    parent=mwindow
+))
+ws_handler.onDisconnected.connect(lambda: InfoBar.warning(
+    'SouthsideClient connection',
+    'SouthsideMusic was been disconnected from SouthsidClient',
+    duration=5000,
+    parent=mwindow
+))
 
 original_popen = subprocess.Popen
 
@@ -393,6 +407,7 @@ class PlayingController(QWidget):
         self.cur_freqs: np.ndarray | None = None
         self.cur_magnitudes: np.ndarray | None = None
         self.smoothed_magnitudes: np.ndarray = np.zeros(513, dtype=np.float32)
+        self.last_lyric: str = ''
 
         self.time_label = QLabel()
         global_layout.addWidget(
@@ -500,6 +515,20 @@ class PlayingController(QWidget):
             if not dp._preload_triggered and dp.current_index < len(dp.playlist) - 1:
                 dp._preload_triggered = True
                 dp.preloadNextSong()
+
+        cl = mgr.getCurrentLyric(player.getPosition())
+        nxt = mgr.getOffsetedLyric(player.getPosition(), 1)
+        trd = mgr.getOffsetedLyric(player.getPosition(), 2)
+        lat = mgr.getOffsetedLyric(player.getPosition(), -1)
+        if cl['content'] != self.last_lyric:
+            ws_handler.send(json.dumps({
+                'option': 'update_lyric',
+                'current': cl['content'],
+                'next': nxt['content'],
+                'third': trd['content'],
+                'last': lat['content']
+            }))
+            self.last_lyric = cl['content']
 
     def updateVol(self):
         value = self.vol_slider.value()
@@ -889,6 +918,13 @@ class PlayingPage(QWidget):
 
         self.refreshPlaylistWidget()
 
+        InfoBar.success(
+            'Inserted',
+            'Removed all songs',
+            duration=1500,
+            parent=mwindow
+        )
+
     def refreshPlaylistWidget(self):
         self.lst.clear()
 
@@ -929,8 +965,9 @@ class PlayingPage(QWidget):
 
     def onTargetLUFSChanged(self, value: int):
         cfg.target_lufs = value
-        self.target_lufs_label.setText(f'Target LUFS: {value}')
-        self.lufs_changed_timer.start(1000)
+        if hasattr(self, 'target_lufs_label'):
+            self.target_lufs_label.setText(f'Target LUFS: {value}')
+            self.lufs_changed_timer.start(1000)
 
     def addSetting(self, name: str, widget: QWidget) -> None:
         self.playing_layout.addWidget(QLabel(name), self.playing_layout.rowCount(), 0, Qt.AlignmentFlag.AlignVCenter)
@@ -961,8 +998,9 @@ class PlayingPage(QWidget):
         player.fft_enabled = checked
         cfg.enable_fft = checked
 
-        self.FFT_filtering_windowsize.setEnabled(checked)
-        self.FFT_factor.setEnabled(checked)
+        if hasattr(self, 'FFT_filtering_windowsize'):
+            self.FFT_filtering_windowsize.setEnabled(checked)
+            self.FFT_factor.setEnabled(checked)
 
     def onPlaylistItemClicked(self, item: QListWidgetItem):
         for i, song in enumerate(self.playlist):
@@ -1924,6 +1962,8 @@ class MainWindow(FluentWindow):
 
         self.init()
 
+        QTimer.singleShot(1750, ws_server.start)
+
     def play(self, card: MusicCard):
         logging.debug(card.info['id'])
 
@@ -1965,6 +2005,9 @@ class MainWindow(FluentWindow):
         self.hide()
         island.hide()
         player.stop()
+
+        ws_server.stop()
+        ws_server.join()
 
         cfg.last_playing_song = dp.cur.storable if isinstance(dp.cur, DummyCard) else None
         cfg.last_playing_time = player.getPosition()

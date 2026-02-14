@@ -35,12 +35,7 @@ from utils.icon_util import getQIcon
 from utils.dialog_util import get_value_bylist, get_text_lineedit
 from utils.websocket_util import ws_server, ws_handler
 
-ws_handler.onConnected.connect(lambda: InfoBar.success(
-    'SouthsideClient connection',
-    'SouthsideMusic was connected to SouthsidClient',
-    duration=5000,
-    parent=mwindow
-))
+ws_handler.onConnected.connect(lambda: mwindow.onWebsocketConnected)
 ws_handler.onDisconnected.connect(lambda: InfoBar.warning(
     'SouthsideClient connection',
     'SouthsideMusic was been disconnected from SouthsidClient',
@@ -543,7 +538,7 @@ class PlayingController(QWidget):
 
             ws_handler.send(json.dumps({
                 'option': 'update_fft',
-                'magnitudes': [float(item) for item in self.final_magnitudes.tolist()]
+                'magnitudes': [float(item) * cfg.sfft_multiple for item in self.final_magnitudes.tolist()]
             }))
 
         self.repaint()
@@ -611,7 +606,7 @@ class PlayingController(QWidget):
             total = int(self.cur_magnitudes.size / 1.5)
             for i in range(total):
                 x = ((i + 1) / total) * self.width()
-                path.lineTo(QPointF(x, self.final_magnitudes[i] * ((1 + (i * 0.01)) - 0.1) + 3.5))
+                path.lineTo(QPointF(x, (self.final_magnitudes[i] * ((1 + (i * 0.01)) - 0.1) + 3.5) * cfg.cfft_multiple))
             path.lineTo(QPointF(self.width(), 0))
 
             painter.setPen(QPen(QColor(120, 120, 120), 1))
@@ -812,6 +807,20 @@ class PlayingPage(QWidget):
         self.FFT_factor.setEnabled(cfg.enable_fft)
         self.addSetting('FFT Smoothing Factor', self.FFT_factor)
 
+        self.cFFT_multiple = DoubleSpinBox()
+        self.cFFT_multiple.setRange(0, 15.0)
+        self.cFFT_multiple.setSingleStep(0.05)
+        self.cFFT_multiple.valueChanged.connect(self.onCFFTMultipleChanged)
+        self.cFFT_multiple.setValue(cfg.cfft_multiple)
+        self.addSetting('SouthsideMusic side FFT Multiple Factor', self.cFFT_multiple)
+
+        self.sFFT_multiple = DoubleSpinBox()
+        self.sFFT_multiple.setRange(0, 15.0)
+        self.sFFT_multiple.setSingleStep(0.05)
+        self.sFFT_multiple.valueChanged.connect(self.onSFFTMultipleChanged)
+        self.sFFT_multiple.setValue(cfg.sfft_multiple)
+        self.addSetting('SouthsideClient side FFT Multiple Factor', self.sFFT_multiple)
+
         self.addSeparateWidget(TitleLabel('Loudness Balance'))
         
         self.target_lufs = Slider(Qt.Orientation.Horizontal)
@@ -938,6 +947,7 @@ class PlayingPage(QWidget):
 
     def applyNewLUFS(self):
         self.lufs_changed_timer.stop()
+        self.target_lufs.setEnabled(False)
 
         self.target_lufs_label.setText('Reapplying')
         def _apply():
@@ -962,6 +972,7 @@ class PlayingPage(QWidget):
             player.setPosition(p)
 
             QTimer.singleShot(250, self.preloadNextSong)
+            QTimer.singleShot(250, lambda: self.target_lufs.setEnabled(True))
 
         threading.Thread(target=_apply).start()
 
@@ -992,6 +1003,11 @@ class PlayingPage(QWidget):
             self.FFT_factor.setValue(max(0.01, min(self.FFT_filtering_windowsize.value(), 1.0)))
 
         cfg.fft_factor = self.FFT_factor.value()
+
+    def onCFFTMultipleChanged(self, value: float):
+        cfg.cfft_multiple = value
+    def onSFFTMultipleChanged(self, value: float):
+        cfg.sfft_multiple = value
 
     def addSubInterface(self, widget: QWidget, objectName, text):
         widget.setObjectName(objectName)
@@ -2035,6 +2051,14 @@ class MainWindow(FluentWindow):
 
         sys.exit(0)
 
+    def onWebsocketConnected(self):
+        InfoBar.success(
+            'SouthsideClient connection',
+            'SouthsideMusic was connected to SouthsidClient',
+            duration=5000,
+            parent=self
+        )
+        QTimer.singleShot(200, lambda: ws_handler.send(json.dumps({'option': f'{'disable' if not dp.enableFFT_box.isChecked() else 'enable'}_fft'})))
 
 if __name__ == '__main__':
     logging.basicConfig(

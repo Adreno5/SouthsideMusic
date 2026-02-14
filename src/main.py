@@ -33,15 +33,10 @@ from utils.loudness_balance_util import getAdjustedGainFactor
 from utils.play_util import AudioPlayer
 from utils.icon_util import getQIcon
 from utils.dialog_util import get_value_bylist, get_text_lineedit
-from utils.websocket_util import ws_server, ws_handler
+from utils.websocket_util import WebSocketServer, ws_server, ws_handler
 
 ws_handler.onConnected.connect(lambda: mwindow.onWebsocketConnected())
-ws_handler.onDisconnected.connect(lambda: InfoBar.warning(
-    'SouthsideClient connection',
-    'SouthsideMusic was been disconnected from SouthsidClient',
-    duration=5000,
-    parent=mwindow
-))
+ws_handler.onDisconnected.connect(lambda: mwindow.onWebsocketDisconnected())
 
 original_popen = subprocess.Popen
 
@@ -496,6 +491,12 @@ class PlayingController(QWidget):
             self.expand_btn.setIcon(getQIcon('pl_expand'))
 
     def updateWidgets(self):
+        dp.southsideclient_status_label.setText(
+            'Connection Status: <span style="color: green;">Connected</span>'
+                if mwindow.connected else
+            'Connection Status: <span style="color: red;">Disconnected</span>'
+        )
+
         if dp.cur and dp.lst_shoud_set:
             # Highlight the currently playing song in the playlist
             for i, song in enumerate(dp.playlist):
@@ -824,6 +825,7 @@ class PlayingPage(QWidget):
         self.addSeparateWidget(TitleLabel('Loudness Balance'))
         
         self.target_lufs = Slider(Qt.Orientation.Horizontal)
+        self.target_lufs.wheelEvent = lambda e: e.ignore() # 防止滚动时误触发
         self.target_lufs.setRange(-60, 0)
         self.target_lufs.setSingleStep(1)
         self.target_lufs.valueChanged.connect(self.onTargetLUFSChanged)
@@ -836,6 +838,19 @@ class PlayingPage(QWidget):
             '\nReference:\nYoutube > -14LUFS\nNetflix > -27LUFS\nTikTok / Instagram Reels > -13LUFS\nApple Music (Video) > -16LUFS'
             '\nSpotify (Video): -14LUFS / -16LUFS'
         ))
+
+        self.addSeparateWidget(QLabel())
+        self.addSeparateWidget(TitleLabel('SouthsideClient Connection'))
+        self.southsideclient_status_label = SubtitleLabel('Connection Status: <span style="color: red;">Disconnected</span>')
+        self.addSeparateWidget(self.southsideclient_status_label)
+        self.disconnect_btn = TransparentPushButton(getQIcon('disc'), 'Disconnect')
+        self.disconnect_btn.clicked.connect(self.disconnectFromSouthsideClient)
+        self.disconnect_btn.setEnabled(False)
+        self.addSeparateWidget(self.disconnect_btn)
+        self.connect_btn = TransparentPushButton(getQIcon('cnnt'), 'Try connect')
+        self.connect_btn.clicked.connect(self.connectToSouthsideClient)
+        self.connect_btn.setEnabled(False)
+        self.addSeparateWidget(self.connect_btn)
 
         self.song_randomer = AdvancedRandom()
         self.song_randomer.init(self.playlist)
@@ -867,6 +882,20 @@ class PlayingPage(QWidget):
 
         self.lufs_changed_timer = QTimer(self)
         self.lufs_changed_timer.timeout.connect(self.applyNewLUFS)
+
+    def disconnectFromSouthsideClient(self):
+        ws_server.tryGetHandler()
+        ws_server.stop()
+        ws_server.join()
+        ws_handler.onDisconnected.emit()
+
+        self.disconnect_btn.setEnabled(False)
+        self.connect_btn.setEnabled(True)
+    def connectToSouthsideClient(self):
+        ws_server = WebSocketServer(port=15489)
+        ws_server.start()
+
+        self.connect_btn.setEnabled(False)
     
     def removeSong(self) -> None:
         selected = get_value_bylist(mwindow, 'Remove Song', 'select a song to remove', [song.name for song in self.playlist])
@@ -1934,6 +1963,7 @@ class MainWindow(FluentWindow):
         super().__init__(parent)
 
         self.closing = False
+        self.connected = False
 
         self.setWindowTitle('Southside Music')
 
@@ -2057,6 +2087,24 @@ class MainWindow(FluentWindow):
             parent=self
         )
         ws_handler.send(json.dumps({'option': f'{'disable' if not dp.enableFFT_box.isChecked() else 'enable'}_fft'}))
+
+        self.connected = True
+
+        dp.disconnect_btn.setEnabled(True)
+        dp.connect_btn.setEnabled(False)
+
+    def onWebsocketDisconnected(self):
+        InfoBar.warning(
+            'SouthsideClient connection',
+            'SouthsideMusic was been disconnected from SouthsidClient',
+            duration=5000,
+            parent=mwindow
+        )
+
+        self.connected = False
+
+        dp.connect_btn.setEnabled(True)
+        dp.disconnect_btn.setEnabled(False)
 
 if __name__ == '__main__':
     logging.basicConfig(

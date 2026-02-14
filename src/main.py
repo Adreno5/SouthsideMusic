@@ -25,7 +25,7 @@ from utils.random_util import AdvancedRandom
 from functools import cache, lru_cache
 from utils.lyrics.base_util import FolderInfo, SongInfo, SongStorable
 from utils.lyrics.base_util import SongDetail
-from utils.lyric_util import LRCLyricManager
+from utils.lyric_util import LRCLyricManager, LyricInfo
 from utils.time_util import float2time
 from utils.favorite_util import loadFavorites, saveFavorites
 from utils.config_util import loadConfig, saveConfig, cfg
@@ -408,7 +408,7 @@ class PlayingController(QWidget):
         self.cur_magnitudes: np.ndarray | None = None
         self.final_magnitudes: np.ndarray = np.zeros(513, dtype=np.float32)
         self.smoothed_magnitudes: np.ndarray = np.zeros(513, dtype=np.float32)
-        self.last_lyric: str = ''
+        self.last_lyric: LyricInfo = LyricInfo(time=0, content='')
 
         self.time_label = QLabel()
         global_layout.addWidget(
@@ -461,12 +461,8 @@ class PlayingController(QWidget):
         self.setLayout(global_layout)
 
         self.timer = QTimer(self)
-        self.timer.timeout.connect(self.repaint)
+        self.timer.timeout.connect(self.updateWidgets)
         self.timer.start(20)
-
-        self.timelabel_updater = QTimer(self)
-        self.timelabel_updater.timeout.connect(self.updateWidgets)
-        self.timelabel_updater.start(50)
         self.playingtime_lastupdate = time.perf_counter()
 
         player.fftDataReady.connect(self.updateFFTData)
@@ -521,7 +517,7 @@ class PlayingController(QWidget):
         nxt = mgr.getOffsetedLyric(player.getPosition(), 1)
         trd = mgr.getOffsetedLyric(player.getPosition(), 2)
         lat = mgr.getOffsetedLyric(player.getPosition(), -1)
-        if cl['content'] != self.last_lyric:
+        if cl != self.last_lyric:
             ws_handler.send(json.dumps({
                 'option': 'update_lyric',
                 'current': cl['content'],
@@ -529,7 +525,28 @@ class PlayingController(QWidget):
                 'third': trd['content'],
                 'last': lat['content']
             }))
-            self.last_lyric = cl['content']
+            self.last_lyric = cl
+
+        if dp.enableFFT_box.isChecked():
+            if not player.isPlaying():
+                self.cur_magnitudes = np.zeros(513, dtype=np.float32)
+            window_size = cfg.fft_filtering_windowsize
+
+            self.smoothed_magnitudes += (self.cur_magnitudes - self.smoothed_magnitudes) * (cfg.fft_factor if player.isPlaying() else 0.07)
+            self.final_magnitudes = np.convolve(
+                self.smoothed_magnitudes,
+                np.ones(window_size) / window_size,
+                mode='same'
+            )
+            if isinstance(dp.cur, DummyCard):
+                self.final_magnitudes *= (2 / dp.cur.storable.loudness_gain) * 0.75
+
+            ws_handler.send(json.dumps({
+                'option': 'update_fft',
+                'magnitudes': [float(item) for item in self.final_magnitudes.tolist()]
+            }))
+
+        self.repaint()
 
     def updateVol(self):
         value = self.vol_slider.value()
@@ -590,24 +607,6 @@ class PlayingController(QWidget):
         isDark = darkdetect.isDark()
 
         if dp.enableFFT_box.isChecked() and self.cur_freqs is not None and self.cur_magnitudes is not None:
-            if not player.isPlaying():
-                self.cur_magnitudes = np.zeros(513, dtype=np.float32)
-            window_size = cfg.fft_filtering_windowsize
-
-            self.smoothed_magnitudes += (self.cur_magnitudes - self.smoothed_magnitudes) * (cfg.fft_factor if player.isPlaying() else 0.07)
-            self.final_magnitudes = np.convolve(
-                self.smoothed_magnitudes,
-                np.ones(window_size) / window_size,
-                mode='same'
-            )
-            if isinstance(dp.cur, DummyCard):
-                self.final_magnitudes *= (2 / dp.cur.storable.loudness_gain) * 0.75
-
-            ws_handler.send(json.dumps({
-                'option': 'update_fft',
-                'magnitudes': self.final_magnitudes.tolist()
-            }))
-
             path = QPainterPath(QPointF(0, 0))
             total = int(self.cur_magnitudes.size / 1.5)
             for i in range(total):
@@ -1388,18 +1387,11 @@ class PlayingPage(QWidget):
         return super().keyPressEvent(event)
     
     def showEvent(self, event: QShowEvent) -> None:
-        if self.enableFFT_box.isChecked():
-            player.fft_enabled = True
-            logging.debug('enabled FFT')
-
         if self.shoud_expand_when_show:
             self.controller.toggleExpand()
         return super().showEvent(event)
     
     def hideEvent(self, event: QHideEvent) -> None:
-        player.fft_enabled = False
-        logging.debug('disabled FFT')
-
         if not globals().get('mwindow'):
             return
         if mwindow.closing:

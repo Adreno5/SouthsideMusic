@@ -8,6 +8,8 @@ from utils.lyrics.base_util import SongStorable
 @dataclass
 class Config:
     play_method: Literal['Repeat one', 'Repeat list', 'Shuffle', 'Play in order'] = 'Repeat list'
+    skip_nosound: bool = True
+
     island_checked: bool = False
     island_x: int = 0
     island_y: int = 0
@@ -40,6 +42,8 @@ def loadConfig() -> None:
             data = json.load(f)
 
             cfg.play_method = data['play_method']
+            cfg.skip_nosound = data.get('skip_nosound', True)
+
             cfg.island_checked = data['island_checked']
             cfg.island_x = data['island_x']
             cfg.island_y = data['island_y']
@@ -81,4 +85,5 @@ def saveConfig() -> None:
             'target_lufs': cfg.target_lufs,
             'cfft_multiple': cfg.cfft_multiple,
             'sfft_multiple': cfg.sfft_multiple,
+            'skip_nosound': cfg.skip_nosound,
         }, f, indent=4)

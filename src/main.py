@@ -606,7 +606,7 @@ class PlayingController(QWidget):
             total = int(self.cur_magnitudes.size / 1.5)
             for i in range(total):
                 x = ((i + 1) / total) * self.width()
-                path.lineTo(QPointF(x, (self.final_magnitudes[i] * ((1 + (i * 0.01)) - 0.1) + 3.5) * cfg.cfft_multiple))
+                path.lineTo(QPointF(x, ((self.final_magnitudes[i] * ((1 + (i * 0.01)) - 0.1)) * cfg.cfft_multiple) + 3.5))
             path.lineTo(QPointF(self.width(), 0))
 
             painter.setPen(QPen(QColor(120, 120, 120), 1))
@@ -616,6 +616,7 @@ class PlayingController(QWidget):
             gradient.setColorAt(1, QColor(QColor(255, 255, 255, 150) if isDark else QColor(0, 0, 0, 150)))
             gradient.setColorAt(0.5, QColor(0, 0, 0, 0))
             painter.fillRect(0, 0, self.width(), self.height(), gradient)
+            painter.setClipPath(path, Qt.ClipOperation.NoClip)
 
         painter.setPen(QPen(QColor(120, 120, 120), 8))
         painter.drawLine(0, 0, self.width(), 0)
@@ -1027,8 +1028,67 @@ class PlayingPage(QWidget):
             self.target_lufs_label.setText(f'Target LUFS: {value}')
             self.lufs_changed_timer.start(1000)
 
+    @staticmethod
+    def patchedPaintEvent(card: CardWidget, e):
+        painter = QPainter(card)
+        painter.setRenderHints(QPainter.RenderHint.Antialiasing)
+
+        w, h = card.width(), card.height()
+        r = card.getBorderRadius()
+        d = 2 * r
+
+        isDark = isDarkTheme()
+
+        # draw top border
+        path = QPainterPath()
+        # path.moveTo(1, h - r)
+        path.arcMoveTo(1, h - d - 1, d, d, 240)
+        path.arcTo(1, h - d - 1, d, d, 225, -60)
+        path.lineTo(1, r)
+        path.arcTo(1, 1, d, d, -180, -90)
+        path.lineTo(w - r, 1)
+        path.arcTo(w - d - 1, 1, d, d, 90, -90)
+        path.lineTo(w - 1, h - r)
+        path.arcTo(w - d - 1, h - d - 1, d, d, 0, -60)
+
+        topBorderColor = QColor(0, 0, 0, 35)
+        if isDark:
+            if card.isPressed:
+                topBorderColor = QColor(255, 255, 255, 34)
+            elif card.isHover:
+                topBorderColor = QColor(255, 255, 255, 30)
+        else:
+            topBorderColor = QColor(0, 0, 0, 28)
+
+        painter.strokePath(path, topBorderColor)
+
+        # draw bottom border
+        path = QPainterPath()
+        path.arcMoveTo(1, h - d - 1, d, d, 240)
+        path.arcTo(1, h - d - 1, d, d, 240, 30)
+        path.lineTo(w - r - 1, h - 1)
+        path.arcTo(w - d - 1, h - d - 1, d, d, 270, 30)
+
+        bottomBorderColor = topBorderColor
+        if not isDark and card.isHover and not card.isPressed:
+            bottomBorderColor = QColor(0, 0, 0, 27)
+
+        painter.strokePath(path, bottomBorderColor)
+
+        # draw background
+        painter.setPen(Qt.PenStyle.NoPen)
+        rect = card.rect().adjusted(1, 1, -1, -1)
+        painter.setBrush(card.backgroundColor)
+        painter.drawRoundedRect(rect, r, r)
+
     def addSetting(self, name: str, description: str, widget: QWidget) -> None:
         card = CardWidget()
+        card.paintEvent = lambda e: self.patchedPaintEvent(card, e)
+        card.setBackgroundColor(QColor(255, 255, 255, 0))
+        card._normalBackgroundColor = lambda: QColor(255, 255, 255, 0)
+        card._hoverBackgroundColor = lambda: QColor(255, 255, 255, 0)
+        card._pressedBackgroundColor = lambda: QColor(255, 255, 255, 0)
+        card._focusInBackgroundColor = lambda: QColor(255, 255, 255, 0)
         global_layout = QVBoxLayout()
         top_layout = QHBoxLayout()
         name_l = QLabel(name)
@@ -2113,7 +2173,7 @@ class MainWindow(FluentWindow):
             duration=5000,
             parent=self
         )
-        ws_handler.send(json.dumps({'option': f'{'disable' if not dp.enableFFT_box.isChecked() else 'enable'}_fft'}))
+        QTimer.singleShot(500, lambda: ws_handler.send(json.dumps({'option': f'{'disable' if not dp.enableFFT_box.isChecked() else 'enable'}_fft'})))
 
         self.connected = True
 

@@ -550,7 +550,6 @@ class PlayingController(QWidget):
             volume = 0
         else:
             volume = math.log(value / 100 * (math.e - 1) + 1)
-        logging.debug(volume)
         player.setVolume(volume)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
@@ -671,7 +670,8 @@ class PlayingPage(QWidget):
         self._gain_cache: dict[str, float] = {}
 
         self.controller = PlayingController()
-        player.onFinished.connect(self.controller.onSongFinish.emit)
+        player.onFullFinished.connect(self.controller.onSongFinish.emit)
+        player.onEndingNoSound.connect(self.onEndingNoSound)
         self.controller.onSongFinish.connect(lambda: self.playNext(False))
         # Connect play button to start playlist if no song is loaded
         self.controller.play_pausebtn.clicked.connect(self.onPlayButtonClicked)
@@ -776,14 +776,19 @@ class PlayingPage(QWidget):
         self.play_method_box = ComboBox()
         self.play_method_box.addItems(['Repeat one', 'Repeat list', 'Shuffle', 'Play in order'])
         self.play_method_box.setCurrentText('Repeat list')
-        self.addSetting('Play order', self.play_method_box)
+        self.addSetting('Play order', 'the order of play', self.play_method_box)
 
         self.play_speed = DoubleSpinBox()
         self.play_speed.setRange(0.1, 5)
         self.play_speed.setSingleStep(0.1)
         self.play_speed.valueChanged.connect(self.onPlaySpeedChanged)
         self.play_speed.setValue(1)
-        self.addSetting('Play Speed(poor effect)', self.play_speed)
+        self.addSetting('Play Speed(poor effect)', 'POOR EFFECT!!!' ,self.play_speed)
+
+        self.nosound_skip = CheckBox('Smart Skip')
+        self.nosound_skip.checkStateChanged.connect(self.onNosoundSkipChanged)
+        self.nosound_skip.setChecked(cfg.skip_nosound)
+        self.addSetting('Smart Skip', 'Skip the no sound section when song ends', self.nosound_skip)
 
         self.addSeparateWidget(TitleLabel('FFT'))
 
@@ -798,7 +803,7 @@ class PlayingPage(QWidget):
         self.FFT_filtering_windowsize.valueChanged.connect(self.onFFTWindowsizeChanged)
         self.FFT_filtering_windowsize.setValue(cfg.fft_filtering_windowsize)
         self.FFT_filtering_windowsize.setEnabled(cfg.enable_fft)
-        self.addSetting('FFT Filtering Window size', self.FFT_filtering_windowsize)
+        self.addSetting('FFT Filtering Window size', 'larger value means more smoothing', self.FFT_filtering_windowsize)
 
         self.FFT_factor = DoubleSpinBox()
         self.FFT_factor.setRange(0.01, 1.0)
@@ -806,21 +811,21 @@ class PlayingPage(QWidget):
         self.FFT_factor.valueChanged.connect(self.onFFTFactorChanged)
         self.FFT_factor.setValue(cfg.fft_factor)
         self.FFT_factor.setEnabled(cfg.enable_fft)
-        self.addSetting('FFT Smoothing Factor', self.FFT_factor)
+        self.addSetting('FFT Smoothing Factor', 'larger value means a more sudden change', self.FFT_factor)
 
         self.cFFT_multiple = DoubleSpinBox()
         self.cFFT_multiple.setRange(0, 15.0)
         self.cFFT_multiple.setSingleStep(0.05)
         self.cFFT_multiple.valueChanged.connect(self.onCFFTMultipleChanged)
         self.cFFT_multiple.setValue(cfg.cfft_multiple)
-        self.addSetting('SouthsideMusic side FFT Multiple Factor', self.cFFT_multiple)
+        self.addSetting('SouthsideMusic side FFT Multiple Factor', 'larger value means more intense changing(only on SouthsideMusic side)', self.cFFT_multiple)
 
         self.sFFT_multiple = DoubleSpinBox()
         self.sFFT_multiple.setRange(0, 15.0)
         self.sFFT_multiple.setSingleStep(0.05)
         self.sFFT_multiple.valueChanged.connect(self.onSFFTMultipleChanged)
         self.sFFT_multiple.setValue(cfg.sfft_multiple)
-        self.addSetting('SouthsideClient side FFT Multiple Factor', self.sFFT_multiple)
+        self.addSetting('SouthsideClient side FFT Multiple Factor', 'larger value means more intense changing(only on SouthsideClient side)', self.sFFT_multiple)
 
         self.addSeparateWidget(TitleLabel('Loudness Balance'))
         
@@ -882,6 +887,14 @@ class PlayingPage(QWidget):
 
         self.lufs_changed_timer = QTimer(self)
         self.lufs_changed_timer.timeout.connect(self.applyNewLUFS)
+
+    def onNosoundSkipChanged(self, state: Qt.CheckState):
+        checked = state == Qt.CheckState.Checked
+        cfg.skip_nosound = checked
+
+    def onEndingNoSound(self):
+        if not cfg.skip_nosound: return
+        self.controller.onSongFinish.emit()
 
     def disconnectFromSouthsideClient(self):
         ws_server.tryGetHandler()
@@ -976,6 +989,7 @@ class PlayingPage(QWidget):
 
     def applyNewLUFS(self):
         self.lufs_changed_timer.stop()
+        self.target_lufs.hide()
 
         self.target_lufs_label.setText('Reapplying')
         def _apply():
@@ -1000,6 +1014,7 @@ class PlayingPage(QWidget):
             player.setPosition(p)
 
             QTimer.singleShot(250, self.preloadNextSong)
+            self.target_lufs.show()
 
         threading.Thread(target=_apply).start()
 
@@ -1012,9 +1027,21 @@ class PlayingPage(QWidget):
             self.target_lufs_label.setText(f'Target LUFS: {value}')
             self.lufs_changed_timer.start(1000)
 
-    def addSetting(self, name: str, widget: QWidget) -> None:
-        self.playing_layout.addWidget(QLabel(name), self.playing_layout.rowCount(), 0, Qt.AlignmentFlag.AlignVCenter)
-        self.playing_layout.addWidget(widget, self.playing_layout.rowCount() - 1, 1, Qt.AlignmentFlag.AlignVCenter)
+    def addSetting(self, name: str, description: str, widget: QWidget) -> None:
+        card = CardWidget()
+        global_layout = QVBoxLayout()
+        top_layout = QHBoxLayout()
+        name_l = QLabel(name)
+        name_l.setStyleSheet('font-weight: bold;')
+        name_l.setWordWrap(True)
+        top_layout.addWidget(name_l)
+        top_layout.addWidget(widget)
+        global_layout.addLayout(top_layout)
+        desc_l = QLabel(description)
+        desc_l.setWordWrap(True)
+        global_layout.addWidget(desc_l)
+        card.setLayout(global_layout)
+        self.playing_layout.addWidget(card, self.playing_layout.rowCount(), 0, 2, 2)
 
     def addSeparateWidget(self, widget: QWidget) -> None:
         self.playing_layout.addWidget(widget, self.playing_layout.rowCount(), 0, 1, 2)

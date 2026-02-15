@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 import sounddevice as sd
 from pydub import AudioSegment
@@ -9,7 +10,8 @@ from scipy.fft import rfft, rfftfreq
 from utils.config_util import cfg
 
 class AudioPlayer(QObject):
-    onFinished = Signal()
+    onFullFinished = Signal()
+    onEndingNoSound = Signal()
     positionChanged = Signal(float)
     fftDataReady = Signal(np.ndarray, np.ndarray)  # (freqs, magnitudes)
 
@@ -146,8 +148,23 @@ class AudioPlayer(QObject):
             if self.current_index >= len(self.samples):
                 self.is_playing = False
                 self.is_paused = False
-                self.onFinished.emit()
+                self.onFullFinished.emit()
                 raise sd.CallbackStop
+            
+            remain = (len(self.samples) - self.current_index) / self.sample_rate
+            if remain < 10 and copy_len > 0 and cfg.skip_nosound:
+                rms = np.sqrt(np.mean(chunk**2))
+                if rms > 0:
+                    db = 20 * np.log10(rms)
+                else:
+                    db = -float('inf')
+
+                if db < -45:
+                    self.onEndingNoSound.emit()
+                    self.is_playing = False
+                    self.is_paused = False
+                    logging.info(f'skip {db=}')
+                    raise sd.CallbackStop
             
             if self.fft_enabled:
                 chunk_raw = self.samples[start:end]

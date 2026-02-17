@@ -849,7 +849,6 @@ class PlayingPage(QWidget):
         self.addSeparateWidget(TitleLabel('Loudness Balance'))
         
         self.target_lufs = Slider(Qt.Orientation.Horizontal)
-        self.target_lufs.wheelEvent = lambda e: e.ignore() # 防止滚动时误触发
         self.target_lufs.setRange(-60, 0)
         self.target_lufs.setSingleStep(1)
         self.target_lufs.valueChanged.connect(self.onTargetLUFSChanged)
@@ -905,6 +904,9 @@ class PlayingPage(QWidget):
 
         self.lufs_changed_timer = QTimer(self)
         self.lufs_changed_timer.timeout.connect(self.applyNewLUFS)
+
+        for slider in self.options_interface.findChildren(QSlider):
+            slider.wheelEvent = lambda e: e.ignore() # 防止滚动时触发
 
     def onRamainSkipTimeChanged(self, value: int):
         cfg.skip_remain_time = value
@@ -2059,7 +2061,7 @@ class MainWindow(FluentWindowBase):
         self.setTitleBar(FluentTitleBar(self))
 
         self.navigationInterface = NavigationInterface(self, showReturnButton=True)
-        self.widgetLayout = QHBoxLayout()
+        self.widgetLayout = QVBoxLayout()
 
         contents_layout = QHBoxLayout()
 

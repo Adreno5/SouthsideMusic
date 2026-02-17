@@ -1,4 +1,5 @@
 import logging
+import math
 import numpy as np
 import sounddevice as sd
 from pydub import AudioSegment
@@ -21,6 +22,8 @@ class AudioPlayer(QObject):
         self.samples: np.ndarray = np.array([], dtype=np.float32)
         self.sample_rate: int = 88200
         self.channels: int = 1
+
+        self.db: float = 0
 
         self.current_index: int = 0
         self.is_playing: bool = False
@@ -120,7 +123,7 @@ class AudioPlayer(QObject):
                 samplerate=self.sample_rate,
                 channels=self.channels,
                 callback=self._audio_callback,
-                blocksize=1024,
+                blocksize=736,
                 dtype='float32'
             )
         self.stream.start()
@@ -143,7 +146,7 @@ class AudioPlayer(QObject):
             if copy_len < frames:
                 outdata[copy_len:] = 0
 
-            self.current_index += int(copy_len * self.play_speed)
+            self.current_index += math.ceil(copy_len * self.play_speed)
 
             if self.current_index >= len(self.samples):
                 self.is_playing = False
@@ -151,19 +154,19 @@ class AudioPlayer(QObject):
                 self.onFullFinished.emit()
                 raise sd.CallbackStop
             
+            rms = np.sqrt(np.mean(chunk**2))
+            if rms > 0:
+                self.db = 20 * np.log10(rms)
+            else:
+                self.db = -float('inf')
+            
             remain = (len(self.samples) - self.current_index) / self.sample_rate
-            if remain < 10 and copy_len > 0 and cfg.skip_nosound:
-                rms = np.sqrt(np.mean(chunk**2))
-                if rms > 0:
-                    db = 20 * np.log10(rms)
-                else:
-                    db = -float('inf')
-
-                if db < -45:
+            if ((remain < cfg.skip_remain_time) if cfg.skip_remain_time < 60 else True) and copy_len > 0 and cfg.skip_nosound:
+                if self.db < cfg.skip_threshold:
                     self.onEndingNoSound.emit()
                     self.is_playing = False
                     self.is_paused = False
-                    logging.info(f'skip {db=}')
+                    logging.info(f'skip {self.db=}')
                     raise sd.CallbackStop
             
             if self.fft_enabled:

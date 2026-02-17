@@ -6,12 +6,13 @@ import subprocess
 import sys
 import threading
 import time
-from PySide6.QtGui import QHideEvent, QKeyEvent, QMouseEvent, QPaintEvent, QShowEvent
+from typing import Union
 from PySide6.QtWidgets import *  # type: ignore
 from PySide6.QtCore import *  # type: ignore
 from PySide6.QtGui import *  # type: ignore
 import numpy as np
 from qfluentwidgets import *  # type: ignore
+from qfluentwidgets.window.fluent_window import FluentWindowBase
 import requests
 
 from colorama import Fore, Style
@@ -468,9 +469,9 @@ class PlayingController(QWidget):
             if not mwindow.isMaximized():
                 mwindow_anim = QPropertyAnimation(mwindow, b'geometry', self)
                 mwindow_anim.setDuration(200)
-                mwindow_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+                mwindow_anim.setEasingCurve(QEasingCurve.Type.OutBack)
                 mwindow_anim.setStartValue(mwindow.geometry())
-                mwindow_anim.setEndValue(QRect(mwindow.x() - 252, mwindow.y(), mwindow.width() + 505, mwindow.height()))
+                mwindow_anim.setEndValue(QRect(mwindow.x() - 250, mwindow.y(), mwindow.width() + 505, mwindow.height()))
                 mwindow_anim.start()
 
             dp.expanded_widget.show()
@@ -482,9 +483,9 @@ class PlayingController(QWidget):
             if not mwindow.isMaximized():
                 mwindow_anim = QPropertyAnimation(mwindow, b'geometry', self)
                 mwindow_anim.setDuration(200)
-                mwindow_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+                mwindow_anim.setEasingCurve(QEasingCurve.Type.OutBack)
                 mwindow_anim.setStartValue(mwindow.geometry())
-                mwindow_anim.setEndValue(QRect(mwindow.x() + 253, mwindow.y(), mwindow.width() - 505, mwindow.height()))
+                mwindow_anim.setEndValue(QRect(mwindow.x() + 250, mwindow.y(), mwindow.width() - 505, mwindow.height()))
                 mwindow_anim.start()
 
             self.expand_btn.setText('Menu')
@@ -496,6 +497,7 @@ class PlayingController(QWidget):
                 if mwindow.connected else
             'Connection Status: <span style="color: red;">Disconnected</span>'
         )
+        dp.now_volume.setText(f'Current volume(db): {(round(player.db * 10) / 10) if player.db != float('-inf') else '-inf'}')
 
         if dp.cur and dp.lst_shoud_set:
             # Highlight the currently playing song in the playlist
@@ -657,8 +659,6 @@ class PlayingPage(QWidget):
 
         self.total_length = 0
 
-        self.shoud_expand_when_show: bool = False
-
         self._preload_triggered = False
 
         # Playlist management
@@ -722,9 +722,9 @@ class PlayingPage(QWidget):
         contents_layout.addLayout(middle_layout)
 
         self.controller.setFixedWidth(self.width())
-        contents_layout.addWidget(
-            self.controller, alignment=ali.AlignBottom | ali.AlignHCenter
-        )
+        # contents_layout.addWidget(
+        #     self.controller, alignment=ali.AlignBottom | ali.AlignHCenter
+        # )
 
         global_layout.addLayout(contents_layout)
 
@@ -768,8 +768,8 @@ class PlayingPage(QWidget):
 
         self.playing_scrollarea = SmoothScrollArea()
 
-        self.playing_interface = QWidget()
-        self.playing_interface.setStyleSheet(f'background: #{'000000' if darkdetect.isDark() else 'FFFFFF'}')
+        self.options_interface = QWidget()
+        self.options_interface.setStyleSheet(f'background: #{'000000' if darkdetect.isDark() else 'FFFFFF'}')
         self.playing_layout = QGridLayout()
 
         self.addSeparateWidget(TitleLabel('Playing'))
@@ -790,6 +790,24 @@ class PlayingPage(QWidget):
         self.nosound_skip.checkStateChanged.connect(self.onNosoundSkipChanged)
         self.nosound_skip.setChecked(cfg.skip_nosound)
         self.addSetting('Smart Skip', 'Skip the no sound section when song ends', self.nosound_skip)
+
+        self.skipt_box = Slider(Qt.Orientation.Horizontal)
+        self.skipt_label = QLabel(f'Skip when the volume(db) is <= {cfg.skip_threshold}')
+        self.now_volume = QLabel(f'Current volume(db): {0}')
+        self.skipt_box.setRange(-100, 0)
+        self.skipt_box.valueChanged.connect(self.onSkipThresholdChanged)
+        self.skipt_box.setValue(cfg.skip_threshold)
+        self.addSetting('Skip Threshold', 'the threshold of the skip', self.skipt_box)
+        self.addSeparateWidget(self.skipt_label)
+        self.addSeparateWidget(self.now_volume)
+
+        self.rskipt_box = Slider(Qt.Orientation.Horizontal)
+        self.rskipt_label = QLabel(f'start detecting when remaining {cfg.skip_remain_time}s')
+        self.rskipt_box.setRange(1, 60)
+        self.rskipt_box.valueChanged.connect(self.onRamainSkipTimeChanged)
+        self.rskipt_box.setValue(cfg.skip_remain_time)
+        self.addSetting('Remain time to Skip', 'start detecting volume during the remaining specified seconds', self.rskipt_box)
+        self.addSeparateWidget(self.rskipt_label)
 
         self.addSeparateWidget(TitleLabel('FFT'))
 
@@ -861,19 +879,18 @@ class PlayingPage(QWidget):
         self.song_randomer = AdvancedRandom()
         self.song_randomer.init(self.playlist)
 
-        self.playing_interface.setLayout(self.playing_layout)
-        self.playing_scrollarea.setWidget(self.playing_interface)
+        self.options_interface.setLayout(self.playing_layout)
+        self.playing_scrollarea.setWidget(self.options_interface)
         self.playing_scrollarea.setWidgetResizable(True)
 
         self.addSubInterface(self.lst_interface, 'playlist_listwidget', 'Playlist')
-        self.addSubInterface(self.playing_scrollarea, 'playing_interface', 'Options')
+        self.addSubInterface(self.playing_scrollarea, 'options_interface', 'Options')
 
         self.stacked_widget.setCurrentWidget(self.lst)
         self.pivot.setCurrentItem('playlist_listwidget')
-        self.pivot.currentItemChanged.connect(lambda k: self.stacked_widget.setCurrentWidget(self.findChild(QWidget, k))) # type: ignore
+        self.pivot.currentItemChanged.connect(lambda k: self.stacked_widget.setCurrentWidget(mwindow.findChild(QWidget, k))) # type: ignore
 
         self.expanded_widget.setLayout(expanded_layout)
-        global_layout.addWidget(self.expanded_widget)
 
         self.expanded_widget.hide()
 
@@ -888,6 +905,14 @@ class PlayingPage(QWidget):
 
         self.lufs_changed_timer = QTimer(self)
         self.lufs_changed_timer.timeout.connect(self.applyNewLUFS)
+
+    def onRamainSkipTimeChanged(self, value: int):
+        cfg.skip_remain_time = value
+        self.rskipt_label.setText(f'start detecting when remaining {value if value < 60 else '(inf)'}s')
+
+    def onSkipThresholdChanged(self, value: int) -> None:
+        cfg.skip_threshold = value
+        self.skipt_label.setText(f'Skip when the volume(db) is <= {value if 0 > value > -100 else '-inf' if value < 0 else 'directly skip'}')
 
     def onNosoundSkipChanged(self, state: Qt.CheckState):
         checked = state == Qt.CheckState.Checked
@@ -1051,8 +1076,9 @@ class PlayingPage(QWidget):
         path.lineTo(w - 1, h - r)
         path.arcTo(w - d - 1, h - d - 1, d, d, 0, -60)
 
-        topBorderColor = QColor(0, 0, 0, 35)
+        topBorderColor = QColor(0, 0, 0, 0)
         if isDark:
+            topBorderColor = QColor(255, 255, 255, 11)
             if card.isPressed:
                 topBorderColor = QColor(255, 255, 255, 34)
             elif card.isHover:
@@ -1345,7 +1371,7 @@ class PlayingPage(QWidget):
 
     def playNext(self, byuser: bool):
         logging.debug(f'(Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}')
-        if isinstance(self.next_song_audio, AudioSegment) and isinstance(self.next_song_gain, float) and not (dp.play_method_box.currentText() in ['Play in order', 'Repeat list']):
+        if isinstance(self.next_song_audio, AudioSegment) and isinstance(self.next_song_gain, np.float64) and (dp.play_method_box.currentText() in ['Play in order', 'Repeat list']):
             self.playPreloadedSong()
             self.current_index += 1
             return
@@ -1377,7 +1403,7 @@ class PlayingPage(QWidget):
         self.playSongAtIndex(self.current_index)
 
     def playPreloadedSong(self) -> None:
-        if (not isinstance(self.next_song_audio, AudioSegment)) or (not isinstance(self.next_song_gain, float)):
+        if (not isinstance(self.next_song_audio, AudioSegment)) or (not isinstance(self.next_song_gain, np.float64)):
             logging.error(f'cant play preloaded song: (Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}')
             return
         
@@ -1515,24 +1541,6 @@ class PlayingPage(QWidget):
         if event.key() == Qt.Key.Key_Space:
             self.controller.toggle()
         return super().keyPressEvent(event)
-    
-    def showEvent(self, event: QShowEvent) -> None:
-        if self.shoud_expand_when_show:
-            self.controller.toggleExpand()
-        return super().showEvent(event)
-    
-    def hideEvent(self, event: QHideEvent) -> None:
-        if not globals().get('mwindow'):
-            return
-        if mwindow.closing:
-            return
-
-        if self.controller.expanded:
-            self.controller.toggleExpand()
-            self.shoud_expand_when_show = True
-        else:
-            self.shoud_expand_when_show = False
-        return super().hideEvent(event)
 
 class FavoritesPage(QWidget):
     def __init__(self) -> None:
@@ -2045,9 +2053,33 @@ class LyricIslandOverlay(QWidget):
 
         painter.end()
 
-class MainWindow(FluentWindow):
+class MainWindow(FluentWindowBase):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setTitleBar(FluentTitleBar(self))
+
+        self.navigationInterface = NavigationInterface(self, showReturnButton=True)
+        self.widgetLayout = QHBoxLayout()
+
+        contents_layout = QHBoxLayout()
+
+        left_layout = QVBoxLayout()
+
+        # initialize layout
+        self.hBoxLayout.addWidget(self.navigationInterface)
+        self.hBoxLayout.addLayout(self.widgetLayout)
+        self.hBoxLayout.setStretchFactor(self.widgetLayout, 1)
+
+        left_layout.addWidget(self.stackedWidget)
+        contents_layout.setContentsMargins(0, 48, 0, 0)
+
+        left_layout.addWidget(dp.controller, alignment=Qt.AlignmentFlag.AlignHCenter)
+        contents_layout.addLayout(left_layout)
+        contents_layout.addWidget(dp.expanded_widget)
+        self.widgetLayout.addLayout(contents_layout)
+
+        self.navigationInterface.displayModeChanged.connect(self.titleBar.raise_)
+        self.titleBar.raise_()
 
         self.closing = False
         self.connected = False
@@ -2087,15 +2119,51 @@ class MainWindow(FluentWindow):
             cfg.window_width = self.width()
             cfg.window_height = self.height()
         else:
+            self.move(cfg.window_x, cfg.window_y)
+            self.resize(cfg.window_width, cfg.window_height)
+
             if cfg.wiondow_maximized:
                 QTimer.singleShot(500, self.showMaximized)
-            else:
-                self.move(cfg.window_x, cfg.window_y)
-                self.resize(cfg.window_width, cfg.window_height)
 
         self.init()
 
         QTimer.singleShot(1750, ws_server.start)
+
+    def addSubInterface(self, interface: QWidget, icon: Union[FluentIconBase, QIcon, str], text: str,
+                        position=NavigationItemPosition.TOP, parent=None, isTransparent=False) -> NavigationTreeWidget:
+        if not interface.objectName():
+            raise ValueError("The object name of `interface` can't be empty string.")
+
+        parentRouteKey = parent
+        if parent and isinstance(parent, QWidget):
+            parentRouteKey = parent.objectName()
+            if not parentRouteKey:
+                raise ValueError("The object name of `parent` can't be empty string.")
+
+        interface.setProperty("isStackedTransparent", isTransparent)
+        self.stackedWidget.addWidget(interface)
+
+        # add navigation item
+        routeKey = interface.objectName()
+        item = self.navigationInterface.addItem(
+            routeKey=routeKey,
+            icon=icon,
+            text=text,
+            onClick=lambda: self.switchTo(interface),
+            position=position,
+            tooltip=text,
+            parentRouteKey=parentRouteKey # type: ignore
+        )
+
+        # initialize selected item
+        if self.stackedWidget.count() == 1:
+            self.stackedWidget.currentChanged.connect(self._onCurrentInterfaceChanged)
+            self.navigationInterface.setCurrentItem(routeKey)
+            qrouter.setDefaultRouteKey(self.stackedWidget, routeKey) # type: ignore
+
+        self._updateStackedBackground()
+
+        return item
 
     def play(self, card: MusicCard):
         logging.debug(card.info['id'])
@@ -2132,7 +2200,8 @@ class MainWindow(FluentWindow):
             'Initialization', f'Loaded {len(favs)} folders', parent=self, duration=2000
         )
 
-    def closeEvent(self, e):
+    def closeEvent(self, e: QCloseEvent):
+        e.ignore()
         self.closing = True
 
         self.hide()

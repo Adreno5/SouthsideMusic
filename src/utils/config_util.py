@@ -9,6 +9,8 @@ from utils.lyrics.base_util import SongStorable
 class Config:
     play_method: Literal['Repeat one', 'Repeat list', 'Shuffle', 'Play in order'] = 'Repeat list'
     skip_nosound: bool = True
+    skip_threshold: int = -45
+    skip_remain_time: int = 10
 
     island_checked: bool = False
     island_x: int = 0
@@ -43,6 +45,8 @@ def loadConfig() -> None:
 
             cfg.play_method = data['play_method']
             cfg.skip_nosound = data.get('skip_nosound', True)
+            cfg.skip_threshold = data.get('skip_threshold', -45)
+            cfg.skip_remain_time = data.get('skip_remain_time', 10)
 
             cfg.island_checked = data['island_checked']
             cfg.island_x = data['island_x']
@@ -86,4 +90,6 @@ def saveConfig() -> None:
             'cfft_multiple': cfg.cfft_multiple,
             'sfft_multiple': cfg.sfft_multiple,
             'skip_nosound': cfg.skip_nosound,
+            'skip_threshold': cfg.skip_threshold,
+            'skip_remain_time': cfg.skip_remain_time,
         }, f, indent=4)

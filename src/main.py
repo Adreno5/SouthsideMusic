@@ -7,12 +7,15 @@ import sys
 import threading
 import time
 from typing import Union
+from PySide6.QtCore import QEvent
+from PySide6.QtGui import QEnterEvent
 from PySide6.QtWidgets import *  # type: ignore
 from PySide6.QtCore import *  # type: ignore
 from PySide6.QtGui import *  # type: ignore
 import numpy as np
 from qfluentwidgets import *  # type: ignore
 from qfluentwidgets.window.fluent_window import FluentWindowBase
+from qframelesswindow import TitleBar
 import requests
 
 from colorama import Fore, Style
@@ -492,6 +495,17 @@ class PlayingController(QWidget):
             self.expand_btn.setIcon(getQIcon('pl_expand'))
 
     def updateWidgets(self):
+        title_bar = mwindow.titleBar
+        if isinstance(title_bar, SouthsideMusicTitleBar):
+            if mwindow.stackedWidget.currentWidget() == dp:
+                title_bar.song_title.clear()
+                title_bar.lyric_label.clear()
+                title_bar.fm_label.setPixmap(QPixmap())
+            else:
+                title_bar.song_title.setText(dp.title_label.text())
+                title_bar.lyric_label.setText(dp.lyric_label.text() if dp.lyric_label.text() else dp.artists_label.text())
+                title_bar.fm_label.setPixmap(dp.img_label.pixmap().scaled(40, 40, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+
         dp.southsideclient_status_label.setText(
             'Connection Status: <span style="color: green;">Connected</span>'
                 if mwindow.connected else
@@ -1373,7 +1387,7 @@ class PlayingPage(QWidget):
 
     def playNext(self, byuser: bool):
         logging.debug(f'(Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}')
-        if isinstance(self.next_song_audio, AudioSegment) and isinstance(self.next_song_gain, np.float64) and (dp.play_method_box.currentText() in ['Play in order', 'Repeat list']):
+        if isinstance(self.next_song_audio, AudioSegment) and isinstance(self.next_song_gain, float) and (dp.play_method_box.currentText() in ['Play in order', 'Repeat list']):
             self.playPreloadedSong()
             self.current_index += 1
             return
@@ -1405,7 +1419,7 @@ class PlayingPage(QWidget):
         self.playSongAtIndex(self.current_index)
 
     def playPreloadedSong(self) -> None:
-        if (not isinstance(self.next_song_audio, AudioSegment)) or (not isinstance(self.next_song_gain, np.float64)):
+        if (not isinstance(self.next_song_audio, AudioSegment)) or (not isinstance(self.next_song_gain, float)):
             logging.error(f'cant play preloaded song: (Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}')
             return
         
@@ -2055,10 +2069,71 @@ class LyricIslandOverlay(QWidget):
 
         painter.end()
 
+class SouthsideMusicTitleBar(TitleBar):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setFixedHeight(48)
+        self.hBoxLayout.removeWidget(self.minBtn)
+        self.hBoxLayout.removeWidget(self.maxBtn)
+        self.hBoxLayout.removeWidget(self.closeBtn)
+
+        # add title label
+        self.titleLabel = CaptionLabel(self)
+        self.hBoxLayout.insertWidget(0, self.titleLabel, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.titleLabel.setObjectName('titleLabel')
+        self.window().windowTitleChanged.connect(self.setTitle)
+
+        middle_layout = QHBoxLayout()
+        middle_widget = QWidget()
+
+        self.fm_label = QLabel(self)
+        self.fm_label.setFixedSize(40, 40)
+        self.fm_label.setObjectName('fm_label')
+        self.hBoxLayout.insertWidget(1, self.fm_label, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        texts_layout = QVBoxLayout()
+
+        self.song_title = QLabel(self)
+        f = self.song_title.font()
+        f.setPointSize(f.pointSize() + 1)
+        self.song_title.setFont(f)
+        self.song_title.setStyleSheet('font-weight: bold;')
+        self.song_title.setObjectName('song_title')
+
+        texts_layout.addWidget(self.song_title)
+
+        self.lyric_label = QLabel(self)
+        self.lyric_label.setObjectName('lyric_label')
+        texts_layout.addWidget(self.lyric_label)
+
+        middle_layout.addWidget(self.fm_label)
+        middle_layout.addLayout(texts_layout)
+        middle_widget.setLayout(middle_layout)
+
+        self.hBoxLayout.addWidget(middle_widget, 2, alignment=Qt.AlignmentFlag.AlignVCenter)
+
+        self.vBoxLayout = QVBoxLayout()
+        self.buttonLayout = QHBoxLayout()
+        self.buttonLayout.setSpacing(0)
+        self.buttonLayout.setContentsMargins(0, 0, 0, 0)
+        self.buttonLayout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.buttonLayout.addWidget(self.minBtn)
+        self.buttonLayout.addWidget(self.maxBtn)
+        self.buttonLayout.addWidget(self.closeBtn)
+        self.vBoxLayout.addLayout(self.buttonLayout)
+        self.vBoxLayout.addStretch(1)
+        self.hBoxLayout.addLayout(self.vBoxLayout, 0)
+
+        FluentStyleSheet.FLUENT_WINDOW.apply(self)
+
+    def setTitle(self, title):
+        self.titleLabel.setText(title)
+        self.titleLabel.adjustSize()
+
 class MainWindow(FluentWindowBase):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setTitleBar(FluentTitleBar(self))
+        self.setTitleBar(SouthsideMusicTitleBar(self))
 
         self.navigationInterface = NavigationInterface(self, showReturnButton=True)
         self.widgetLayout = QVBoxLayout()
@@ -2236,6 +2311,10 @@ class MainWindow(FluentWindowBase):
         island.deleteLater()
 
         sys.exit(0)
+    
+    def resizeEvent(self, e):
+        self.titleBar.move(46, 0)
+        self.titleBar.resize(self.width()-46, self.titleBar.height())
 
     def onWebsocketConnected(self):
         InfoBar.success(

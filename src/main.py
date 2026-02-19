@@ -2259,6 +2259,12 @@ class MainWindow(FluentWindowBase):
             wy.init()
 
             dp.play_method_box.setCurrentText(cfg.play_method)
+
+            ############################## 世界上最神秘的虫子修复 #####################################
+            ip.island_check.setChecked(True)
+            ip.island_check.setChecked(False)
+            ############################## 世界上最神秘的虫子修复 #####################################
+
             ip.island_check.setChecked(cfg.island_checked)
 
             if cfg.last_playing_song:

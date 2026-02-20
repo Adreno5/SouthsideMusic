@@ -60,7 +60,7 @@ class PatchedAudioSegment(AudioSegment):
     @override
     @classmethod
     def from_file(cls, file, format=None, codec=None, parameters=None, start_second=None, duration=None, **kwargs):
-        logging.debug(f'{Fore.LIGHTGREEN_EX}[{file}]/[PatchedAudioSegment]{Style.RESET_ALL} patching')
+        logging.debug(f'[{file}]/[PatchedAudioSegment] patching')
         orig_file = file
         try:
             filename = fsdecode(file)

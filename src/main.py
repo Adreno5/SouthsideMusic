@@ -4,14 +4,13 @@ import datetime
 import io
 import logging
 import os
-from queue import Queue
 import subprocess
 import sys
 import threading
 import time
+import traceback
+from types import FrameType, TracebackType
 from typing import Union
-from PySide6.QtCore import QEvent
-from PySide6.QtGui import QEnterEvent
 from PySide6.QtWidgets import *  # type: ignore
 from PySide6.QtCore import *  # type: ignore
 from PySide6.QtGui import *  # type: ignore
@@ -58,6 +57,37 @@ def patched_popen(*args, **kwargs):
 
 subprocess.Popen = patched_popen
 subprocess.call = patched_popen
+
+def patchedExceptHook(exc_type: type[BaseException], exc_value: BaseException, exc_traceback: TracebackType):
+    logging.error('\n| Exception occurred |')
+    logging.error(f'Caused by {exc_type.__name__}')
+    logging.error('Traceback:')
+    stack_frames = traceback.extract_tb(exc_traceback)
+    for frame in stack_frames:
+        logging.error(f'    at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}')
+    logging.error('Exception chain:')
+    current_exc = exc_value
+    logging.error(f'    caused by {type(current_exc).__name__}({current_exc}) #0')
+    if current_exc.__traceback__:
+        root_frames = traceback.extract_tb(current_exc.__traceback__)
+        for frame in root_frames:
+            logging.error(f'      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}')
+    chain_level = 1
+    while True:
+        next_exc = current_exc.__cause__ or current_exc.__context__
+        if not next_exc or next_exc is current_exc:
+            break
+        exc = next_exc
+        logging.error(f'    caused by {type(exc).__name__}({exc}) #{chain_level}')
+        if next_exc.__traceback__:
+            root_frames = traceback.extract_tb(next_exc.__traceback__)
+            for frame in root_frames:
+                logging.error(f'      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}')
+        current_exc = next_exc
+        chain_level += 1
+    logging.error(f'Raised {exc_type.__name__}({exc_value})')
+
+sys.excepthook = patchedExceptHook
 
 class DummyCard:
     def __init__(self, storable: SongStorable):
@@ -2361,9 +2391,9 @@ class ColoredHandler(logging.Handler):
             'ERROR': Fore.RED,
             'CRITICAL': Fore.RED
         }.get(record.levelname, Fore.WHITE)
-        messages_printable = f'[{datetime.datetime.now().strftime('%H:%M:%S')}/{color}{record.levelname}{Style.RESET_ALL}] {Fore.LIGHTBLACK_EX}-{Style.RESET_ALL} {record.msg}'
+        messages_printable = f'[{datetime.datetime.now().strftime('%H:%M:%S')}/{color}{Style.BRIGHT}{record.levelname}{Style.RESET_ALL}] {Fore.LIGHTBLACK_EX}-{Style.RESET_ALL} {record.msg}'
         suffix_printable = f'{Fore.LIGHTGREEN_EX}[{Style.RESET_ALL}{record.thread}/{record.threadName}{Fore.LIGHTGREEN_EX}]{Style.RESET_ALL}'
-        middle_break = ' ' * max(os.get_terminal_size().columns - len(messages_printable) - len(suffix_printable) + 8, 1)
+        middle_break = ' ' * max(os.get_terminal_size().columns - len(messages_printable) - len(suffix_printable) + 9, 1)
         if isinstance(record.msg, str):
             if 'PatchedAudioSegment' in record.msg:
                 middle_break += '         '

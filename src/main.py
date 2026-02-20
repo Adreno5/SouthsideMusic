@@ -1,7 +1,10 @@
 
 import base64
+import datetime
 import io
 import logging
+import os
+from queue import Queue
 import subprocess
 import sys
 import threading
@@ -20,7 +23,6 @@ import requests
 
 from colorama import Fore, Style
 
-from pydub import AudioSegment
 import darkdetect
 import math
 
@@ -35,6 +37,7 @@ from utils.favorite_util import loadFavorites, saveFavorites
 from utils.config_util import loadConfig, saveConfig, cfg
 from utils.loudness_balance_util import getAdjustedGainFactor
 from utils.play_util import AudioPlayer
+from utils.play_util import PatchedAudioSegment as AudioSegment
 from utils.icon_util import getQIcon
 from utils.dialog_util import get_value_bylist, get_text_lineedit
 from utils.websocket_util import WebSocketServer, ws_server, ws_handler
@@ -2349,14 +2352,29 @@ class MainWindow(FluentWindowBase):
         dp.connect_btn.setEnabled(True)
         dp.disconnect_btn.setEnabled(False)
 
+class ColoredHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        color = {
+            'DEBUG': Fore.LIGHTBLACK_EX,
+            'INFO': Fore.LIGHTGREEN_EX,
+            'WARNING': Fore.YELLOW,
+            'ERROR': Fore.RED,
+            'CRITICAL': Fore.RED
+        }.get(record.levelname, Fore.WHITE)
+        messages_printable = f'[{datetime.datetime.now().strftime('%H:%M:%S')}/{color}{record.levelname}{Style.RESET_ALL}] {Fore.LIGHTBLACK_EX}-{Style.RESET_ALL} {record.msg}'
+        suffix_printable = f'{Fore.LIGHTGREEN_EX}[{Style.RESET_ALL}{record.thread}/{record.threadName}{Fore.LIGHTGREEN_EX}]{Style.RESET_ALL}'
+        middle_break = ' ' * max(os.get_terminal_size().columns - len(messages_printable) - len(suffix_printable) + 8, 1)
+        if isinstance(record.msg, str):
+            if 'PatchedAudioSegment' in record.msg:
+                middle_break += '         '
+        final_printable = messages_printable + middle_break + suffix_printable
+        print(final_printable)
+
 if __name__ == '__main__':
+    logging_handler = ColoredHandler()
     logging.basicConfig(
         level=logging.DEBUG,
-        format=f'[%(asctime)s/{Style.BRIGHT}%(levelname)s{Style.RESET_ALL}] {Fore.LIGHTBLACK_EX}-{Style.RESET_ALL} %(message)s',
-        datefmt='%H:%M:%S',
-        handlers=[
-            logging.StreamHandler()
-        ]
+        handlers=[logging_handler]
     )
     
     app = QApplication([])

@@ -429,6 +429,8 @@ class PlayingController(QWidget):
         self.expanded = False
         self.dragging = False
 
+        self.lastfm = time.time()
+
         global_layout = QHBoxLayout()
 
         self.cur_freqs: np.ndarray | None = None
@@ -590,6 +592,10 @@ class PlayingController(QWidget):
                 'option': 'update_fft',
                 'magnitudes': [float(item) * cfg.sfft_multiple for item in self.final_magnitudes.tolist()]
             }))
+
+        if time.time() - self.lastfm > 2.5:
+            self.lastfm = time.time()
+            dp.sendSongFMAndInfo()
 
         self.repaint()
 
@@ -1353,6 +1359,8 @@ class PlayingPage(QWidget):
             def _fini():
                 self.controller.toggle()
 
+                self.sendSongFMAndInfo()
+
             doWithMultiThreading(_real, (), mwindow, 'Parsing...', finished=_fini)
 
         doWithMultiThreading(_parse, (), mwindow, 'Loading...')
@@ -1413,12 +1421,15 @@ class PlayingPage(QWidget):
         if not hasattr(self.cur, 'storable'):
             self.downloadMusic()
 
+        self.sendSongFMAndInfo()
+
     def onPlayButtonClicked(self):
         # If no song is currently loaded, start playlist
         if self.cur is None:
             self.startPlaylist()
 
     def playNext(self, byuser: bool):
+        self.sendSongFMAndInfo()
         logging.debug(f'(Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}')
         if isinstance(self.next_song_audio, AudioSegment) and isinstance(self.next_song_gain, float) and (dp.play_method_box.currentText() in ['Play in order', 'Repeat list']):
             self.playPreloadedSong()
@@ -1562,6 +1573,8 @@ class PlayingPage(QWidget):
             self.next_song_audio = None
             self.next_song_gain = None
 
+        self.sendSongFMAndInfo()
+
     def loadMusicFromBase64(self, content_base64: str, gain: float):
         music_bytes = base64.b64decode(content_base64)
         logging.debug(f'loading data {len(music_bytes)}')
@@ -1590,6 +1603,31 @@ class PlayingPage(QWidget):
         if event.key() == Qt.Key.Key_Space:
             self.controller.toggle()
         return super().keyPressEvent(event)
+
+    def sendSongFMAndInfo(self):
+        if self.cur is None:
+            return
+        if not isinstance(self.cur, DummyCard):
+            return
+
+        pixmap = self.img_label.pixmap().scaled(self.img_label.pixmap().size(), Qt.AspectRatioMode.KeepAspectRatio)
+
+        from PySide6.QtCore import QBuffer, QIODevice
+        
+        buffer = QBuffer()
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        pixmap.save(buffer, 'PNG')
+        img_bytes = buffer.data().data()
+        buffer.close()
+
+        img_base64 = base64.b64encode(img_bytes).decode()
+
+        ws_handler.send(json.dumps({
+            'option': 'fm',
+            'image': img_base64,
+            'song_name': self.cur.storable.name,
+            'artists': self.cur.storable.artists
+        }))
 
 class FavoritesPage(QWidget):
     def __init__(self) -> None:
@@ -2363,6 +2401,8 @@ class MainWindow(FluentWindowBase):
             parent=self
         )
         QTimer.singleShot(500, lambda: ws_handler.send(json.dumps({'option': f'{'disable' if not dp.enableFFT_box.isChecked() else 'enable'}_fft'})))
+
+        dp.sendSongFMAndInfo()
 
         self.connected = True
 

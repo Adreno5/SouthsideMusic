@@ -2463,6 +2463,8 @@ class LaunchWindow(QWidget):
         launchlayout.addWidget(self.sublabel, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.setLayout(launchlayout)
 
+        self.setStyleSheet(f'QWidget {{ background-color: {'#FFFFFF' if darkdetect.isDark() else '#000000'} }}')
+
         self.show()
 
     def setStatusText(self, text: str, sleep=True):

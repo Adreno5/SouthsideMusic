@@ -2397,6 +2397,10 @@ class MainWindow(FluentWindowBase):
         island.timer.deleteLater()
         island.deleteLater()
 
+        ws_server.stop()
+        ws_server.join()
+        player.stop()
+
         sys.exit(0)
     
     def resizeEvent(self, e):

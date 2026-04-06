@@ -2454,7 +2454,7 @@ class LaunchWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
-        self.setFixedSize(app.primaryScreen().size() * 0.4)
+        self.setFixedSize(app.primaryScreen().size() * 0.25)
         hPyT.window_frame.center(self)
 
         launchlayout = QVBoxLayout()
@@ -2463,7 +2463,7 @@ class LaunchWindow(QWidget):
         launchlayout.addWidget(self.sublabel, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.setLayout(launchlayout)
 
-        self.setStyleSheet(f'QWidget {{ background-color: {'#FFFFFF' if darkdetect.isDark() else '#000000'} }}')
+        self.setStyleSheet(f'QWidget {{ background-color: {'#FFFFFF' if darkdetect.isLight() else '#000000'} }} QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}')
 
         self.show()
 

@@ -144,6 +144,15 @@ wheels = [
 ]
 
 [[package]]
+name = "hpyt"
+version = "1.4.0"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/e3/16/a94baddc0137ad692a12d33ef2ac28fb6eeab5f508fa45592183e3742a58/hpyt-1.4.0.tar.gz", hash = "sha256:27a06f4b86cd679ce44b2afd4b699814e88cf88d5c35cf43c86454c39dc51f6a" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/a4/53/783ad4d5286ca17d11feadfa7ffbf71db61777d8ea286e05275821990e93/hPyT-1.4.0-py3-none-any.whl", hash = "sha256:7d8528a18432c1afa6eeed6e41acb39fa4d076b041b60ebb6df7a9c80cc50270" },
+]
+
+[[package]]
 name = "idna"
 version = "3.11"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
@@ -3136,11 +3145,12 @@ wheels = [
 
 [[package]]
 name = "southsidemusic"
-version = "8"
+version = "13"
 source = { virtual = "." }
 dependencies = [
     { name = "colorama" },
     { name = "darkdetect" },
+    { name = "hpyt" },
     { name = "nuitka" },
     { name = "numpy" },
     { name = "pydub" },
@@ -3156,6 +3166,7 @@ dependencies = [
 requires-dist = [
     { name = "colorama", specifier = ">=0.4.6" },
     { name = "darkdetect", specifier = ">=0.8.0" },
+    { name = "hpyt", specifier = ">=1.4.0" },
     { name = "nuitka", specifier = ">=4.0" },
     { name = "numpy", specifier = ">=2.4.2" },
     { name = "pydub", specifier = ">=0.25.1" },

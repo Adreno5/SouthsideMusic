@@ -1,8 +1,10 @@
 @echo off
 title Building
 
+.venv\Scripts\activate
 nuitka src/main.py --standalone --enable-plugin=pyside6,numpy --windows-console-mode=hide --output-filename=SouthsideMusic --include-data-dir="./icons=./icons" --include-data-dir="./fonts=./fonts"`
-xcopy /s /y ffmpeg main.dist\ffmpeg
+mkdir .\main.dist\ffmpeg 2>nul
+xcopy .\ffmpeg .\main.dist\ffmpeg /E /I /Y
 
 echo Done!
 title Done

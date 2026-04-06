@@ -1,4 +1,12 @@
 
+from PySide6.QtWidgets import *  # type: ignore
+from PySide6.QtCore import *  # type: ignore
+from PySide6.QtGui import *  # type: ignore
+import hPyT
+import threading
+
+app = QApplication([])
+
 import base64
 import datetime
 import io
@@ -6,14 +14,10 @@ import logging
 import os
 import subprocess
 import sys
-import threading
 import time
 import traceback
 from types import FrameType, TracebackType
 from typing import Union
-from PySide6.QtWidgets import *  # type: ignore
-from PySide6.QtCore import *  # type: ignore
-from PySide6.QtGui import *  # type: ignore
 import numpy as np
 from qfluentwidgets import *  # type: ignore
 from qfluentwidgets.window.fluent_window import FluentWindowBase
@@ -32,7 +36,7 @@ from utils.lyrics.base_util import FolderInfo, SongInfo, SongStorable
 from utils.lyrics.base_util import SongDetail
 from utils.lyric_util import LRCLyricManager, LyricInfo
 from utils.time_util import float2time
-from utils.favorite_util import loadFavorites, saveFavorites
+from utils.favorite_util import loadFavorites, loadFavoritesWithLaunching, saveFavorites
 from utils.config_util import loadConfig, saveConfig, cfg
 from utils.loudness_balance_util import getAdjustedGainFactor
 from utils.play_util import AudioPlayer
@@ -2327,6 +2331,9 @@ class MainWindow(FluentWindowBase):
 
     def init(self) -> None:
         def _init():
+            global launchwindow
+            launchwindow.setStatusText('Initializing...\n  Initializing Mainwindow...\n    Initializing...')
+
             wy.init()
 
             dp.play_method_box.setCurrentText(cfg.play_method)
@@ -2347,6 +2354,9 @@ class MainWindow(FluentWindowBase):
                 dp.playSongAtIndex(0)
                 dp.controller.setPlaytime(cfg.last_playing_time)
                 dp.controller.toggle()
+
+            launchwindow.setStatusText('Initializing...\n  Initializing Mainwindow...')
+            launchwindow.deleteLater()
 
         doWithMultiThreading(_init, (), self, 'Loading...')
 
@@ -2440,42 +2450,70 @@ class ColoredHandler(logging.Handler):
         final_printable = messages_printable + middle_break + suffix_printable
         print(final_printable)
 
+class LaunchWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+        self.setFixedSize(app.primaryScreen().size() * 0.4)
+        hPyT.window_frame.center(self)
+
+        launchlayout = QVBoxLayout()
+        launchlayout.addWidget(TitleLabel('Southside Music'), alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
+        self.sublabel = QLabel('Launching...')
+        launchlayout.addWidget(self.sublabel, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.setLayout(launchlayout)
+
+        self.show()
+
+    def setStatusText(self, text: str, sleep=True):
+        self.sublabel.setText(f'Launching...\n{text}')
+        app.processEvents()
+        if sleep: time.sleep(0.05)
+
 if __name__ == '__main__':
     logging_handler = ColoredHandler()
     logging.basicConfig(
         level=logging.DEBUG,
         handlers=[logging_handler]
     )
-    
-    app = QApplication([])
+
     app.setStyleSheet(f'QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}')
+    setTheme(Theme.AUTO)
+
+    launchwindow = LaunchWindow()
+    launchwindow.setStatusText('Initializing...')
+
+    app.processEvents()
 
     harmony_font_family = QFontDatabase.applicationFontFamilies(QFontDatabase.addApplicationFont('fonts/HARMONYOS_SANS_SC_REGULAR.ttf'))[0]
 
     from utils.loading_util import doWithMultiThreading, downloadWithMultiThreading
 
     from utils.lyrics.w163_util import CloudMusicUtil
-
+    
+    launchwindow.setStatusText('Initializing...\n  Intializing services...')
     wy = CloudMusicUtil()  # type: ignore
 
     mgr = LRCLyricManager()
     transmgr = LRCLyricManager()
-    favs: list[FolderInfo] = loadFavorites()
+
+    launchwindow.setStatusText('Initializing...\n  Loading favorites...')
+    favs: list[FolderInfo] = loadFavoritesWithLaunching(launchwindow)
 
     loadConfig()
-
-    setTheme(Theme.AUTO)
 
     player = AudioPlayer()
 
     lock = threading.Lock()
 
+    launchwindow.setStatusText('Initializing...\n  Initializing pages...')
     dp = PlayingPage()
     sp = SearchPage()
     fp = FavoritesPage()
     ip = DynamicIslandPage()
     island_editing_overlay = EditingIslandOverlay()
     island = LyricIslandOverlay()
+    launchwindow.setStatusText('Initializing...\n  Initializing Mainwindow...')
     mwindow = MainWindow()
 
     fp.refresh()

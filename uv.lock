@@ -256,6 +256,81 @@ wheels = [
 ]
 
 [[package]]
+name = "pymusiclibrary"
+version = "0.0.4"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/ec/cb/49c9c12fe3a8d7ea0da6a62e22aabaa437f4601c0e9abcff82f0b100e5a1/pymusiclibrary-0.0.4-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:323388fe1bf8e9be358d06acafef6a4304aeed06106f191cbe4f491423c0dcf7" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/80/5e/f7d2d3ca37c6d00d0adc5bf8a4065fd50cba49b6d16e4fce38736e58f253/pymusiclibrary-0.0.4-cp310-abi3-macosx_11_0_x86_64.whl", hash = "sha256:6871fea648695a77f98bee3c2a678c0bff6d395e592dac70481da8fad2637b9c" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/57/0a/a5c1380458bf4b01db0ab6b4fccf0fb10243d7609753e2d6097fa055f73c/pymusiclibrary-0.0.4-cp310-abi3-manylinux2014_aarch64.whl", hash = "sha256:b9346c6f784309632e130af6ccad0b76e92d1f322ca4f49fb37383896b5fd7b4" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/c0/25/60429aa5f1ab2af3f73c085ef593ad41045fbb11373c04d5fdc4a61ac4ef/pymusiclibrary-0.0.4-cp310-abi3-manylinux2014_x86_64.whl", hash = "sha256:244d6ec5dbc5d1c1576f823b3c30292401a8077aea1efc745032f1cef0f95199" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/27/22/2edd2b4e9556872749da7ce460ed01342e428c54628a2b13eae4e093fa52/pymusiclibrary-0.0.4-cp310-abi3-win32.whl", hash = "sha256:cfc7b977b06a5ad64ce13456ec97455388318b74cae79f4d0557f493a9d8c85a" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/b9/b8/bf486cdbba127115d2e03e4a3257101160b318c6a87f640e3b154b25be15/pymusiclibrary-0.0.4-cp310-abi3-win_amd64.whl", hash = "sha256:98b7d722fa4efb3c54a463eb9edf21c3581fb17230097c2d48d2351746d386bd" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/88/fe/521dda772734b46433f18267f2b9331081024cfc16a33c5cb99bd59037a2/pymusiclibrary-0.0.4-cp310-abi3-win_arm64.whl", hash = "sha256:3d29598a36ec553e4ae36912447c7832d4a3794c5fe49c7820a41646afb73b43" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/73/62/96e922c5b52ca201b5ca04de5251967d883943d8b6e48d6f75ab505b98a3/pymusiclibrary-0.0.4-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:41bf8b329e4ca8209b6c07683ec49bb756cbd0655bedf840884ddc7a0263c6ae" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/c4/b8/b545909ed3aa1a19fb20b32e433045697522bbaa9af82c6c4e6c3482dd42/pymusiclibrary-0.0.4-cp311-abi3-macosx_11_0_x86_64.whl", hash = "sha256:fced23c879a3e2922be21a04085ef1a82b9c5ca3a0de814fd782b858b42f4532" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/89/3d/378533024d0de788a0491894359c8b4c56caa103683e3deccff612b51155/pymusiclibrary-0.0.4-cp311-abi3-manylinux2014_aarch64.whl", hash = "sha256:9200bee2bb5f33ab5b0d3842d32190975511b281e49b2b7b654b6abfe159c76e" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/7b/b1/6f9456b9eb53e33bc6b151797bf7b99276df2254ee09b4a9f551dd031393/pymusiclibrary-0.0.4-cp311-abi3-manylinux2014_x86_64.whl", hash = "sha256:39e473303a4d998f6b68deb8efaa5b6c75f271e1159d24e55e56e64bdee40405" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/6c/51/8433656146d3f6e45b0fb74f7d96412af8eb4ceca9b2b42811554f98f26e/pymusiclibrary-0.0.4-cp311-abi3-win32.whl", hash = "sha256:1c19c0b76511add02d6801a5b4924e25e3404082e4137f910696d4f69472d2f9" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/59/ad/faf9e72641448151e1e59e47798bb65b9d11af76ee7ab18722b9d1b85c22/pymusiclibrary-0.0.4-cp311-abi3-win_amd64.whl", hash = "sha256:273cddf01e03d4b820c7c5c04631b469f7862e9ae2011d3aefb57635a44cbee9" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/0d/b9/7b5f10520c7636caf174af4bf1f30ab6010bee9fd38ef9b026d2cf4132c8/pymusiclibrary-0.0.4-cp311-abi3-win_arm64.whl", hash = "sha256:f9037ca31f3049877e84a778c5dee6b2e81e6405468b9e3f4afdddebf240977a" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/fb/18/e976c449059581eca0869e3620aeb445f73fe9809e8126b513a8f342cf62/pymusiclibrary-0.0.4-cp312-abi3-macosx_11_0_arm64.whl", hash = "sha256:c87b9328835a7eb0bba405d9f715800ba8bc7c010a00c82ccea1372fefba4e41" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/98/b0/305a9c476953c1f9a8f09961606fa8215bf4bd049743287056fdd14dc7c3/pymusiclibrary-0.0.4-cp312-abi3-macosx_11_0_x86_64.whl", hash = "sha256:86dc29d46d63268d5c20e6d7e9174f26fa2dbc2327aa885dc9d79c09d6c571f6" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/ef/d4/c75fe1170061dd26e9a1620cbf45eb4877f22d9592693ecc77a7f03db443/pymusiclibrary-0.0.4-cp312-abi3-manylinux2014_aarch64.whl", hash = "sha256:d48a9430ed3a5f8ba98767fd81d9ac662dcc35fd18f6372eb95f41e0fb57b9da" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/16/fb/6afa5a328503c79848c2e998dcbd1609b2618d6348b7b503781869170b4c/pymusiclibrary-0.0.4-cp312-abi3-manylinux2014_x86_64.whl", hash = "sha256:c036ffbe16074261e2b7c9510e5b2851dddecaef8e4f88172eb3bbd66a81554c" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/1c/dc/30700bfec1ce355d7c97d497bfb3c5d25b2e3bfa9262825a4b9bd6e6f6f3/pymusiclibrary-0.0.4-cp312-abi3-win32.whl", hash = "sha256:55ffefe74ad444424ec55fc7fa0d089dd6acbf4419a4a8de83d06a0fd989f5e7" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/91/19/6673b51660c05e3f39018311345c8e3cc6cb7feaaedf15ad4cfae2a9ab7e/pymusiclibrary-0.0.4-cp312-abi3-win_amd64.whl", hash = "sha256:74bbbb48e87cc05ee795b8d29f27eecc6bbb1d513a7c25e9f7f7fc730862ab00" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/3a/e2/f09dcbeb250523287b9c5f5f54521bd23c5edb8475c606c092fa0a8b6ffb/pymusiclibrary-0.0.4-cp312-abi3-win_arm64.whl", hash = "sha256:7b4bd010a1e48d3d6a03e337c0ca9308689956f104594880de2afdea64454911" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/bd/8a/e0796cfa09a9f17d345bc854635254a16d837f154152bba6626611cc0b20/pymusiclibrary-0.0.4-cp313-abi3-macosx_11_0_arm64.whl", hash = "sha256:ebabf1227e3af0a816d855af1a76fd6d290ccf3aef7491814d9fdec34989fdcc" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/31/74/c5b787ef17e1e7db5361126a66260391462252e16e46363305774cb1e5b6/pymusiclibrary-0.0.4-cp313-abi3-macosx_11_0_x86_64.whl", hash = "sha256:8ddf4ad67041709ffc8e4a620ee4f4361021cd9359499c336312b44239c4c4a1" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/df/ab/d4e4792f28409abdc8275f25668bcba3828366d084d0a70704dd572607ca/pymusiclibrary-0.0.4-cp313-abi3-manylinux2014_aarch64.whl", hash = "sha256:6c0456f79f857a49116b892c5160026c3e96d9b1c03434285b474118d69a4566" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/e9/2f/eee9193574528769eeaa4bce3bbb1fd2363a4a88576ec1e3a1490b4f6aec/pymusiclibrary-0.0.4-cp313-abi3-manylinux2014_x86_64.whl", hash = "sha256:700473c2befcaf46c72a6c1adb10235f23444cdd0ed73f3585a4328a82a8a782" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/df/fc/9b25ec67232dbbfd34503a42ae16945fca5f78546f06bf963f4ad17acb4e/pymusiclibrary-0.0.4-cp313-abi3-win32.whl", hash = "sha256:ea390d936617260f0ea9a9dabe70ad6a2790c305aaa718175ce67047a6bba705" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/65/eb/2b5a8a4411bfd52b694ed56d40c5550f93a7ba2ed93b07a7fc65f6df650e/pymusiclibrary-0.0.4-cp313-abi3-win_amd64.whl", hash = "sha256:3ef78da2e39f9805a784e34ce1054edfe404dd5979223106eb813621d3dc02ba" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/72/ef/2c3e9ccd3185fd5a36e852bf41a4046434fed5d9c8802322fb36ce16bd71/pymusiclibrary-0.0.4-cp313-abi3-win_arm64.whl", hash = "sha256:7259dff01e785d0a7fcb4322e26b9baed2ea30af260f98427e88d8381ae9c671" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/3e/76/8652e86dd7ed70d886ff69a3861705d2d718445fee879fd94f565115e65a/pymusiclibrary-0.0.4-cp314-abi3-macosx_11_0_arm64.whl", hash = "sha256:e5040a7409d34aed618d7866540da44830a5e521e3be5717c19f24c516d84a14" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/5c/ce/23ed4f09d8f4d7927bcd6b043daa0464e57c510db6716a2ce2891ec4e5e7/pymusiclibrary-0.0.4-cp314-abi3-macosx_11_0_x86_64.whl", hash = "sha256:724157d5de5513148e2a5bea5fad727dcfed5cb0f25ee706ea047fbd52fef78a" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/7d/cd/fb56b6d27a1d11d4815001d6ea526fdc6481574c5e7935146c552e9c3e42/pymusiclibrary-0.0.4-cp314-abi3-manylinux2014_aarch64.whl", hash = "sha256:1c66eb9c8e6bbf96c25b1d82458fbb901f3f80fc78437e2c8a7c762f66d58c88" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/73/d4/9abaa5c559d2089434296350893e614f3ccafa34459ea00e514b54ac1f7c/pymusiclibrary-0.0.4-cp314-abi3-manylinux2014_x86_64.whl", hash = "sha256:b7ff3b717ab56758459712d047c7d5e541244f95dafa671c3d671ecfa470e1c4" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/13/41/fe22c43924ca4a4fc63f244d012ad056c102cbbc90b4ba90015f24a9bc30/pymusiclibrary-0.0.4-cp314-abi3-win32.whl", hash = "sha256:ecdff84d31b47cd83cd98cb9662767b02705330b21108d00f98d7e6e1e224d48" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/16/ab/b3f0e05db0c17bd5c246e095f98947abb15b8f8a7e097d7a264cd157b9b7/pymusiclibrary-0.0.4-cp314-abi3-win_amd64.whl", hash = "sha256:8f906cf911e8c90bdc7ed41b9a269e4b8a08821b88c528e6b7f6d9f2147cdca6" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/bc/72/c7f81819d11f4e1ed17c242864843e7ff66e402f49f1759780b40d560003/pymusiclibrary-0.0.4-cp314-abi3-win_arm64.whl", hash = "sha256:d95bf96f320496d3b8201c7e5d0124ed8c960d735c74f8c7bc839795f0190767" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/ac/02/e0fde257d6af871f4f661c748d42ea23196235814a2a2f2abb92ccd22b43/pymusiclibrary-0.0.4-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:726ea86516a756374da240aaa4d54e9a9eaa07bbc52b3d8d46c80ece564c4c87" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/df/ec/153b5e0177c21de87ecb8796b08df436aabb955972b28f86de8db287819d/pymusiclibrary-0.0.4-cp37-abi3-macosx_11_0_x86_64.whl", hash = "sha256:984816597c30bcb4a7ac9069d093bba481a385953c3186347e1354710eca179f" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/42/0a/5e17adde094841f4cd69cd370eab1bc72eb928bf61da8183b4772b4d7fe1/pymusiclibrary-0.0.4-cp37-abi3-manylinux2014_aarch64.whl", hash = "sha256:45776ff58b2ef4a642aa243f15460b00055f0a2398e8945c435ed6d4845184ba" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/0c/15/ab6d800c4e93465ae1df70e11796fc69dd2a84e4a576ecde62e8ee603534/pymusiclibrary-0.0.4-cp37-abi3-manylinux2014_x86_64.whl", hash = "sha256:62309672cb0034cb91105d8c977eb04222f62f1acd23663a5ba3ed414be7d09d" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/e0/32/cfc52d60239db41c4d735bf9880c30f226d9b0e9c15491a1eb0098e0c2f6/pymusiclibrary-0.0.4-cp37-abi3-win32.whl", hash = "sha256:0228c5534ccf7068c59384fb4911624202620538f0e7487da1cb3053fa697de9" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/2f/2e/b9e95268e4cfbd3db50157da38e2ebe0e93f3cf22b5917d9cd7f22230468/pymusiclibrary-0.0.4-cp37-abi3-win_amd64.whl", hash = "sha256:8abcfe8546d34c33118419e2bd587b467d92c5501f66fb93429efcdbb0a47315" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/27/f9/972a625fe6e4076f42421f52774878b215ac9ee41bda97b560c71bbfb9fe/pymusiclibrary-0.0.4-cp37-abi3-win_arm64.whl", hash = "sha256:188a179c896a26b0e7671365b8c8b23dcd4979d431751a9d8bb6abb99eb05db9" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/9f/72/d43861f20721da9748b67bf81a69e6b88ad07929baa49253966361cc8f5c/pymusiclibrary-0.0.4-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:3460b59af36e1187299b644e193f05d44d2cdfb3c73817ad947ebe7e0a3093b7" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/65/22/8be214e881e160fec9f3f0acb452d2eebc154e6c33e18957572fe896d051/pymusiclibrary-0.0.4-cp38-abi3-macosx_11_0_x86_64.whl", hash = "sha256:1ea177d154d6ecf2f29133200763e7eb4816b3086f74407f5852475ff655791a" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/f3/6b/a5d682a881f47a9ac7ed8056cccdb9ae45c405b73c65179b633d196c1240/pymusiclibrary-0.0.4-cp38-abi3-manylinux2014_aarch64.whl", hash = "sha256:73325e4244e7109b58dd87a2bcb9fbb7387054b0470661aa6a0af9c95eff5d2f" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/33/4a/180858c163f680b78f931cd6885aa9533c00e6b13abb59379ff6597368fe/pymusiclibrary-0.0.4-cp38-abi3-manylinux2014_x86_64.whl", hash = "sha256:216992aed92375879d03c5a45f205dfcd4a4d75a12ae67646bfc7840d515c577" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/a9/cd/8fbc598fd864ebf7f6f35976137649dd9e5c4f2928e6b29944e268413c25/pymusiclibrary-0.0.4-cp38-abi3-win32.whl", hash = "sha256:9522cd6af545961fbb49f1456b362a7155d691e9385598726a725fb8d8d62c3b" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/e1/9d/71b47793299894b12b7ffcb7cedd98cbf35fc32233805ad20a58e209b692/pymusiclibrary-0.0.4-cp38-abi3-win_amd64.whl", hash = "sha256:13284f8f6c0d46ac6039470000e861e51596ee9b87a64c130000b1470796b1fb" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/1a/12/487863e2b1de36c1bc354011c65f6d49e415af495f527dfcb325fa66f498/pymusiclibrary-0.0.4-cp38-abi3-win_arm64.whl", hash = "sha256:bcf028bfff04f5de18c7fe24d8b77d97faa7a4d840c68efccfb6c2b58b78df44" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/18/c5/427356595ff6c64427666251781b3ed4f0fac0ad03637b9b8b4558741a96/pymusiclibrary-0.0.4-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:e860fc30140ea4faa8fb92d8ed65713746b589425288fcd77e09f442865df272" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/77/4d/a585e28c0506d46953808f2d78d79979c57538299a5660b6af3b0b1b0c0f/pymusiclibrary-0.0.4-cp39-abi3-macosx_11_0_x86_64.whl", hash = "sha256:3fc3496b502d390bf09eef923dca0248186b441e9e4edb3735f93c7a39199be6" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/88/4c/ef62c4efbde20eacbfd25c4c3fbf06df9cab7b8df0a47b9c4de0546372a1/pymusiclibrary-0.0.4-cp39-abi3-manylinux2014_aarch64.whl", hash = "sha256:3edeec742585ca405ab428e81ec8ff4c440f650c08c28c8abdd8882792cf3d63" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/0c/54/bcb2aea43a9dccea45301693d147131d881d702762ed7c63465caeb737eb/pymusiclibrary-0.0.4-cp39-abi3-manylinux2014_x86_64.whl", hash = "sha256:d4af93eefc61012e9ccb8d26a346b44eda8cf51ed37d880db51547d18ab010a3" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/7c/9e/efe63d085341230f99d6005434df12c01c96e1b8a38284494c7701938c4e/pymusiclibrary-0.0.4-cp39-abi3-win32.whl", hash = "sha256:a0a047da6efa92f04589ee91af4e0e43b4fb0b81737aa51282986e089b133aba" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/6f/5f/dc122d73065df89d5acbc1d8edb92c14b44008f3544fabf0060ffe63013b/pymusiclibrary-0.0.4-cp39-abi3-win_amd64.whl", hash = "sha256:1538422e8b7b097a6fb65d343874d304dd5b3007682f31a55b0923e2d3d872fc" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/c6/c4/2bbebf5d04338d50abc6350361d911aba6104bb2ff4e3d55b882802ceb35/pymusiclibrary-0.0.4-cp39-abi3-win_arm64.whl", hash = "sha256:14a5f1c023069080b8b913c05543251756c6db833496b7e4439b4a0097a74bb5" },
+]
+
+[[package]]
+name = "pyncm"
+version = "1.8.1"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/35/1a/30c0dad2969452e6b6d5b65f930d04d8247a3c506bad552ee9b7082336a4/pyncm-1.8.1.tar.gz", hash = "sha256:f967a598d148dbf69ff013f2e669e077764c34997c761a6a4b8f709d06494593" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/58/f4/05d7a0116bd70dcef0f7214c0e9ee6a50a124525eaefc5c2bb0c5085f0b7/pyncm-1.8.1-py3-none-any.whl", hash = "sha256:839f9f0e534d4892b7b9ad0378f13c4595f900653e11f00d758f1aed957c4374" },
+]
+
+[[package]]
 name = "pyobjc"
 version = "12.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
@@ -3154,6 +3229,8 @@ dependencies = [
     { name = "nuitka" },
     { name = "numpy" },
     { name = "pydub" },
+    { name = "pymusiclibrary" },
+    { name = "pyncm" },
     { name = "pyside6" },
     { name = "pyside6-fluent-widgets" },
     { name = "requests" },
@@ -3170,6 +3247,8 @@ requires-dist = [
     { name = "nuitka", specifier = ">=4.0" },
     { name = "numpy", specifier = ">=2.4.2" },
     { name = "pydub", specifier = ">=0.25.1" },
+    { name = "pymusiclibrary", specifier = ">=0.0.4" },
+    { name = "pyncm", specifier = ">=1.8.1" },
     { name = "pyside6", specifier = ">=6.10.2" },
     { name = "pyside6-fluent-widgets", specifier = ">=1.11.1" },
     { name = "requests", specifier = ">=2.32.5" },

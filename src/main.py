@@ -1,3 +1,175 @@
+import re
+import shutil
+import logging
+import sys
+import datetime
+import os
+import threading
+from typing import TextIO, Optional
+from colorama import Fore, Style, init
+
+init(autoreset=True)
+
+_ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+def _visible_len(text: str) -> int:
+    return len(_ANSI_ESCAPE.sub('', text))
+
+class LogHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        message = record.getMessage()
+
+        color = {
+            'DEBUG': Fore.LIGHTBLACK_EX,
+            'INFO': Fore.LIGHTGREEN_EX,
+            'WARNING': Fore.YELLOW,
+            'ERROR': Fore.RED,
+            'CRITICAL': Fore.RED
+        }.get(record.levelname, Fore.WHITE)
+
+        time_str = datetime.datetime.now().strftime('%H:%M:%S')
+        plain_prefix = f'[{time_str}/{record.levelname}] - '
+        plain_msg = plain_prefix + message
+        plain_suffix = f'[{record.thread}/{record.threadName}]'
+
+        try:
+            term_width = shutil.get_terminal_size().columns
+        except Exception:
+            term_width = 80
+
+        visible_len = _visible_len(plain_msg) + _visible_len(plain_suffix)
+        spaces = max(term_width - visible_len, 1)
+
+        colored_prefix = (
+            f'[{Fore.LIGHTBLACK_EX}{time_str}{Style.RESET_ALL}/'
+            f'{color}{Style.BRIGHT}{record.levelname}{Style.RESET_ALL}] '
+            f'{Fore.LIGHTBLACK_EX}-{Style.RESET_ALL} '
+        )
+        colored_suffix = (
+            f'{Fore.LIGHTGREEN_EX}[{Style.RESET_ALL}'
+            f'{record.thread}/{record.threadName}'
+            f'{Fore.LIGHTGREEN_EX}]{Style.RESET_ALL}'
+        )
+
+        final = f'{colored_prefix}{message}{' ' * spaces}{colored_suffix}'
+        assert sys.__stdout__ is not None
+        sys.__stdout__.write(final + '\n')
+        sys.__stdout__.flush()
+
+class LoggingStream:
+    def __init__(self, level: int = logging.DEBUG, source: str = 'stderr'):
+        self.level = level
+        self.source = source
+        self.buffer = ''
+        self.original_stream: Optional[TextIO] = None
+
+    def write(self, message: str) -> int:
+        if not message:
+            return 0
+
+        if getattr(self, '_in_logging', False):
+            if self.original_stream:
+                self.original_stream.write(message)
+            return len(message)
+
+        self.buffer += message
+        if self.buffer.endswith('\n'):
+            self._flush_buffer()
+        return len(message)
+
+    def _flush_buffer(self):
+        lines = self.buffer.splitlines()
+        self.buffer = ''
+        for line in lines:
+            if not line:
+                continue
+            self._in_logging = True
+            try:
+                if self.source == 'stderr':
+                    logging.error(line.strip())
+                else:
+                    logging.info(line.strip())
+            finally:
+                self._in_logging = False
+
+    def flush(self):
+        if self.buffer:
+            self._flush_buffer()
+        if self.original_stream:
+            self.original_stream.flush()
+
+    def fileno(self) -> int:
+        return self.original_stream.fileno() if self.original_stream else -1
+
+    def isatty(self) -> bool:
+        return False
+
+class StderrRedirector:
+    def __init__(self, logger: Optional[logging.Logger] = None):
+        self.logger = logger or logging.getLogger()
+        self.pipe_read, self.pipe_write = os.pipe()
+        self.original_stderr_fd = os.dup(2)
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._buffer = b''
+
+    def start(self):
+        os.dup2(self.pipe_write, 2)
+        self._thread = threading.Thread(target=self._read_loop, daemon=True)
+        self._thread.start()
+
+    def _read_loop(self):
+        while not self._stop_event.is_set():
+            try:
+                data = os.read(self.pipe_read, 4096)
+                if not data:
+                    break
+                self._buffer += data
+                while b'\n' in self._buffer:
+                    line, self._buffer = self._buffer.split(b'\n', 1)
+                    self._log_line(line.decode('utf-8', errors='replace'))
+            except (OSError, ValueError):
+                break
+
+    def _log_line(self, line: str):
+        line = line.strip()
+        if line:
+            self.logger.error(line)
+
+    def stop(self):
+        self._stop_event.set()
+        os.dup2(self.original_stderr_fd, 2)
+        os.close(self.pipe_read)
+        os.close(self.pipe_write)
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=1.0)
+
+
+def hijack_standard_streams():
+    stderr_redirector = StderrRedirector()
+    stderr_redirector.start()
+
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+
+    stdout_stream = LoggingStream(logging.INFO, source='stdout')
+    stderr_stream = LoggingStream(logging.ERROR, source='stderr')
+    stdout_stream.original_stream = original_stdout
+    stderr_stream.original_stream = original_stderr
+
+    sys.stdout = stdout_stream
+    sys.stderr = stderr_stream
+
+    return original_stdout, original_stderr, stderr_redirector
+
+if __name__ == '__main__':
+    logging_handler = LogHandler()
+    logging.basicConfig(
+        level=logging.DEBUG,
+        handlers=[logging_handler]
+    )
+
+    hijack_standard_streams()
 
 from PySide6.QtWidgets import *  # type: ignore
 from PySide6.QtCore import *  # type: ignore
@@ -8,23 +180,18 @@ import threading
 app = QApplication([])
 
 import base64
-import datetime
 import io
-import logging
 import os
 import subprocess
-import sys
 import time
 import traceback
 from types import FrameType, TracebackType
-from typing import Union
+from typing import TextIO, Union
 import numpy as np
 from qfluentwidgets import *  # type: ignore
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 from qframelesswindow import TitleBar
 import requests
-
-from colorama import Fore, Style
 
 import darkdetect
 import math
@@ -45,6 +212,8 @@ from utils.icon_util import getQIcon
 from utils.dialog_util import get_value_bylist, get_text_lineedit
 from utils.websocket_util import WebSocketServer, ws_server, ws_handler
 
+from pyncm import apis as ncm
+
 ws_handler.onConnected.connect(lambda: mwindow.onWebsocketConnected())
 ws_handler.onDisconnected.connect(lambda: mwindow.onWebsocketDisconnected())
 
@@ -63,7 +232,7 @@ subprocess.Popen = patched_popen
 subprocess.call = patched_popen
 
 def patchedExceptHook(exc_type: type[BaseException], exc_value: BaseException, exc_traceback: TracebackType):
-    logging.error('\n| Exception occurred |')
+    logging.error('| Unhandled Exception occurred |')
     logging.error(f'Caused by {exc_type.__name__}')
     logging.error('Traceback:')
     stack_frames = traceback.extract_tb(exc_traceback)
@@ -90,6 +259,10 @@ def patchedExceptHook(exc_type: type[BaseException], exc_value: BaseException, e
         current_exc = next_exc
         chain_level += 1
     logging.error(f'Raised {exc_type.__name__}({exc_value})')
+
+    if exc_type is KeyboardInterrupt:
+        logging.info('quit by user')
+        mwindow.close()
 
 sys.excepthook = patchedExceptHook
 
@@ -166,14 +339,16 @@ class MusicCard(QWidget):
 
         def _download():
             # Get image URL
-            response = requests.get(
-                f'https://apis.netstart.cn/music/song/detail?ids={self.info['id']}',
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                },
-            ).json()
-            image_url = response['songs'][0]['al']['picUrl']
+            # response = requests.get(
+            #     f'https://apis.netstart.cn/music/song/detail?ids={self.info['id']}',
+            #     headers={
+            #         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
+            #         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            #     },
+            # ).json()
+            response = ncm.track.GetTrackDetail(song_ids=[self.info['id']])
+            assert isinstance(response, dict), 'Invalid response'
+            image_url = response['songs'][0]['al']['picUrl'] # type: ignore
 
             # Download image
             image_bytes = requests.get(
@@ -194,15 +369,17 @@ class MusicCard(QWidget):
             ).content
 
             # Download lyrics
-            lyric_data = requests.get(
-                f'https://apis.netstart.cn/music/lyric?id={self.info['id']}',
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                },
-            ).json()
+            # lyric_data = requests.get(
+            #     f'https://apis.netstart.cn/music/lyric?id={self.info['id']}',
+            #     headers={
+            #         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
+            #         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            #     },
+            # ).json()
+            lyric_data = ncm.track.GetTrackLyrics(song_id=self.info['id'])
+            assert isinstance(lyric_data, dict), 'Invalid response'
             
-            lyric = lyric_data['lrc']['lyric']
+            lyric = lyric_data['lrc']['lyric'] # type: ignore
             translated_lyric = lyric_data.get('tlyric', {}).get('lyric', '[00:00.000]')
 
             result_container.append((image_bytes, music_bytes, lyric, translated_lyric))
@@ -290,15 +467,17 @@ class MusicCard(QWidget):
 
         @lru_cache(maxsize=128)
         def _load():
-            response = requests.get(
-                f'https://apis.netstart.cn/music/song/detail?ids={self.info['id']}',
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                },
-            ).json()
+            # response = requests.get(
+            #     f'https://apis.netstart.cn/music/song/detail?ids={self.info['id']}',
+            #     headers={
+            #         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
+            #         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            #     },
+            # ).json()
+            response = ncm.track.GetTrackDetail(song_ids=[self.info['id']])
+            assert isinstance(response, dict), 'Invalid response'
 
-            self.detail['image_url'] = response['songs'][0]['al']['picUrl']
+            self.detail['image_url'] = response['songs'][0]['al']['picUrl'] # type: ignore
 
             image: bytes = requests.get(
                 self.detail['image_url'],
@@ -402,9 +581,6 @@ class SearchPage(QWidget):
 
         def _finish():
             nonlocal result
-
-            for info in result:
-                logging.debug(f'{info['name']} -> {info['privilege']}')
 
             self.search_btn.setEnabled(True)
 
@@ -841,7 +1017,7 @@ class PlayingPage(QWidget):
         self.play_speed.setSingleStep(0.1)
         self.play_speed.valueChanged.connect(self.onPlaySpeedChanged)
         self.play_speed.setValue(1)
-        self.addSetting('Play Speed(poor effect)', 'POOR EFFECT!!!' ,self.play_speed)
+        self.addSetting('Play Speed(poor effect)', 'shit by me :>' ,self.play_speed)
 
         self.nosound_skip = CheckBox('Smart Skip')
         self.nosound_skip.checkStateChanged.connect(self.onNosoundSkipChanged)
@@ -2284,15 +2460,15 @@ class MainWindow(FluentWindowBase):
     def addSubInterface(self, interface: QWidget, icon: Union[FluentIconBase, QIcon, str], text: str,
                         position=NavigationItemPosition.TOP, parent=None, isTransparent=False) -> NavigationTreeWidget:
         if not interface.objectName():
-            raise ValueError("The object name of `interface` can't be empty string.")
+            raise ValueError('The object name of `interface` can\'t be empty string.')
 
         parentRouteKey = parent
         if parent and isinstance(parent, QWidget):
             parentRouteKey = parent.objectName()
             if not parentRouteKey:
-                raise ValueError("The object name of `parent` can't be empty string.")
+                raise ValueError('The object name of `parent` can\'t be empty string.')
 
-        interface.setProperty("isStackedTransparent", isTransparent)
+        interface.setProperty('isStackedTransparent', isTransparent)
         self.stackedWidget.addWidget(interface)
 
         # add navigation item
@@ -2436,24 +2612,6 @@ class MainWindow(FluentWindowBase):
         dp.connect_btn.setEnabled(True)
         dp.disconnect_btn.setEnabled(False)
 
-class ColoredHandler(logging.Handler):
-    def emit(self, record: logging.LogRecord) -> None:
-        color = {
-            'DEBUG': Fore.LIGHTBLACK_EX,
-            'INFO': Fore.LIGHTGREEN_EX,
-            'WARNING': Fore.YELLOW,
-            'ERROR': Fore.RED,
-            'CRITICAL': Fore.RED
-        }.get(record.levelname, Fore.WHITE)
-        messages_printable = f'[{datetime.datetime.now().strftime('%H:%M:%S')}/{color}{Style.BRIGHT}{record.levelname}{Style.RESET_ALL}] {Fore.LIGHTBLACK_EX}-{Style.RESET_ALL} {record.msg}'
-        suffix_printable = f'{Fore.LIGHTGREEN_EX}[{Style.RESET_ALL}{record.thread}/{record.threadName}{Fore.LIGHTGREEN_EX}]{Style.RESET_ALL}'
-        middle_break = ' ' * max(os.get_terminal_size().columns - len(messages_printable) - len(suffix_printable) + 9, 1)
-        if isinstance(record.msg, str):
-            if 'PatchedAudioSegment' in record.msg:
-                middle_break += '         '
-        final_printable = messages_printable + middle_break + suffix_printable
-        print(final_printable)
-
 class LaunchWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -2477,12 +2635,6 @@ class LaunchWindow(QWidget):
         if sleep: time.sleep(0.05)
 
 if __name__ == '__main__':
-    logging_handler = ColoredHandler()
-    logging.basicConfig(
-        level=logging.DEBUG,
-        handlers=[logging_handler]
-    )
-
     app.setStyleSheet(f'QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}')
     setTheme(Theme.AUTO)
 

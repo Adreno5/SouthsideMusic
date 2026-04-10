@@ -2,7 +2,7 @@
 import base64
 import json
 import os
-from utils.lyrics.base_util import FolderInfo, SongInfo, SongStorable
+from utils.base.base_util import FolderInfo, SongInfo, SongStorable
 
 def loadFavorites() -> list[FolderInfo]:
     if not os.path.exists('./favorites.json'):

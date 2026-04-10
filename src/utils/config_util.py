@@ -3,7 +3,7 @@ import json
 import os
 from typing import Literal
 
-from utils.lyrics.base_util import SongStorable
+from utils.base.base_util import SongStorable
 
 @dataclass
 class Config:

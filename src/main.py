@@ -32,8 +32,8 @@ import math
 from utils.random_util import AdvancedRandom
 
 from functools import cache, lru_cache
-from utils.lyrics.base_util import FolderInfo, SongInfo, SongStorable
-from utils.lyrics.base_util import SongDetail
+from utils.base.base_util import FolderInfo, SongInfo, SongStorable
+from utils.base.base_util import SongDetail
 from utils.lyric_util import LRCLyricManager, LyricInfo
 from utils.time_util import float2time
 from utils.favorite_util import loadFavorites, loadFavoritesWithLaunching, saveFavorites
@@ -1715,7 +1715,7 @@ class FavoritesPage(QWidget):
         doWithMultiThreading(_view, (), mwindow, 'Loading...')
 
     def newFolder(self):
-        from utils.lyrics.base_util import FolderInfo
+        from utils.base.base_util import FolderInfo
 
         global favs
 
@@ -2495,7 +2495,7 @@ if __name__ == '__main__':
 
     from utils.loading_util import doWithMultiThreading, downloadWithMultiThreading
 
-    from utils.lyrics.w163_util import CloudMusicUtil
+    from utils.base.w163_util import CloudMusicUtil
     
     launchwindow.setStatusText('Initializing...\n  Intializing services...')
     wy = CloudMusicUtil()  # type: ignore

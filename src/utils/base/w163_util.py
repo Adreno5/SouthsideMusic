@@ -7,7 +7,7 @@ import time
 
 from functools import lru_cache
 
-from utils.lyrics.base_util import SongInfo
+from utils.base.base_util import SongInfo
 
 from .base_util import BaseLyricUtil
 

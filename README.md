@@ -23,3 +23,5 @@ Install uv on: https://uv.doczh.com/getting-started/installation/
 - pydub, sounddevice: play music
 - request: send API request
 - numpy, scipy: Fast math support & FFT computing
+
+请勿用作商业用途

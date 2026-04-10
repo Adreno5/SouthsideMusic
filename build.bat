@@ -6,7 +6,7 @@ RD /S /Q *.dist 2>nul
 
 call .venv\Scripts\activate
 title Building - Nuitka
-call nuitka src/launch.py --windows-console-mode=hide --output-filename=Launch
+call nuitka src/launch.py --standalone --windows-console-mode=hide --output-filename=Launch
 
 mkdir build.result 2>nul
 title Building - Copy launch.dist

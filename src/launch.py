@@ -21,26 +21,24 @@ if __name__ == '__main__':
     print(f'[LAUNCH] python={python.as_posix()}')
     print(f'[LAUNCH] mainpy={mainpy.as_posix()}')
 
-    powershell_cmd = [
-        'powershell.exe',
-        '-NoProfile',
-        '-ExecutionPolicy', 'Bypass',
-        '-Command',
-        f"cd '{cwd.as_posix()}'; & '{python.as_posix()}' '{mainpy.as_posix()}'"
+    cmd_command = [
+        'cmd.exe', '/c',
+        str(python),
+        str(mainpy)
     ]
 
-    print(f'[LAUNCH] excution command: {' '.join(powershell_cmd)}')
+    print(f'[LAUNCH] executing command: {" ".join(cmd_command)}')
 
-    subprocess.run([python.as_posix(), '--version'], text=True, shell=True)
+    subprocess.run([str(python), '--version'], text=True)
 
     print('[LAUNCH] run launch script')
     process = subprocess.Popen(
-        powershell_cmd,
+        cmd_command,
         stdout=sys.stdout,
         stderr=sys.stderr,
         stdin=sys.stdin,
         text=True,
-        cwd=cwd.as_posix()
+        cwd=cwd
     )
 
     process.wait()

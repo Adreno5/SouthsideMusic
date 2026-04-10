@@ -9,10 +9,10 @@ title Building - Nuitka
 call nuitka src/launch.py --standalone --windows-console-mode=hide --output-filename=Launch
 
 mkdir build.result 2>nul
-title Building - Copy launch.dist
+title Building - Copy Launch
 xcopy .\launch.dist .\build.result /E /I /Y
-title Building - Copy .venv
-xcopy .\.venv .\build.result\.venv /E /I /Y
+title Building - Copy Python Embed
+xcopy .\python .\build.result\python /E /I /Y
 title Building - Copy src
 xcopy .\src .\build.result\src /E /I /Y
 title Building - Copy fonts
@@ -20,7 +20,7 @@ xcopy .\fonts .\build.result\fonts /E /I /Y
 title Building - Copy icons
 xcopy .\icons .\build.result\icons /E /I /Y
 title Building - Copy ffmpeg
-xcopy .\ffmpeg .\build.result\ffmpeg /E /I /Y
+xcopy .\ffmpeg.exe .\build.result\ffmpeg.exe /Y
 
 title Building - Remove unneeded files
 RD /S /Q "build.result\.venv\Lib\site-packages\__pycache__" 2>nul

@@ -2,9 +2,12 @@
 title Building
 
 RD /S /Q build.result 2>nul
+RD /S /Q *.dist 2>nul
+
 call .venv\Scripts\activate
 title Building - Nuitka
 call nuitka src/launch.py --windows-console-mode=hide --output-filename=Launch
+
 mkdir build.result 2>nul
 title Building - Copy launch.dist
 xcopy .\launch.dist .\build.result /E /I /Y
@@ -16,8 +19,9 @@ title Building - Copy fonts
 xcopy .\fonts .\build.result\fonts /E /I /Y
 title Building - Copy icons
 xcopy .\icons .\build.result\icons /E /I /Y
-title Building - Copy icons
+title Building - Copy ffmpeg
 xcopy .\ffmpeg .\build.result\ffmpeg /E /I /Y
+
 title Building - Remove unneeded files
 RD /S /Q "build.result\.venv\Lib\site-packages\__pycache__" 2>nul
 RD /S /Q "build.result\.venv\Lib\site-packages\*.dist-info" 2>nul

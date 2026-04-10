@@ -26,3 +26,5 @@ config.json
 main.spec
 SouthsideMusic_v*/
 build.result/
+Launch.cmd
+Launch.exe

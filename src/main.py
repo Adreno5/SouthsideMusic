@@ -133,6 +133,8 @@ class StderrRedirector:
 
     def _log_line(self, line: str):
         line = line.strip()
+        if 'QPixmap::scaled' in line:
+            return
         if line:
             self.logger.error(line)
 

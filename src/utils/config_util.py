@@ -34,6 +34,8 @@ class Config:
 
     target_lufs: int = -16
 
+    session: dict | None = None
+
 cfg = Config()
 
 def loadConfig() -> None:
@@ -69,6 +71,8 @@ def loadConfig() -> None:
 
             cfg.target_lufs = data.get('target_lufs', -16)
 
+            cfg.session = data.get('session', None)
+
 def saveConfig() -> None:
     with open('./config.json', 'w', encoding='utf-8') as f:
         json.dump({
@@ -92,4 +96,5 @@ def saveConfig() -> None:
             'skip_nosound': cfg.skip_nosound,
             'skip_threshold': cfg.skip_threshold,
             'skip_remain_time': cfg.skip_remain_time,
+            'session': cfg.session
         }, f, indent=4)

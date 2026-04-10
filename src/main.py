@@ -144,7 +144,6 @@ class StderrRedirector:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
 
-
 def hijack_standard_streams():
     stderr_redirector = StderrRedirector()
     stderr_redirector.start()
@@ -509,7 +508,6 @@ class MusicCard(QWidget):
             if self.info['privilege'] != 1:
                 self.playbtn.setEnabled(True)
 
-
 class SearchPage(QWidget):
     resultGot = Signal(list)
 
@@ -597,7 +595,6 @@ class SearchPage(QWidget):
             self.lst.setItemWidget(item, content_widget)
             self.cards.append(content_widget)
             content_widget.load = False
-
 
 class PlayingController(QWidget):
     onSongFinish = Signal()
@@ -2181,6 +2178,11 @@ class DynamicIslandPage(QWidget):
         mwindow.hide()
         island_editing_overlay.show()
 
+class SessionPage(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName('session_page')
+
 class EditingIslandOverlay(QWidget):
     def __init__(self) -> None:
         super().__init__()
@@ -2436,6 +2438,12 @@ class MainWindow(FluentWindowBase):
             'Lyric Island',
             NavigationItemPosition.SCROLL,
         )
+        self.addSubInterface(
+            sep,
+            getQIcon('session'),
+            'Session',
+            NavigationItemPosition.BOTTOM,
+        )
 
         self.show()
 
@@ -2669,6 +2677,7 @@ if __name__ == '__main__':
     sp = SearchPage()
     fp = FavoritesPage()
     ip = DynamicIslandPage()
+    sep = SessionPage()
     island_editing_overlay = EditingIslandOverlay()
     island = LyricIslandOverlay()
     launchwindow.setStatusText('Initializing...\n  Initializing Mainwindow...')

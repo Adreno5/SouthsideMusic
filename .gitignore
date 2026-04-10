@@ -17,9 +17,12 @@ temp
 LDDC-main
 main.build
 main.dist
+launch.build
+launch.dist
 main.onefile-build
 res.json
 config.json
 .lingma
 main.spec
 SouthsideMusic_v*/
+build.result/

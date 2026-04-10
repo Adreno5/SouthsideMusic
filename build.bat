@@ -1,11 +1,15 @@
 @echo off
 title Building
 
+RD /S /Q build.result 2>nul
 call .venv\Scripts\activate
-call nuitka src/main.py --standalone --enable-plugin=pyside6,numpy --windows-console-mode=hide --output-filename=SouthsideMusic --include-data-dir="./icons=./icons" --include-data-dir="./fonts=./fonts"
-
-mkdir .\main.dist\ffmpeg 2>nul
-xcopy .\ffmpeg .\main.dist\ffmpeg /E /I /Y
+call nuitka src/launch.py --standalone --windows-console-mode=hide --output-filename=Launch
+mkdir build.result 2>nul
+xcopy .\launch.dist .\build.result /E /I /Y
+xcopy .\.venv .\build.result\.venv /E /I /Y
+xcopy .\src .\build.result\src /E /I /Y
+xcopy .\fonts .\build.result\fonts /E /I /Y
+xcopy .\icons .\build.result\icons /E /I /Y
 
 echo Done!
 title Done

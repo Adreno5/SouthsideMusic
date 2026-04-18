@@ -29,3 +29,4 @@ build.result/
 Launch.cmd
 Launch.exe
 python-venv
+embed_python/

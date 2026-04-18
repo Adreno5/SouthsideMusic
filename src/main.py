@@ -8,6 +8,9 @@ import threading
 from typing import TextIO, Optional
 from colorama import Fore, Style, init
 
+sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
+sys.path.append(os.path.dirname(__file__))
+
 init(autoreset=True)
 
 _ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
@@ -133,7 +136,7 @@ class StderrRedirector:
 
     def _log_line(self, line: str):
         line = line.strip()
-        if 'QPixmap::scaled' in line:
+        if 'QPixmap::scaled' in line or 'QFont' in line:
             return
         if line:
             self.logger.error(line)
@@ -204,7 +207,7 @@ from utils.base.base_util import FolderInfo, SongInfo, SongStorable
 from utils.base.base_util import SongDetail
 from utils.lyric_util import LRCLyricManager, LyricInfo
 from utils.time_util import float2time
-from utils.favorite_util import loadFavorites, loadFavoritesWithLaunching, saveFavorites
+from utils.favorite_util import loadFavorites, loadFavoritesWithLaunching, saveFavorites, getFavoriteSong
 from utils.config_util import loadConfig, saveConfig, cfg
 from utils.loudness_balance_util import getAdjustedGainFactor
 from utils.play_util import AudioPlayer
@@ -1194,7 +1197,7 @@ class PlayingPage(QWidget):
             if selected == self.cur.storable.name:
                 self.playSongAtIndex(self.current_index)
     def addSong(self) -> None:
-        selected = getFavoriteSong()
+        selected = getFavoriteSong(mwindow, favs)
 
         if not selected:
             return
@@ -1211,7 +1214,7 @@ class PlayingPage(QWidget):
 
         self.preloadNextSong()
     def insertSong(self) -> None:
-        selected = getFavoriteSong()
+        selected = getFavoriteSong(mwindow, favs)
 
         if not selected:
             return
@@ -2061,91 +2064,6 @@ class FavoritesPage(QWidget):
                 self.folder_selector.addItem(folder['folder_name'])
 
         doWithMultiThreading(_load, (), mwindow, 'Loading...')
-
-class FavoriteSelectionDialog(MessageBoxBase):
-    def __init__(self, parent):
-        super().__init__(parent)
-        # Title
-        self.title_label = SubtitleLabel('Add Songs from Favorites')
-        self.viewLayout.addWidget(self.title_label)
-
-        # Horizontal layout for folder list and song list
-        content_layout = QHBoxLayout()
-
-        # Left: folder list
-        folder_layout = QVBoxLayout()
-        folder_layout.addWidget(QLabel('Folders:'))
-        self.folder_list = ListWidget()
-        self.folder_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-        folder_layout.addWidget(self.folder_list)
-
-        # Right: song list
-        song_layout = QVBoxLayout()
-        song_layout.addWidget(QLabel('Songs:'))
-        self.song_list = ListWidget()
-        self.song_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-        song_layout.addWidget(self.song_list)
-
-        content_layout.addLayout(folder_layout)
-        content_layout.addLayout(song_layout)
-
-        self.viewLayout.addLayout(content_layout)
-
-        # Load folders
-        self.loadFolders()
-
-        # Connect signals
-        self.folder_list.itemClicked.connect(self.onFolderSelected)
-
-    def loadFolders(self):
-        global favs
-        self.folder_list.clear()
-        self.song_list.clear()
-
-        for folder in favs:
-            self.folder_list.addItem(folder['folder_name'])
-
-    def onFolderSelected(self, item):
-        global favs
-        self.song_list.clear()
-
-        folder_name = item.text()
-        for folder in favs:
-            if folder['folder_name'] == folder_name:
-                for song in folder['songs']:
-                    self.song_list.addItem(song.name)
-                break
-
-    def getSelectedSong(self):
-        '''Return list of selected SongStorable objects'''
-        global favs
-
-        folder_item = self.folder_list.currentItem()
-        song_item = self.song_list.currentItem()
-
-        if not folder_item or not song_item:
-            return None
-
-        folder_name = folder_item.text()
-        song_name = song_item.text()
-
-        for folder in favs:
-            if folder['folder_name'] == folder_name:
-                for song in folder['songs']:
-                    if song.name == song_name:
-                        return song
-
-        return None
-
-def getFavoriteSong() -> SongStorable | None:
-    box = FavoriteSelectionDialog(mwindow)
-    reply = box.exec()
-    selected = box.getSelectedSong()
-
-    if reply and selected:
-        return selected
-    else:
-        return None
 
 class DynamicIslandPage(QWidget):
     def __init__(self) -> None:

@@ -319,18 +319,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pyncm"
-version = "1.8.1"
-source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
-dependencies = [
-    { name = "requests" },
-]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/35/1a/30c0dad2969452e6b6d5b65f930d04d8247a3c506bad552ee9b7082336a4/pyncm-1.8.1.tar.gz", hash = "sha256:f967a598d148dbf69ff013f2e669e077764c34997c761a6a4b8f709d06494593" }
-wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/58/f4/05d7a0116bd70dcef0f7214c0e9ee6a50a124525eaefc5c2bb0c5085f0b7/pyncm-1.8.1-py3-none-any.whl", hash = "sha256:839f9f0e534d4892b7b9ad0378f13c4595f900653e11f00d758f1aed957c4374" },
-]
-
-[[package]]
 name = "pyobjc"
 version = "12.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
@@ -3230,7 +3218,6 @@ dependencies = [
     { name = "numpy" },
     { name = "pydub" },
     { name = "pymusiclibrary" },
-    { name = "pyncm" },
     { name = "pyside6" },
     { name = "pyside6-fluent-widgets" },
     { name = "requests" },
@@ -3248,7 +3235,6 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.2" },
     { name = "pydub", specifier = ">=0.25.1" },
     { name = "pymusiclibrary", specifier = ">=0.0.4" },
-    { name = "pyncm", specifier = ">=1.8.1" },
     { name = "pyside6", specifier = ">=6.10.2" },
     { name = "pyside6-fluent-widgets", specifier = ">=1.11.1" },
     { name = "requests", specifier = ">=2.32.5" },

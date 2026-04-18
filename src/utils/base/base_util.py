@@ -2,6 +2,10 @@ from abc import ABC, abstractmethod
 from typing import TypedDict
 import base64
 
+import pyncm
+
+from utils.dialog_util import QPixmap
+
 class SongInfo(TypedDict):
     name: str
     artists: str

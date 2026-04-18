@@ -1,7 +1,11 @@
 from dataclasses import dataclass
 import json
+import logging
+import pickle
 import os
 from typing import Literal
+
+import pyncm
 
 from utils.base.base_util import SongStorable
 
@@ -24,7 +28,7 @@ class Config:
     window_y: int = 0
     window_width: int = 0
     window_height: int = 0
-    wiondow_maximized: bool = False
+    window_maximized: bool = False
 
     enable_fft: bool = True
     fft_filtering_windowsize: int = 4
@@ -34,67 +38,63 @@ class Config:
 
     target_lufs: int = -16
 
-    session: dict | None = None
+    session: pyncm.Session | None = None
 
 cfg = Config()
 
-def loadConfig() -> None:
+def restoreOldConfigFormat() -> None:
     if not os.path.exists('./config.json'):
+        return
+    
+    with open('./config.json', 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+        cfg.play_method = data['play_method']
+        cfg.skip_nosound = data.get('skip_nosound', True)
+        cfg.skip_threshold = data.get('skip_threshold', -45)
+        cfg.skip_remain_time = data.get('skip_remain_time', 10)
+
+        cfg.island_checked = data['island_checked']
+        cfg.island_x = data['island_x']
+        cfg.island_y = data['island_y']
+
+        cfg.last_playing_song = SongStorable.fromObject(data['last_playing_song']) if data['last_playing_song'] else None
+        cfg.last_playing_time = data['last_playing_time']
+
+        cfg.window_x = data.get('window_x', 0)
+        cfg.window_y = data.get('window_y', 0)
+        cfg.window_width = data.get('window_width', 0)
+        cfg.window_height = data.get('window_height', 0)
+        cfg.window_maximized = data.get('window_maximized', False)
+
+        cfg.enable_fft = data.get('enable_fft', True)
+        cfg.fft_filtering_windowsize = data.get('fft_filtering_windowsize', 4)
+        cfg.fft_factor = data.get('fft_factor', 0.4)
+        cfg.cfft_multiple = data.get('cfft_multiple', 1.0)
+        cfg.sfft_multiple = data.get('sfft_multiple', 1.0)
+
+        cfg.target_lufs = data.get('target_lufs', -16)
+
+        cfg.session = None
+
+        saveConfig()
+
+        logging.info('restored old config.json to pickle format')
+
+    os.remove('./config.json')
+
+def loadConfig() -> None:
+    global cfg
+    restoreOldConfigFormat()
+
+    if not os.path.exists('./config.pkl'):
         saveConfig()
     else:
-        with open('./config.json', 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        with open('./config.pkl', 'rb') as f:
+            data = pickle.load(f)
 
-            cfg.play_method = data['play_method']
-            cfg.skip_nosound = data.get('skip_nosound', True)
-            cfg.skip_threshold = data.get('skip_threshold', -45)
-            cfg.skip_remain_time = data.get('skip_remain_time', 10)
-
-            cfg.island_checked = data['island_checked']
-            cfg.island_x = data['island_x']
-            cfg.island_y = data['island_y']
-
-            cfg.last_playing_song = SongStorable.fromObject(data['last_playing_song']) if data['last_playing_song'] else None
-            cfg.last_playing_time = data['last_playing_time']
-
-            cfg.window_x = data.get('window_x', 0)
-            cfg.window_y = data.get('window_y', 0)
-            cfg.window_width = data.get('window_width', 0)
-            cfg.window_height = data.get('window_height', 0)
-            cfg.wiondow_maximized = data.get('window_maximized', False)
-
-            cfg.enable_fft = data.get('enable_fft', True)
-            cfg.fft_filtering_windowsize = data.get('fft_filtering_windowsize', 4)
-            cfg.fft_factor = data.get('fft_factor', 0.4)
-            cfg.cfft_multiple = data.get('cfft_multiple', 1.0)
-            cfg.sfft_multiple = data.get('sfft_multiple', 1.0)
-
-            cfg.target_lufs = data.get('target_lufs', -16)
-
-            cfg.session = data.get('session', None)
+            cfg = data
 
 def saveConfig() -> None:
-    with open('./config.json', 'w', encoding='utf-8') as f:
-        json.dump({
-            'play_method': cfg.play_method,
-            'island_checked': cfg.island_checked,
-            'island_x': cfg.island_x,
-            'island_y': cfg.island_y,
-            'last_playing_song': cfg.last_playing_song.toObject() if cfg.last_playing_song else None,
-            'last_playing_time': cfg.last_playing_time,
-            'window_x': cfg.window_x,
-            'window_y': cfg.window_y,
-            'window_width': cfg.window_width,
-            'window_height': cfg.window_height,
-            'window_maximized': cfg.wiondow_maximized,
-            'enable_fft': cfg.enable_fft,
-            'fft_filtering_windowsize': cfg.fft_filtering_windowsize,
-            'fft_factor': cfg.fft_factor,
-            'target_lufs': cfg.target_lufs,
-            'cfft_multiple': cfg.cfft_multiple,
-            'sfft_multiple': cfg.sfft_multiple,
-            'skip_nosound': cfg.skip_nosound,
-            'skip_threshold': cfg.skip_threshold,
-            'skip_remain_time': cfg.skip_remain_time,
-            'session': cfg.session
-        }, f, indent=4)
+    with open('./config.pkl', 'wb') as f:
+        pickle.dump(cfg, f)

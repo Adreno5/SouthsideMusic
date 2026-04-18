@@ -87,6 +87,10 @@ class LoggingStream:
             if not line:
                 continue
             self._in_logging = True
+
+            if 'QFluentWidgets' in line.strip():
+                continue
+
             try:
                 if self.source == 'stderr':
                     logging.error(line.strip())
@@ -149,7 +153,7 @@ class StderrRedirector:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
 
-def hijack_standard_streams():
+def hijackStreams():
     stderr_redirector = StderrRedirector()
     stderr_redirector.start()
 
@@ -173,7 +177,7 @@ if __name__ == '__main__':
         handlers=[logging_handler]
     )
 
-    hijack_standard_streams()
+    hijackStreams()
 
 from PySide6.QtWidgets import *  # type: ignore
 from PySide6.QtCore import *  # type: ignore
@@ -236,19 +240,28 @@ subprocess.Popen = patched_popen
 subprocess.call = patched_popen
 
 def patchedExceptHook(exc_type: type[BaseException], exc_value: BaseException, exc_traceback: TracebackType):
+    inf: list[str] = []
+
     logging.error('| Unhandled Exception occurred |')
     logging.error(f'Caused by {exc_type.__name__}')
     logging.error('Traceback:')
+    inf.append('| Unhandled Exception occurred |')
+    inf.append(f'Caused by {exc_type.__name__}')
+    inf.append('Traceback:')
     stack_frames = traceback.extract_tb(exc_traceback)
     for frame in stack_frames:
         logging.error(f'    at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}')
+        inf.append(f'    at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}')
     logging.error('Exception chain:')
+    inf.append('Exception chain:')
     current_exc = exc_value
     logging.error(f'    caused by {type(current_exc).__name__}({current_exc}) #0')
+    inf.append(f'    caused by {type(current_exc).__name__}({current_exc}) #0')
     if current_exc.__traceback__:
         root_frames = traceback.extract_tb(current_exc.__traceback__)
         for frame in root_frames:
             logging.error(f'      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}')
+            inf.append(f'      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}')
     chain_level = 1
     while True:
         next_exc = current_exc.__cause__ or current_exc.__context__
@@ -256,17 +269,26 @@ def patchedExceptHook(exc_type: type[BaseException], exc_value: BaseException, e
             break
         exc = next_exc
         logging.error(f'    caused by {type(exc).__name__}({exc}) #{chain_level}')
+        inf.append(f'    caused by {type(exc).__name__}({exc}) #{chain_level}')
         if next_exc.__traceback__:
             root_frames = traceback.extract_tb(next_exc.__traceback__)
             for frame in root_frames:
                 logging.error(f'      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}')
+                inf.append(f'      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}')
         current_exc = next_exc
         chain_level += 1
     logging.error(f'Raised {exc_type.__name__}({exc_value})')
+    inf.append(f'Raised {exc_type.__name__}({exc_value})')
 
     if exc_type is KeyboardInterrupt:
         logging.info('quit by user')
-        mwindow.close()
+        sys.exit()
+    
+    txt = '\n'.join(inf)
+    launchwindow.deleteLater()
+    QMessageBox.critical(None, 'Error Occured', txt, buttons=QMessageBox.StandardButton.Close, defaultButton=QMessageBox.StandardButton.Close)
+
+    saveConfig()
 
 sys.excepthook = patchedExceptHook
 
@@ -350,43 +372,46 @@ class MusicCard(QWidget):
             #         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             #     },
             # ).json()
-            response = ncm.track.GetTrackDetail(song_ids=[self.info['id']])
-            assert isinstance(response, dict), 'Invalid response'
-            image_url = response['songs'][0]['al']['picUrl'] # type: ignore
+            if cfg.session is None:
+                return
+            with cfg.session:
+                response = ncm.track.GetTrackDetail(song_ids=[self.info['id']])
+                assert isinstance(response, dict), 'Invalid response'
+                image_url = response['songs'][0]['al']['picUrl'] # type: ignore
 
-            # Download image
-            image_bytes = requests.get(
-                image_url,
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                },
-            ).content
+                # Download image
+                image_bytes = requests.get(
+                    image_url,
+                    headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                    },
+                ).content
 
-            # Download music
-            music_bytes = requests.get(
-                f'https://music.163.com/song/media/outer/url?id={self.info['id']}.mp3',
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                },
-            ).content
+                # Download music
+                music_bytes = requests.get(
+                    f'https://music.163.com/song/media/outer/url?id={self.info['id']}.mp3',
+                    headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                    },
+                ).content
 
-            # Download lyrics
-            # lyric_data = requests.get(
-            #     f'https://apis.netstart.cn/music/lyric?id={self.info['id']}',
-            #     headers={
-            #         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
-            #         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            #     },
-            # ).json()
-            lyric_data = ncm.track.GetTrackLyrics(song_id=self.info['id'])
-            assert isinstance(lyric_data, dict), 'Invalid response'
-            
-            lyric = lyric_data['lrc']['lyric'] # type: ignore
-            translated_lyric = lyric_data.get('tlyric', {}).get('lyric', '[00:00.000]')
+                # Download lyrics
+                # lyric_data = requests.get(
+                #     f'https://apis.netstart.cn/music/lyric?id={self.info['id']}',
+                #     headers={
+                #         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
+                #         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                #     },
+                # ).json()
+                lyric_data = ncm.track.GetTrackLyrics(song_id=self.info['id'])
+                assert isinstance(lyric_data, dict), 'Invalid response'
+                
+                lyric = lyric_data['lrc']['lyric'] # type: ignore
+                translated_lyric = lyric_data.get('tlyric', {}).get('lyric', '[00:00.000]')
 
-            result_container.append((image_bytes, music_bytes, lyric, translated_lyric))
+                result_container.append((image_bytes, music_bytes, lyric, translated_lyric))
 
         def _on_finished():
             if not result_container:
@@ -712,7 +737,11 @@ class PlayingController(QWidget):
             self.expand_btn.setIcon(getQIcon('pl_expand'))
 
     def updateWidgets(self):
-        title_bar = mwindow.titleBar
+        title_bar = None
+        try:
+            title_bar = mwindow.titleBar
+        except:
+            pass
         if isinstance(title_bar, SouthsideMusicTitleBar):
             if mwindow.stackedWidget.currentWidget() == dp:
                 title_bar.song_title.clear()
@@ -723,12 +752,15 @@ class PlayingController(QWidget):
                 title_bar.lyric_label.setText(dp.lyric_label.text() if dp.lyric_label.text() else dp.artists_label.text())
                 title_bar.fm_label.setPixmap(dp.img_label.pixmap().scaled(40, 40, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
-        dp.southsideclient_status_label.setText(
-            'Connection Status: <span style="color: green;">Connected</span>'
-                if mwindow.connected else
-            'Connection Status: <span style="color: red;">Disconnected</span>'
-        )
-        dp.now_volume.setText(f'Current volume(db): {(round(player.db * 10) / 10) if player.db != float('-inf') else '-inf'}')
+        try:
+            dp.southsideclient_status_label.setText(
+                'Connection Status: <span style="color: green;">Connected</span>'
+                    if mwindow.connected else
+                'Connection Status: <span style="color: red;">Disconnected</span>'
+            )
+            dp.now_volume.setText(f'Current volume(db): {(round(player.db * 10) / 10) if player.db != float('-inf') else '-inf'}')
+        except:
+            pass
 
         if dp.cur and dp.lst_shoud_set:
             # Highlight the currently playing song in the playlist
@@ -2070,12 +2102,12 @@ class DynamicIslandPage(QWidget):
         super().__init__()
         self.setObjectName('dynamic_island_page')
 
-        self.delta = 1 / 60
-
         self.island_x = cfg.island_x
         self.island_y = cfg.island_y
 
         self.show_island = cfg.island_checked
+
+        island.setVisible(self.show_island)
 
         global_layout = QVBoxLayout()
         global_layout.addWidget(TitleLabel('Lyric Island'))
@@ -2122,7 +2154,7 @@ class EditingIslandOverlay(QWidget):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.repaint)
-        self.timer.start(int(ip.delta * 1000))
+        self.timer.start(int((1 / 60) * 1000))
 
         InfoBar.info(
             'Help',
@@ -2209,12 +2241,10 @@ class LyricIslandOverlay(QWidget):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.repaint)
-        self.timer.start(int(ip.delta * 1000))
+        self.timer.start(int((1 / 60) * 1000))
 
         self.resize(QApplication.primaryScreen().size())
         self.move(0, 0)
-
-        self.show()
 
     def paintEvent(self, event: QPaintEvent) -> None:
         lyric = mgr.getCurrentLyric(player.getPosition())['content']
@@ -2593,15 +2623,27 @@ if __name__ == '__main__':
     lock = threading.Lock()
 
     launchwindow.setStatusText('Initializing...\n  Initializing pages...')
+
     dp = PlayingPage()
     sp = SearchPage()
     fp = FavoritesPage()
-    ip = DynamicIslandPage()
     sep = SessionPage()
     island_editing_overlay = EditingIslandOverlay()
     island = LyricIslandOverlay()
+    ip = DynamicIslandPage()
+    sep = SessionPage()
     launchwindow.setStatusText('Initializing...\n  Initializing Mainwindow...')
     mwindow = MainWindow()
+
+    if cfg.session is None:
+        logging.info('no account, logging in...')
+
+        dict_ = ncm.login.LoginViaAnonymousAccount()
+        data: ncm.Session = ncm.GetCurrentSession()
+
+        InfoBar.success('Login Success', parent=mwindow, content='Logined into Anonymous account', duration=10000, isClosable=False)
+
+        cfg.session = data
 
     fp.refresh()
 

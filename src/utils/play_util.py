@@ -185,6 +185,8 @@ class PatchedAudioSegment(AudioSegment):
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         p_out, p_err = p.communicate(input=stdin_data)
 
+        logging.debug(conversion_command)
+
         if p.returncode != 0 or len(p_out) == 0:
             if close_file:
                 file.close() # type: ignore
@@ -298,7 +300,7 @@ class AudioPlayer(QObject):
         self.load(audio)
 
     def loadFromBytes(self, data: bytes) -> None:
-        audio = PatchedAudioSegment.from_file(data, format='mp3')
+        audio = PatchedAudioSegment.from_file(data)
         self.load(audio)
 
     def play(self) -> None:

@@ -339,6 +339,10 @@ class MusicCard(QWidget):
             self.vip_label.hide()
         global_layout.addWidget(self.vip_label)
 
+        pri_label = QLabel(f'privilege: (song: {info['privilege']}, yours: {ncm.GetCurrentSession().vipType})')
+        pri_label.setStyleSheet(f'color: {'#666666' if darkdetect.isDark() else '#CCCCCC'};')
+        global_layout.addWidget(pri_label)
+
         self.playbtn = PrimaryToolButton(FluentIcon.SEND)
         self.playbtn.setEnabled(False)
         global_layout.addWidget(self.playbtn)
@@ -462,7 +466,7 @@ class MusicCard(QWidget):
             # Add song to target folder
             
             with lock:
-                song_storable = SongStorable(self.info, image_bytes, music_bytes, lyric, translated_lyric, getAdjustedGainFactor(-16, AudioSegment.from_file(io.BytesIO(music_bytes), format='mp3')), cfg.target_lufs)
+                song_storable = SongStorable(self.info, image_bytes, music_bytes, lyric, translated_lyric, getAdjustedGainFactor(-16, AudioSegment.from_file(io.BytesIO(music_bytes))), cfg.target_lufs)
                 target_folder['songs'].append(song_storable) # type: ignore
 
             # Save favorites
@@ -1277,7 +1281,7 @@ class PlayingPage(QWidget):
             if not hasattr(self.cur, 'storable'):
                 return
         
-            audio: AudioSegment = AudioSegment.from_file(io.BytesIO(base64.b64decode(self.cur.storable.content_base64)), format='mp3')
+            audio: AudioSegment = AudioSegment.from_file(io.BytesIO(base64.b64decode(self.cur.storable.content_base64)))
             logging.debug('new lufs -> applying gain')
             gain = getAdjustedGainFactor(cfg.target_lufs, audio)
             self.cur.storable.loudness_gain = gain
@@ -1515,7 +1519,7 @@ class PlayingPage(QWidget):
             def _preload():
                 with lock:
                     song_bytes = base64.b64decode(next_song.content_base64)
-                    self.next_song_audio = AudioSegment.from_file(io.BytesIO(song_bytes), format='mp3')
+                    self.next_song_audio = AudioSegment.from_file(io.BytesIO(song_bytes))
 
                 if (next_song.loudness_gain == 1.0 or next_song.target_lufs != cfg.target_lufs) and isinstance(self.next_song_audio, AudioSegment):
                     next_song.loudness_gain = getAdjustedGainFactor(cfg.target_lufs, self.next_song_audio)
@@ -1571,7 +1575,7 @@ class PlayingPage(QWidget):
                 player.stop()
 
             with lock:
-                audio = AudioSegment.from_file(io.BytesIO(bytes), format='mp3')
+                audio = AudioSegment.from_file(io.BytesIO(bytes))
 
             player.load(audio)
             self.total_length = player.getLength()
@@ -1745,7 +1749,7 @@ class PlayingPage(QWidget):
             music_bytes = base64.b64decode(song_storable.content_base64)
             logging.debug(f'loading data {len(music_bytes)}')
             with lock:
-                audio = AudioSegment.from_file(io.BytesIO(music_bytes), format='mp3')
+                audio = AudioSegment.from_file(io.BytesIO(music_bytes))
 
             song_storable.target_lufs = cfg.target_lufs
             song_storable.loudness_gain = getAdjustedGainFactor(cfg.target_lufs, audio)
@@ -1779,7 +1783,7 @@ class PlayingPage(QWidget):
         music_bytes = base64.b64decode(content_base64)
         logging.debug(f'loading data {len(music_bytes)}')
         with lock:
-            audio = AudioSegment.from_file(io.BytesIO(music_bytes), format='mp3')
+            audio = AudioSegment.from_file(io.BytesIO(music_bytes))
 
         logging.debug(f'applying gain {gain} {cfg.target_lufs=}')
         audio = audio.apply_gain(20 * np.log10(gain))
@@ -2116,7 +2120,7 @@ class DynamicIslandPage(QWidget):
         mwindow.hide()
         island_editing_overlay.show()
 
-class   SessionPage(QWidget):
+class SessionPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName('session_page')
@@ -2160,12 +2164,6 @@ class   SessionPage(QWidget):
             logging.warning(f'Failed to get session: {e}')
             session = None
 
-        if cfg.login_status:
-            try:
-                apis.login.WriteLoginInfo(cfg.login_status)
-            except Exception as e:
-                logging.warning(f'Failed to write login info: {e}')
-
         try:
             login_status = apis.login.GetCurrentLoginStatus()
             if login_status and 'account' in login_status and 'id' in login_status['account']: # type: ignore
@@ -2184,6 +2182,10 @@ class   SessionPage(QWidget):
                 nick = getattr(session, 'nickname', None)
                 if nick and isinstance(nick, str) and nick.strip():
                     nickname = nick.strip()
+                if cfg.login_status:
+                    nick = getattr(cfg.login_status.get('account'), 'userName', None)
+                    if nick and isinstance(nick, str) and nick.strip():
+                        nickname = nick.strip()
             except Exception as e:
                 logging.warning(f'Failed to get nickname: {e}')
         self.nickname.setText(nickname)
@@ -2220,18 +2222,40 @@ class   SessionPage(QWidget):
 
             cfg.session = ncm.DumpSessionAsString(ncm.GetCurrentSession())
         elif method == 'QR Code':
-            logger = logging.getLogger('login-QRcode')
-            logger.info('start logging in')
+            logging.info('start logging in(via QRCode)')
 
             key: str = apis.login.LoginQrcodeUnikey()['unikey'] # type: ignore
-            logger.debug(f'{key=}')
+            logging.debug(f'{key=}')
 
             url = apis.login.GetLoginQRCodeUrl(key)
-            logger.debug(f'{url=}')
+            logging.debug(f'{url=}')
 
-            msgbox = QRCodeLoginDialog(mwindow, url, key, logger)
+            msgbox = QRCodeLoginDialog(mwindow, url, key, logging)
             if msgbox.exec():
                 cfg.session = ncm.DumpSessionAsString(ncm.GetCurrentSession())
+                cfg.login_status = apis.login.GetCurrentLoginStatus() # type: ignore
+                cfg.login_method = 'QR code'
+        elif method == 'Cell Phone':
+            logging.info('start logging in(via cell phone)')
+            phone = get_text_lineedit('Login', 'enter your cell phone number', '1xxxxxxxxxx', mwindow)
+            if not phone:
+                return
+
+            result = apis.login.SetSendRegisterVerifcationCodeViaCellphone(phone, 86)
+            assert result.get('code', 0) == 200, 'Invaild response' # type: ignore
+            while True:
+                captcha = get_text_lineedit('Verification Code Sent', 'enter the verification code', 'xxxx', mwindow)
+                if len(captcha) != 4:
+                    continue
+                verified = apis.login.GetRegisterVerifcationStatusViaCellphone(phone, captcha, 86)
+                if verified.get('code', 0) == 200: # type: ignore
+                    break
+
+            apis.login.LoginViaCellphone(phone, captcha=captcha, ctcode=86)
+
+            cfg.session = ncm.DumpSessionAsString(ncm.GetCurrentSession())
+            cfg.login_status = apis.login.GetCurrentLoginStatus() # type: ignore
+            cfg.login_method = 'cell phone'
 
         InfoBar.success('Login successful', f'logged in via method {method}', parent=mwindow, duration=5000)
 
@@ -2703,19 +2727,6 @@ class LaunchWindow(QWidget):
         if sleep: time.sleep(0.05)
 
 if __name__ == '__main__':
-    if cfg.session is None:
-        apis.login.LoginViaAnonymousAccount()
-
-        sstr = ncm.DumpSessionAsString(apis.GetCurrentSession())
-        cfg.session = sstr
-        cfg.login_status = apis.login.GetCurrentLoginStatus() # type: ignore
-
-        logging.info('logged into generated anonymous account')
-    else:
-        ncm.SetCurrentSession(ncm.LoadSessionFromString(cfg.session))
-
-        logging.info('loaded session from pickle')
-
     if cfg.login_status and not ncm.GetCurrentSession().is_anonymous:
         apis.login.WriteLoginInfo(cfg.login_status)
     else:
@@ -2750,12 +2761,28 @@ if __name__ == '__main__':
 
     lock = threading.Lock()
 
+    if cfg.session is None:
+        apis.login.LoginViaAnonymousAccount()
+
+        sstr = ncm.DumpSessionAsString(apis.GetCurrentSession())
+        cfg.session = sstr
+        cfg.login_status = apis.login.GetCurrentLoginStatus() # type: ignore
+
+        logging.info('logged into generated anonymous account')
+    else:
+        ncm.SetCurrentSession(ncm.LoadSessionFromString(cfg.session))
+
+        logging.info('loaded session from pickle')
+
+        if (cfg.login_method == 'cell phone' or cfg.login_method == 'QR code') and cfg.login_status:
+            apis.login.WriteLoginInfo(cfg.login_status) # type: ignore
+            logging.info('wrote login info')
+
     launchwindow.setStatusText('Initializing...\n  Initializing pages...')
 
     dp = PlayingPage()
     sp = SearchPage()
     fp = FavoritesPage()
-    sep = SessionPage()
     island_editing_overlay = EditingIslandOverlay()
     island = LyricIslandOverlay()
     ip = DynamicIslandPage()

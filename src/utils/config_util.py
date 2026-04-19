@@ -40,6 +40,7 @@ class Config:
 
     session: str | None = None
     login_status: dict | None = None
+    login_method: Literal['anonymous', 'cell phone', 'QR code'] = 'anonymous'
 
 cfg = Config()
 

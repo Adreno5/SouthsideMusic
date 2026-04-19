@@ -2,7 +2,7 @@
 Advanced Modern Player
 
 ## Install
-just download the latest release and unzip it. And launch the `SouthsideMusic.exe`!
+just download the latest release and unzip it. And launch the `Launch.exe`!
 
 ## Usage
 - Search Page

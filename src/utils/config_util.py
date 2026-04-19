@@ -38,7 +38,8 @@ class Config:
 
     target_lufs: int = -16
 
-    session: pyncm.Session | None = None
+    session: str | None = None
+    login_status: dict | None = None
 
 cfg = Config()
 
@@ -76,6 +77,7 @@ def restoreOldConfigFormat() -> None:
         cfg.target_lufs = data.get('target_lufs', -16)
 
         cfg.session = None
+        cfg.login_status = None
 
         saveConfig()
 
@@ -93,8 +95,8 @@ def loadConfig() -> None:
         with open('./config.pkl', 'rb') as f:
             data = pickle.load(f)
 
-            cfg = data
+            cfg.__dict__.update(data)
 
 def saveConfig() -> None:
     with open('./config.pkl', 'wb') as f:
-        pickle.dump(cfg, f)
+        pickle.dump(cfg.__dict__, f)

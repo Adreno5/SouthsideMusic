@@ -21,6 +21,8 @@ title Building - Copy icons
 xcopy .\icons .\build.result\icons /E /I /Y
 title Building - Copy ffmpeg
 xcopy .\ffmpeg .\build.result\ffmpeg /E /I /Y
+title Building - Copy images
+xcopy .\images .\build.result\images /E /I /Y
 
 title Building - Remove unneeded files
 RD /S /Q "build.result\.venv\Lib\site-packages\__pycache__" 2>nul

@@ -1,7 +1,14 @@
+import io
+
 from PySide6.QtWidgets import * # type: ignore
 from PySide6.QtCore import * # type: ignore
 from PySide6.QtGui import * # type: ignore
+from pyncm import apis
+import qrcode
 from qfluentwidgets import * # type: ignore
+import requests
+
+from utils.loading_util import doWithMultiThreading # type: ignore
 
 class LineinputDialog(MessageBoxBase):
     def __init__(self, parent, title: str, desc: str, place: str):
@@ -58,7 +65,7 @@ class ListDialog(MessageBoxBase):
         self.inputer = ListWidget(self)
         self.inputer.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.inputer.addItems(texts)
-        self.inputer.setFixedSize(parent.size() * 0.65)
+        self.inputer.setFixedSize(parent.size() * 0.5)
 
         self.viewLayout.addWidget(self.title_label)
         self.viewLayout.addWidget(self.desc_label)
@@ -73,3 +80,65 @@ def get_value_bylist(parent: QWidget, title: str, desc: str, texts: list[str]) -
         return selected
     else:
         return None
+    
+class QRCodeLoginDialog(MessageBoxBase):
+    def __init__(self, parent, qrcode_url: str, key: str, logger):
+        super().__init__(parent)
+
+        self.key = key
+        self.logger = logger
+
+        self.viewLayout.addWidget(TitleLabel('Login via QRCode'))
+        self.viewLayout.addWidget(QLabel('use your CloudMusic app to scan the QRCode and click \'I scanned\' button'))
+
+        self.qrlabel = QLabel()
+        self.qrlabel.setFixedSize(parent.height() * 0.5, parent.height() * 0.5)
+
+        self.viewLayout.addWidget(self.qrlabel)
+
+        self.is_btn = PrimaryPushButton('I scanned')
+        self.is_btn.clicked.connect(self.login)
+        self.viewLayout.addWidget(self.is_btn)
+        self.is_btn.setEnabled(False)
+
+        self.errlabel = QLabel()
+        self.errlabel.hide()
+        self.errlabel.setStyleSheet('color: red;')
+        self.viewLayout.addWidget(self.errlabel)
+
+        self.downloadImage(qrcode_url)
+
+        self.yesButton.hide()
+
+    def downloadImage(self, qrcode_url: str) -> None:
+        def __download():
+            self.qrlabel.show()
+
+            io_ = io.BytesIO()
+            qrcode.make(qrcode_url).save(io_)
+            io_.seek(0)
+
+            qimage = QImage.fromData(io_.read())
+            self.qrlabel.setPixmap(QPixmap.fromImage(qimage).scaled(self.qrlabel.size()))
+
+            self.is_btn.setEnabled(True)
+        
+        doWithMultiThreading(__download, (), self.parent(), 'downloadImage', dialog=False)
+
+    def login(self):
+        self.errlabel.hide()
+
+        rsp: dict = apis.login.LoginQrcodeCheck(self.key) # type: ignore
+        if rsp['code'] == 803:
+            self.logger.info('Logined in successfully')
+            apis.login.WriteLoginInfo(
+                apis.login.GetCurrentLoginStatus(), # type: ignore
+            )
+
+            self.accept()
+        elif rsp['code'] == 8821:
+            self.errlabel.setText('Login anomaly risk control')
+            self.errlabel.show()
+        elif rsp['code'] == 800:
+            self.errlabel.setText('QRCode expired or not exist')
+            self.errlabel.show()

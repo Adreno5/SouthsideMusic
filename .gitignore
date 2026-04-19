@@ -20,7 +20,7 @@ main.dist
 launch.build
 launch.dist
 main.onefile-build
-res.json
+res*.json
 config.json
 .lingma
 main.spec

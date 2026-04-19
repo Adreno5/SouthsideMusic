@@ -1,3 +1,4 @@
+from pprint import pprint
 import re
 import shutil
 import logging
@@ -6,6 +7,7 @@ import datetime
 import os
 import threading
 from typing import TextIO, Optional
+from PySide6.QtGui import QResizeEvent
 from colorama import Fore, Style, init
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
@@ -217,10 +219,11 @@ from utils.loudness_balance_util import getAdjustedGainFactor
 from utils.play_util import AudioPlayer
 from utils.play_util import PatchedAudioSegment as AudioSegment
 from utils.icon_util import getQIcon
-from utils.dialog_util import get_value_bylist, get_text_lineedit
+from utils.dialog_util import QRCodeLoginDialog, get_value_bylist, get_text_lineedit
 from utils.websocket_util import WebSocketServer, ws_server, ws_handler
 
-from pyncm import apis as ncm
+from pyncm import apis
+import pyncm as ncm
 
 ws_handler.onConnected.connect(lambda: mwindow.onWebsocketConnected())
 ws_handler.onDisconnected.connect(lambda: mwindow.onWebsocketDisconnected())
@@ -282,6 +285,8 @@ def patchedExceptHook(exc_type: type[BaseException], exc_value: BaseException, e
 
     if exc_type is KeyboardInterrupt:
         logging.info('quit by user')
+        mwindow.close()
+        app.quit()
         sys.exit()
     
     txt = '\n'.join(inf)
@@ -328,9 +333,9 @@ class MusicCard(QWidget):
         artists_label = QLabel(info['artists'])
         artists_label.setWordWrap(True)
         global_layout.addWidget(artists_label)
-        self.vip_label = SubtitleLabel('Needs VIP!')
+        self.vip_label = SubtitleLabel(f'Need more privilege ({info['privilege']}(song)>{ncm.GetCurrentSession().vipType}(yours))')
         self.vip_label.setStyleSheet('color: red;')
-        if info['privilege'] != 1:
+        if info['privilege'] < ncm.GetCurrentSession().vipType:
             self.vip_label.hide()
         global_layout.addWidget(self.vip_label)
 
@@ -353,10 +358,10 @@ class MusicCard(QWidget):
         mwindow.play(self)
 
     def addToFavorites(self):
-        if self.info['privilege'] == 1:
+        if self.info['privilege'] > ncm.GetCurrentSession().vipType:
             InfoBar.warning(
                 'Cannot add to favorites',
-                'VIP songs cannot be added to favorites',
+                'Need more privilege',
                 parent=mwindow,
             )
             return
@@ -364,18 +369,8 @@ class MusicCard(QWidget):
         result_container = []
 
         def _download():
-            # Get image URL
-            # response = requests.get(
-            #     f'https://apis.netstart.cn/music/song/detail?ids={self.info['id']}',
-            #     headers={
-            #         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
-            #         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            #     },
-            # ).json()
-            if cfg.session is None:
-                return
-            with cfg.session:
-                response = ncm.track.GetTrackDetail(song_ids=[self.info['id']])
+            with ncm.GetCurrentSession():
+                response = apis.track.GetTrackDetail(song_ids=[self.info['id']])
                 assert isinstance(response, dict), 'Invalid response'
                 image_url = response['songs'][0]['al']['picUrl'] # type: ignore
 
@@ -389,8 +384,10 @@ class MusicCard(QWidget):
                 ).content
 
                 # Download music
+                music_url = apis.track.GetTrackAudio(str(self.info['id']), bitrate=3200 * 1000) # type: ignore
+                logging.debug(f'{music_url['data'][0]['url']=}') # type: ignore
                 music_bytes = requests.get(
-                    f'https://music.163.com/song/media/outer/url?id={self.info['id']}.mp3',
+                    music_url['data'][0]['url'], # type: ignore
                     headers={
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
@@ -398,14 +395,7 @@ class MusicCard(QWidget):
                 ).content
 
                 # Download lyrics
-                # lyric_data = requests.get(
-                #     f'https://apis.netstart.cn/music/lyric?id={self.info['id']}',
-                #     headers={
-                #         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
-                #         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                #     },
-                # ).json()
-                lyric_data = ncm.track.GetTrackLyrics(song_id=self.info['id'])
+                lyric_data = apis.track.GetTrackLyrics(song_id=self.info['id'])
                 assert isinstance(lyric_data, dict), 'Invalid response'
                 
                 lyric = lyric_data['lrc']['lyric'] # type: ignore
@@ -496,27 +486,21 @@ class MusicCard(QWidget):
 
         @lru_cache(maxsize=128)
         def _load():
-            # response = requests.get(
-            #     f'https://apis.netstart.cn/music/song/detail?ids={self.info['id']}',
-            #     headers={
-            #         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
-            #         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            #     },
-            # ).json()
-            response = ncm.track.GetTrackDetail(song_ids=[self.info['id']])
-            assert isinstance(response, dict), 'Invalid response'
+            with ncm.GetCurrentSession():
+                response = apis.track.GetTrackDetail(song_ids=[self.info['id']])
+                assert isinstance(response, dict), 'Invalid response'
 
-            self.detail['image_url'] = response['songs'][0]['al']['picUrl'] # type: ignore
+                self.detail['image_url'] = response['songs'][0]['al']['picUrl'] # type: ignore
 
-            image: bytes = requests.get(
-                self.detail['image_url'],
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                },
-            ).content
+                image: bytes = requests.get(
+                    self.detail['image_url'],
+                    headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                    },
+                ).content
 
-            self.imageLoaded.emit(image)
+                self.imageLoaded.emit(image)
 
         doWithMultiThreading(_load, (), mwindow, f'Loading...', dialog=False)
 
@@ -535,7 +519,7 @@ class MusicCard(QWidget):
             self.img_label.show()
             self.ring.hide()
 
-            if self.info['privilege'] != 1:
+            if self.info['privilege'] < ncm.GetCurrentSession().vipType:
                 self.playbtn.setEnabled(True)
 
 class SearchPage(QWidget):
@@ -754,9 +738,9 @@ class PlayingController(QWidget):
 
         try:
             dp.southsideclient_status_label.setText(
-                'Connection Status: <span style="color: green;">Connected</span>'
+                'Connection Status: <span style=\'color: green;\'>Connected</span>'
                     if mwindow.connected else
-                'Connection Status: <span style="color: red;">Disconnected</span>'
+                'Connection Status: <span style=\'color: red;\'>Disconnected</span>'
             )
             dp.now_volume.setText(f'Current volume(db): {(round(player.db * 10) / 10) if player.db != float('-inf') else '-inf'}')
         except:
@@ -1131,7 +1115,7 @@ class PlayingPage(QWidget):
 
         self.addSeparateWidget(QLabel())
         self.addSeparateWidget(TitleLabel('SouthsideClient Connection'))
-        self.southsideclient_status_label = SubtitleLabel('Connection Status: <span style="color: red;">Disconnected</span>')
+        self.southsideclient_status_label = SubtitleLabel('Connection Status: <span style=\'color: red;\'>Disconnected</span>')
         self.addSeparateWidget(self.southsideclient_status_label)
         self.disconnect_btn = TransparentPushButton(getQIcon('disc'), 'Disconnect')
         self.disconnect_btn.clicked.connect(self.disconnectFromSouthsideClient)
@@ -1606,8 +1590,10 @@ class PlayingPage(QWidget):
 
             self.downloadLyric()
 
+        music_url = apis.track.GetTrackAudio(str(self.cur.info['id']), bitrate=3200 * 1000) # type: ignore
+        logging.debug(f'{music_url['data'][0]['url']=}') # type: ignore
         downloadWithMultiThreading(
-            f'https://music.163.com/song/media/outer/url?id={self.cur.info['id']}.mp3',
+            music_url['data'][0]['url'], # type: ignore
             {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
@@ -2130,10 +2116,132 @@ class DynamicIslandPage(QWidget):
         mwindow.hide()
         island_editing_overlay.show()
 
-class SessionPage(QWidget):
+class   SessionPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName('session_page')
+
+        self.nickname = TitleLabel()
+        self.avatar = QLabel()
+        global_layout = QVBoxLayout()
+
+        user_layout = QHBoxLayout()
+
+        user_layout.addWidget(self.avatar, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        user_layout.addWidget(self.nickname, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        self.avatar.setFixedSize(self.nickname.height() - 3, self.nickname.height() - 3)
+
+        global_layout.addLayout(user_layout)
+
+        bottom_layout = QHBoxLayout()
+
+        self.vip = SubtitleLabel('VIP Level: Loading...')
+        bottom_layout.addWidget(self.vip, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+
+        self.login_btn = PrimaryPushButton(getQIcon('login', 'light'), 'Login')
+        self.login_btn.clicked.connect(self.login)
+
+        bottom_layout.addWidget(self.login_btn, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+
+        global_layout.addLayout(bottom_layout)
+
+        self.setLayout(global_layout)
+
+        self.refreshInformations()
+
+    def refreshInformations(self):
+        if os.path.exists('images/avatar.png'):
+            os.remove('images/avatar.png')
+        
+        try:
+            session = ncm.GetCurrentSession()
+        except Exception as e:
+            logging.warning(f'Failed to get session: {e}')
+            session = None
+
+        if cfg.login_status:
+            try:
+                apis.login.WriteLoginInfo(cfg.login_status)
+            except Exception as e:
+                logging.warning(f'Failed to write login info: {e}')
+
+        try:
+            login_status = apis.login.GetCurrentLoginStatus()
+            if login_status and 'account' in login_status and 'id' in login_status['account']: # type: ignore
+                detail = apis.user.GetUserDetail(login_status['account']['id']) # type: ignore
+                logging.debug(f'{detail['profile']['avatarUrl']=}') # type: ignore
+                avatar_url = detail['profile']['avatarUrl'] # type: ignore
+                avatar_data = requests.get(avatar_url).content
+                with open('images/avatar.png', 'wb') as f:
+                    f.write(avatar_data)
+        except Exception as e:
+            logging.warning(f'Failed to fetch user detail or avatar: {e}')
+
+        nickname = 'Anonymous User'
+        if session is not None:
+            try:
+                nick = getattr(session, 'nickname', None)
+                if nick and isinstance(nick, str) and nick.strip():
+                    nickname = nick.strip()
+            except Exception as e:
+                logging.warning(f'Failed to get nickname: {e}')
+        self.nickname.setText(nickname)
+
+        vip_level = 0
+        if session is not None:
+            try:
+                vip = getattr(session, 'vipType', 0)
+                if isinstance(vip, (int, float)):
+                    vip_level = int(vip)
+            except Exception as e:
+                logging.warning(f'Failed to get vipType: {e}')
+        self.vip.setText(f'VIP Level: {vip_level}')
+
+        if not os.path.exists('images/avatar.png'):
+            pixmap = QPixmap('images/def_avatar.png')
+        else:
+            pixmap = QPixmap('images/avatar.png')
+        if not pixmap.isNull():
+            scaled = pixmap.scaled(self.height() * 0.4, self.height() * 0.4, # type: ignore
+                                Qt.AspectRatioMode.KeepAspectRatio,
+                                Qt.TransformationMode.SmoothTransformation)
+            self.avatar.setPixmap(scaled)
+
+    def login(self):
+        method = get_value_bylist(mwindow, 'Login', 'choose method to log into an account', [
+            'QR Code', 'Cell Phone', 'Anonymous'
+        ])
+        if method is None:
+            return
+
+        if method == 'Anonymous':
+            apis.login.LoginViaAnonymousAccount()
+
+            cfg.session = ncm.DumpSessionAsString(ncm.GetCurrentSession())
+        elif method == 'QR Code':
+            logger = logging.getLogger('login-QRcode')
+            logger.info('start logging in')
+
+            key: str = apis.login.LoginQrcodeUnikey()['unikey'] # type: ignore
+            logger.debug(f'{key=}')
+
+            url = apis.login.GetLoginQRCodeUrl(key)
+            logger.debug(f'{url=}')
+
+            msgbox = QRCodeLoginDialog(mwindow, url, key, logger)
+            if msgbox.exec():
+                cfg.session = ncm.DumpSessionAsString(ncm.GetCurrentSession())
+
+        InfoBar.success('Login successful', f'logged in via method {method}', parent=mwindow, duration=5000)
+
+        self.refreshInformations()
+
+    def showSession(self):
+        s = ncm.DumpSessionAsString(ncm.GetCurrentSession())
+
+        msgbox = MessageBox('Session', s, mwindow)
+        msgbox.exec()
 
 class EditingIslandOverlay(QWidget):
     def __init__(self) -> None:
@@ -2408,7 +2516,7 @@ class MainWindow(FluentWindowBase):
             self.move(cfg.window_x, cfg.window_y)
             self.resize(cfg.window_width, cfg.window_height)
 
-            if cfg.wiondow_maximized:
+            if cfg.window_maximized:
                 QTimer.singleShot(500, self.showMaximized)
 
         self.init()
@@ -2492,6 +2600,8 @@ class MainWindow(FluentWindowBase):
             launchwindow.setStatusText('Initializing...\n  Initializing Mainwindow...')
             launchwindow.deleteLater()
 
+            sep.refreshInformations()
+
         doWithMultiThreading(_init, (), self, 'Loading...')
 
         InfoBar.info(
@@ -2519,7 +2629,7 @@ class MainWindow(FluentWindowBase):
         cfg.window_y = self.y()
         cfg.window_width = self.width() - (505 if dp.controller.expand_btn.text() == 'Collapse' else 0)
         cfg.window_height = self.height()
-        cfg.wiondow_maximized = self.isMaximized()
+        cfg.window_maximized = self.isMaximized()
 
         saveConfig()
         saveFavorites(favs)
@@ -2593,6 +2703,24 @@ class LaunchWindow(QWidget):
         if sleep: time.sleep(0.05)
 
 if __name__ == '__main__':
+    if cfg.session is None:
+        apis.login.LoginViaAnonymousAccount()
+
+        sstr = ncm.DumpSessionAsString(apis.GetCurrentSession())
+        cfg.session = sstr
+        cfg.login_status = apis.login.GetCurrentLoginStatus() # type: ignore
+
+        logging.info('logged into generated anonymous account')
+    else:
+        ncm.SetCurrentSession(ncm.LoadSessionFromString(cfg.session))
+
+        logging.info('loaded session from pickle')
+
+    if cfg.login_status and not ncm.GetCurrentSession().is_anonymous:
+        apis.login.WriteLoginInfo(cfg.login_status)
+    else:
+        cfg.login_status = apis.login.GetCurrentLoginStatus() # type: ignore
+
     app.setStyleSheet(f'QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}')
     setTheme(Theme.AUTO)
 
@@ -2634,16 +2762,6 @@ if __name__ == '__main__':
     sep = SessionPage()
     launchwindow.setStatusText('Initializing...\n  Initializing Mainwindow...')
     mwindow = MainWindow()
-
-    if cfg.session is None:
-        logging.info('no account, logging in...')
-
-        dict_ = ncm.login.LoginViaAnonymousAccount()
-        data: ncm.Session = ncm.GetCurrentSession()
-
-        InfoBar.success('Login Success', parent=mwindow, content='Logined into Anonymous account', duration=10000, isClosable=False)
-
-        cfg.session = data
 
     fp.refresh()
 

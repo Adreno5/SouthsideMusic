@@ -1541,13 +1541,8 @@ class PlayingPage(QWidget):
         assert self.cur is not None
 
         def _parse():
-            data = requests.get(
-                f'https://apis.netstart.cn/music/lyric?id={self.cur.info['id']}', # type: ignore
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                },
-            ).json()
+            with ncm.GetCurrentSession():
+                data: dict = apis.track.GetTrackLyrics(str(self.cur.info['id'])) # type: ignore
             mgr.cur = data['lrc']['lyric']
             if data.get('tlyric'):
                 transmgr.cur = '\n'.join(data['tlyric']['lyric'].splitlines()[1:])
@@ -1563,9 +1558,9 @@ class PlayingPage(QWidget):
 
                 self.sendSongFMAndInfo()
 
-            doWithMultiThreading(_real, (), mwindow, 'Parsing...', finished=_fini)
+            doWithMultiThreading(_real, (), mwindow, 'Parsing...', finished=_fini, dialog=False)
 
-        doWithMultiThreading(_parse, (), mwindow, 'Loading...')
+        doWithMultiThreading(_parse, (), mwindow, 'Loading...', dialog=False)
 
     def downloadMusic(self):
         assert self.cur is not None

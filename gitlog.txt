@@ -1,0 +1,1939 @@
+commit b9c95d8e4637bf22cdbc89de11644278a71a8b22
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sun Apr 19 12:36:42 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sun Apr 19 12:36:42 2026 +0800
+
+    updated to v17
+
+M	pyproject.toml
+M	src/main.py
+
+commit 87b80c1b2ffcb7a51c56e67a42c15c6a498e43de
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sun Apr 19 12:28:24 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sun Apr 19 12:28:24 2026 +0800
+
+    feat: 添加特权标签显示并优化音频处理功能
+    
+    - 在音乐卡片中添加特权信息标签，显示歌曲特权级别和用户VIP类型
+    - 移除AudioSegment.from_file中的硬编码format参数，让库自动检测音频格式
+    - 在SessionPage中重构登录逻辑，支持二维码和手机号登录方式
+    - 添加登录方法配置项(login_method)，记录当前使用的登录方式
+    - 实现手机号验证码登录功能，包括发送验证、验证状态检查和登录流程
+    - 重构下载工具类，实现多线程分块下载功能，提升大文件下载效率
+    - 添加登录成功后的信息保存逻辑，确保登录状态正确持久化
+    - 修复PlayPage中音频加载的格式参数问题
+    - 在音频转换时添加调试日志输出转换命令
+
+M	src/main.py
+M	src/utils/config_util.py
+M	src/utils/loading_util.py
+M	src/utils/play_util.py
+
+commit a191d44d5a1f18caf3114a64b6fc520f9a639cd4
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sun Apr 19 11:32:34 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sun Apr 19 11:32:34 2026 +0800
+
+    feat: 添加网易云音乐登录功能和VIP权限检查
+    
+    - 集成pyncm库实现网易云音乐API访问
+    - 添加二维码、手机号和匿名登录方式
+    - 实现VIP权限检查和显示用户信息
+    - 添加头像下载和用户详情获取功能
+    
+    fix: 修复应用退出时的资源清理问题
+    
+    - 在KeyboardInterrupt异常处理中添加窗口关闭和应用退出
+    - 修复VIP权限比较逻辑，正确显示VIP限制状态
+    
+    chore: 更新项目依赖和构建配置
+    
+    - 在pyproject.toml中添加inquirer、pillow、pyncm、qrcode等依赖
+    - 修改.gitignore文件模式匹配res*.json
+    - 更新构建脚本添加图片资源复制
+    
+    refactor: 重构网易云音乐API调用方式
+    
+    - 移除旧的API调用方法，使用pyncm库的官方接口
+    - 更新音乐下载、歌词获取等功能的实现方式
+    - 优化音乐卡牌中的VIP权限判断逻辑
+
+M	.gitignore
+M	build.bat
+A	icons/login_dark.svg
+A	icons/login_light.svg
+A	images/avatar.png
+A	images/def_avatar.png
+M	pyproject.toml
+M	requirements.txt
+M	src/main.py
+D	src/pyncm/__init__.py
+D	src/pyncm/__main__.py
+D	src/pyncm/apis/__init__.py
+D	src/pyncm/apis/album.py
+D	src/pyncm/apis/artist.py
+D	src/pyncm/apis/cloud.py
+D	src/pyncm/apis/cloudsearch.py
+D	src/pyncm/apis/exception.py
+D	src/pyncm/apis/login.py
+D	src/pyncm/apis/playlist.py
+D	src/pyncm/apis/track.py
+D	src/pyncm/apis/user.py
+D	src/pyncm/apis/video.py
+D	src/pyncm/utils/__init__.py
+D	src/pyncm/utils/aes.py
+D	src/pyncm/utils/constant.py
+D	src/pyncm/utils/crypto.py
+D	src/pyncm/utils/helper.py
+D	src/pyncm/utils/lrcparser.py
+D	src/pyncm/utils/security.py
+D	src/pyncm/utils/yrcparser.py
+A	src/test.py
+M	src/utils/config_util.py
+M	src/utils/dialog_util.py
+D	test.py
+M	uv.lock
+
+commit 3139f167fb71891b638e36e2705c01e6710ae069
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sat Apr 18 23:04:45 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sat Apr 18 23:04:45 2026 +0800
+
+    refactor(main): 移除pyncm依赖并优化异常处理
+    
+    - 从pyproject.toml和uv.lock中移除pyncm依赖
+    - 更新.gitignore添加config.pkl文件
+    - 重命名hijack_standard_streams函数为hijackStreams
+    - 在LoggingStream中过滤QFluentWidgets日志
+    - 重构异常处理逻辑，在崩溃时显示错误对话框并保存配置
+    - 修复config.json配置项拼写错误(wiondow_maximized改为window_maximized)
+    
+    feat(config): 实现pickle格式配置文件管理
+    
+    - 将配置文件格式从JSON改为pickle以支持复杂对象序列化
+    - 添加restoreOldConfigFormat函数用于迁移旧配置格式
+    - 实现自动配置格式转换和数据持久化功能
+    
+    fix(music-card): 确保网易云音乐API调用前验证会话状态
+    
+    - 在MusicCard类中添加会话状态检查
+    - 使用with cfg.session上下文管理器确保API调用安全
+    
+    refactor(island): 调整动态岛初始化顺序和定时器设置
+    
+    - 修改DynamicIslandPage初始化顺序，确保组件正确显示
+    - 统一各页面定时器时间间隔为60fps
+    - 修复南边客户端状态更新时的空指针异常
+    
+    feat(login): 实现匿名账户自动登录功能
+    
+    - 在应用启动时检查会话状态
+    - 无有效会话时自动创建匿名账户登录
+    - 显示登录成功提示信息
+
+M	.gitignore
+M	pyproject.toml
+M	src/main.py
+A	src/pyncm/__init__.py
+A	src/pyncm/__main__.py
+A	src/pyncm/apis/__init__.py
+A	src/pyncm/apis/album.py
+A	src/pyncm/apis/artist.py
+A	src/pyncm/apis/cloud.py
+A	src/pyncm/apis/cloudsearch.py
+A	src/pyncm/apis/exception.py
+A	src/pyncm/apis/login.py
+A	src/pyncm/apis/playlist.py
+A	src/pyncm/apis/track.py
+A	src/pyncm/apis/user.py
+A	src/pyncm/apis/video.py
+A	src/pyncm/utils/__init__.py
+A	src/pyncm/utils/aes.py
+A	src/pyncm/utils/constant.py
+A	src/pyncm/utils/crypto.py
+A	src/pyncm/utils/helper.py
+A	src/pyncm/utils/lrcparser.py
+A	src/pyncm/utils/security.py
+A	src/pyncm/utils/yrcparser.py
+D	src/utils/__init__.py
+M	src/utils/base/base_util.py
+M	src/utils/config_util.py
+M	test.py
+M	uv.lock
+
+commit 7b0bba0eaa17b1853b9c474dc4db404536d9ac9b
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sat Apr 18 21:12:50 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sat Apr 18 21:12:50 2026 +0800
+
+    ```
+    feat(build): 使用Nuitka重构构建流程并优化应用打包
+    
+    - 将构建脚本从VBS改为Python启动器，并集成Nuitka编译
+    - 添加embed_python到.gitignore，移除旧的Launch.vbs文件
+    - 更新构建批处理脚本以支持Nuitka编译和文件复制
+    - 修改launch.py以支持嵌入式Python环境路径
+    - 升级nuitka依赖版本至4.0.8
+    - 重构收藏歌曲选择对话框实现
+    - 修复控制台输出过滤规则，添加对QFont错误的过滤
+    - 清理构建过程中的临时文件和无用依赖包
+
+M	.gitignore
+D	Launch.vbs
+M	build.bat
+A	get-pip.py
+A	icons/session_dark.svg
+A	icons/session_light.svg
+M	pyproject.toml
+M	requirements.txt
+M	src/launch.py
+M	src/main.py
+A	src/utils/__init__.py
+M	src/utils/favorite_util.py
+M	uv.lock
+
+commit e7084215b5c56474e543d653f4c38128c3fe993f
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sat Apr 11 09:34:20 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sat Apr 11 09:34:20 2026 +0800
+
+    feat(build): 更新构建脚本并优化启动流程
+    
+    - 在.gitignore中添加python-venv目录排除规则
+    - 重构build.bat脚本，简化构建流程并改进输出信息
+    - 优化src/launch.py启动逻辑，直接调用虚拟环境Python解释器
+    - 移除不必要的PowerShell包装层，提高启动效率
+    - 改进错误处理和日志输出格式
+
+M	.gitignore
+A	Launch.vbs
+M	build.bat
+A	requirements.txt
+M	src/launch.py
+
+commit c2b83cca49fbae207ae7639b97acf448114a768a
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Apr 10 23:08:47 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Apr 10 23:08:47 2026 +0800
+
+    remove python
+
+M	build.bat
+D	python/LICENSE.txt
+D	python/_asyncio.pyd
+D	python/_bz2.pyd
+D	python/_ctypes.pyd
+D	python/_decimal.pyd
+D	python/_elementtree.pyd
+D	python/_hashlib.pyd
+D	python/_lzma.pyd
+D	python/_msi.pyd
+D	python/_multiprocessing.pyd
+D	python/_overlapped.pyd
+D	python/_queue.pyd
+D	python/_socket.pyd
+D	python/_sqlite3.pyd
+D	python/_ssl.pyd
+D	python/_uuid.pyd
+D	python/_wmi.pyd
+D	python/_zoneinfo.pyd
+D	python/libcrypto-3.dll
+D	python/libffi-8.dll
+D	python/libssl-3.dll
+D	python/pyexpat.pyd
+D	python/python.cat
+D	python/python.exe
+D	python/python3.dll
+D	python/python312._pth
+D	python/python312.dll
+D	python/pythonw.exe
+D	python/select.pyd
+D	python/sqlite3.dll
+D	python/unicodedata.pyd
+D	python/vcruntime140.dll
+D	python/vcruntime140_1.dll
+D	python/winsound.pyd
+M	src/launch.py
+
+commit 566b7f9e7ad70b2d3c32345d97758b04eb8b9317
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Apr 10 22:55:47 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Apr 10 22:55:47 2026 +0800
+
+    add python
+
+M	build.bat
+A	python/LICENSE.txt
+A	python/_asyncio.pyd
+A	python/_bz2.pyd
+A	python/_ctypes.pyd
+A	python/_decimal.pyd
+A	python/_elementtree.pyd
+A	python/_hashlib.pyd
+A	python/_lzma.pyd
+A	python/_msi.pyd
+A	python/_multiprocessing.pyd
+A	python/_overlapped.pyd
+A	python/_queue.pyd
+A	python/_socket.pyd
+A	python/_sqlite3.pyd
+A	python/_ssl.pyd
+A	python/_uuid.pyd
+A	python/_wmi.pyd
+A	python/_zoneinfo.pyd
+A	python/libcrypto-3.dll
+A	python/libffi-8.dll
+A	python/libssl-3.dll
+A	python/pyexpat.pyd
+A	python/python.cat
+A	python/python.exe
+A	python/python3.dll
+A	python/python312._pth
+A	python/python312.dll
+A	python/pythonw.exe
+A	python/select.pyd
+A	python/sqlite3.dll
+A	python/unicodedata.pyd
+A	python/vcruntime140.dll
+A	python/vcruntime140_1.dll
+A	python/winsound.pyd
+M	src/launch.py
+
+commit 9ccaaeb780a04cd785ec52129885ce663514049c
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Apr 10 22:29:14 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Apr 10 22:29:14 2026 +0800
+
+    yes
+
+M	.gitignore
+M	build.bat
+M	src/main.py
+
+commit 22ed198cf120c98f7d37e9284f46b43a66f15fdc
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Apr 10 22:22:06 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Apr 10 22:22:06 2026 +0800
+
+    build(build): 优化构建脚本并移除FFmpeg LFS文件
+    
+    - 更新build.bat脚本，添加Nuitka构建过程的状态提示标题
+    - 增加对build.result目录的完整文件复制，包括.venv、src、fonts、icons和ffmpeg目录
+    - 添加清理步骤以删除不必要的缓存和测试文件，减少最终包大小
+    - 移除FFmpeg相关的LFS跟踪文件，避免大文件提交
+
+M	build.bat
+D	ffmpeg/bin/avcodec-62.dll
+D	ffmpeg/bin/avdevice-62.dll
+D	ffmpeg/bin/avfilter-11.dll
+D	ffmpeg/bin/avformat-62.dll
+D	ffmpeg/bin/avutil-60.dll
+D	ffmpeg/bin/ffplay.exe
+D	ffmpeg/bin/ffprobe.exe
+D	ffmpeg/bin/swresample-6.dll
+D	ffmpeg/bin/swscale-9.dll
+D	ffmpeg/include/libavcodec/ac3_parser.h
+D	ffmpeg/include/libavcodec/adts_parser.h
+D	ffmpeg/include/libavcodec/avcodec.h
+D	ffmpeg/include/libavcodec/avdct.h
+D	ffmpeg/include/libavcodec/bsf.h
+D	ffmpeg/include/libavcodec/codec.h
+D	ffmpeg/include/libavcodec/codec_desc.h
+D	ffmpeg/include/libavcodec/codec_id.h
+D	ffmpeg/include/libavcodec/codec_par.h
+D	ffmpeg/include/libavcodec/d3d11va.h
+D	ffmpeg/include/libavcodec/defs.h
+D	ffmpeg/include/libavcodec/dirac.h
+D	ffmpeg/include/libavcodec/dv_profile.h
+D	ffmpeg/include/libavcodec/dxva2.h
+D	ffmpeg/include/libavcodec/exif.h
+D	ffmpeg/include/libavcodec/jni.h
+D	ffmpeg/include/libavcodec/mediacodec.h
+D	ffmpeg/include/libavcodec/packet.h
+D	ffmpeg/include/libavcodec/qsv.h
+D	ffmpeg/include/libavcodec/smpte_436m.h
+D	ffmpeg/include/libavcodec/vdpau.h
+D	ffmpeg/include/libavcodec/version.h
+D	ffmpeg/include/libavcodec/version_major.h
+D	ffmpeg/include/libavcodec/videotoolbox.h
+D	ffmpeg/include/libavcodec/vorbis_parser.h
+D	ffmpeg/include/libavdevice/avdevice.h
+D	ffmpeg/include/libavdevice/version.h
+D	ffmpeg/include/libavdevice/version_major.h
+D	ffmpeg/include/libavfilter/avfilter.h
+D	ffmpeg/include/libavfilter/buffersink.h
+D	ffmpeg/include/libavfilter/buffersrc.h
+D	ffmpeg/include/libavfilter/version.h
+D	ffmpeg/include/libavfilter/version_major.h
+D	ffmpeg/include/libavformat/avformat.h
+D	ffmpeg/include/libavformat/avio.h
+D	ffmpeg/include/libavformat/version.h
+D	ffmpeg/include/libavformat/version_major.h
+D	ffmpeg/include/libavutil/adler32.h
+D	ffmpeg/include/libavutil/aes.h
+D	ffmpeg/include/libavutil/aes_ctr.h
+D	ffmpeg/include/libavutil/ambient_viewing_environment.h
+D	ffmpeg/include/libavutil/attributes.h
+D	ffmpeg/include/libavutil/audio_fifo.h
+D	ffmpeg/include/libavutil/avassert.h
+D	ffmpeg/include/libavutil/avconfig.h
+D	ffmpeg/include/libavutil/avstring.h
+D	ffmpeg/include/libavutil/avutil.h
+D	ffmpeg/include/libavutil/base64.h
+D	ffmpeg/include/libavutil/blowfish.h
+D	ffmpeg/include/libavutil/bprint.h
+D	ffmpeg/include/libavutil/bswap.h
+D	ffmpeg/include/libavutil/buffer.h
+D	ffmpeg/include/libavutil/camellia.h
+D	ffmpeg/include/libavutil/cast5.h
+D	ffmpeg/include/libavutil/channel_layout.h
+D	ffmpeg/include/libavutil/common.h
+D	ffmpeg/include/libavutil/container_fifo.h
+D	ffmpeg/include/libavutil/cpu.h
+D	ffmpeg/include/libavutil/crc.h
+D	ffmpeg/include/libavutil/csp.h
+D	ffmpeg/include/libavutil/des.h
+D	ffmpeg/include/libavutil/detection_bbox.h
+D	ffmpeg/include/libavutil/dict.h
+D	ffmpeg/include/libavutil/display.h
+D	ffmpeg/include/libavutil/dovi_meta.h
+D	ffmpeg/include/libavutil/downmix_info.h
+D	ffmpeg/include/libavutil/encryption_info.h
+D	ffmpeg/include/libavutil/error.h
+D	ffmpeg/include/libavutil/eval.h
+D	ffmpeg/include/libavutil/executor.h
+D	ffmpeg/include/libavutil/ffversion.h
+D	ffmpeg/include/libavutil/fifo.h
+D	ffmpeg/include/libavutil/file.h
+D	ffmpeg/include/libavutil/film_grain_params.h
+D	ffmpeg/include/libavutil/frame.h
+D	ffmpeg/include/libavutil/hash.h
+D	ffmpeg/include/libavutil/hdr_dynamic_metadata.h
+D	ffmpeg/include/libavutil/hdr_dynamic_vivid_metadata.h
+D	ffmpeg/include/libavutil/hmac.h
+D	ffmpeg/include/libavutil/hwcontext.h
+D	ffmpeg/include/libavutil/hwcontext_amf.h
+D	ffmpeg/include/libavutil/hwcontext_cuda.h
+D	ffmpeg/include/libavutil/hwcontext_d3d11va.h
+D	ffmpeg/include/libavutil/hwcontext_d3d12va.h
+D	ffmpeg/include/libavutil/hwcontext_drm.h
+D	ffmpeg/include/libavutil/hwcontext_dxva2.h
+D	ffmpeg/include/libavutil/hwcontext_mediacodec.h
+D	ffmpeg/include/libavutil/hwcontext_oh.h
+D	ffmpeg/include/libavutil/hwcontext_opencl.h
+D	ffmpeg/include/libavutil/hwcontext_qsv.h
+D	ffmpeg/include/libavutil/hwcontext_vaapi.h
+D	ffmpeg/include/libavutil/hwcontext_vdpau.h
+D	ffmpeg/include/libavutil/hwcontext_videotoolbox.h
+D	ffmpeg/include/libavutil/hwcontext_vulkan.h
+D	ffmpeg/include/libavutil/iamf.h
+D	ffmpeg/include/libavutil/imgutils.h
+D	ffmpeg/include/libavutil/intfloat.h
+D	ffmpeg/include/libavutil/intreadwrite.h
+D	ffmpeg/include/libavutil/lfg.h
+D	ffmpeg/include/libavutil/log.h
+D	ffmpeg/include/libavutil/lzo.h
+D	ffmpeg/include/libavutil/macros.h
+D	ffmpeg/include/libavutil/mastering_display_metadata.h
+D	ffmpeg/include/libavutil/mathematics.h
+D	ffmpeg/include/libavutil/md5.h
+D	ffmpeg/include/libavutil/mem.h
+D	ffmpeg/include/libavutil/motion_vector.h
+D	ffmpeg/include/libavutil/murmur3.h
+D	ffmpeg/include/libavutil/opt.h
+D	ffmpeg/include/libavutil/parseutils.h
+D	ffmpeg/include/libavutil/pixdesc.h
+D	ffmpeg/include/libavutil/pixelutils.h
+D	ffmpeg/include/libavutil/pixfmt.h
+D	ffmpeg/include/libavutil/random_seed.h
+D	ffmpeg/include/libavutil/rational.h
+D	ffmpeg/include/libavutil/rc4.h
+D	ffmpeg/include/libavutil/refstruct.h
+D	ffmpeg/include/libavutil/replaygain.h
+D	ffmpeg/include/libavutil/ripemd.h
+D	ffmpeg/include/libavutil/samplefmt.h
+D	ffmpeg/include/libavutil/sha.h
+D	ffmpeg/include/libavutil/sha512.h
+D	ffmpeg/include/libavutil/spherical.h
+D	ffmpeg/include/libavutil/stereo3d.h
+D	ffmpeg/include/libavutil/tdrdi.h
+D	ffmpeg/include/libavutil/tea.h
+D	ffmpeg/include/libavutil/threadmessage.h
+D	ffmpeg/include/libavutil/time.h
+D	ffmpeg/include/libavutil/timecode.h
+D	ffmpeg/include/libavutil/timestamp.h
+D	ffmpeg/include/libavutil/tree.h
+D	ffmpeg/include/libavutil/twofish.h
+D	ffmpeg/include/libavutil/tx.h
+D	ffmpeg/include/libavutil/uuid.h
+D	ffmpeg/include/libavutil/version.h
+D	ffmpeg/include/libavutil/video_enc_params.h
+D	ffmpeg/include/libavutil/video_hint.h
+D	ffmpeg/include/libavutil/xtea.h
+D	ffmpeg/include/libswresample/swresample.h
+D	ffmpeg/include/libswresample/version.h
+D	ffmpeg/include/libswresample/version_major.h
+D	ffmpeg/include/libswscale/swscale.h
+D	ffmpeg/include/libswscale/version.h
+D	ffmpeg/include/libswscale/version_major.h
+D	ffmpeg/lib/avcodec-62.def
+D	ffmpeg/lib/avcodec.lib
+D	ffmpeg/lib/avdevice-62.def
+D	ffmpeg/lib/avdevice.lib
+D	ffmpeg/lib/avfilter-11.def
+D	ffmpeg/lib/avfilter.lib
+D	ffmpeg/lib/avformat-62.def
+D	ffmpeg/lib/avformat.lib
+D	ffmpeg/lib/avutil-60.def
+D	ffmpeg/lib/avutil.lib
+D	ffmpeg/lib/libavcodec.dll.a
+D	ffmpeg/lib/libavdevice.dll.a
+D	ffmpeg/lib/libavfilter.dll.a
+D	ffmpeg/lib/libavformat.dll.a
+D	ffmpeg/lib/libavutil.dll.a
+D	ffmpeg/lib/libswresample.dll.a
+D	ffmpeg/lib/libswscale.dll.a
+D	ffmpeg/lib/pkgconfig/libavcodec.pc
+D	ffmpeg/lib/pkgconfig/libavdevice.pc
+D	ffmpeg/lib/pkgconfig/libavfilter.pc
+D	ffmpeg/lib/pkgconfig/libavformat.pc
+D	ffmpeg/lib/pkgconfig/libavutil.pc
+D	ffmpeg/lib/pkgconfig/libswresample.pc
+D	ffmpeg/lib/pkgconfig/libswscale.pc
+D	ffmpeg/lib/swresample-6.def
+D	ffmpeg/lib/swresample.lib
+D	ffmpeg/lib/swscale-9.def
+D	ffmpeg/lib/swscale.lib
+
+commit ab2e84a9c5f3236643fabfd56ddb02d47dda99d4
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Apr 10 22:04:31 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Apr 10 22:04:31 2026 +0800
+
+    updated to v16
+
+M	pyproject.toml
+
+commit 598ffb51b7866fddec660df48ef90c48eff71797
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Apr 10 22:04:13 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Apr 10 22:04:13 2026 +0800
+
+    five
+
+D	icons/session_dark.svg
+D	icons/session_light.svg
+
+commit 50a8b3e0d324f1152df4e3630b8d065d81975664
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Apr 10 22:02:52 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Apr 10 22:02:52 2026 +0800
+
+    feat: 添加会话页面和构建脚本优化
+    
+    - 新增SessionPage组件并集成到主窗口导航中
+    - 重构构建脚本，将main.py改为launch.py作为启动入口
+    - 添加launch.build、launch.dist和build.result到.gitignore
+    - 在构建脚本中添加清理旧构建结果的功能
+    - 集成会话配置到应用配置系统中
+    - 修复了一些代码中的空行问题
+
+M	.gitignore
+M	build.bat
+A	icons/session_dark.svg
+A	icons/session_light.svg
+A	src/launch.py
+M	src/main.py
+M	src/utils/config_util.py
+M	test.py
+
+commit 1190cf3fecfee3c2816ea696b187e95dd962a371
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Apr 10 21:12:14 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Apr 10 21:12:14 2026 +0800
+
+    feat: 集成网易云音乐API并改进日志系统
+    
+    - 添加pymusiclibrary和pyncm依赖用于网易云音乐功能
+    - 实现彩色日志处理器，支持线程ID显示和ANSI转义码处理
+    - 创建标准流重定向器来捕获stderr输出到日志系统
+    - 使用pyncm库替换原有的HTTP API调用获取歌曲详情和歌词
+    - 更新异常处理机制，在用户中断时正常关闭应用
+    - 移除过时的日志处理器实现
+    - 调整搜索结果调试信息显示逻辑
+
+M	pyproject.toml
+M	src/main.py
+M	src/utils/base/w163_util.py
+M	src/utils/favorite_util.py
+M	uv.lock
+
+commit 3529575820e2ea62c883e3dfc7e446a8781618e0
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Apr 10 19:53:45 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Apr 10 19:53:45 2026 +0800
+
+    refactor(utils): 移动基础工具类到base模块
+    
+    将utils.lyrics.base_util中的基础工具类移动到utils.base.base_util，
+    统一管理基础工具类和网易云音乐工具类，优化模块结构。
+    
+    feat(README): 添加使用限制说明
+    
+    在README文档中添加"请勿用作商业用途"的使用限制说明。
+    
+    refactor(utils): 调整模块导入路径
+    
+    更新配置工具、收藏页面和主程序中的导入路径，
+    从utils.lyrics.base_util改为utils.base.base_util。
+    
+    chore(build): 更新项目版本号
+    
+    将项目版本从13升级到15。
+
+M	README.md
+M	src/main.py
+R100	src/utils/lyrics/base_util.py	src/utils/base/base_util.py
+R096	src/utils/lyrics/w163_util.py	src/utils/base/w163_util.py
+M	src/utils/config_util.py
+M	test.py
+M	uv.lock
+
+commit 136ec5b5ff2a5515edd49bda1309d9083ea3af6b
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Mon Apr 6 18:13:28 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Mon Apr 6 18:13:28 2026 +0800
+
+    feat(main): 添加程序退出时的资源清理逻辑
+    
+    在程序退出时停止WebSocket服务器和播放器，
+    确保正确释放相关资源并避免潜在的内存泄漏问题。
+
+M	src/main.py
+
+commit 70c41f1cc7115a45184bd86f9d1e6dd653284a05
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Mon Apr 6 16:59:25 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Mon Apr 6 16:59:25 2026 +0800
+
+    fix(LaunchWindow): 调整启动窗口大小并修复样式设置
+    
+    - 将启动窗口固定大小从屏幕尺寸的40%调整为25%
+    - 修复背景色判断逻辑，将darkdetect.isDark()改为darkdetect.isLight()
+    - 添加标签文字颜色样式设置，深色模式下显示白色文字，
+      浅色模式下显示黑色文字
+    ```
+
+M	src/main.py
+
+commit 41ffdf538a0c4e259e1ea44952797ff90055caed
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Mon Apr 6 16:47:07 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Mon Apr 6 16:47:07 2026 +0800
+
+    feat(main): 添加深色模式背景色适配
+    
+    为LaunchWindow类添加样式表设置，根据darkdetect检测的系统主题
+    自动切换背景颜色，实现深色模式下的视觉一致性。
+
+M	src/main.py
+
+commit ba88d979ca6e003b748e7036e266d1f1013242de
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Mon Apr 6 15:22:21 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Mon Apr 6 15:22:21 2026 +0800
+
+    chore(build): 更新.gitignore文件
+    
+    添加SouthsideMusic_v目录到忽略列表中，
+    避免将释放文件提交到版本控制系统。
+
+M	.gitignore
+
+commit 2ac8780fcf014bfb42d05ce2ebbad78e1b6106e9
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Mon Apr 6 14:43:23 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Mon Apr 6 14:43:23 2026 +0800
+
+    build(build): 修复Windows构建脚本并更新版本号
+    
+    - 在build.bat中添加call命令确保虚拟环境激活和Nuitka构建正确执行
+    - 更新pyproject.toml中的版本号从v13到v15
+    - 保持命令调用的一致性以确保构建流程正常工作
+
+M	build.bat
+D	ffcache51GoiE
+A	nuitka-crash-report.xml
+M	pyproject.toml
+
+commit 62ed3cc295dfc11ecf7f3e3c411d56cfe5662c33
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Mon Apr 6 14:19:49 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Mon Apr 6 14:19:49 2026 +0800
+
+    feat(build): 更新构建脚本和依赖配置
+    
+    - 修改VSCode设置，将Python环境管理器从system切换到venv
+    - 更新build.bat构建脚本，改进FFmpeg文件复制逻辑并添加虚拟环境激活
+    - 在pyproject.toml中添加hpyt依赖库
+    - 更新uv.lock文件中的依赖项和项目版本号(8→13)
+
+M	.vscode/settings.json
+M	build.bat
+M	pyproject.toml
+M	uv.lock
+
+commit 89c40f9b5beec7e7ebc69c625e9e55d71112c1ed
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Mon Apr 6 14:04:19 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Mon Apr 6 14:04:19 2026 +0800
+
+    feat: 添加启动窗口并优化构建脚本
+    
+    添加了启动窗口(LaunchWindow)来显示程序初始化进度，
+    改进了构建脚本中的文件复制方式，从copy改为xcopy以确保ffmpeg目录正确复制，
+    更新了依赖导入顺序和初始化流程以支持启动窗口功能，
+    新增loadFavoritesWithLaunching函数提供带状态显示的收藏夹加载功能
+
+A	.vscode/settings.json
+M	build.bat
+A	ffcache51GoiE
+M	src/main.py
+M	src/utils/favorite_util.py
+M	test.py
+
+commit 311070abe986194121c3022e8ff4407605813441
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Tue Mar 3 23:06:00 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Tue Mar 3 23:06:00 2026 +0800
+
+    feat(playing): 添加发送歌曲信息和封面图像的功能
+
+M	src/main.py
+
+commit 890fbf91c2f59c2a7b97ed5976cd9e4b2fd4fc6f
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 20 20:56:41 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 20 20:56:41 2026 +0800
+
+    feat(core): 添加异常钩子处理增强错误日志记录
+    
+    - 添加自定义异常钩子函数 patchedExceptHook 来捕获和记录详细的异常信息
+    - 实现异常链追踪功能，显示完整的异常调用栈和上下文关系
+    - 改进日志记录格式，增加亮色高亮显示错误级别
+    - 移除未使用的导入语句（Queue、QEvent、QEnterEvent）
+    - 修复终端宽度计算偏移量，优化日志显示格式
+    - 简化音频段补丁类的日志输出格式
+
+M	src/main.py
+M	src/utils/play_util.py
+
+commit d8aa0a49408395aed07a6201eee444f7d4bbdf46
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 20 20:22:50 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 20 20:22:50 2026 +0800
+
+    build(build): 更新构建脚本以正确复制ffmpeg文件
+    
+    修改了build.bat脚本，将ffmpeg目录复制到main.dist目录下，
+    确保应用程序能够正确访问ffmpeg资源文件
+
+M	build.bat
+
+commit 8898a5006e2fbaf03475c275620a77c7d0199bcf
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 20 20:12:06 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 20 20:12:06 2026 +0800
+
+    updated to v13
+
+M	pyproject.toml
+
+commit 9031545665813d3f6a40886e6157517da1758190
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 20 20:08:15 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 20 20:08:15 2026 +0800
+
+    fix: configure LFS for ffmpeg directory
+
+M	.gitattributes
+
+commit 729a24b0e9ad6458c793bc9069ea30a54546e67c
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 20 20:05:51 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 20 20:05:51 2026 +0800
+
+    add ffmpeg folder
+
+commit b9aef48127e8a51b24cc40359c313994df7ea33a
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 20 19:58:02 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 20 19:58:02 2026 +0800
+
+    feat(build): 添加ffmpeg资源目录到打包配置
+    
+    打包脚本中增加了--include-data-dir="./ffmpeg=./ffmpeg"参数，
+    确保ffmpeg二进制文件被正确包含到最终的可执行文件中。
+    
+    BREAKING CHANGE: 移除了build_with_console.bat和build_use_pyinstaller.bat构建脚本
+
+M	build.bat
+D	build_use_pyinstaller.bat
+D	build_with_console.bat
+A	ffmpeg/bin/avcodec-62.dll
+A	ffmpeg/bin/avdevice-62.dll
+A	ffmpeg/bin/avfilter-11.dll
+A	ffmpeg/bin/avformat-62.dll
+A	ffmpeg/bin/avutil-60.dll
+A	ffmpeg/bin/ffmpeg.exe
+A	ffmpeg/bin/ffplay.exe
+A	ffmpeg/bin/ffprobe.exe
+A	ffmpeg/bin/swresample-6.dll
+A	ffmpeg/bin/swscale-9.dll
+A	ffmpeg/include/libavcodec/ac3_parser.h
+A	ffmpeg/include/libavcodec/adts_parser.h
+A	ffmpeg/include/libavcodec/avcodec.h
+A	ffmpeg/include/libavcodec/avdct.h
+A	ffmpeg/include/libavcodec/bsf.h
+A	ffmpeg/include/libavcodec/codec.h
+A	ffmpeg/include/libavcodec/codec_desc.h
+A	ffmpeg/include/libavcodec/codec_id.h
+A	ffmpeg/include/libavcodec/codec_par.h
+A	ffmpeg/include/libavcodec/d3d11va.h
+A	ffmpeg/include/libavcodec/defs.h
+A	ffmpeg/include/libavcodec/dirac.h
+A	ffmpeg/include/libavcodec/dv_profile.h
+A	ffmpeg/include/libavcodec/dxva2.h
+A	ffmpeg/include/libavcodec/exif.h
+A	ffmpeg/include/libavcodec/jni.h
+A	ffmpeg/include/libavcodec/mediacodec.h
+A	ffmpeg/include/libavcodec/packet.h
+A	ffmpeg/include/libavcodec/qsv.h
+A	ffmpeg/include/libavcodec/smpte_436m.h
+A	ffmpeg/include/libavcodec/vdpau.h
+A	ffmpeg/include/libavcodec/version.h
+A	ffmpeg/include/libavcodec/version_major.h
+A	ffmpeg/include/libavcodec/videotoolbox.h
+A	ffmpeg/include/libavcodec/vorbis_parser.h
+A	ffmpeg/include/libavdevice/avdevice.h
+A	ffmpeg/include/libavdevice/version.h
+A	ffmpeg/include/libavdevice/version_major.h
+A	ffmpeg/include/libavfilter/avfilter.h
+A	ffmpeg/include/libavfilter/buffersink.h
+A	ffmpeg/include/libavfilter/buffersrc.h
+A	ffmpeg/include/libavfilter/version.h
+A	ffmpeg/include/libavfilter/version_major.h
+A	ffmpeg/include/libavformat/avformat.h
+A	ffmpeg/include/libavformat/avio.h
+A	ffmpeg/include/libavformat/version.h
+A	ffmpeg/include/libavformat/version_major.h
+A	ffmpeg/include/libavutil/adler32.h
+A	ffmpeg/include/libavutil/aes.h
+A	ffmpeg/include/libavutil/aes_ctr.h
+A	ffmpeg/include/libavutil/ambient_viewing_environment.h
+A	ffmpeg/include/libavutil/attributes.h
+A	ffmpeg/include/libavutil/audio_fifo.h
+A	ffmpeg/include/libavutil/avassert.h
+A	ffmpeg/include/libavutil/avconfig.h
+A	ffmpeg/include/libavutil/avstring.h
+A	ffmpeg/include/libavutil/avutil.h
+A	ffmpeg/include/libavutil/base64.h
+A	ffmpeg/include/libavutil/blowfish.h
+A	ffmpeg/include/libavutil/bprint.h
+A	ffmpeg/include/libavutil/bswap.h
+A	ffmpeg/include/libavutil/buffer.h
+A	ffmpeg/include/libavutil/camellia.h
+A	ffmpeg/include/libavutil/cast5.h
+A	ffmpeg/include/libavutil/channel_layout.h
+A	ffmpeg/include/libavutil/common.h
+A	ffmpeg/include/libavutil/container_fifo.h
+A	ffmpeg/include/libavutil/cpu.h
+A	ffmpeg/include/libavutil/crc.h
+A	ffmpeg/include/libavutil/csp.h
+A	ffmpeg/include/libavutil/des.h
+A	ffmpeg/include/libavutil/detection_bbox.h
+A	ffmpeg/include/libavutil/dict.h
+A	ffmpeg/include/libavutil/display.h
+A	ffmpeg/include/libavutil/dovi_meta.h
+A	ffmpeg/include/libavutil/downmix_info.h
+A	ffmpeg/include/libavutil/encryption_info.h
+A	ffmpeg/include/libavutil/error.h
+A	ffmpeg/include/libavutil/eval.h
+A	ffmpeg/include/libavutil/executor.h
+A	ffmpeg/include/libavutil/ffversion.h
+A	ffmpeg/include/libavutil/fifo.h
+A	ffmpeg/include/libavutil/file.h
+A	ffmpeg/include/libavutil/film_grain_params.h
+A	ffmpeg/include/libavutil/frame.h
+A	ffmpeg/include/libavutil/hash.h
+A	ffmpeg/include/libavutil/hdr_dynamic_metadata.h
+A	ffmpeg/include/libavutil/hdr_dynamic_vivid_metadata.h
+A	ffmpeg/include/libavutil/hmac.h
+A	ffmpeg/include/libavutil/hwcontext.h
+A	ffmpeg/include/libavutil/hwcontext_amf.h
+A	ffmpeg/include/libavutil/hwcontext_cuda.h
+A	ffmpeg/include/libavutil/hwcontext_d3d11va.h
+A	ffmpeg/include/libavutil/hwcontext_d3d12va.h
+A	ffmpeg/include/libavutil/hwcontext_drm.h
+A	ffmpeg/include/libavutil/hwcontext_dxva2.h
+A	ffmpeg/include/libavutil/hwcontext_mediacodec.h
+A	ffmpeg/include/libavutil/hwcontext_oh.h
+A	ffmpeg/include/libavutil/hwcontext_opencl.h
+A	ffmpeg/include/libavutil/hwcontext_qsv.h
+A	ffmpeg/include/libavutil/hwcontext_vaapi.h
+A	ffmpeg/include/libavutil/hwcontext_vdpau.h
+A	ffmpeg/include/libavutil/hwcontext_videotoolbox.h
+A	ffmpeg/include/libavutil/hwcontext_vulkan.h
+A	ffmpeg/include/libavutil/iamf.h
+A	ffmpeg/include/libavutil/imgutils.h
+A	ffmpeg/include/libavutil/intfloat.h
+A	ffmpeg/include/libavutil/intreadwrite.h
+A	ffmpeg/include/libavutil/lfg.h
+A	ffmpeg/include/libavutil/log.h
+A	ffmpeg/include/libavutil/lzo.h
+A	ffmpeg/include/libavutil/macros.h
+A	ffmpeg/include/libavutil/mastering_display_metadata.h
+A	ffmpeg/include/libavutil/mathematics.h
+A	ffmpeg/include/libavutil/md5.h
+A	ffmpeg/include/libavutil/mem.h
+A	ffmpeg/include/libavutil/motion_vector.h
+A	ffmpeg/include/libavutil/murmur3.h
+A	ffmpeg/include/libavutil/opt.h
+A	ffmpeg/include/libavutil/parseutils.h
+A	ffmpeg/include/libavutil/pixdesc.h
+A	ffmpeg/include/libavutil/pixelutils.h
+A	ffmpeg/include/libavutil/pixfmt.h
+A	ffmpeg/include/libavutil/random_seed.h
+A	ffmpeg/include/libavutil/rational.h
+A	ffmpeg/include/libavutil/rc4.h
+A	ffmpeg/include/libavutil/refstruct.h
+A	ffmpeg/include/libavutil/replaygain.h
+A	ffmpeg/include/libavutil/ripemd.h
+A	ffmpeg/include/libavutil/samplefmt.h
+A	ffmpeg/include/libavutil/sha.h
+A	ffmpeg/include/libavutil/sha512.h
+A	ffmpeg/include/libavutil/spherical.h
+A	ffmpeg/include/libavutil/stereo3d.h
+A	ffmpeg/include/libavutil/tdrdi.h
+A	ffmpeg/include/libavutil/tea.h
+A	ffmpeg/include/libavutil/threadmessage.h
+A	ffmpeg/include/libavutil/time.h
+A	ffmpeg/include/libavutil/timecode.h
+A	ffmpeg/include/libavutil/timestamp.h
+A	ffmpeg/include/libavutil/tree.h
+A	ffmpeg/include/libavutil/twofish.h
+A	ffmpeg/include/libavutil/tx.h
+A	ffmpeg/include/libavutil/uuid.h
+A	ffmpeg/include/libavutil/version.h
+A	ffmpeg/include/libavutil/video_enc_params.h
+A	ffmpeg/include/libavutil/video_hint.h
+A	ffmpeg/include/libavutil/xtea.h
+A	ffmpeg/include/libswresample/swresample.h
+A	ffmpeg/include/libswresample/version.h
+A	ffmpeg/include/libswresample/version_major.h
+A	ffmpeg/include/libswscale/swscale.h
+A	ffmpeg/include/libswscale/version.h
+A	ffmpeg/include/libswscale/version_major.h
+A	ffmpeg/lib/avcodec-62.def
+A	ffmpeg/lib/avcodec.lib
+A	ffmpeg/lib/avdevice-62.def
+A	ffmpeg/lib/avdevice.lib
+A	ffmpeg/lib/avfilter-11.def
+A	ffmpeg/lib/avfilter.lib
+A	ffmpeg/lib/avformat-62.def
+A	ffmpeg/lib/avformat.lib
+A	ffmpeg/lib/avutil-60.def
+A	ffmpeg/lib/avutil.lib
+A	ffmpeg/lib/libavcodec.dll.a
+A	ffmpeg/lib/libavdevice.dll.a
+A	ffmpeg/lib/libavfilter.dll.a
+A	ffmpeg/lib/libavformat.dll.a
+A	ffmpeg/lib/libavutil.dll.a
+A	ffmpeg/lib/libswresample.dll.a
+A	ffmpeg/lib/libswscale.dll.a
+A	ffmpeg/lib/pkgconfig/libavcodec.pc
+A	ffmpeg/lib/pkgconfig/libavdevice.pc
+A	ffmpeg/lib/pkgconfig/libavfilter.pc
+A	ffmpeg/lib/pkgconfig/libavformat.pc
+A	ffmpeg/lib/pkgconfig/libavutil.pc
+A	ffmpeg/lib/pkgconfig/libswresample.pc
+A	ffmpeg/lib/pkgconfig/libswscale.pc
+A	ffmpeg/lib/swresample-6.def
+A	ffmpeg/lib/swresample.lib
+A	ffmpeg/lib/swscale-9.def
+A	ffmpeg/lib/swscale.lib
+M	src/main.py
+M	src/utils/play_util.py
+
+commit be9a33e8f390a7dee5e99b2b871192eeafde76b8
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 20 02:40:58 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 20 02:40:58 2026 +0800
+
+    fix(main): 修复神秘虫子导致的岛屿检查框状态异常
+    
+    在初始化过程中添加临时的勾选-取消操作来解决状态同步问题，
+    这是一个临时解决方案用于处理未知的UI状态bug。
+
+M	src/main.py
+
+commit edf901bfdab62af18add3c487e3e3f99aeff50c9
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Tue Feb 17 17:54:58 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Tue Feb 17 17:54:58 2026 +0800
+
+    updated to v12
+
+M	pyproject.toml
+
+commit ad81ca4f226f6b0b4aa777b785afa2901a00bfd9
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Tue Feb 17 17:54:38 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Tue Feb 17 17:54:38 2026 +0800
+
+    feat(main): 添加自定义标题栏并修复数据类型检查
+    
+    添加 SouthsideMusicTitleBar 自定义标题栏类，支持显示歌曲信息和封面图片，
+    优化播放控制器中的标题栏更新逻辑，将 np.float64 类型检查改为 float 类型检查以
+    提高兼容性。
+
+M	src/main.py
+
+commit f259e990b27c9116d3d866ad8194f4d3f528e89a
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Tue Feb 17 16:42:58 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Tue Feb 17 16:42:58 2026 +0800
+
+    updated to v11
+
+M	pyproject.toml
+M	src/main.py
+
+commit dcfd047cb10416e6e4aebe91279958721276ce98
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Tue Feb 17 16:29:43 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Tue Feb 17 16:29:43 2026 +0800
+
+    feat(main): 添加音量阈值跳过功能和界面优化
+    
+    - 添加typing模块导入和FluentWindowBase基类
+    - 实现音量阈值跳过配置选项，包括滑块控制器和实时显示
+    - 修改动画缓动曲线从OutCubic到OutBack，调整动画数值
+    - 更新预加载音频类型检查从float到np.float64
+    - 添加当前音量dB显示功能
+    - 重构主窗口布局结构，使用新导航界面
+    - 移除未使用的expand相关逻辑
+    - 添加剩余时间检测跳过功能
+    
+    fix(config): 增加跳过配置参数的持久化存储
+    
+    - 添加skip_threshold和skip_remain_time配置项
+    - 实现配置文件的读取和保存功能
+    
+    refactor(play): 优化音频播放性能和音量计算
+    
+    - 调整音频流blocksize从1024到736以改善性能
+    - 使用math.ceil替代int进行索引计算
+    - 实现实时dB值计算并存储到player.db属性
+    - 改进智能跳过算法，使用配置的阈值参数
+
+M	src/main.py
+M	src/utils/config_util.py
+M	src/utils/play_util.py
+
+commit dbc810323020caacad336539a091e75f7f1df1ae
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sun Feb 15 20:34:07 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sun Feb 15 20:34:07 2026 +0800
+
+    feat(main): 优化音频频谱绘制和UI组件渲染
+    
+    - 修复PlayingController中音频频谱路径绘制的数学计算公式，使波形显示更准确
+    - 为PlayingController添加painter裁剪路径，优化图形渲染效果
+    - 新增patchedPaintEvent静态方法，自定义CardWidget的绘制逻辑，
+      包括边框、渐变背景等视觉效果的精细化控制
+    - 修改设置项卡片的绘制方式，通过重写paintEvent实现透明背景和动态边框效果
+    - 将WebSocket FFT选项发送延迟到500ms后执行，避免连接时序问题
+
+M	src/main.py
+
+commit 2d0537756cea5e3b49bf5359a1ad10f3c167e8e3
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sun Feb 15 19:54:27 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sun Feb 15 19:54:27 2026 +0800
+
+    updated to v10
+
+M	pyproject.toml
+D	"\351\241\271\347\233\256\346\267\261\345\272\246\345\210\206\346\236\220\346\212\245\345\221\212.md"
+
+commit 923c1ff3244f4803c843d9d3b12ecad581bb93c6
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sun Feb 15 19:53:52 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sun Feb 15 19:53:52 2026 +0800
+
+    feat(player): 添加智能跳过无声片段功能
+    
+    添加了智能跳过歌曲结尾无声部分的功能，当检测到音量低于-45dB时自动跳转到下一首歌曲，
+    并提供用户配置选项来控制此行为。
+    
+    fix(ui): 改进设置项显示样式
+    
+    修改了设置项的布局，为每个设置项添加描述文本，使界面更加直观易懂。
+    
+    refactor(config): 添加跳过无声配置项
+    
+    在配置文件中添加skip_nosound选项，默认值为True，用于控制是否启用智能跳过功能。
+    
+    perf(audio): 优化音频播放结束处理
+    
+    将原来的onFinished信号重命名为onFullFinished，并添加onEndingNoSound信号
+    用于处理歌曲结尾无声检测的逻辑。
+
+M	src/main.py
+M	src/utils/config_util.py
+M	src/utils/play_util.py
+
+commit ad1fad4fccd1e08869b0338ca294a23386f422c5
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sun Feb 15 02:02:37 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sun Feb 15 02:02:37 2026 +0800
+
+    feat(websocket): 添加SouthsideClient连接状态管理和手动连接控制功能
+    
+    - 实现WebSocket连接状态的实时显示，包括连接/断开状态指示
+    - 添加手动连接和断开按钮，允许用户主动管理SouthsideClient连接
+    - 重构websocket_util模块，优化QObjectHandler和WebSocketHandler的交互逻辑
+    - 修复滚动条误触发问题，在Slider组件中添加wheelEvent忽略处理
+    - 改进WebSocket消息发送机制，增加异常处理和安全检查
+
+A	icons/cnnt_dark.svg
+A	icons/cnnt_light.svg
+A	icons/disc_dark.svg
+A	icons/disc_light.svg
+M	src/main.py
+M	src/utils/websocket_util.py
+A	"\351\241\271\347\233\256\346\267\261\345\272\246\345\210\206\346\236\220\346\212\245\345\221\212.md"
+
+commit 6e0958b4c79d7bfc587b23c2cdd3d4be1738c676
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sun Feb 15 00:40:59 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sun Feb 15 00:40:59 2026 +0800
+
+    feat(player): 优化LUFS重新应用逻辑
+    
+    移除不必要的播放停止操作，改进音频处理流程以提高性能。
+    使用playStorable方法替代直接的音频加载和播放操作，
+    确保播放状态的一致性并修复位置设置时机问题。
+
+M	src/main.py
+
+commit 8a436fdfbd88baa8ecfa901da7a9feaa78a215d6
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sun Feb 15 00:35:19 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sun Feb 15 00:35:19 2026 +0800
+
+    feat(player): 在应用新LUFS时停止播放器并优化增益计算
+    
+    - 在applyNewLUFS方法中添加player.stop()来确保正确停止播放
+    - 重构音频加载逻辑，使用player.load()和player.play()替代playStorable
+    - 添加LRU缓存到getAdjustedGainFactor函数以提高性能
+    - 保持播放位置在重新应用LUFS后的一致性
+
+M	src/main.py
+M	src/utils/loudness_balance_util.py
+
+commit c09f9975379679e61f3e9a0aead4d0c7d12bd3dd
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sun Feb 15 00:22:50 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sun Feb 15 00:22:50 2026 +0800
+
+    fix(websocket): 修复websocket连接事件调用方式
+    
+    移除lambda包装，直接调用mwindow.onWebsocketConnected方法
+    
+    fix(player): 移除LUFS控件的启用禁用逻辑
+    
+    移除target_lufs控件的setEnabled调用，简化播放页面的LUFS应用流程
+    
+    fix(player): 调整下一首歌曲播放条件
+    
+    添加播放模式检查，仅在非顺序播放和列表重复模式下预加载歌曲
+    
+    refactor(main): 优化FFT启用禁用消息发送
+    
+    移除QTimer延迟，立即发送FFT开关状态到websocket处理器
+    
+    fix(audio): 调整音频剪辑幅度限制范围
+    
+    将np.clip的上限从61.0 + cfg.target_lufs调整为(61.0 + cfg.target_lufs) * 3.0
+
+M	src/main.py
+M	src/utils/play_util.py
+
+commit 4eab5e5c4ef41d2af2957ea386406d634833c0ce
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sat Feb 14 23:01:17 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sat Feb 14 23:01:17 2026 +0800
+
+    feat(main): 添加FFT倍数配置选项并优化WebSocket连接处理
+    
+    - 将WebSocket连接成功提示逻辑移至MainWindow类的方法中
+    - 添加客户端和服务端FFT倍数调节功能，支持实时调整FFT显示效果
+    - 在播放页面添加FFT倍数设置滑块控件
+    - 更新配置文件以保存FFT倍数设置
+    - 修复LUFS应用时控件状态管理问题
+
+M	src/main.py
+M	src/utils/config_util.py
+
+commit 5d3ea8e6efe31f5b7a5b96d95ea9686c7b90dba8
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sat Feb 14 21:16:27 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sat Feb 14 21:16:27 2026 +0800
+
+    feat(lyrics): 添加歌词信息类型并优化歌词更新逻辑
+    
+    - 引入LyricInfo类型用于更准确的歌词数据管理
+    - 修改last_lyric字段类型以支持完整的歌词信息
+    - 改进歌词比较逻辑，从字符串比较改为对象比较
+    
+    refactor(ui): 优化播放控制器的定时器和FFT数据处理
+    
+    - 将重绘逻辑从主定时器分离到专用方法
+    - 移除多余的timelabel_updater定时器
+    - 将FFT数据处理逻辑移到合适的位置
+    - 改进音频可视化性能
+    
+    fix(fft): 修复FFT数据处理和WebSocket发送机制
+    
+    - 修正FFT数据平滑和滤波算法
+    - 优化FFT数据发送频率，避免重复计算
+    - 修复窗口大小配置应用问题
+    
+    refactor(websocket): 改进WebSocket连接状态管理和端口配置
+    
+    - 添加连接状态跟踪属性is_open
+    - 简化WebSocket服务器初始化流程
+    - 更新WebSocket服务端口号为15489
+    
+    chore(ui): 移除播放页面中不必要的心跳控制逻辑
+
+M	src/main.py
+M	src/utils/websocket_util.py
+
+commit 79271b14d6436f65cf3dccd971d3068ad95cf487
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sat Feb 14 19:55:41 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sat Feb 14 19:55:41 2026 +0800
+
+    feat(playing-controller): 添加FFT数据WebSocket实时传输功能
+    
+    - 新增final_magnitudes属性用于存储最终的频谱幅度数据
+    - 将频谱平滑处理结果存储到实例变量中，便于后续使用
+    - 集成WebSocket处理器，实时发送FFT数据更新消息
+    - 在播放页面添加FFT开关状态的WebSocket通知
+
+M	src/main.py
+
+commit e97d016361da09e77fc5a1584a9c05a9c806c739
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sat Feb 14 19:50:19 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sat Feb 14 19:50:19 2026 +0800
+
+    feat: 添加WebSocket服务支持歌词同步功能
+    
+    - 集成tornado库作为WebSocket服务器依赖
+    - 实现WebSocket连接和断开连接的通知提示
+    - 添加歌词实时更新功能，通过WebSocket发送当前、下一、上一条歌词
+    - 在MainWindow中启动和停止WebSocket服务器
+    - 修复部分UI组件在未初始化时被访问的问题
+    - 添加移除所有歌曲时的成功提示信息
+
+M	pyproject.toml
+M	src/main.py
+A	src/utils/websocket_util.py
+M	uv.lock
+
+commit 39ffe84e45ab2462d0bdb7d3f13e888243357dd0
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sat Feb 14 02:43:11 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sat Feb 14 02:43:11 2026 +0800
+
+    feat(PlayingPage): 添加清除所有歌曲功能
+    
+    - 新增removeAll按钮，用于清除播放列表中的所有歌曲
+    - 实现removeAllSongs方法，清空播放列表并保留当前歌曲
+    - 将清除按钮添加到按钮布局中
+    - 确保清除操作后刷新播放列表组件
+
+A	icons/clearall_dark.svg
+A	icons/clearall_light.svg
+M	src/main.py
+
+commit e62df0d7603303c9613da34ba19d5edb92b6faab
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sat Feb 14 02:09:13 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sat Feb 14 02:09:13 2026 +0800
+
+    hotfix
+
+M	src/main.py
+M	uv.lock
+
+commit 07e1d4463d1f35b353a3412067a6bbe7468c3d08
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sat Feb 14 01:16:28 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sat Feb 14 01:16:28 2026 +0800
+
+    fix(build): 修复Windows控制台显示问题
+    
+    将nuitka构建参数从--windows-console-mode=disable改为--windows-console-mode=hide，
+    以正确隐藏应用程序运行时的控制台窗口。
+    
+    fix(core): 改进子进程调用的控制台隐藏机制
+    
+    修改了Popen补丁实现方式，同时对subprocess.call进行补丁处理，
+    确保所有子进程都不会显示控制台窗口。
+    
+    fix(player): 优化播放列表更新逻辑
+    
+    添加dp.lst_shoud_set条件检查，避免在用户与播放列表交互时
+    不必要地更新高亮状态。当鼠标进入列表时禁用自动设置，离开时重新启用。
+    
+    fix(audio): 改进音频频谱平滑算法
+    
+    在暂停播放时使用固定的平滑因子0.07，避免播放暂停时频谱图
+    仍然跟随上一首歌曲的频率变化。
+    
+    feat(ui): 添加预加载延迟机制
+    
+    使用QTimer.singleShot延迟250毫秒执行预加载下首歌曲，
+    提升用户界面响应性能。
+    
+    fix(sync): 调整线程锁类型
+    
+    将RLock改为标准Lock，简化线程同步机制并避免潜在的递归锁定问题。
+
+M	build.bat
+A	build_use_pyinstaller.bat
+M	src/main.py
+
+commit 0c5760b2f52cd13a901cfe06bcfd040484c929a6
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Sat Feb 14 00:14:19 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Sat Feb 14 00:14:19 2026 +0800
+
+    移除了src/main.py中未被使用的import os语句
+
+M	src/main.py
+
+commit 2164245bc959ed7120befd4bf74bd3f198573044
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 23:47:44 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 13 23:47:44 2026 +0800
+
+    feat(utils): 重构音频播放器API方法命名以符合Python命名规范
+    
+    - 将AudioPlayer类的方法从下划线命名改为驼峰命名
+    - load_from_file -> loadFromFile
+    - load_from_bytes -> loadFromBytes
+    - set_position -> setPosition
+    - get_position -> getPosition
+    - get_length -> getLength
+    - set_volume -> setVolume
+    - get_busy -> isPlaying
+    - set_gain_factor -> setGain
+    
+    refactor(main): 统一音频播放控制方法调用
+    
+    - 更新主程序中所有音频播放器方法调用以匹配新的API
+    - 使用isPlaying()替换get_busy()
+    - 使用setPosition(), getPosition(), setVolume()等新方法名
+    
+    refactor(main): 扩展控制台隐藏功能并更新函数名
+    
+    - 新增os模块导入
+    - 将hideFFmpegConsole()重命名为hideConsoles()
+    - 修改函数逻辑以隐藏所有子进程控制台而非仅FFmpeg
+    
+    style(playing): 更新播放控制器界面标签文本
+    
+    - 将Playing界面标签从'Playing'更改为'Options'
+
+M	src/main.py
+M	src/utils/play_util.py
+
+commit 287b06b432bb120e580c87c81892fb24e8eada50
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 23:08:06 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 13 23:08:06 2026 +0800
+
+    Revert "feat(main): 添加调试窗口和日志记录功能"
+    
+    This reverts commit 397824d9204b1c9d8477479180393771e808c88d.
+
+M	src/main.py
+M	src/utils/random_util.py
+
+commit 993d89736cffdfef3516ce2ca589be71d85a00a4
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 22:56:46 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 13 22:56:46 2026 +0800
+
+    chore(pyproject): 更新项目版本号从v7到v8
+    
+    - 将pyproject.toml中的version字段从"v7"更新为"v8"
+    - 此次更新是为了发布新版本的SouthsideMusic音乐播放器
+
+M	pyproject.toml
+
+commit 5fbbec0c9d800ba5063057fc06fa2631f4fa0d32
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 22:55:41 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 13 22:55:41 2026 +0800
+
+    feat(main): 添加调试窗口和日志记录功能
+    
+    - 在MainWindow中添加键盘事件处理，支持F3键切换调试窗口
+    - 创建LoggingWindow类用于显示实时日志和系统信息
+    - 实现DebuggingLoggingHandler将日志输出到调试窗口
+    - 添加定时器每16ms更新调试信息显示
+    
+    fix(widgets): 修复展开组件的显示和布局问题
+    
+    - 在PlayingController中修正展开时显示expanded_widget逻辑
+    - 使用QParallelAnimationGroup优化动画组管理
+    - 将PlayingPage中的固定宽度设置改为resize方式
+    - 移除初始化时的隐藏调用以确保组件正确显示
+    
+    refactor(random): 优化随机算法权重跟踪机制
+    
+    - 在AdvancedRandom类中添加adjusted_weights实例属性
+    - 将局部变量改为实例变量以便外部访问和调试
+    - 更新日志输出以显示当前调整后的权重值
+
+M	src/main.py
+M	src/utils/random_util.py
+
+commit a89fad41e206f5df75cbc916b044437315977280
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 22:02:46 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 13 22:02:46 2026 +0800
+
+    feat(main): 添加FFmpeg控制台隐藏功能并优化播放器性能
+    
+    - 引入subprocess模块用于进程管理
+    - 实现hideFFmpegConsole函数来隐藏FFmpeg控制台窗口
+    - 将RandomInstance重命名为AdvancedRandom
+    - 修复get_values_bylist函数的导入问题
+    - 移除未使用的导入语句
+    
+    refactor(dialog_util): 简化列表选择对话框实现
+    
+    - 移除selectionMode参数，统一使用单选模式
+    - 修改返回值类型为单个字符串或None
+    - 调整对话框按钮显示逻辑
+    
+    fix(play_util): 扩大音频剪辑范围以支持更宽动态范围
+    
+    - 将np.clip的最大值从31.0 + cfg.target_lufs调整为61.0 + cfg.target_lufs
+    - 支持更大的音频动态范围处理
+    
+    feat(playing_page): 增强播放列表管理和UI交互功能
+    
+    - 添加播放列表增删改功能按钮
+    - 实现removeSong、addSong、insertSong方法
+    - 添加线程安全锁保护数据操作
+    - 改进LUFS范围从-30到-60以支持更低音量需求
+    - 优化预加载逻辑避免越界错误
+    - 添加窗口显示/隐藏时的展开状态保持功能
+    
+    refactor(music_card): 优化歌曲添加过程中的线程安全
+    
+    - 使用threading.RLock保护并发访问
+    - 修正类型注解以提高代码可读性
+    
+    style(playing_controller): 统一命名规范
+    
+    - 将toggle_expand重命名为toggleExpand以保持一致性
+    - 移除预加载条件中不必要的时间判断
+    - 修正频谱显示的增益计算逻辑
+
+A	icons/insert_dark.svg
+A	icons/insert_light.svg
+M	src/main.py
+M	src/utils/dialog_util.py
+M	src/utils/play_util.py
+M	src/utils/random_util.py
+
+commit 32d51a5628a4a3837ed931fbf0c890922b136b0b
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 20:21:40 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 13 20:21:40 2026 +0800
+
+    feat(player): 更新版本并增强音频播放音量控制
+    
+    - 将项目版本从v6升级到v7
+    - 在音频播放器中引入配置管理器
+    - 改进音量限制逻辑，支持基于目标LUFS值的动态范围调整
+
+M	pyproject.toml
+M	src/utils/play_util.py
+
+commit 65b2f2946523946e41b678698ece72f6db95b02f
+Merge: 84d4d84 d6db0cb
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 20:17:48 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 13 20:17:48 2026 +0800
+
+    Merge branch 'master' of https://github.com/Adreno5/SouthsideMusic
+
+commit 84d4d84ff49f8358bb0025a3630d0d9756d240fb
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 20:17:46 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 13 20:17:46 2026 +0800
+
+    feat(player): 添加播放速度控制和LUFS响度平衡功能
+    
+    添加了播放速度调节，支持0.1-5倍速播放
+    新增LUFS目标响度设置滑块，范围-30到0，推荐-16到-18
+    实现音频响度标准化处理，支持实时调整目标响度
+    优化音频播放逻辑，支持不同响度标准的音频文件
+    
+    fix(build): 移除pyloudnorm包的冗余打包配置
+    
+    移除build_with_console.bat中对pyloudnorm包的额外包含配置
+    简化Nuitka构建参数，提高构建效率
+    
+    refactor(ui): 优化播放界面布局和样式
+    
+    为播放界面添加黑色透明背景样式
+    整理设置项分组，增加标题分隔
+    优化FFT和响度平衡相关控件的布局结构
+
+M	build_with_console.bat
+M	src/main.py
+M	src/utils/config_util.py
+M	src/utils/lyrics/base_util.py
+M	src/utils/play_util.py
+
+commit d6db0cb20797057ae60383a93e7be2a0af77f921
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 16:59:48 2026 +0800
+Commit:     GitHub <noreply@github.com>
+CommitDate: Fri Feb 13 16:59:48 2026 +0800
+
+    Update README to remove pyloudnorm from tech stack
+    
+    Removed 'pyloudnorm' from the list of libraries used for playing music.
+
+M	README.md
+
+commit 8bb1e117d5948baf35430d05e6d9e4871d0a5b32
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 16:59:27 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 13 16:59:27 2026 +0800
+
+    docs(README): 更新项目标题描述
+    
+    - 将项目标题从 "Southside Music" 更改为 "Advanced Modern Player"
+    - 移除了原有的项目介绍文字
+
+M	README.md
+
+commit 2b1c474a15558257559647409f18417be689222e
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 16:56:45 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 13 16:56:45 2026 +0800
+
+    feat(main): 重构图标管理并优化播放控制器界面
+    
+    - 引入统一的图标工具函数 getQIcon 来管理主题相关的图标
+    - 移除未使用的 colorama 库导入
+    - 添加 QHideEvent 导入用于窗口隐藏事件处理
+    - 重构播放控制器中的图标加载方式，统一使用 getQIcon 函数
+    
+    refactor(playing): 调整展开/收起动画尺寸参数
+    
+    - 将播放控制器展开时的宽度调整为 505px（之前为 205px）
+    - 相应调整位置偏移量从 102/103 改为 252/253
+    - 修复图标加载逻辑以支持不同的主题模式
+    
+    feat(fft): 增强频谱图显示效果和配置选项
+    
+    - 添加 FFT 滤波窗口大小和混合因子的配置选项
+    - 在播放设置界面添加可调节的滑块控件
+    - 优化频谱图绘制算法，改进视觉效果
+    - 添加窗口显示/隐藏时的 FFT 启用状态控制
+    
+    style(playing): 重新组织播放页面布局结构
+    
+    - 使用 QGridLayout 替代 QVBoxLayout 进行更灵活的布局
+    - 为播放设置项创建独立的辅助方法
+    - 将播放界面包装在滚动区域中以支持更好的内容展示
+    
+    perf(audio): 优化音频播放性能参数
+    
+    - 将采样率从 44100 提升至 88200 以提高音质
+    - 块大小从 1024 调整为 2048 以优化性能
+    - 简化 FFT 数据处理逻辑，移除计数器机制
+    
+    chore(config): 添加新的配置项支持
+    
+    - 在配置文件中添加 FFT 滤波窗口大小和混合因子参数
+    - 更新配置加载和保存逻辑以包含新参数
+
+A	icons/dropdown_dark.svg
+A	icons/dropdown_light.svg
+A	icons/dropup_dark.svg
+A	icons/dropup_light.svg
+M	src/main.py
+M	src/utils/config_util.py
+A	src/utils/icon_util.py
+M	src/utils/play_util.py
+
+commit 064fdecc4db0ea6c102a933a6ac57ea9c3d05cdc
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 05:58:39 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 13 05:58:39 2026 +0800
+
+    feat(build): 添加numpy插件支持并更新构建配置
+    
+    添加numpy插件到Nuitka构建命令中，确保在打包时包含numpy依赖。
+    同时更新了控制台版本的构建脚本，添加pyloudnorm目录包含路径。
+    
+    BREAKING CHANGE: 构建配置已更改，需要重新构建应用
+
+M	.gitignore
+M	build.bat
+M	build_with_console.bat
+M	pyproject.toml
+M	src/main.py
+M	src/utils/loudness_balance_util.py
+M	src/utils/lyric_util.py
+M	uv.lock
+
+commit 5288badd31d57d1ffaa0c36551533432c43d120d
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 05:05:28 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 13 05:05:28 2026 +0800
+
+    updated to v6
+
+M	pyproject.toml
+
+commit 39700e22610b8bb31bfc9d703574a03cde8f1fa6
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 04:59:52 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 13 04:59:52 2026 +0800
+
+    hotfix
+
+M	src/main.py
+
+commit c659964c50420d7fb9a3153b72f8daed6bc6d873
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 04:55:06 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 13 04:55:06 2026 +0800
+
+    feat(player): 添加音频频谱分析功能并优化窗口状态管理
+    
+    - 集成scipy库进行FFT计算，添加numpy依赖支持快速数学运算
+    - 实现音频播放时的实时频谱数据计算和可视化显示
+    - 添加可选的频率图形显示功能，用户可通过复选框控制开关
+    - 优化窗口大小和位置的持久化保存与恢复机制
+    - 改进程序关闭时的配置保存逻辑，确保所有状态正确保存
+    - 更新依赖配置文件以包含新的科学计算库依赖
+
+M	README.md
+M	pyproject.toml
+M	src/main.py
+M	src/utils/config_util.py
+M	src/utils/play_util.py
+M	uv.lock
+
+commit 69481f412ce0a9a76cf04b07368b03f1fd863f91
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 03:51:54 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 13 03:51:54 2026 +0800
+
+    feat(core): 添加音频预加载功能并优化播放体验
+    
+    - 实现音频预加载机制，在当前歌曲播放时预先加载下一首歌曲
+    - 集成loudness balance功能，自动调整音频增益以达到一致的音量水平
+    - 添加logging系统替代print语句，便于调试和监控应用状态
+    - 引入colorama库用于美化控制台日志输出格式
+    
+    refactor(ui): 更新播放控制器界面和交互逻辑
+    
+    - 将播放列表按钮文本从"Playlist"更改为"Menu"
+    - 重构时间标签更新逻辑，合并到统一的updateWidgets方法中
+    - 调整播放完成信号连接方式，使用onFinished信号替代onSongFinish
+    
+    chore(dependencies): 升级项目版本并添加新依赖
+    
+    - 将项目版本从v4升级到v5
+    - 更新项目描述为"Advanced music player"
+    - 添加colorama作为新的依赖项用于控制台颜色输出
+    
+    perf(utils): 优化音频处理和歌词解析性能
+    
+    - 在音频播放工具类中添加增益因子设置功能
+    - 使用缓存机制存储音频增益计算结果
+    - 改进歌词解析错误处理，使用logging记录解析异常
+
+M	pyproject.toml
+M	src/main.py
+M	src/utils/favorite_util.py
+M	src/utils/loudness_balance_util.py
+M	src/utils/lyric_util.py
+M	src/utils/lyrics/base_util.py
+M	src/utils/play_util.py
+M	src/utils/random_util.py
+M	uv.lock
+
+commit 58e99b6420c1ff6dcf2986db9c37c9be07ae9b11
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Fri Feb 13 01:53:04 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Fri Feb 13 01:53:04 2026 +0800
+
+    ```
+    feat: 使用自定义音频播放器替换pygame并优化音乐播放功能
+    
+    - 移除pygame依赖，添加numpy、pydub、pyloudnorm、sounddevice等音频处理库
+    - 实现AudioPlayer类用于音乐播放控制
+    - 添加响度平衡功能，使用pyloudnorm进行音频增益调整
+    - 更新音乐加载逻辑，支持从base64编码加载音频
+    - 重构播放控制器，移除pygame相关代码
+    - 在配置中添加岛屿背景透明度设置
+    - 为歌词管理器添加缓存优化
+    - 更新.gitignore文件，添加.lingma忽略规则
+    - 在README中更新技术栈说明
+    ```
+
+M	.gitignore
+M	README.md
+M	pyproject.toml
+M	src/main.py
+M	src/utils/config_util.py
+A	src/utils/loudness_balance_util.py
+M	src/utils/lyric_util.py
+A	src/utils/play_util.py
+M	uv.lock
+
+commit d853829f8cc820d7f94dcee0bdc76afd80c782dd
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Thu Feb 12 22:28:50 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Thu Feb 12 22:28:50 2026 +0800
+
+    1111
+
+M	src/main.py
+
+commit 0033949b3595f9f3abe4195b6f781f57933fa579
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Thu Feb 12 21:26:23 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Thu Feb 12 21:26:23 2026 +0800
+
+    更新到v4
+
+M	pyproject.toml
+
+commit 122c3b7150c5c6bb15ff1819a1c506c04e37eb49
+Merge: c9b0580 bc86bd1
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Thu Feb 12 21:25:50 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Thu Feb 12 21:25:50 2026 +0800
+
+    Merge branch 'master' of https://github.com/Adreno5/SouthsideMusic
+
+commit c9b05800ba7c4127ab0ba8ecc062d3d2788fcbdb
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Thu Feb 12 21:25:37 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Thu Feb 12 21:25:37 2026 +0800
+
+    Add configuration utility for managing application settings
+    
+    - Introduced Config dataclass to encapsulate application settings.
+    - Implemented loadConfig and saveConfig functions for JSON-based configuration management.
+    - Added support for storing and retrieving last playing song and playback settings.
+
+M	.gitignore
+M	build.bat
+M	build_with_console.bat
+A	fonts/HARMONYOS_SANS_SC_REGULAR.ttf
+M	src/main.py
+A	src/utils/config_util.py
+M	src/utils/lyrics/base_util.py
+
+commit bc86bd190061a941aad126a4c53cf7cb59690a6e
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Thu Feb 12 17:52:32 2026 +0800
+Commit:     GitHub <noreply@github.com>
+CommitDate: Thu Feb 12 17:52:32 2026 +0800
+
+    Update README with uv installation instructions
+    
+    Added installation instructions for uv to the README.
+
+M	README.md
+
+commit d6494ae6e4d414a762c42a3b6f155da844d32d55
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Thu Feb 12 17:39:45 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Thu Feb 12 17:39:45 2026 +0800
+
+    更新项目版本至 v3；优化歌词解析逻辑并添加随机歌曲选择功能；新增图标文件
+
+A	icons/island_dark.svg
+A	icons/island_light.svg
+M	pyproject.toml
+M	src/main.py
+M	src/utils/lyric_util.py
+A	src/utils/random_util.py
+
+commit 6ae0339c2445d47ada1191cafe894b40ee8c73be
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Thu Feb 12 02:44:27 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Thu Feb 12 02:44:27 2026 +0800
+
+    添加重命名文件夹功能；优化对话框返回值处理
+
+M	src/main.py
+M	src/utils/dialog_util.py
+
+commit 734ebb84358fbaf2227fe2233f5a17431b5f84ff
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Thu Feb 12 02:23:08 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Thu Feb 12 02:23:08 2026 +0800
+
+    更新 README 文件，添加安装和使用说明；将版本号从 v1 更新为 v2；优化播放控制器的窗口位置和播放列表逻辑
+
+M	README.md
+M	pyproject.toml
+M	src/main.py
+
+commit b1f61ca6c5e1988b954a57bef04f3e4c9b65b673
+Author:     Adreno5 <3855904186@qq.com>
+AuthorDate: Thu Feb 12 02:00:40 2026 +0800
+Commit:     Adreno5 <3855904186@qq.com>
+CommitDate: Thu Feb 12 02:00:40 2026 +0800
+
+    Refactor code structure for improved readability and maintainability
+
+A	.gitattributes
+A	.gitignore
+A	.python-version
+A	README.md
+A	build.bat
+A	build_with_console.bat
+A	icons/fav_dark.svg
+A	icons/fav_light.svg
+A	icons/last_dark.svg
+A	icons/last_light.svg
+A	icons/menu_dark.svg
+A	icons/menu_light.svg
+A	icons/music_dark.svg
+A	icons/music_light.svg
+A	icons/next_dark.svg
+A	icons/next_light.svg
+A	icons/pause_dark.svg
+A	icons/pause_light.svg
+A	icons/pl_collapse_dark.svg
+A	icons/pl_collapse_light.svg
+A	icons/pl_dark.svg
+A	icons/pl_expand_dark.svg
+A	icons/pl_expand_light.svg
+A	icons/pl_light.svg
+A	icons/playa_dark.svg
+A	icons/playa_light.svg
+A	icons/playlist_dark.svg
+A	icons/playlist_light.svg
+A	icons/studio_dark.svg
+A	icons/studio_light.svg
+A	pyproject.toml
+A	src/main.py
+A	src/utils/dialog_util.py
+A	src/utils/favorite_util.py
+A	src/utils/loading_util.py
+A	src/utils/lyric_util.py
+A	src/utils/lyrics/base_util.py
+A	src/utils/lyrics/w163_util.py
+A	src/utils/pyside_util.py
+A	src/utils/time_util.py
+A	test.py
+A	uv.lock

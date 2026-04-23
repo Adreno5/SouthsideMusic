@@ -7,7 +7,7 @@ import datetime
 import os
 import threading
 from typing import TextIO, Optional
-from PySide6.QtGui import QResizeEvent
+from PySide6.QtGui import QMouseEvent, QResizeEvent
 from colorama import Fore, Style, init
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
@@ -314,44 +314,49 @@ class MusicCard(QWidget):
     def __init__(self, info: SongInfo) -> None:
         super().__init__()
         self.info = info
-        self.setFixedHeight(105)
 
         self.detail = SongDetail(image_url='')
 
-        global_layout = FlowLayout()
+        global_layout = QVBoxLayout()
+        top_layout = FlowLayout()
 
         ali = Qt.AlignmentFlag
         self.img_label = QLabel()
         self.img_label.setFixedSize(100, 100)
-        global_layout.addWidget(self.img_label)
+        top_layout.addWidget(self.img_label)
         self.img_label.hide()
         self.ring = IndeterminateProgressRing()
         self.ring.setFixedSize(100, 100)
-        global_layout.addWidget(self.ring)
+        top_layout.addWidget(self.ring)
         title_label = SubtitleLabel(info['name'])
-        global_layout.addWidget(title_label)
+        top_layout.addWidget(title_label)
         artists_label = QLabel(info['artists'])
         artists_label.setWordWrap(True)
-        global_layout.addWidget(artists_label)
+        top_layout.addWidget(artists_label)
         self.vip_label = SubtitleLabel(f'Need more privilege ({info['privilege']}(song)>{ncm.GetCurrentSession().vipType}(yours))')
         self.vip_label.setStyleSheet('color: red;')
         if info['privilege'] < ncm.GetCurrentSession().vipType:
             self.vip_label.hide()
-        global_layout.addWidget(self.vip_label)
+        top_layout.addWidget(self.vip_label)
 
         pri_label = QLabel(f'privilege: (song: {info['privilege']}, yours: {ncm.GetCurrentSession().vipType})')
         pri_label.setStyleSheet(f'color: {'#666666' if darkdetect.isDark() else '#CCCCCC'};')
-        global_layout.addWidget(pri_label)
+        top_layout.addWidget(pri_label)
+
+        bottom_layout = FlowLayout()
 
         self.playbtn = PrimaryToolButton(FluentIcon.SEND)
         self.playbtn.setEnabled(False)
-        global_layout.addWidget(self.playbtn)
+        bottom_layout.addWidget(self.playbtn)
         self.playbtn.clicked.connect(self.play)
 
         self.favbtn = TransparentToolButton(getQIcon('fav'))
         self.favbtn.setEnabled(True)
-        global_layout.addWidget(self.favbtn)
+        bottom_layout.addWidget(self.favbtn)
         self.favbtn.clicked.connect(self.addToFavorites)
+
+        global_layout.addLayout(top_layout)
+        global_layout.addLayout(bottom_layout)
 
         self.setLayout(global_layout)
 
@@ -549,7 +554,7 @@ class SearchPage(QWidget):
         self.lst.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.lst.verticalScrollBar().setSingleStep(14)
         self.lst.setResizeMode(QListWidget.ResizeMode.Adjust)
-        self.lst.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.lst.setSelectionMode(QListWidget.SelectionMode.NoSelection)
         global_layout.addWidget(self.lst)
 
         self.setLayout(global_layout)
@@ -789,6 +794,10 @@ class PlayingController(QWidget):
             )
             if isinstance(dp.cur, DummyCard):
                 self.final_magnitudes *= (2 / dp.cur.storable.loudness_gain) * 0.75
+            
+            maxmag = max(np.max(self.final_magnitudes), 10)
+            self.final_magnitudes /= maxmag
+            self.final_magnitudes *= self.height() - 10
 
             ws_handler.send(json.dumps({
                 'option': 'update_fft',
@@ -977,9 +986,6 @@ class PlayingPage(QWidget):
         contents_layout.addLayout(middle_layout)
 
         self.controller.setFixedWidth(self.width())
-        # contents_layout.addWidget(
-        #     self.controller, alignment=ali.AlignBottom | ali.AlignHCenter
-        # )
 
         global_layout.addLayout(contents_layout)
 
@@ -1419,6 +1425,8 @@ class PlayingPage(QWidget):
         if hasattr(self, 'FFT_filtering_windowsize'):
             self.FFT_filtering_windowsize.setEnabled(checked)
             self.FFT_factor.setEnabled(checked)
+            self.cFFT_multiple.setEnabled(checked)
+            self.sFFT_multiple.setEnabled(checked)
 
         ws_handler.send(json.dumps({
             'option': f'{'disable' if not checked else 'enable'}_fft'

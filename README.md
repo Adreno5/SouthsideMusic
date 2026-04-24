@@ -1,27 +1,23 @@
 # Southside Music
-Advanced Modern Player
+### Advanced Modern Player
 
 ## Install
-just download the latest release and unzip it. And launch the `SouthsideMusic.exe`!
+Just download the latest release and unzip it, then launch `Launch.exe`.
 
 ## Usage
-- Search Page
-  You can search music by keywords.
-- Playing Page
-  You can see the playing status, playlist and so on.
-- Favorite Page
-  You can see the musics you liked and manage them.
+Do not use an anonymous account. Instead, go to the `Session` page to log into your own account.
 
 ## Contributing
-Clone this repository and run `uv sync` to setup your environment.
-Install uv on: https://uv.doczh.com/getting-started/installation/
+Clone this repository and run `uv sync` to set up your environment.
+And download embeddable Python 3.12.7 from https://www.python.org/downloads/release/python-3127/, then use get-pip.py to install pip for Python, and you can install the required libraries from requirements.txt
+Download uv from https://uv.doczh.com/getting-started/installation/
 
 ## Tech Stack
 - PySide: GUI base
 - Fluent Widgets: Modern widgets
 - Nuitka: Package
 - pydub, sounddevice: play music
-- request: send API request
 - numpy, scipy: Fast math support & FFT computing
+- pyncm: NeteaseCloudMusic api requesting and account management
 
-请勿用作商业用途
+**Not for commercial use.**

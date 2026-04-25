@@ -1,6 +1,6 @@
-
-from functools import lru_cache
+import json
 import logging
+import re
 from typing import TypedDict
 
 
@@ -8,68 +8,93 @@ class LyricInfo(TypedDict):
     time: float
     content: str
 
+
+_LRC_TIME_RE = re.compile(r"^\[(\d+):(\d+)[.:](\d+)\]")
+
+
+def _try_parse_lrc_line(line: str) -> LyricInfo | None:
+    m = _LRC_TIME_RE.match(line)
+    if not m:
+        return None
+    minutes = int(m.group(1))
+    seconds = int(m.group(2))
+    ms_raw = m.group(3).ljust(3, "0")[:3]
+    ms = int(ms_raw)
+    time = minutes * 60 + seconds + ms / 1000
+    content = line[m.end() :]
+    if not content:
+        return None
+    return LyricInfo(time=time, content=content)
+
+
+def _is_metadata_tag(line: str) -> bool:
+    return bool(re.match(r"^\[(?:by|ar|al|ti|offset|length|re|ve):", line))
+
+
+def _is_json_metadata(line: str) -> bool:
+    if not line.startswith("{"):
+        return False
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(obj, dict) and "t" in obj and "c" in obj
+
+
 class LRCLyricManager:
     def __init__(self) -> None:
-        self.cur: str = ''
+        self.cur: str = ""
         self.parsed: list[LyricInfo] = []
 
     def getCurrentLyric(self, time: float) -> LyricInfo:
-        if len(self.parsed) > 0:
-            if self.parsed[0]['time'] > time:
-                return LyricInfo(time=0, content='')
+        if not self.parsed:
+            return LyricInfo(time=0, content="")
+
+        if self.parsed[0]["time"] > time:
+            return LyricInfo(time=0, content="")
 
         for i, l in enumerate(self.parsed):
-            if l['time'] > time:
-                return self.parsed[max(0, i - 1)]
-            
-        return LyricInfo(time=0, content='')
-    
+            if l["time"] > time:
+                return self.parsed[i - 1]
+
+        return self.parsed[-1]
+
     def getOffsetedLyric(self, time: float, offset_index: int) -> LyricInfo:
-        if len(self.parsed) > 0:
-            if self.parsed[0]['time'] > time:
-                return LyricInfo(time=0, content='')
+        if not self.parsed:
+            return LyricInfo(time=0, content="")
+
+        if self.parsed[0]["time"] > time:
+            return LyricInfo(time=0, content="")
 
         for i, l in enumerate(self.parsed):
-            if l['time'] > time:
+            if l["time"] > time:
                 target_index = i - 1 + offset_index
-                if target_index < 0:
-                    return LyricInfo(time=0, content='')
-                elif target_index >= len(self.parsed):
-                    return LyricInfo(time=0, content='')
-                else:
-                    return self.parsed[target_index]
-            
-        return LyricInfo(time=0, content='')
+                if target_index < 0 or target_index >= len(self.parsed):
+                    return LyricInfo(time=0, content="")
+                return self.parsed[target_index]
 
-    def parse(self):
-        if not self.cur: return
+        return LyricInfo(time=0, content="")
+
+    def parse(self) -> None:
+        if not self.cur:
+            return
 
         self.parsed.clear()
 
-        for idx, line in enumerate(self.cur.splitlines()):
-            if 'by' in line:
+        for line in self.cur.splitlines():
+            stripped = line.strip()
+            if not stripped:
                 continue
-            
-            try:
-                info = LyricInfo(time=0, content=line.split(']')[-1])
-                time_text = line.removeprefix('[').split(']')[0]
-                if time_text.count(':') == 1:
-                    time_m = int(time_text.split(':')[0])
-                    time_s = int(time_text.split(':')[-1].split('.')[0])
-                    time_ms = int(time_text.split('.')[-1])
 
-                    info['time'] = time_m * 60 + time_s + time_ms / 1000
+            if _is_metadata_tag(stripped):
+                continue
 
-                    self.parsed.append(info)
-                elif time_text.count(':') == 2:
-                    time_m = int(time_text.split(':')[0])
-                    time_s = int(time_text.split(':')[-2])
-                    time_ms = int(time_text.split(':')[-1])
+            if _is_json_metadata(stripped):
+                continue
 
-                    info['time'] = time_m * 60 + time_s + time_ms / 100
+            info = _try_parse_lrc_line(stripped)
+            if info is not None:
+                self.parsed.append(info)
 
-                    self.parsed.append(info)
-            except Exception as e:
-                logging.error(f'error parsing {line}: {e}')
-
-        logging.info(f'parsed {len(self.parsed)} lines')
+        self.parsed.sort(key=lambda x: x["time"])
+        logging.info(f"parsed {len(self.parsed)} lines")

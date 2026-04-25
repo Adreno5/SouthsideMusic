@@ -10,7 +10,7 @@ with open('config.pkl', 'rb') as f:
     pyncm.WriteLoginInfo(data['login_status'])
     pyncm.SetCurrentSession(pyncm.LoadSessionFromString(data['session']))
 
-    pprint(pyncm.apis.track.GetTrackLyricsNew('1435828582'))
+    pprint(pyncm.apis.track.GetTrackLyricsNew('518904426'))
 
     # playlists = pyncm.apis.user.GetUserPlaylists(pyncm.GetCurrentSession().uid)['playlist'] # type: ignore
     # pprint(playlists)

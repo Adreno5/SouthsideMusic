@@ -1149,6 +1149,9 @@ class PlayingPage(QWidget):
         middle_layout = QVBoxLayout()
         self.lyric_label = SubtitleLabel("null")
         self.transl_label = QLabel("null")
+        self.lyric_label.setWordWrap(True)
+        self.transl_label.setWordWrap(True)
+        
         middle_layout.addWidget(
             self.lyric_label, alignment=ali.AlignHCenter | ali.AlignBottom
         )
@@ -3114,6 +3117,10 @@ class MainWindow(FluentWindowBase):
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_F3:
             debug_window.setVisible(not debug_window.isVisible())
+            event.accept()
+        elif event.key() == Qt.Key.Key_Space:
+            dp.controller.toggle()
+            event.accept()
         else:
             return super().keyPressEvent(event)
 

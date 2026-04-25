@@ -108,7 +108,7 @@ class PatchedAudioSegment(AudioSegment):
                     return cls._from_safe_wav(file)[: duration * 1000]
                 else:
                     return cls._from_safe_wav(file)[
-                        start_second * 1000 : (start_second + duration) * 1000
+                        start_second * 1000 : (start_second + duration) * 1000 # type: ignore
                     ]  # type: ignore
             except:
                 file.seek(0)  # type: ignore
@@ -129,8 +129,8 @@ class PatchedAudioSegment(AudioSegment):
             elif start_second is None and duration is not None:
                 return cls(data=file.read(), metadata=metadata)[: duration * 1000]  # type: ignore
             else:
-                return cls(data=file.read(), metadata=metadata)[
-                    start_second * 1000 : (start_second + duration) * 1000
+                return cls(data=file.read(), metadata=metadata)[ # type: ignore
+                    start_second * 1000 : (start_second + duration) * 1000 # type: ignore
                 ]  # type: ignore
 
         conversion_command = [

@@ -19,25 +19,28 @@ from pydub.exceptions import CouldntDecodeError
 from pydub import AudioSegment
 from collections import namedtuple
 
-WavSubChunk = namedtuple('WavSubChunk', ['id', 'position', 'size'])
+WavSubChunk = namedtuple("WavSubChunk", ["id", "position", "size"])
+
+
 def extract_wav_headers(data):
     # def search_subchunk(data, subchunk_id):
     pos = 12  # The size of the RIFF chunk descriptor
     subchunks = []
     while pos + 8 <= len(data) and len(subchunks) < 10:
-        subchunk_id = data[pos:pos + 4]
-        subchunk_size = struct.unpack_from('<I', data[pos + 4:pos + 8])[0]
+        subchunk_id = data[pos : pos + 4]
+        subchunk_size = struct.unpack_from("<I", data[pos + 4 : pos + 8])[0]
         subchunks.append(WavSubChunk(subchunk_id, pos, subchunk_size))
-        if subchunk_id == b'data':
+        if subchunk_id == b"data":
             # 'data' is the last subchunk
             break
         pos += subchunk_size + 8
 
     return subchunks
 
+
 def fix_wav_headers(data):
     headers = extract_wav_headers(data)
-    if not headers or headers[-1].id != b'data':
+    if not headers or headers[-1].id != b"data":
         return
 
     # TODO: Handle huge files in some other way
@@ -45,34 +48,44 @@ def fix_wav_headers(data):
         raise CouldntDecodeError("Unable to process >4GB files")
 
     # Set the file size in the RIFF chunk descriptor
-    data[4:8] = struct.pack('<I', len(data) - 8)
+    data[4:8] = struct.pack("<I", len(data) - 8)
 
     # Set the data size in the data subchunk
     pos = headers[-1].position
-    data[pos + 4:pos + 8] = struct.pack('<I', len(data) - pos - 8)
+    data[pos + 4 : pos + 8] = struct.pack("<I", len(data) - pos - 8)
+
 
 class PatchedAudioSegment(AudioSegment):
     def __init__(self, data=None, *args, **kwargs):
         super().__init__(data, *args, **kwargs)
-        self.converter = r'ffmpeg\bin\ffmpeg.exe'
-        self.ffmpeg = r'ffmpeg\bin\ffmpeg.exe'
+        self.converter = r"ffmpeg\bin\ffmpeg.exe"
+        self.ffmpeg = r"ffmpeg\bin\ffmpeg.exe"
 
     @override
     @classmethod
-    def from_file(cls, file, format=None, codec=None, parameters=None, start_second=None, duration=None, **kwargs):
-        logging.debug(f'[{file}]/[PatchedAudioSegment] patching')
+    def from_file(
+        cls,
+        file,
+        format=None,
+        codec=None,
+        parameters=None,
+        start_second=None,
+        duration=None,
+        **kwargs,
+    ):
+        logging.debug(f"[{file}]/[PatchedAudioSegment] patching")
         orig_file = file
         try:
             filename = fsdecode(file)
         except TypeError:
             filename = None
-        file, close_file = _fd_or_path_or_tempfile(file, 'rb', tempfile=False)
+        file, close_file = _fd_or_path_or_tempfile(file, "rb", tempfile=False)
 
         if format:
             format = format.lower()
             format = {
-                'm4a': 'mp4',
-                'wave': 'wav',
+                "m4a": "mp4",
+                "wave": "wav",
             }.get(format, format)
 
         def is_format(f):
@@ -81,99 +94,113 @@ class PatchedAudioSegment(AudioSegment):
                 return True
 
             if filename:
-                return filename.lower().endswith('.{0}'.format(f))
+                return filename.lower().endswith(".{0}".format(f))
 
             return False
 
-        if is_format('wav'):
+        if is_format("wav"):
             try:
                 if start_second is None and duration is None:
                     return cls._from_safe_wav(file)
                 elif start_second is not None and duration is None:
-                    return cls._from_safe_wav(file)[start_second*1000:]
+                    return cls._from_safe_wav(file)[start_second * 1000 :]
                 elif start_second is None and duration is not None:
-                    return cls._from_safe_wav(file)[:duration*1000]
+                    return cls._from_safe_wav(file)[: duration * 1000]
                 else:
-                    return cls._from_safe_wav(file)[start_second*1000:(start_second+duration)*1000] # type: ignore
+                    return cls._from_safe_wav(file)[
+                        start_second * 1000 : (start_second + duration) * 1000
+                    ]  # type: ignore
             except:
-                file.seek(0) # type: ignore
-        elif is_format('raw') or is_format('pcm'):
-            sample_width = kwargs['sample_width']
-            frame_rate = kwargs['frame_rate']
-            channels = kwargs['channels']
+                file.seek(0)  # type: ignore
+        elif is_format("raw") or is_format("pcm"):
+            sample_width = kwargs["sample_width"]
+            frame_rate = kwargs["frame_rate"]
+            channels = kwargs["channels"]
             metadata = {
-                'sample_width': sample_width,
-                'frame_rate': frame_rate,
-                'channels': channels,
-                'frame_width': channels * sample_width
+                "sample_width": sample_width,
+                "frame_rate": frame_rate,
+                "channels": channels,
+                "frame_width": channels * sample_width,
             }
             if start_second is None and duration is None:
-                return cls(data=file.read(), metadata=metadata) # type: ignore
+                return cls(data=file.read(), metadata=metadata)  # type: ignore
             elif start_second is not None and duration is None:
-                return cls(data=file.read(), metadata=metadata)[start_second*1000:] # type: ignore
+                return cls(data=file.read(), metadata=metadata)[start_second * 1000 :]  # type: ignore
             elif start_second is None and duration is not None:
-                return cls(data=file.read(), metadata=metadata)[:duration*1000] # type: ignore
+                return cls(data=file.read(), metadata=metadata)[: duration * 1000]  # type: ignore
             else:
-                return cls(data=file.read(), metadata=metadata)[start_second*1000:(start_second+duration)*1000] # type: ignore
+                return cls(data=file.read(), metadata=metadata)[
+                    start_second * 1000 : (start_second + duration) * 1000
+                ]  # type: ignore
 
-        conversion_command = [r'ffmpeg\bin\ffmpeg.exe',
-                              '-y',  # always overwrite existing files
-                              ]
+        conversion_command = [
+            r"ffmpeg\bin\ffmpeg.exe",
+            "-y",  # always overwrite existing files
+        ]
 
         # If format is not defined
         # ffmpeg/avconv will detect it automatically
         if format:
-            conversion_command += ['-f', format]
+            conversion_command += ["-f", format]
 
         if codec:
             # force audio decoder
-            conversion_command += ['-acodec', codec]
+            conversion_command += ["-acodec", codec]
 
-        read_ahead_limit = kwargs.get('read_ahead_limit', -1)
+        read_ahead_limit = kwargs.get("read_ahead_limit", -1)
         if filename:
-            conversion_command += ['-i', filename]
+            conversion_command += ["-i", filename]
             stdin_parameter = None
             stdin_data = None
         else:
-            conversion_command += ['-read_ahead_limit', str(read_ahead_limit),
-                                    '-i', 'cache:pipe:0']
+            conversion_command += [
+                "-read_ahead_limit",
+                str(read_ahead_limit),
+                "-i",
+                "cache:pipe:0",
+            ]
             stdin_parameter = subprocess.PIPE
-            stdin_data = file.read() # type: ignore
+            stdin_data = file.read()  # type: ignore
 
         if codec:
             info = None
         else:
             info = mediainfo_json(orig_file, read_ahead_limit=read_ahead_limit)
         if info:
-            audio_streams = [x for x in info['streams']
-                             if x['codec_type'] == 'audio']
+            audio_streams = [x for x in info["streams"] if x["codec_type"] == "audio"]
             # This is a workaround for some ffprobe versions that always say
             # that mp3/mp4/aac/webm/ogg files contain fltp samples
-            audio_codec = audio_streams[0].get('codec_name')
-            if (audio_streams[0].get('sample_fmt') == 'fltp' and
-                    audio_codec in ['mp3', 'mp4', 'aac', 'webm', 'ogg']):
+            audio_codec = audio_streams[0].get("codec_name")
+            if audio_streams[0].get("sample_fmt") == "fltp" and audio_codec in [
+                "mp3",
+                "mp4",
+                "aac",
+                "webm",
+                "ogg",
+            ]:
                 bits_per_sample = 16
             else:
-                bits_per_sample = audio_streams[0]['bits_per_sample']
+                bits_per_sample = audio_streams[0]["bits_per_sample"]
             if bits_per_sample == 8:
-                acodec = 'pcm_u8'
+                acodec = "pcm_u8"
             else:
-                acodec = 'pcm_s%dle' % bits_per_sample
+                acodec = "pcm_s%dle" % bits_per_sample
 
-            conversion_command += ['-acodec', acodec]
+            conversion_command += ["-acodec", acodec]
 
         conversion_command += [
-            '-vn',  # Drop any video streams if there are any
-            '-f', 'wav'  # output options (filename last)
+            "-vn",  # Drop any video streams if there are any
+            "-f",
+            "wav",  # output options (filename last)
         ]
 
         if start_second is not None:
-            conversion_command += ['-ss', str(start_second)]
+            conversion_command += ["-ss", str(start_second)]
 
         if duration is not None:
-            conversion_command += ['-t', str(duration)]
+            conversion_command += ["-t", str(duration)]
 
-        conversion_command += ['-']
+        conversion_command += ["-"]
 
         if parameters is not None:
             # extend arguments with arbitrary set
@@ -181,18 +208,24 @@ class PatchedAudioSegment(AudioSegment):
 
         log_conversion(conversion_command)
 
-        p = subprocess.Popen(conversion_command, stdin=stdin_parameter,
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        p = subprocess.Popen(
+            conversion_command,
+            stdin=stdin_parameter,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
         p_out, p_err = p.communicate(input=stdin_data)
 
         logging.debug(conversion_command)
 
         if p.returncode != 0 or len(p_out) == 0:
             if close_file:
-                file.close() # type: ignore
+                file.close()  # type: ignore
             raise CouldntDecodeError(
-                'Decoding failed. ffmpeg returned error code: {0}\n\nOutput from ffmpeg/avlib:\n\n{1}'.format(
-                    p.returncode, p_err.decode(errors='ignore') ))
+                "Decoding failed. ffmpeg returned error code: {0}\n\nOutput from ffmpeg/avlib:\n\n{1}".format(
+                    p.returncode, p_err.decode(errors="ignore")
+                )
+            )
 
         p_out = bytearray(p_out)
         fix_wav_headers(p_out)
@@ -200,17 +233,17 @@ class PatchedAudioSegment(AudioSegment):
         obj = cls(p_out)
 
         if close_file:
-            file.close() # type: ignore
+            file.close()  # type: ignore
 
         if start_second is None and duration is None:
             return obj
         elif start_second is not None and duration is None:
             return obj[0:]
         elif start_second is None and duration is not None:
-            return obj[:duration * 1000]
+            return obj[: duration * 1000]
         else:
-            return obj[0:duration * 1000] # type: ignore
-    
+            return obj[0 : duration * 1000]  # type: ignore
+
     @override
     def set_channels(self, channels):
         if channels == self.channels:
@@ -220,18 +253,17 @@ class PatchedAudioSegment(AudioSegment):
             fn = audioop.tostereo
             frame_width = self.frame_width * 2
             fac = 1
-            converted = fn(self._data, self.sample_width, fac, fac) # type: ignore
+            converted = fn(self._data, self.sample_width, fac, fac)  # type: ignore
         elif channels == 1 and self.channels == 2:
             fn = audioop.tomono
             frame_width = self.frame_width // 2
             fac = 0.5
-            converted = fn(self._data, self.sample_width, fac, fac) # type: ignore
+            converted = fn(self._data, self.sample_width, fac, fac)  # type: ignore
         elif channels == 1:
             channels_data = [seg.get_array_of_samples() for seg in self.split_to_mono()]
             frame_count = int(self.frame_count())
             converted = array.array(
-                channels_data[0].typecode,
-                b'\0' * (frame_count * self.sample_width)
+                channels_data[0].typecode, b"\0" * (frame_count * self.sample_width)
             )
             for raw_channel_data in channels_data:
                 for i in range(frame_count):
@@ -242,12 +274,13 @@ class PatchedAudioSegment(AudioSegment):
             return PatchedAudioSegment.from_mono_audiosegments(*dup_channels)
         else:
             raise ValueError(
-                "AudioSegment.set_channels only supports mono-to-multi channel and multi-to-mono channel conversion")
+                "AudioSegment.set_channels only supports mono-to-multi channel and multi-to-mono channel conversion"
+            )
 
-        return self._spawn(data=converted,
-                           overrides={
-                               'channels': channels,
-                               'frame_width': frame_width})
+        return self._spawn(
+            data=converted, overrides={"channels": channels, "frame_width": frame_width}
+        )
+
 
 class AudioPlayer(QObject):
     onFullFinished = Signal()
@@ -258,9 +291,10 @@ class AudioPlayer(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.samples: np.ndarray = np.array([], dtype=np.float32)
+        self.samples: np.ndarray = np.zeros((0, 1), dtype=np.float32)
         self.sample_rate: int = 88200
         self.channels: int = 1
+        self.output_channels: int = 1
 
         self.db: float = 0
 
@@ -277,6 +311,63 @@ class AudioPlayer(QObject):
 
         self._lock = threading.RLock()
 
+    def _prepare_samples(self, audio: PatchedAudioSegment) -> np.ndarray:
+        samples_raw = np.array(audio.get_array_of_samples(), dtype=np.float32)  # type: ignore
+        max_val = np.iinfo(audio.array_type).max if audio.sample_width != 4 else 2**31
+        normalized = samples_raw / max_val
+
+        if audio.channels <= 1:
+            return normalized.reshape(-1, 1)
+
+        frame_count = len(samples_raw) // audio.channels
+        multi = normalized.reshape(frame_count, audio.channels)
+        # Always force stereo: mix >2ch down to stereo, pass stereo through
+        if audio.channels == 2:
+            return multi
+        left = multi[:, ::2].mean(axis=1)
+        right = multi[:, 1::2].mean(axis=1)
+        return np.stack((left, right), axis=1)
+
+    def _apply_stereo_effect(
+        self, mono_chunk: np.ndarray, absolute_start: int
+    ) -> np.ndarray:
+        stereo_chunk = np.repeat(mono_chunk.reshape(-1, 1), 2, axis=1)
+        if not cfg.stereo or len(mono_chunk) == 0:
+            return stereo_chunk
+
+        delay = min(max(1, self.sample_rate // 200), max(1, len(self.samples) // 8))
+        delayed_indices = np.arange(len(mono_chunk)) + absolute_start - delay
+        valid = delayed_indices >= 0
+
+        right = stereo_chunk[:, 1]
+        if np.any(valid):
+            right[valid] = self.samples[delayed_indices[valid], 0]
+        right[~valid] = 0.0
+        right *= 0.82
+
+        return stereo_chunk
+
+    def _remap_channels(self, target_channels: int) -> None:
+        if self.samples.ndim != 2 or self.channels == target_channels:
+            self.channels = target_channels if self.samples.ndim == 2 else 1
+            self.output_channels = self.channels
+            return
+
+        if target_channels <= 1:
+            self.samples = self.samples.mean(axis=1, keepdims=True)
+        elif target_channels == 2:
+            left = self.samples[:, ::2]
+            right = self.samples[:, 1::2]
+            mono = self.samples.mean(axis=1)
+            left_mix = left.mean(axis=1) if left.shape[1] > 0 else mono
+            right_mix = right.mean(axis=1) if right.shape[1] > 0 else mono
+            self.samples = np.stack((left_mix, right_mix), axis=1)
+        else:
+            self.samples = self.samples[:, :target_channels]
+
+        self.channels = self.samples.shape[1]
+        self.output_channels = self.channels
+
     def load(self, audio: PatchedAudioSegment) -> None:
         with self._lock:
             self.stop()
@@ -284,12 +375,10 @@ class AudioPlayer(QObject):
                 self.stream.close()
                 self.stream = None
 
-            audio = audio.set_channels(1)
             self.sample_rate = audio.frame_rate
-
-            samples_raw = np.array(audio.get_array_of_samples(), dtype=np.float32) # type: ignore
-            max_val = np.iinfo(audio.array_type).max if audio.sample_width != 4 else 2**31
-            self.samples = samples_raw / max_val
+            self.samples = self._prepare_samples(audio)
+            self.channels = self.samples.shape[1] if self.samples.ndim == 2 else 1
+            self.output_channels = 2
 
             self.current_index = 0
             self.is_playing = False
@@ -358,13 +447,25 @@ class AudioPlayer(QObject):
 
     def _start_stream(self):
         if self.stream is None:
-            self.stream = sd.OutputStream(
-                samplerate=self.sample_rate,
-                channels=self.channels,
-                callback=self._audio_callback,
-                blocksize=736,
-                dtype='float32'
-            )
+            channels = self.output_channels
+            try:
+                self.stream = sd.OutputStream(
+                    samplerate=self.sample_rate,
+                    channels=channels,
+                    callback=self._audio_callback,
+                    blocksize=736,
+                    dtype="float32",
+                )
+            except sd.PortAudioError:
+                channels = 1
+                self.stream = sd.OutputStream(
+                    samplerate=self.sample_rate,
+                    channels=channels,
+                    callback=self._audio_callback,
+                    blocksize=736,
+                    dtype="float32",
+                )
+            self.output_channels = channels
         self.stream.start()
 
     def setGain(self, gain: float):
@@ -378,12 +479,22 @@ class AudioPlayer(QObject):
             chunk = self.samples[start:end]
             copy_len = len(chunk)
 
+            outdata[:] = 0
             if copy_len > 0:
-                out = chunk * self.volume_gain
+                if self.channels == 1:
+                    out = self._apply_stereo_effect(chunk[:, 0], start)
+                else:
+                    if not cfg.stereo:
+                        mono = chunk.mean(axis=1, keepdims=True)
+                        out = np.repeat(mono, 2, axis=1)
+                    else:
+                        out = chunk[:, :2].copy()
+
+                out *= self.volume_gain
                 np.clip(out, -1.0, (61.0 + cfg.target_lufs) * 3.0, out=out)
-                outdata[:copy_len] = out.reshape(-1, 1)
-            if copy_len < frames:
-                outdata[copy_len:] = 0
+                outdata[:copy_len, : self.output_channels] = out[
+                    :, : self.output_channels
+                ]
 
             self.current_index += math.ceil(copy_len * self.play_speed)
 
@@ -392,34 +503,39 @@ class AudioPlayer(QObject):
                 self.is_paused = False
                 self.onFullFinished.emit()
                 raise sd.CallbackStop
-            
-            rms = np.sqrt(np.mean(chunk**2))
+
+            monitor_chunk = chunk.mean(axis=1) if chunk.ndim == 2 else chunk
+            rms = np.sqrt(np.mean(monitor_chunk**2))
             if rms > 0:
                 self.db = 20 * np.log10(rms)
             else:
-                self.db = -float('inf')
-            
+                self.db = -float("inf")
+
             remain = (len(self.samples) - self.current_index) / self.sample_rate
-            if ((remain < cfg.skip_remain_time) if cfg.skip_remain_time < 60 else True) and copy_len > 0 and cfg.skip_nosound:
+            if (
+                ((remain < cfg.skip_remain_time) if cfg.skip_remain_time < 60 else True)
+                and copy_len > 0
+                and cfg.skip_nosound
+            ):
                 if self.db < cfg.skip_threshold:
                     self.onEndingNoSound.emit()
                     self.is_playing = False
                     self.is_paused = False
-                    logging.info(f'skip {self.db=}')
+                    logging.info(f"skip {self.db=}")
                     raise sd.CallbackStop
-            
+
             if self.fft_enabled:
-                chunk_raw = self.samples[start:end]
+                chunk_raw = monitor_chunk
                 if len(chunk_raw) < self.fft_size:
                     chunk_pad = np.zeros(self.fft_size, dtype=np.float32)
-                    chunk_pad[:len(chunk_raw)] = chunk_raw
+                    chunk_pad[: len(chunk_raw)] = chunk_raw
                 else:
-                    chunk_pad = chunk_raw[:self.fft_size]
+                    chunk_pad = chunk_raw[: self.fft_size]
 
                 window = np.hanning(len(chunk_pad))
                 chunk_windowed = chunk_pad * window
-                
-                fft_vals = np.abs(rfft(chunk_windowed)) # type: ignore
-                fft_freqs = rfftfreq(len(chunk_pad), 1/self.sample_rate)
-                
+
+                fft_vals = np.abs(rfft(chunk_windowed))  # type: ignore
+                fft_freqs = rfftfreq(len(chunk_pad), 1 / self.sample_rate)
+
                 self.fftDataReady.emit(fft_freqs, fft_vals)

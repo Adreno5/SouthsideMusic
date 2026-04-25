@@ -1,369 +1,430 @@
-# import json
+import pickle
+from pprint import pprint
 
-# from pyncm.apis.login import (
-#     LoginViaCellphone,
-#     SetSendRegisterVerifcationCodeViaCellphone,
-#     GetRegisterVerifcationStatusViaCellphone,
-# )
-# from pyncm import GetCurrentSession, DumpSessionAsString
-# from pprint import pprint
+import pyncm
+import pyncm.apis
 
+with open('config.pkl', 'rb') as f:
+    data = pickle.load(f)
 
-# def login():
-#     import inquirer
+    pyncm.WriteLoginInfo(data['login_status'])
+    pyncm.SetCurrentSession(pyncm.LoadSessionFromString(data['session']))
 
-#     query = inquirer.prompt(
-#         [
-#             inquirer.Text("phone", message="手机号"),
-#             inquirer.Text("ctcode", message="国家代码(默认86)"),
-#         ]
-#     )
-#     phone, ctcode = query["phone"], query["ctcode"] or 86
-#     if inquirer.confirm("使用手机验证码登陆？"):
-#         result = SetSendRegisterVerifcationCodeViaCellphone(phone, ctcode)
-#         if not result.get("code", 0) == 200:
-#             pprint(result)
-#         else:
-#             print("[-] 已发送验证码")
-#         while True:
-#             captcha = inquirer.text("输入验证码")
-#             verified = GetRegisterVerifcationStatusViaCellphone(phone, captcha, ctcode)
-#             pprint(verified)
-            
-#             if verified.get("code", 0) == 200:
-#                 print("[-] 验证成功")
-#                 break
-#         result = LoginViaCellphone(phone, captcha=captcha, ctcode=ctcode)
-#         pprint(result)
-#         with open('res.json', 'w', encoding='utf-8') as f:
-#             json.dump(result, f, indent=4)
-#     else:
-#         password = inquirer.password("输入密码")
-#         result = LoginViaCellphone(phone, password=password, ctcode=ctcode)
-#         pprint(result)
-#     print("[!] 登录态 Session:", DumpSessionAsString(GetCurrentSession()))
-#     print(
-#         '[-] 此后可通过 SetCurrentSession(LoadSessionFromString("PYNCMe...")) 恢复当前登录态'
-#     )
-#     return True
+    playlists = pyncm.apis.user.GetUserPlaylists(pyncm.GetCurrentSession().uid)['playlist'] # type: ignore
+    pprint(playlists)
+    pprint(pyncm.apis.playlist.GetPlaylistAllTracks(17923377465))
 
-
-# if __name__ == "__main__":
-#     print("[-] 登录测试")
-#     assert login(), "登陆失败"
-
-# import json
-# from pprint import pprint
-
-# from pyncm import apis
-# import pyncm
-
-# with open('res2.json', 'w', encoding='utf-8') as f:
-#     json.dump(apis.login.LoginViaAnonymousAccount(), f, indent=4)
-#     print(pyncm.DumpSessionAsString(pyncm.GetCurrentSession()))
-
-# import subprocess
-
-# output = subprocess.check_output(['uv', 'pip', 'freeze']).decode()
-# libs = output.splitlines()
-
-# result = [lib.split('==')[0] for lib in libs]
-# print(f'found {len(result)} libs')
-
-# for i, lib in enumerate(result):
-#     print(f'upgrading {i + 1}/{len(result)} ({lib})')
-#     subprocess.run(['uv', 'pip', 'install', '--upgrade', lib])
-
-import subprocess
-import json
-import os
-import sys
-import re
-from datetime import datetime
-from pathlib import Path
-
-def run_git_command(cmd):
-    """执行git命令并返回输出，修复Windows编码问题"""
-    try:
-        # 设置环境变量强制使用UTF-8编码
-        env = os.environ.copy()
-        env['PYTHONIOENCODING'] = 'utf-8'
-        env['LANG'] = 'en_US.UTF-8'
-        
-        result = subprocess.run(
-            cmd,
-            shell=True,
-            capture_output=True,
-            text=True,
-            encoding='utf-8',  # 明确指定UTF-8编码
-            errors='replace',   # 替换无法解码的字符
-            env=env,
-            check=True
-        )
-        return result.stdout
-    except subprocess.CalledProcessError as e:
-        print(f"执行命令失败: {cmd}")
-        print(f"错误信息: {e.stderr}")
-        return None
-    except Exception as e:
-        print(f"执行命令时发生异常: {e}")
-        return None
-
-def get_all_commits():
-    """获取所有提交的基本信息"""
-    # 获取提交列表：hash, author name, date, subject
-    cmd = 'git log --all --pretty=format:"%H|%an|%ad|%s" --date=iso'
-    output = run_git_command(cmd)
-    
-    if not output:
-        print("警告: 没有获取到提交记录")
-        return []
-    
-    commits = []
-    for line in output.strip().split('\n'):
-        if line and '|' in line:
-            parts = line.split('|', 3)  # 最多分割3次
-            if len(parts) == 4:
-                commit = {
-                    'hash': parts[0],
-                    'author': parts[1],
-                    'date': parts[2],
-                    'message': parts[3]
-                }
-                commits.append(commit)
-    
-    return commits
-
-def parse_diff(diff_text):
-    """解析diff文本，提取文件变更和具体内容"""
-    if not diff_text:
-        return []
-    
-    changes = []
-    current_file = None
-    file_changes = []
-    
-    lines = diff_text.split('\n')
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        
-        # 检测文件变更标记 (diff --git a/file b/file)
-        if line.startswith('diff --git'):
-            # 保存上一个文件
-            if current_file:
-                changes.append({
-                    'file': current_file,
-                    'changes': file_changes
-                })
-            
-            # 提取文件名
-            match = re.search(r'diff --git a/(.+?) b/(.+)$', line)
-            if match:
-                current_file = match.group(1)
-            else:
-                current_file = "unknown"
-            file_changes = []
-            
-            # 跳过后面的 --- 和 +++ 行
-            i += 2
-        
-        # 检测变更标记 (+, -, 空格)
-        elif line and (line[0] in ['+', '-', ' ']) and len(line) > 0:
-            # 只记录实际的文件内容变更，跳过@@行
-            if not line.startswith('@@'):
-                # 限制每行长度，避免过长
-                if len(line) > 200:
-                    file_changes.append(line[:200] + "...")
-                else:
-                    file_changes.append(line)
-        
-        i += 1
-    
-    # 保存最后一个文件
-    if current_file:
-        changes.append({
-            'file': current_file,
-            'changes': file_changes
-        })
-    
-    return changes
-
-def get_commit_files(commit_hash):
-    """获取提交中变更的文件列表和状态"""
-    # 获取文件状态 (A: added, M: modified, D: deleted, R: renamed)
-    cmd = f'git show --name-status --format="" {commit_hash}'
-    output = run_git_command(cmd)
-    
-    files = []
-    if output:
-        for line in output.strip().split('\n'):
-            if line:
-                parts = line.split('\t')
-                if len(parts) >= 2:
-                    status = parts[0]
-                    filename = parts[1]
-                    files.append({'status': status, 'file': filename})
-    
-    return files
-
-def get_commit_diff(commit_hash):
-    """获取提交的diff内容"""
-    cmd = f'git show {commit_hash}'
-    output = run_git_command(cmd)
-    return output or ""
-
-def save_to_custom_format(commits_data, output_file):
-    """按照自定义格式保存到txt文件"""
-    try:
-        with open(output_file, 'w', encoding='utf-8') as f:
-            # 写入头部信息
-            f.write("=" * 80 + "\n")
-            f.write(f"Git仓库提交记录导出\n")
-            f.write(f"导出时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"提交总数: {len(commits_data)}\n")
-            f.write("=" * 80 + "\n\n")
-            
-            for i, commit in enumerate(commits_data, 1):
-                # 写入提交头部
-                short_hash = commit['hash'][:8]
-                f.write(f"({short_hash}) By {commit['author']}\n")
-                
-                # 写入提交消息（多行）
-                message_lines = commit['message'].split('\n')
-                for msg_line in message_lines:
-                    if msg_line.strip():
-                        f.write(f"{msg_line}\n")
-                
-                # 获取文件变更列表和diff内容
-                files = get_commit_files(commit['hash'])
-                diff_text = get_commit_diff(commit['hash'])
-                
-                # 解析diff内容
-                parsed_diff = parse_diff(diff_text)
-                
-                # 如果没有解析到详细diff，使用name-status作为备用
-                if not parsed_diff and files:
-                    for file_info in files:
-                        status_map = {
-                            'A': 'A',  # Added
-                            'M': 'M',  # Modified
-                            'D': 'D',  # Deleted
-                            'R': 'R'   # Renamed
-                        }
-                        status = status_map.get(file_info['status'][0], '?')
-                        f.write(f"{status} {file_info['file']}\n")
-                else:
-                    # 写入详细的文件变更
-                    for file_change in parsed_diff:
-                        # 确定文件状态
-                        status = 'M'  # 默认为修改
-                        if file_change['changes']:
-                            # 检查是否有新增或删除的标记
-                            has_additions = any(line.startswith('+') for line in file_change['changes'])
-                            has_deletions = any(line.startswith('-') for line in file_change['changes'])
-                            
-                            if has_additions and not has_deletions:
-                                status = 'A'  # 新增文件（所有行都是+）
-                            elif has_deletions and not has_additions:
-                                status = 'D'  # 删除文件（所有行都是-）
-                            else:
-                                status = 'M'  # 修改文件
-                        
-                        # 写入文件名
-                        f.write(f"{status} {file_change['file']}\n")
-                        
-                        # 写入具体的变更内容
-                        for change_line in file_change['changes']:
-                            # 限制行长度
-                            if len(change_line) > 200:
-                                change_line = change_line[:200] + "..."
-                            f.write(f"{change_line}\n")
-                
-                # 添加分隔线（除了最后一个提交）
-                if i < len(commits_data):
-                    f.write("\n" + "-" * 80 + "\n\n")
-        
-        print(f"✓ 文本报告已保存到: {output_file}")
-        print(f"  文件大小: {os.path.getsize(output_file)} 字节")
-        return True
-    except Exception as e:
-        print(f"✗ 保存文本文件失败: {e}")
-        return False
-
-def save_to_json(commits_data, output_file):
-    """保存数据到JSON文件"""
-    try:
-        # 准备JSON数据（包含所有信息）
-        json_data = []
-        for commit in commits_data:
-            files = get_commit_files(commit['hash'])
-            diff_text = get_commit_diff(commit['hash'])
-            
-            json_data.append({
-                'hash': commit['hash'],
-                'author': commit['author'],
-                'date': commit['date'],
-                'message': commit['message'],
-                'files': files,
-                'diff': diff_text
-            })
-        
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(json_data, f, ensure_ascii=False, indent=2)
-        print(f"✓ JSON数据已保存到: {output_file}")
-        print(f"  文件大小: {os.path.getsize(output_file)} 字节")
-        return True
-    except Exception as e:
-        print(f"✗ 保存JSON文件失败: {e}")
-        return False
-
-def main():
-    # 检查是否在git仓库中
-    if not os.path.exists('.git'):
-        print("错误: 当前目录不是Git仓库!")
-        print(f"当前路径: {os.getcwd()}")
-        sys.exit(1)
-    
-    print("正在获取Git仓库信息...")
-    print(f"仓库路径: {os.getcwd()}")
-    
-    # 获取所有提交的基本信息
-    print("正在获取提交列表...")
-    commits = get_all_commits()
-    
-    if not commits:
-        print("没有找到任何提交记录!")
-        print("提示: 请确保当前目录是Git仓库并且有提交历史")
-        sys.exit(1)
-    
-    print(f"找到 {len(commits)} 个提交")
-    
-    # 生成输出文件名
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    text_file = f"git_commits_export_{timestamp}.txt"
-    json_file = f"git_commits_export_{timestamp}.json"
-    
-    # 保存为自定义文本格式
-    print("正在导出为文本格式...")
-    save_to_custom_format(commits, text_file)
-    
-    # 可选：同时保存JSON格式
-    print("\n正在导出为JSON格式...")
-    
-    print("\n" + "=" * 50)
-    print("导出完成!")
-    print(f"文本文件: {text_file}")
-    print("=" * 50)
-
-if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n用户中断操作")
-        sys.exit(0)
-    except Exception as e:
-        print(f"\n发生错误: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    # playlists = pyncm.apis.user.GetUserPlaylists(pyncm.GetCurrentSession().uid)['playlist'] # type: ignore
+    # pprint(playlists)
+    # =>
+    #     [{'adType': 0,
+    #   'anonimous': False,
+    #   'artists': None,
+    #   'backgroundCoverId': 0,
+    #   'backgroundCoverUrl': None,
+    #   'cloudTrackCount': 0,
+    #   'commentThreadId': 'A_PL_0_13331336677',
+    #   'containsTracks': False,
+    #   'copied': False,
+    #   'coverImgId': 109951165434984508,
+    #   'coverImgId_str': '109951165434984508',
+    #   'coverImgUrl': 'http://p1.music.126.net/9-rm4PUkKuL-lD1Rgg6SDw==/109951165434984508.jpg',
+    #   'createTime': 1739700633510,
+    #   'creator': {'accountStatus': 0,
+    #               'anchor': False,
+    #               'authStatus': 0,
+    #               'authenticationTypes': 0,
+    #               'authority': 0,
+    #               'avatarDetail': None,
+    #               'avatarImgId': 109951173088338954,
+    #               'avatarImgIdStr': '109951173088338954',
+    #               'avatarImgId_str': '109951173088338954',
+    #               'avatarUrl': 'http://p1.music.126.net/_Ml-2_0Hb57m94acyCU9rQ==/109951173088338954.jpg',
+    #               'backgroundImgId': 109951162868126486,
+    #               'backgroundImgIdStr': '109951162868126486',
+    #               'backgroundUrl': 'http://p1.music.126.net/_f8R60U9mZ42sSNvdPn2sQ==/109951162868126486.jpg',
+    #               'birthday': 0,
+    #               'city': 532500,
+    #               'defaultAvatar': False,
+    #               'description': '',
+    #               'detailDescription': '',
+    #               'djStatus': 0,
+    #               'expertTags': None,
+    #               'experts': None,
+    #               'followed': False,
+    #               'gender': 0,
+    #               'mutual': False,
+    #               'nickname': 'Adreno9135',
+    #               'province': 530000,
+    #               'remarkName': None,
+    #               'signature': '',
+    #               'userId': 13149209959,
+    #               'userType': 0,
+    #               'vipType': 11},
+    #   'description': None,
+    #   'englishTitle': None,
+    #   'highQuality': False,
+    #   'id': 13331336677,
+    #   'name': 'Adreno9135喜欢的音乐',
+    #   'newImported': False,
+    #   'opRecommend': False,
+    #   'ordered': False,
+    #   'playCount': 0,
+    #   'privacy': 0,
+    #   'recommendInfo': None,
+    #   'shareStatus': None,
+    #   'sharedUsers': None,
+    #   'specialType': 5,
+    #   'status': 0,
+    #   'subscribed': None,
+    #   'subscribedCount': 0,
+    #   'subscribers': [],
+    #   'tags': [],
+    #   'titleImage': 0,
+    #   'titleImageUrl': None,
+    #   'top': False,
+    #   'totalDuration': 0,
+    #   'trackCount': 0,
+    #   'trackNumberUpdateTime': 1751034122747,
+    #   'trackUpdateTime': 1751034124783,
+    #   'tracks': None,
+    #   'updateFrequency': None,
+    #   'updateTime': 1751034124773,
+    #   'userId': 13149209959},
+    #  {'adType': 0,
+    #   'anonimous': False,
+    #   'artists': None,
+    #   'backgroundCoverId': 0,
+    #   'backgroundCoverUrl': None,
+    #   'cloudTrackCount': 0,
+    #   'commentThreadId': 'A_PL_0_17923377465',
+    #   'containsTracks': False,
+    #   'copied': False,
+    #   'coverImgId': 18223305719326928,
+    #   'coverImgId_str': '18223305719326928',
+    #   'coverImgUrl': 'http://p1.music.126.net/5ChG4-2IkYzwnj2-WScvMw==/18223305719326928.jpg',
+    #   'createTime': 1777105545097,
+    #   'creator': {'accountStatus': 0,
+    #               'anchor': False,
+    #               'authStatus': 0,
+    #               'authenticationTypes': 0,
+    #               'authority': 0,
+    #               'avatarDetail': None,
+    #               'avatarImgId': 109951173088338954,
+    #               'avatarImgIdStr': '109951173088338954',
+    #               'avatarImgId_str': '109951173088338954',
+    #               'avatarUrl': 'http://p1.music.126.net/_Ml-2_0Hb57m94acyCU9rQ==/109951173088338954.jpg',
+    #               'backgroundImgId': 109951162868126486,
+    #               'backgroundImgIdStr': '109951162868126486',
+    #               'backgroundUrl': 'http://p1.music.126.net/_f8R60U9mZ42sSNvdPn2sQ==/109951162868126486.jpg',
+    #               'birthday': 0,
+    #               'city': 532500,
+    #               'defaultAvatar': False,
+    #               'description': '',
+    #               'detailDescription': '',
+    #               'djStatus': 0,
+    #               'expertTags': None,
+    #               'experts': None,
+    #               'followed': False,
+    #               'gender': 0,
+    #               'mutual': False,
+    #               'nickname': 'Adreno9135',
+    #               'province': 530000,
+    #               'remarkName': None,
+    #               'signature': '',
+    #               'userId': 13149209959,
+    #               'userType': 0,
+    #               'vipType': 11},
+    #   'description': None,
+    #   'englishTitle': None,
+    #   'highQuality': False,
+    #   'id': 17923377465,
+    #   'name': 'Ilyove',
+    #   'newImported': False,
+    #   'opRecommend': False,
+    #   'ordered': False,
+    #   'playCount': 0,
+    #   'privacy': 10,
+    #   'recommendInfo': None,
+    #   'shareStatus': None,
+    #   'sharedUsers': None,
+    #   'specialType': 0,
+    #   'status': 0,
+    #   'subscribed': None,
+    #   'subscribedCount': 0,
+    #   'subscribers': [],
+    #   'tags': [],
+    #   'titleImage': 0,
+    #   'titleImageUrl': None,
+    #   'top': False,
+    #   'totalDuration': 0,
+    #   'trackCount': 2,
+    #   'trackNumberUpdateTime': 1777105731012,
+    #   'trackUpdateTime': 1777105731208,
+    #   'tracks': None,
+    #   'updateFrequency': None,
+    #   'updateTime': 1777105731012,
+    #   'userId': 13149209959}]
+    # pprint(pyncm.apis.playlist.GetPlaylistAllTracks(17923377465))
+    # =>
+    # {'code': 200,
+    #  'privileges': [{'bd': None,
+    #                  'chargeInfoList': [{'chargeMessage': None,
+    #                                      'chargeType': 1,
+    #                                      'chargeUrl': None,
+    #                                      'rate': 128000},
+    #                                     {'chargeMessage': None,
+    #                                      'chargeType': 1,
+    #                                      'chargeUrl': None,
+    #                                      'rate': 192000},
+    #                                     {'chargeMessage': None,
+    #                                      'chargeType': 1,
+    #                                      'chargeUrl': None,
+    #                                      'rate': 320000},
+    #                                     {'chargeMessage': None,
+    #                                      'chargeType': 1,
+    #                                      'chargeUrl': None,
+    #                                      'rate': 999000}],
+    #                  'code': 0,
+    #                  'cp': 1,
+    #                  'cs': False,
+    #                  'dl': 999000,
+    #                  'dlLevel': 'jyeffect',
+    #                  'dlLevels': None,
+    #                  'downloadMaxBrLevel': 'vivid',
+    #                  'downloadMaxbr': 999000,
+    #                  'fee': 1,
+    #                  'fl': 0,
+    #                  'flLevel': 'none',
+    #                  'flag': 4161540,
+    #                  'freeTrialPrivilege': {'cannotListenReason': None,
+    #                                         'freeLimitTagType': None,
+    #                                         'listenType': None,
+    #                                         'playReason': None,
+    #                                         'resConsumable': False,
+    #                                         'userConsumable': False},
+    #                  'id': 508671230,
+    #                  'ignoreCache': None,
+    #                  'maxBrLevel': 'vivid',
+    #                  'maxbr': 999000,
+    #                  'message': None,
+    #                  'payed': 1,
+    #                  'pl': 999000,
+    #                  'plLevel': 'jyeffect',
+    #                  'plLevels': None,
+    #                  'playMaxBrLevel': 'vivid',
+    #                  'playMaxbr': 999000,
+    #                  'preSell': False,
+    #                  'rightSource': 0,
+    #                  'rscl': None,
+    #                  'sp': 7,
+    #                  'st': 0,
+    #                  'subp': 1,
+    #                  'toast': False},
+    #                 {'bd': None,
+    #                  'chargeInfoList': [{'chargeMessage': None,
+    #                                      'chargeType': 1,
+    #                                      'chargeUrl': None,
+    #                                      'rate': 128000},
+    #                                     {'chargeMessage': None,
+    #                                      'chargeType': 1,
+    #                                      'chargeUrl': None,
+    #                                      'rate': 192000},
+    #                                     {'chargeMessage': None,
+    #                                      'chargeType': 1,
+    #                                      'chargeUrl': None,
+    #                                      'rate': 320000},
+    #                                     {'chargeMessage': None,
+    #                                      'chargeType': 1,
+    #                                      'chargeUrl': None,
+    #                                      'rate': 999000}],
+    #                  'code': 0,
+    #                  'cp': 1,
+    #                  'cs': False,
+    #                  'dl': 999000,
+    #                  'dlLevel': 'jyeffect',
+    #                  'dlLevels': None,
+    #                  'downloadMaxBrLevel': 'vivid',
+    #                  'downloadMaxbr': 999000,
+    #                  'fee': 1,
+    #                  'fl': 0,
+    #                  'flLevel': 'none',
+    #                  'flag': 4161540,
+    #                  'freeTrialPrivilege': {'cannotListenReason': None,
+    #                                         'freeLimitTagType': None,
+    #                                         'listenType': None,
+    #                                         'playReason': None,
+    #                                         'resConsumable': False,
+    #                                         'userConsumable': False},
+    #                  'id': 28694864,
+    #                  'ignoreCache': None,
+    #                  'maxBrLevel': 'vivid',
+    #                  'maxbr': 999000,
+    #                  'message': None,
+    #                  'payed': 1,
+    #                  'pl': 999000,
+    #                  'plLevel': 'jyeffect',
+    #                  'plLevels': None,
+    #                  'playMaxBrLevel': 'vivid',
+    #                  'playMaxbr': 999000,
+    #                  'preSell': False,
+    #                  'rightSource': 0,
+    #                  'rscl': None,
+    #                  'sp': 7,
+    #                  'st': 0,
+    #                  'subp': 1,
+    #                  'toast': False}],
+    #  'songs': [{'a': None,
+    #             'additionalTitle': '(Original Mix)',
+    #             'al': {'id': 36383914,
+    #                    'name': 'Peeping Tom',
+    #                    'pic': 18223305719326928,
+    #                    'picUrl': 'https://p2.music.126.net/5ChG4-2IkYzwnj2-WScvMw==/18223305719326928.jpg',
+    #                    'pic_str': '18223305719326928',
+    #                    'tns': []},
+    #             'alia': [],
+    #             'ar': [{'alias': [],
+    #                     'id': 336234,
+    #                     'name': 'Jamie Berry',
+    #                     'tns': []},
+    #                    {'alias': [],
+    #                     'id': 28528573,
+    #                     'name': 'Rosie Harte',
+    #                     'tns': []}],
+    #             'artistClassics': False,
+    #             'awardTags': None,
+    #             'cd': '1',
+    #             'cf': '',
+    #             'copyright': 1,
+    #             'cp': 526012,
+    #             'crbt': None,
+    #             'displayTags': None,
+    #             'djId': 0,
+    #             'dt': 210000,
+    #             'entertainmentTags': None,
+    #             'fee': 1,
+    #             'ftype': 0,
+    #             'h': {'br': 320002,
+    #                   'fid': 0,
+    #                   'size': 8403113,
+    #                   'sr': 44100,
+    #                   'vd': -73777.0},
+    #             'hr': None,
+    #             'id': 508671230,
+    #             'l': {'br': 128002,
+    #                   'fid': 0,
+    #                   'size': 3361271,
+    #                   'sr': 44100,
+    #                   'vd': -69841.0},
+    #             'm': {'br': 192002,
+    #                   'fid': 0,
+    #                   'size': 5041885,
+    #                   'sr': 44100,
+    #                   'vd': -71263.0},
+    #             'mainTitle': 'Peeping Tom ',
+    #             'mark': 17180139520,
+    #             'markTags': [],
+    #             'mst': 9,
+    #             'mv': 0,
+    #             'name': 'Peeping Tom (Original Mix)',
+    #             'no': 1,
+    #             'noCopyrightRcmd': None,
+    #             'originCoverType': 0,
+    #             'originSongSimpleData': None,
+    #             'pop': 100.0,
+    #             'pst': 0,
+    #             'publishTime': 1396022400007,
+    #             'resourceState': True,
+    #             'rt': None,
+    #             'rtUrl': None,
+    #             'rtUrls': [],
+    #             'rtype': 0,
+    #             'rurl': None,
+    #             's_id': 0,
+    #             'single': 0,
+    #             'songFeature': None,
+    #             'songJumpInfo': None,
+    #             'sq': {'br': 1054753,
+    #                    'fid': 0,
+    #                    'size': 27687286,
+    #                    'sr': 44100,
+    #                    'vd': -73777.0},
+    #             'st': 0,
+    #             't': 0,
+    #             'tagPicList': None,
+    #             'v': 53,
+    #             'version': 19},
+    #            {'a': None,
+    #             'additionalTitle': '(Radio Edit)',
+    #             'al': {'id': 2880330,
+    #                    'name': 'Wicked Wonderland',
+    #                    'pic': 109951163118669945,
+    #                    'picUrl': 'https://p2.music.126.net/-ea5yMonWQ8D-MpwAeKTbQ==/109951163118669945.jpg',
+    #                    'pic_str': '109951163118669945',
+    #                    'tns': []},
+    #             'alia': [],
+    #             'ar': [{'alias': [], 'id': 962293, 'name': 'Tungevaag', 'tns': []}],
+    #             'artistClassics': False,
+    #             'awardTags': None,
+    #             'cd': '1',
+    #             'cf': '',
+    #             'copyright': 1,
+    #             'cp': 665010,
+    #             'crbt': None,
+    #             'displayTags': None,
+    #             'djId': 0,
+    #             'dt': 217270,
+    #             'entertainmentTags': None,
+    #             'fee': 1,
+    #             'ftype': 0,
+    #             'h': {'br': 320000,
+    #                   'fid': 0,
+    #                   'size': 8693595,
+    #                   'sr': 44100,
+    #                   'vd': -62935.0},
+    #             'hr': None,
+    #             'id': 28694864,
+    #             'l': {'br': 128000,
+    #                   'fid': 0,
+    #                   'size': 3477464,
+    #                   'sr': 44100,
+    #                   'vd': -59006.0},
+    #             'm': {'br': 192000,
+    #                   'fid': 0,
+    #                   'size': 5216174,
+    #                   'sr': 44100,
+    #                   'vd': -60443.0},
+    #             'mainTitle': 'Wicked Wonderland ',
+    #             'mark': 17180139520,
+    #             'markTags': [],
+    #             'mst': 9,
+    #             'mv': 339617,
+    #             'name': 'Wicked Wonderland (Radio Edit)',
+    #             'no': 1,
+    #             'noCopyrightRcmd': None,
+    #             'originCoverType': 1,
+    #             'originSongSimpleData': None,
+    #             'pop': 100.0,
+    #             'pst': 0,
+    #             'publishTime': 1403625600000,
+    #             'resourceState': True,
+    #             'rt': None,
+    #             'rtUrl': None,
+    #             'rtUrls': [],
+    #             'rtype': 0,
+    #             'rurl': None,
+    #             's_id': 0,
+    #             'single': 0,
+    #             'songFeature': None,
+    #             'songJumpInfo': None,
+    #             'sq': {'br': 1032096,
+    #                    'fid': 0,
+    #                    'size': 28030507,
+    #                    'sr': 44100,
+    #                    'vd': -63012.0},
+    #             'st': 0,
+    #             't': 0,
+    #             'tagPicList': None,
+    #             'tns': ['诡丽仙境'],
+    #             'v': 142,
+    #             'version': 108}]}

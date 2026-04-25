@@ -42,6 +42,8 @@ class Config:
     login_status: dict | None = None
     login_method: Literal['anonymous', 'cell phone', 'QR code'] = 'anonymous'
 
+    stereo: bool = True
+
 cfg = Config()
 
 def restoreOldConfigFormat() -> None:
@@ -80,6 +82,8 @@ def restoreOldConfigFormat() -> None:
         cfg.session = None
         cfg.login_status = None
 
+        cfg.stereo = True
+
         saveConfig()
 
         logging.info('restored old config.json to pickle format')
@@ -97,6 +101,8 @@ def loadConfig() -> None:
             data = pickle.load(f)
 
             cfg.__dict__.update(data)
+            if isinstance(cfg.last_playing_song, SongStorable):
+                cfg.last_playing_song.ensure_cached_assets()
 
 def saveConfig() -> None:
     with open('./config.pkl', 'wb') as f:

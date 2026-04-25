@@ -31,3 +31,8 @@ Launch.exe
 python-venv
 embed_python/
 config.pkl
+cache/
+data/
+.agents/
+.mypy_cache/
+.vscode/

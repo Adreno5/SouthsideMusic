@@ -965,7 +965,7 @@ class PlayingController(QWidget):
             self.lastfm = time.time()
             dp.sendSongFMAndInfo()
 
-        if player.isPlaying():
+        if not player.isPlaying():
             self.play_pausebtn.setIcon(getQIcon("playa"))
         else:
             self.play_pausebtn.setIcon(getQIcon("pause"))

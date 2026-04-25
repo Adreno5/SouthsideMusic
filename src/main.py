@@ -1519,8 +1519,8 @@ class PlayingPage(QWidget):
             p = player.getPosition()
             playingnow = player.isPlaying()
             self.playStorable(self.cur.storable)
-            if not playingnow:
-                self.controller.toggle()
+            if playingnow:
+                player.play()
 
             self.target_lufs_label.setText(f"Target LUFS: {cfg.target_lufs}")
             player.setPosition(p)
@@ -1766,7 +1766,7 @@ class PlayingPage(QWidget):
                 transmgr.parse()
 
             def _fini():
-                self.controller.toggle()
+                player.play()
 
                 self.sendSongFMAndInfo()
 
@@ -1788,7 +1788,7 @@ class PlayingPage(QWidget):
 
             player.load(audio)
             self.total_length = player.getLength()
-            self.controller.toggle()
+            player.play()
 
             def computeGain():
                 try:
@@ -1927,7 +1927,7 @@ class PlayingPage(QWidget):
             transmgr.parse()
         finally:
             if not player.isPlaying():
-                self.controller.toggle()
+                player.play()
 
             self._preload_triggered = False
             self.next_song_audio = None
@@ -1960,6 +1960,7 @@ class PlayingPage(QWidget):
         self.playStorable(song)
 
     def playStorable(self, song_storable: SongStorable):
+        player.stop()
         self.cur = DummyCard(song_storable)
 
         # Update UI
@@ -2003,7 +2004,7 @@ class PlayingPage(QWidget):
             transmgr.parse()
         finally:
             if not player.isPlaying():
-                self.controller.toggle()
+                player.play()
 
             self._preload_triggered = False
             self.next_song_audio = None
@@ -2036,12 +2037,7 @@ class PlayingPage(QWidget):
 
         # Ensure playing state
         if not player.isPlaying():
-            self.controller.toggle()
-
-    def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.key() == Qt.Key.Key_Space:
-            self.controller.toggle()
-        return super().keyPressEvent(event)
+            player.play()
 
     def sendSongFMAndInfo(self):
         if self.cur is None:
@@ -3010,7 +3006,7 @@ class MainWindow(FluentWindowBase):
 
                 dp.playSongAtIndex(0)
                 dp.controller.setPlaytime(cfg.last_playing_time)
-                dp.controller.toggle()
+                player.stop()
 
             launchwindow.setStatusText("Initializing...\n  Initializing Mainwindow...")
 

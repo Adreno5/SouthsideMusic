@@ -7,7 +7,7 @@ import datetime
 import os
 import threading
 from typing import TextIO, Optional, override
-from PySide6.QtGui import QMouseEvent, QResizeEvent
+from PySide6.QtGui import QKeyEvent, QMouseEvent, QResizeEvent
 from colorama import Fore, Style, init
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
@@ -229,6 +229,7 @@ from utils.play_util import PatchedAudioSegment as AudioSegment
 from utils.icon_util import getQIcon
 from utils.dialog_util import QRCodeLoginDialog, get_value_bylist, get_text_lineedit
 from utils.websocket_util import WebSocketServer, ws_server, ws_handler
+from utils.pyside_util import remove_widgets
 
 from pyncm import apis
 import pyncm as ncm
@@ -373,7 +374,7 @@ class SongCard(QWidget):
             f"Need more privilege ({info['privilege']}(song)>{ncm.GetCurrentSession().vipType}(yours))"
         )
         self.vip_label.setStyleSheet("color: red;")
-        if info["privilege"] < ncm.GetCurrentSession().vipType:
+        if info["privilege"] <= ncm.GetCurrentSession().vipType:
             self.vip_label.hide()
         top_layout.addWidget(self.vip_label)
 
@@ -928,7 +929,7 @@ class PlayingController(QWidget):
         if dp.enableFFT_box.isChecked():
             if not player.isPlaying():
                 self.cur_magnitudes = np.zeros(513, dtype=np.float32)
-            window_size = cfg.fft_filtering_windowsize
+            window_size = int(cfg.fft_filtering_windowsize)
 
             self.smoothed_magnitudes += (
                 self.cur_magnitudes - self.smoothed_magnitudes
@@ -942,7 +943,6 @@ class PlayingController(QWidget):
                 self.final_magnitudes *= (2 / dp.cur.storable.loudness_gain) * 0.75
             
             maxmag = max(np.max(self.final_magnitudes), 10)
-            self.final_magnitudes *= self.final_magnitudes / maxmag
             self.dev_mag += (maxmag - self.dev_mag) * 0.35
             self.final_magnitudes /= self.dev_mag
             self.final_magnitudes *= self.height() - 10
@@ -1355,20 +1355,17 @@ class PlayingPage(QWidget):
         step: float | int,
         configurationName: str,
     ) -> None:
-        slider = Slider(Qt.Orientation.Horizontal)
-        slider.setRange(min, max)  # pyright: ignore[reportArgumentType]
-        slider.setValue(getattr(cfg, configurationName))
-        slider.setSingleStep(step)  # pyright: ignore[reportArgumentType]
-        label = QLabel(f"Value: {getattr(cfg, configurationName)}")
+        box = DoubleSpinBox()
+        box.setRange(min, max)  # pyright: ignore[reportArgumentType]
+        box.setValue(getattr(cfg, configurationName))
+        box.setSingleStep(step)  # pyright: ignore[reportArgumentType]
 
         def _valueChanged(value: float | int):
             setattr(cfg, configurationName, value)
-            label.setText(f"Value: {getattr(cfg, configurationName)}")
 
-        slider.valueChanged.connect(_valueChanged)
-
-        self.addSetting(title, description, slider)
-        self.addSeparateWidget(label)
+        box.valueChanged.connect(_valueChanged)
+        
+        self.addSetting(title, description, box)
 
     def addCheckSetting(
         self, title: str, description: str, configurationName: str
@@ -1754,7 +1751,7 @@ class PlayingPage(QWidget):
 
         def _parse():
             with ncm.GetCurrentSession():
-                data: dict = apis.track.GetTrackLyrics(str(self.cur.info["id"]))  # type: ignore
+                data: dict = apis.track.GetTrackLyricsNew(str(self.cur.info["id"]))  # type: ignore
             mgr.cur = data["lrc"]["lyric"]
             if data.get("tlyric"):
                 transmgr.cur = "\n".join(data["tlyric"]["lyric"].splitlines()[1:])
@@ -3114,6 +3111,11 @@ class MainWindow(FluentWindowBase):
         dp.connect_btn.setEnabled(True)
         dp.disconnect_btn.setEnabled(False)
 
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_F3:
+            debug_window.setVisible(not debug_window.isVisible())
+        else:
+            return super().keyPressEvent(event)
 
 class LaunchWindow(QWidget):
     def __init__(self):
@@ -3150,6 +3152,120 @@ class LaunchWindow(QWidget):
         if sleep:
             time.sleep(0.05)
 
+class DebugWindow(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.setFixedSize(QApplication.primaryScreen().size() * 0.7)
+
+        global_layout = QVBoxLayout()
+        self.objname_inputer = LineEdit()
+        global_layout.addWidget(self.objname_inputer)
+
+        self.obj_label = QLabel()
+        global_layout.addWidget(self.obj_label)
+
+        scroll_widget = SmoothScrollArea()
+        content_widget = QWidget()
+        content_layout = QVBoxLayout()
+
+        self.eval_inputer = LineEdit()
+        self.eval_label = QLabel()
+
+        content_layout.addWidget(self.eval_inputer)
+        content_layout.addWidget(self.eval_label)
+
+        self.tree = TreeWidget()
+        self.tree.setColumnCount(2)
+        self.tree.setHeaderLabels(['Name', 'Value'])
+        self.tree.header().setStretchLastSection(False)
+
+        content_layout.addWidget(self.tree)
+
+        content_widget.setLayout(content_layout)
+        scroll_widget.setWidget(content_widget)
+        scroll_widget.setWidgetResizable(True)
+        global_layout.addWidget(scroll_widget)
+
+        self.selected_object: Optional[object] = None
+
+        self.setLayout(global_layout)
+
+        self.update_timer = QTimer(self)
+        self.update_timer.timeout.connect(self.updateDatas)
+        self.update_timer.start(500)
+
+        self.hide()
+
+    def updateDatas(self) -> None:
+        if not self.isVisible():
+            return
+        if self.selected_object:
+            self.tree.clear()
+            
+            def _recursive(obj: object, layer: int) -> list:
+                res = []
+                if layer > 5:
+                    return [('To deep')]
+                if hasattr(obj, '__dict__'):
+                    for k, v in obj.__dict__.items():
+                        if isinstance(v, int) or isinstance(v, float) or isinstance(v, str) or isinstance(v, bool) or isinstance(v, list):
+                            res.append((k, v))
+                        else:
+                            res.append((k, _recursive(v, layer+1)))
+                    return res
+                else:
+                    return []
+            
+            def _build_tree(data: list, parent: Union[QTreeWidget, QTreeWidgetItem]):
+                for item in data:
+                    if isinstance(item, tuple):
+                        key, value = item
+                        if isinstance(value, list):
+                            tree_item = QTreeWidgetItem([key, ''])
+                            if isinstance(parent, QTreeWidget):
+                                parent.addTopLevelItem(tree_item)
+                            else:
+                                parent.addChild(tree_item)
+                            _build_tree(value, tree_item)
+                        else:
+                            tree_item = QTreeWidgetItem([key, str(value)])
+                            if isinstance(parent, QTreeWidget):
+                                parent.addTopLevelItem(tree_item)
+                            else:
+                                parent.addChild(tree_item)
+                    elif isinstance(item, list):
+                        for sub_item in item:
+                            _build_tree([sub_item], parent)
+            
+            result = _recursive(self.selected_object, 1)
+            _build_tree(result, self.tree)
+            
+            self.tree.expandAll()
+
+            self.obj_label.setText(str(self.selected_object))
+        self.tree.setColumnWidth(0, self.width() // 2 - 15)
+        self.tree.setColumnWidth(1, self.width() // 2 - 15)
+
+        self.selected_object = globals().get(self.objname_inputer.text())
+
+        completer = QCompleter(list(globals().keys()), self.objname_inputer)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setMaxVisibleItems(20)
+        self.objname_inputer.setCompleter(completer)
+
+        try: self.eval_label.setText(str(eval(self.eval_inputer.text())))
+        except: pass
+
+    def closeEvent(self, event: QCloseEvent):
+        event.ignore()
+        self.hide()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_Escape:
+            self.close()
+        else:
+            return super().keyPressEvent(event)
 
 if __name__ == "__main__":
     if cfg.login_status and not ncm.GetCurrentSession().is_anonymous:
@@ -3210,6 +3326,8 @@ if __name__ == "__main__":
             logging.info("wrote login info")
 
     launchwindow.setStatusText("Initializing...\n  Initializing pages...")
+
+    debug_window = DebugWindow()
 
     dp = PlayingPage()
     sp = SearchPage()

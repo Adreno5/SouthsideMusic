@@ -317,11 +317,11 @@ def doWithMultiThreading(
             box.accept()
         if finished:
             finished()
-        thread.quit()
 
     thread = QThread(parent)
     thread.run = lambda: task(*args)
     thread.finished.connect(__finish)
+    thread.finished.connect(thread.deleteLater)
     thread.start()
 
     if dialog:

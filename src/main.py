@@ -211,7 +211,7 @@ import math
 
 from utils.random_util import AdvancedRandom
 
-from functools import cache, lru_cache
+from functools import lru_cache
 from utils.base.base_util import FolderInfo, SongInfo, SongStorable
 from utils.base.base_util import SongDetail
 from utils.lyric_util import LRCLyricManager, LyricInfo
@@ -695,6 +695,9 @@ class SearchPage(QWidget):
             InfoBar.warning("Search failed", "the keyword is empty!", parent=mwindow)
             return
 
+        if self.search_btn.isEnabled() is False:
+            return
+
         self.search_btn.setEnabled(False)
         self.lst.clear()
         self.cards.clear()
@@ -702,7 +705,6 @@ class SearchPage(QWidget):
 
         result: list[SongInfo] = []
 
-        @cache
         def _do():
             nonlocal result
             result = wy.search(self.inputer.text())
@@ -963,6 +965,11 @@ class PlayingController(QWidget):
             self.lastfm = time.time()
             dp.sendSongFMAndInfo()
 
+        if player.isPlaying():
+            self.play_pausebtn.setIcon(getQIcon("playa"))
+        else:
+            self.play_pausebtn.setIcon(getQIcon("pause"))
+
         self.repaint()
 
     def updateVol(self):
@@ -1007,10 +1014,8 @@ class PlayingController(QWidget):
 
         if player.isPlaying():
             player.pause()
-            self.play_pausebtn.setIcon(getQIcon("playa"))
         else:
             player.resume()
-            self.play_pausebtn.setIcon(getQIcon("pause"))
 
     def setPlaytime(self, time_value: float) -> None:
         playing_time = time_value
@@ -3259,6 +3264,8 @@ class DebugWindow(QWidget):
 
         try: self.eval_label.setText(str(eval(self.eval_inputer.text())))
         except: pass
+
+        self.setStyleSheet(f'background: {'white' if darkdetect.isLight() else 'black'}')
 
     def closeEvent(self, event: QCloseEvent):
         event.ignore()

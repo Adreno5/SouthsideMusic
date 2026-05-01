@@ -764,15 +764,11 @@ class FavoriteSongCard(_SongCardItem):
 
         export = Action('Export', menu)
         export.setIcon(getQIcon('export'))
-        rm = Action('Remove', menu)
-        rm.setIcon(getQIcon('remove'))
 
         export.triggered.connect(lambda: exportSong(self))
-        rm.triggered.connect(lambda: removeSong(self))
 
         menu.addActions([
-            export,
-            rm
+            export
         ])
 
         menu.exec(event.globalPos(), aniType=MenuAnimationType.DROP_DOWN)

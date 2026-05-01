@@ -2,8 +2,57 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import requests
+import toml
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 if __name__ == '__main__':
+    print('[UPDATOR] detecting updates')
+    with open('pyproject.toml', 'r+', encoding='utf-8') as f:
+        parsed = toml.load(f)
+        ver: int = int(parsed['project']['version'].removeprefix('v'))
+        print(f'[UPDATOR] current version: v{ver}')
+        data = requests.get('https://api.github.com/repos/Adreno5/SouthsideMusic/releases/latest').json()
+        newest: int = int(data['tag_name'].removeprefix('v'))
+        
+        if newest > ver:
+            print(f'[UPDATOR] update available: v{newest}')
+
+            file_list = []
+            def collect_files(api_url):
+                items = requests.get(api_url).json()
+                for item in items:
+                    if item['type'] == 'file':
+                        file_list.append((item['path'], item['download_url']))
+                    elif item['type'] == 'dir':
+                        collect_files(item['url'])
+
+            print('[UPDATOR] collecting file list...')
+            collect_files('https://api.github.com/repos/Adreno5/SouthsideMusic/contents/src')
+            print(f'[UPDATOR] {len(file_list)} files to download')
+
+            def download_file(path, url):
+                try:
+                    print(f'[UPDATOR] downloading {path}')
+                    Path(path).parent.mkdir(parents=True, exist_ok=True)
+                    txt = requests.get(url).text
+                    with open(path, 'w', encoding='utf-8') as fp:
+                        fp.write(txt)
+                    print(f'[UPDATOR] downloaded {path} ({len(txt)} chars)')
+                except Exception as e:
+                    print(f'[UPDATOR] failed to download {path}: {e}')
+
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = [executor.submit(download_file, path, url) for path, url in file_list]
+                for future in as_completed(futures):
+                    future.result()
+
+            parsed['project']['version'] = f'v{newest}'
+            toml.dump(parsed, f)
+
+        else:
+            print('[UPDATOR] no update available')
+
     print('[LAUNCH] launching')
 
     cwd = Path(os.getcwd()).resolve()

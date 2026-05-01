@@ -223,6 +223,15 @@ wheels = [
 ]
 
 [[package]]
+name = "mutagen"
+version = "1.47.0"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/81/e6/64bc71b74eef4b68e61eb921dcf72dabd9e4ec4af1e11891bbd312ccbb77/mutagen-1.47.0.tar.gz", hash = "sha256:719fadef0a978c31b4cf3c956261b3c58b6948b32023078a2117b1de09f0fc99" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/b0/7a/620f945b96be1f6ee357d211d5bf74ab1b7fe72a9f1525aafbfe3aee6875/mutagen-1.47.0-py3-none-any.whl", hash = "sha256:edd96f50c5907a9539d8e5bba7245f62c9f520aef333d13392a79a4f70aca719" },
+]
+
+[[package]]
 name = "nuitka"
 version = "4.0.8"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
@@ -3390,6 +3399,7 @@ dependencies = [
     { name = "darkdetect" },
     { name = "hpyt" },
     { name = "inquirer" },
+    { name = "mutagen" },
     { name = "nuitka" },
     { name = "numpy" },
     { name = "pillow" },
@@ -3411,6 +3421,7 @@ requires-dist = [
     { name = "darkdetect", specifier = ">=0.8.0" },
     { name = "hpyt", specifier = ">=1.4.0" },
     { name = "inquirer", specifier = ">=3.4.1" },
+    { name = "mutagen", specifier = ">=1.47.0" },
     { name = "nuitka", specifier = ">=4.0.8" },
     { name = "numpy", specifier = ">=2.4.2" },
     { name = "pillow", specifier = ">=12.2.0" },

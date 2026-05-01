@@ -7,8 +7,10 @@ import datetime
 import os
 import threading
 from typing import TextIO, Optional
-from PySide6.QtGui import QKeyEvent, QMouseEvent
+from PySide6.QtGui import QContextMenuEvent, QKeyEvent, QMouseEvent
 from colorama import Fore, Style, init
+
+from utils.soundfile_util import getSongFormat, saveSongWithMetaInformations
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
 sys.path.append(os.path.dirname(__file__))
@@ -62,7 +64,6 @@ class LogHandler(logging.Handler):
         assert sys.__stdout__ is not None
         sys.__stdout__.write(final + "\n")
         sys.__stdout__.flush()
-
 
 class LoggingStream:
     def __init__(self, level: int = logging.DEBUG, source: str = "stderr"):
@@ -657,7 +658,7 @@ class _SongCardItem(QWidget):
                 with ncm.GetCurrentSession():
                     response = apis.track.GetTrackDetail(song_ids=[storable.id])
                     assert isinstance(response, dict)
-                    image_url = response["songs"][0]["al"]["picUrl"]
+                    image_url = response["songs"][0]["al"]["picUrl"] # type: ignore
                     image_bytes = requests.get(
                         image_url,
                         headers={
@@ -699,17 +700,82 @@ class _SongCardItem(QWidget):
             pass
 
     def mousePressEvent(self, event: QMouseEvent):
-        self.clicked.emit(self.storable)
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self.storable)
         return super().mousePressEvent(event)
 
+def exportSong(card: _SongCardItem):
+    dp.ensureAssets(card.storable)
+    with open(os.path.join(MUSIC_DATA_DIR, card.storable.content_cache_hash), 'rb') as f:
+        export_path, fmt = QFileDialog.getSaveFileName(
+            mwindow, 'Export song', f'./{card.storable.name} - {card.storable.artists}{getSongFormat(f.read())}', 'Song Files (*.mp3, *.m4a, *.flac, *.wav, *.ogg, *.opus)',
+        )
+        
+    if export_path:
+        try:
+            with open(os.path.join(MUSIC_DATA_DIR, card.storable.content_cache_hash), 'rb') as song:
+                with open(os.path.join(IMAGE_DATA_DIR, card.storable.image_cache_hash), 'rb') as image:
+                    saveSongWithMetaInformations(
+                        song.read(),
+                        image.read(),
+                        card.storable.name,
+                        card.storable.artists,
+                        export_path
+                    )
+
+            InfoBar.success('Export', f'Exported song {card.storable.name}', parent=mwindow, duration=5000)
+        except Exception as e:
+            raise e
+        
+def removeSong(card: _SongCardItem) -> None:
+        for i, storable in enumerate(dp.playlist):
+            if storable.id == card.storable.id:
+                dp.playlist.remove(dp.playlist[i])
+                break
+
+        dp.refreshPlaylistWidget()
+
+        if dp.cur:
+            if card.storable.id == dp.cur.storable.id:
+                dp.playSongAtIndex(dp.current_index)
 
 class PlaylistSongCard(_SongCardItem):
-    pass
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        menu = RoundMenu(parent=self)
 
+        export = Action('Export', menu)
+        export.setIcon(getQIcon('export'))
+        rm = Action('Remove', menu)
+        rm.setIcon(getQIcon('remove'))
+
+        export.triggered.connect(lambda: exportSong(self))
+        rm.triggered.connect(lambda: removeSong(self))
+
+        menu.addActions([
+            export,
+            rm
+        ])
+
+        menu.exec(event.globalPos(), aniType=MenuAnimationType.DROP_DOWN)
 
 class FavoriteSongCard(_SongCardItem):
-    pass
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        menu = RoundMenu(parent=self)
 
+        export = Action('Export', menu)
+        export.setIcon(getQIcon('export'))
+        rm = Action('Remove', menu)
+        rm.setIcon(getQIcon('remove'))
+
+        export.triggered.connect(lambda: exportSong(self))
+        rm.triggered.connect(lambda: removeSong(self))
+
+        menu.addActions([
+            export,
+            rm
+        ])
+
+        menu.exec(event.globalPos(), aniType=MenuAnimationType.DROP_DOWN)
 
 class SearchPage(QWidget):
     resultGot = Signal(list)
@@ -1054,7 +1120,7 @@ class PlayingController(QWidget):
         player.setVolume(volume)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        if event.position().y() < 8:
+        if event.position().y() < 8 and dp.preloaded:
             self.dragging = True
             playing_time = min(
                 dp.total_length,
@@ -1064,7 +1130,7 @@ class PlayingController(QWidget):
         return super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if self.dragging:
+        if self.dragging and dp.preloaded:
             playing_time = min(
                 dp.total_length,
                 max(0, (event.position().x() / self.width()) * dp.total_length),
@@ -1074,7 +1140,7 @@ class PlayingController(QWidget):
         return super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        if self.dragging:
+        if self.dragging and dp.preloaded:
             playing_time = min(
                 dp.total_length,
                 max(0, (event.position().x() / self.width()) * dp.total_length),
@@ -1190,6 +1256,7 @@ class PlayingPage(QWidget):
         self.total_length = 0
 
         self._preload_triggered = False
+        self.preloaded: bool = False
 
         # Playlist management
         self.playlist: list[SongStorable] = []
@@ -1280,17 +1347,8 @@ class PlayingPage(QWidget):
         self.lst_layout.addWidget(self.lst)
 
         btn_layout = QHBoxLayout()
-        self.delete_btn = TransparentPushButton(FluentIcon.DELETE, "Remove")
-        self.delete_btn.clicked.connect(self.removeSong)
-        self.add_btn = TransparentPushButton(getQIcon("pl"), "Add")
-        self.add_btn.clicked.connect(self.addSong)
-        self.insert_btn = TransparentPushButton(getQIcon("insert"), "Insert")
-        self.insert_btn.clicked.connect(self.insertSong)
         self.removeall_btn = TransparentPushButton(getQIcon("clearall"), "Remove All")
         self.removeall_btn.clicked.connect(self.removeAllSongs)
-        btn_layout.addWidget(self.delete_btn)
-        btn_layout.addWidget(self.add_btn)
-        btn_layout.addWidget(self.insert_btn)
         btn_layout.addWidget(self.removeall_btn)
         self.lst_layout.addLayout(btn_layout)
 
@@ -1502,68 +1560,6 @@ class PlayingPage(QWidget):
 
         self.connect_btn.setEnabled(False)
 
-    def removeSong(self) -> None:
-        selected = get_value_bylist(
-            mwindow,
-            "Remove Song",
-            "select a song to remove",
-            [song.name for song in self.playlist],
-        )
-
-        if not selected:
-            return
-
-        for i, storable in enumerate(self.playlist):
-            if storable.name == selected:
-                self.playlist.remove(self.playlist[i])
-
-                InfoBar.success(
-                    "Removed",
-                    f"{selected} has been removed",
-                    duration=1500,
-                    parent=mwindow,
-                )
-                break
-
-        self.refreshPlaylistWidget()
-
-        if self.cur:
-            if selected == self.cur.storable.name:
-                self.playSongAtIndex(self.current_index)
-
-    def addSong(self) -> None:
-        selected = getFavoriteSong(mwindow, favs)
-
-        if not selected:
-            return
-
-        self.playlist.append(selected)
-        InfoBar.success(
-            "Added", f"Added {selected.name} to playlist", duration=1500, parent=mwindow
-        )
-
-        self.refreshPlaylistWidget()
-
-        self.preloadNextSong()
-
-    def insertSong(self) -> None:
-        selected = getFavoriteSong(mwindow, favs)
-
-        if not selected:
-            return
-
-        self.playlist.insert(self.current_index + 1, selected)
-        InfoBar.success(
-            "Inserted",
-            f"Inserted {selected.name} to next song",
-            duration=1500,
-            parent=mwindow,
-        )
-
-        self.refreshPlaylistWidget()
-
-        self.preloadNextSong()
-
     def removeAllSongs(self) -> None:
         self.playlist.clear()
         if isinstance(self.cur, DummyCard) and isinstance(
@@ -1590,6 +1586,8 @@ class PlayingPage(QWidget):
 
         for song in self.playlist:
             self.addSongCardToList(song)
+
+        self._preload_triggered = False
 
     def applyNewLUFS(self):
         self.lufs_changed_timer.stop()
@@ -1789,6 +1787,7 @@ class PlayingPage(QWidget):
             return
 
         try:
+            self.preloaded = False
             logging.info("preloading")
 
             next_song = self.playlist[self.current_index + 1]
@@ -1893,6 +1892,8 @@ class PlayingPage(QWidget):
                 logging.debug(
                     f"(Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}"
                 )
+
+                self.preloaded = True
 
             image_missing, music_missing = self._storable_asset_missing(next_song)
             if image_missing or music_missing:
@@ -2258,7 +2259,7 @@ class PlayingPage(QWidget):
             _play_after_download,
         )
 
-    def playStorable(self, song_storable: SongStorable):
+    def ensureAssets(self, song_storable: SongStorable):
         image_missing, music_missing = self._storable_asset_missing(song_storable)
         if image_missing or music_missing:
             self._downloadMissingStorableAssets(
@@ -2268,8 +2269,16 @@ class PlayingPage(QWidget):
             )
             return
 
+    def playStorable(self, song_storable: SongStorable):
+        self.ensureAssets(song_storable)
+
         player.stop()
         self.cur = DummyCard(song_storable)
+
+        mgr.cur = ''
+        transmgr.cur = ''
+        mgr.parse()
+        transmgr.parse()
 
         # Update UI
         self.title_label.setText(song_storable.name)

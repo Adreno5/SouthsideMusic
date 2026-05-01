@@ -9,6 +9,7 @@ dependencies = [
     "darkdetect>=0.8.0",
     "hpyt>=1.4.0",
     "inquirer>=3.4.1",
+    "mutagen>=1.47.0",
     "nuitka>=4.0.8",
     "numpy>=2.4.2",
     "pillow>=12.2.0",

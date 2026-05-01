@@ -5,10 +5,6 @@ import hashlib
 import os
 import shutil
 
-import pyncm
-
-from utils.dialog_util import QPixmap
-
 DATA_DIR = './data'
 MUSIC_DATA_DIR = os.path.join(DATA_DIR, 'music')
 IMAGE_DATA_DIR = os.path.join(DATA_DIR, 'image')

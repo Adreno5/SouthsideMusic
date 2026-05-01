@@ -10,10 +10,9 @@ from typing import TextIO, Optional
 from PySide6.QtGui import QContextMenuEvent, QKeyEvent, QMouseEvent
 from colorama import Fore, Style, init
 
-from utils.soundfile_util import getSongFormat, saveSongWithMetaInformations
-
 sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
 sys.path.append(os.path.dirname(__file__))
+print(f'{sys.path=}')
 
 init(autoreset=True)
 
@@ -237,6 +236,7 @@ from utils.icon_util import getQIcon
 from utils.dialog_util import QRCodeLoginDialog, get_value_bylist, get_text_lineedit
 from utils.websocket_util import WebSocketServer, ws_server, ws_handler
 from utils import darkdetect_util as darkdetect
+from utils.soundfile_util import getSongFormat, saveSongWithMetaInformations
 
 from pyncm import apis
 import pyncm as ncm
@@ -3405,5 +3405,7 @@ if __name__ == "__main__":
     mwindow = MainWindow()
 
     fp.refresh()
+
+    logging.debug(f'{sys.path=}')
 
     app.exec()

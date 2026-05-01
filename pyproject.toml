@@ -1,6 +1,6 @@
 [project]
 name = "SouthsideMusic"
-version = "v18"
+version = "v19"
 description = "Advanced music player"
 readme = "README.md"
 requires-python = ">=3.12"

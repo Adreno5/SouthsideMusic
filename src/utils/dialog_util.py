@@ -8,8 +8,6 @@ import qrcode
 from qfluentwidgets import * # type: ignore
 import requests
 
-from utils.loading_util import doWithMultiThreading # type: ignore
-
 class LineinputDialog(MessageBoxBase):
     def __init__(self, parent, title: str, desc: str, place: str):
         super().__init__(parent)
@@ -106,24 +104,21 @@ class QRCodeLoginDialog(MessageBoxBase):
         self.errlabel.setStyleSheet('color: red;')
         self.viewLayout.addWidget(self.errlabel)
 
-        self.downloadImage(qrcode_url)
+        self.makeImage(qrcode_url)
 
         self.yesButton.hide()
 
-    def downloadImage(self, qrcode_url: str) -> None:
-        def __download():
-            self.qrlabel.show()
+    def makeImage(self, qrcode_url: str) -> None:
+        self.qrlabel.show()
 
-            io_ = io.BytesIO()
-            qrcode.make(qrcode_url).save(io_)
-            io_.seek(0)
+        io_ = io.BytesIO()
+        qrcode.make(qrcode_url).save(io_)
+        io_.seek(0)
 
-            qimage = QImage.fromData(io_.read())
-            self.qrlabel.setPixmap(QPixmap.fromImage(qimage).scaled(self.qrlabel.size()))
+        qimage = QImage.fromData(io_.read())
+        self.qrlabel.setPixmap(QPixmap.fromImage(qimage).scaled(self.qrlabel.size()))
 
-            self.is_btn.setEnabled(True)
-        
-        doWithMultiThreading(__download, (), self.parent(), 'downloadImage', dialog=False)
+        self.is_btn.setEnabled(True)
 
     def login(self):
         self.errlabel.hide()

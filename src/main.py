@@ -6,8 +6,8 @@ import sys
 import datetime
 import os
 import threading
-from typing import TextIO, Optional, override
-from PySide6.QtGui import QKeyEvent, QMouseEvent, QResizeEvent
+from typing import TextIO, Optional
+from PySide6.QtGui import QKeyEvent, QMouseEvent
 from colorama import Fore, Style, init
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
@@ -193,26 +193,32 @@ import threading
 app = QApplication([])
 
 import base64
+import hashlib
 import io
 import os
 import subprocess
 import time
 import traceback
 from types import FrameType, TracebackType
-from typing import TextIO, Union
+from typing import Callable, TextIO, Union
 import numpy as np
 from qfluentwidgets import *  # type: ignore
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 from qframelesswindow import TitleBar
 import requests
 
-import darkdetect
 import math
 
 from utils.random_util import AdvancedRandom
 
 from functools import lru_cache
-from utils.base.base_util import FolderInfo, SongInfo, SongStorable
+from utils.base.base_util import (
+    IMAGE_DATA_DIR,
+    MUSIC_DATA_DIR,
+    FolderInfo,
+    SongInfo,
+    SongStorable,
+)
 from utils.base.base_util import SongDetail
 from utils.lyric_util import LRCLyricManager, LyricInfo
 from utils.time_util import float2time
@@ -229,7 +235,7 @@ from utils.play_util import PatchedAudioSegment as AudioSegment
 from utils.icon_util import getQIcon
 from utils.dialog_util import QRCodeLoginDialog, get_value_bylist, get_text_lineedit
 from utils.websocket_util import WebSocketServer, ws_server, ws_handler
-from utils.pyside_util import remove_widgets
+from utils import darkdetect_util as darkdetect
 
 from pyncm import apis
 import pyncm as ncm
@@ -437,7 +443,7 @@ class SongCard(QWidget):
 
                 # Download music
                 music_url = apis.track.GetTrackAudio(
-                    str(self.info["id"]), # type: ignore
+                    str(self.info["id"]),  # type: ignore
                     bitrate=3200 * 1000,  # type: ignore
                 )  # type: ignore
                 logging.debug(f"{music_url['data'][0]['url']=}")  # type: ignore
@@ -450,7 +456,7 @@ class SongCard(QWidget):
                 ).content
 
                 # Download lyrics
-                lyric_data = apis.track.GetTrackLyrics(song_id=self.info["id"])
+                lyric_data = apis.track.GetTrackLyricsNew(song_id=self.info["id"])
                 assert isinstance(lyric_data, dict), "Invalid response"
 
                 lyric = lyric_data["lrc"]["lyric"]  # type: ignore
@@ -541,7 +547,7 @@ class SongCard(QWidget):
 
             fp.refresh()
 
-        doWithMultiThreading(_download, (), mwindow, "Downloading...", _on_finished)
+        doWithMultiThreading(_download, (), mwindow, _on_finished)
 
     def loadDetailAndImage(self):
         self.load = True
@@ -564,7 +570,7 @@ class SongCard(QWidget):
 
                 self.imageLoaded.emit(image)
 
-        doWithMultiThreading(_load, (), mwindow, f"Loading...", dialog=False)
+        doWithMultiThreading(_load, (), mwindow)
 
     @Slot(bytes)
     def onImageLoaded(self, byte_data: bytes):
@@ -583,6 +589,17 @@ class SongCard(QWidget):
 
             if self.info["privilege"] < ncm.GetCurrentSession().vipType:
                 self.playbtn.setEnabled(True)
+
+
+_image_download_locks: dict[str, threading.Lock] = {}
+_image_download_locks_lock = threading.Lock()
+
+
+def _get_image_download_lock(song_id: str) -> threading.Lock:
+    with _image_download_locks_lock:
+        if song_id not in _image_download_locks:
+            _image_download_locks[song_id] = threading.Lock()
+        return _image_download_locks[song_id]
 
 
 class _SongCardItem(QWidget):
@@ -609,6 +626,62 @@ class _SongCardItem(QWidget):
         layout.addLayout(text_layout, 1)
 
         self.loadImage()
+        dp.imageAssetPersisted.connect(self._on_image_asset_persisted)
+        if self.img_label.pixmap() is None or self.img_label.pixmap().isNull():
+            threading.Thread(
+                target=self._auto_download_missing_image, daemon=True
+            ).start()
+
+    def _on_image_asset_persisted(self, storable: SongStorable):
+        if storable is self.storable:
+            self.loadImage()
+
+    def _auto_download_missing_image(self):
+        storable = self.storable
+        storable._ensure_cache_fields()
+        if storable.image_cache_hash and os.path.exists(
+            os.path.join(IMAGE_DATA_DIR, storable.image_cache_hash)
+        ):
+            return
+
+        lock = _get_image_download_lock(storable.id)
+        if not lock.acquire(blocking=False):
+            return
+        try:
+            storable._ensure_cache_fields()
+            if storable.image_cache_hash and os.path.exists(
+                os.path.join(IMAGE_DATA_DIR, storable.image_cache_hash)
+            ):
+                return
+            try:
+                with ncm.GetCurrentSession():
+                    response = apis.track.GetTrackDetail(song_ids=[storable.id])
+                    assert isinstance(response, dict)
+                    image_url = response["songs"][0]["al"]["picUrl"]
+                    image_bytes = requests.get(
+                        image_url,
+                        headers={
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0",
+                        },
+                    ).content
+            except Exception as e:
+                logging.warning(f"failed to auto-download image for {storable.id}: {e}")
+                return
+
+            if not image_bytes:
+                return
+            os.makedirs(IMAGE_DATA_DIR, exist_ok=True)
+            cache_hash = hashlib.sha256(image_bytes).hexdigest()
+            cache_path = os.path.join(IMAGE_DATA_DIR, cache_hash)
+            if not os.path.exists(cache_path):
+                with open(cache_path, "wb") as f:
+                    f.write(image_bytes)
+            storable.image_base64 = base64.b64encode(image_bytes).decode()
+            storable.image_cache_hash = cache_hash
+            saveFavorites(favs)
+            dp.imageAssetPersisted.emit(storable)
+        finally:
+            lock.release()
 
     def loadImage(self):
         try:
@@ -716,7 +789,7 @@ class SearchPage(QWidget):
 
             self.resultGot.emit(result)
 
-        doWithMultiThreading(_do, (), mwindow, "Searching...", _finish)
+        doWithMultiThreading(_do, (), mwindow, _finish)
 
     def addSongs(self, result: list[SongInfo]) -> None:
         for i, song in enumerate(result):
@@ -943,7 +1016,7 @@ class PlayingController(QWidget):
             )
             if isinstance(dp.cur, DummyCard):
                 self.final_magnitudes *= (2 / dp.cur.storable.loudness_gain) * 0.75
-            
+
             maxmag = max(np.max(self.final_magnitudes), 10)
             self.dev_mag += (maxmag - self.dev_mag) * 0.35
             self.final_magnitudes /= self.dev_mag
@@ -1033,7 +1106,7 @@ class PlayingController(QWidget):
             and self.cur_magnitudes is not None
         ):
             path = QPainterPath(QPointF(0, 0))
-            total = int(self.cur_magnitudes.size / 1.5)
+            total = int(self.cur_magnitudes.size * 0.67)
             for i in range(total):
                 x = ((i + 1) / total) * self.width()
                 path.lineTo(
@@ -1062,21 +1135,35 @@ class PlayingController(QWidget):
 
         painter.setPen(QPen(QColor(120, 120, 120), 8))
         painter.drawLine(0, 0, self.width(), 0)
-        if dp.total_length > 0:
-            painter.setPen(
-                QPen(QColor(255, 255, 255) if isDark else QColor(0, 0, 0), 8)
-            )
-            painter.drawLine(
-                0, 0, int(self.width() * (player.getPosition() / dp.total_length)), 0
-            )
+        if cfg.show_progress:
+            if cfg.progress_inter:
+                self.time_label.setText(f"Loading")
+            else:
+                painter.setPen(
+                    QPen(QColor(255, 255, 255) if isDark else QColor(0, 0, 0), 8)
+                )
+                painter.drawLine(0, 0, int(self.width() * cfg.progress), 0)
 
-        cur_time = float2time(player.getPosition())
-        # self.time_label.setText(
-        #     f'{str(cur_time['minutes']).zfill(2)}:{str(cur_time['seconds']).zfill(2)}.{str(cur_time['millionsecs']).zfill(3)}'
-        # )
-        self.time_label.setText(
-            f"{str(cur_time['minutes']).zfill(2)}:{str(cur_time['seconds']).zfill(2)}"
-        )
+                self.time_label.setText(f"Buffering ({round(cfg.progress * 100)}%)")
+        else:
+            if dp.total_length > 0:
+                painter.setPen(
+                    QPen(QColor(255, 255, 255) if isDark else QColor(0, 0, 0), 8)
+                )
+                painter.drawLine(
+                    0,
+                    0,
+                    int(self.width() * (player.getPosition() / dp.total_length)),
+                    0,
+                )
+
+                cur_time = float2time(player.getPosition())
+                # self.time_label.setText(
+                #     f'{str(cur_time['minutes']).zfill(2)}:{str(cur_time['seconds']).zfill(2)}.{str(cur_time['millionsecs']).zfill(3)}'
+                # )
+                self.time_label.setText(
+                    f"{str(cur_time['minutes']).zfill(2)}:{str(cur_time['seconds']).zfill(2)}"
+                )
 
         yw = mgr.getCurrentLyric(player.getPosition())["content"]
         dp.lyric_label.setText(yw)
@@ -1092,6 +1179,8 @@ class PlayingController(QWidget):
 
 class PlayingPage(QWidget):
     imageLoaded = Signal(bytes)
+    preloadRetryRequested = Signal()
+    imageAssetPersisted = Signal(object)
 
     def __init__(self) -> None:
         super().__init__()
@@ -1117,6 +1206,7 @@ class PlayingPage(QWidget):
         self.controller.onSongFinish.connect(lambda: self.playNext(False))
         # Connect play button to start playlist if no song is loaded
         self.controller.play_pausebtn.clicked.connect(self.onPlayButtonClicked)
+        self.preloadRetryRequested.connect(self.preloadNextSong)
 
         self.lst_shoud_set: bool = True
 
@@ -1156,7 +1246,7 @@ class PlayingPage(QWidget):
         self.transl_label = QLabel("null")
         self.lyric_label.setWordWrap(True)
         self.transl_label.setWordWrap(True)
-        
+
         middle_layout.addWidget(
             self.lyric_label, alignment=ali.AlignHCenter | ali.AlignBottom
         )
@@ -1372,7 +1462,7 @@ class PlayingPage(QWidget):
             setattr(cfg, configurationName, value)
 
         box.valueChanged.connect(_valueChanged)
-        
+
         self.addSetting(title, description, box)
 
     def addCheckSetting(
@@ -1667,7 +1757,7 @@ class PlayingPage(QWidget):
                     mgr.parse()
                     transmgr.parse()
 
-                doWithMultiThreading(_parse_local, (), mwindow, "Parsing...")
+                doWithMultiThreading(_parse_local, (), mwindow)
             else:
                 # Fallback to network download
                 self.downloadLyric()
@@ -1690,7 +1780,7 @@ class PlayingPage(QWidget):
 
             self.img_label.hide()
             self.ring.show()
-            doWithMultiThreading(_do, (), mwindow, "Loading...")
+            doWithMultiThreading(_do, (), mwindow)
 
     def preloadNextSong(self):
         if len(dp.playlist) <= 1:
@@ -1720,13 +1810,67 @@ class PlayingPage(QWidget):
             ):
                 return
 
-            def _preload():
-                with lock:
-                    song_bytes = next_song.get_music_bytes()
-                    self.next_song_audio = AudioSegment.from_file(
-                        io.BytesIO(song_bytes)
-                    )
+            preload_base_index = self.current_index
 
+            def _is_preload_current() -> bool:
+                return (
+                    self.current_index == preload_base_index
+                    and preload_base_index + 1 < len(self.playlist)
+                    and self.playlist[preload_base_index + 1] is next_song
+                )
+
+            def _start_preload(redownload_on_failure: bool = True):
+                threading.Thread(
+                    target=lambda: _preload(redownload_on_failure),
+                    daemon=True,
+                ).start()
+
+            def _download_then_preload(image_missing: bool, music_missing: bool):
+                logging.info("downloading next song before preload")
+                self.next_song_audio = None
+                self.next_song_gain = None
+
+                def _after_download(success: bool):
+                    if not success:
+                        logging.warning("failed to download next song for preload")
+                        return
+                    if not _is_preload_current():
+                        logging.info("discarding stale preload download")
+                        return
+                    _start_preload(False)
+
+                self._downloadStorableMissingAssets(
+                    next_song,
+                    image_missing,
+                    music_missing,
+                    _after_download,
+                )
+
+            def _preload(redownload_on_failure: bool):
+                if not _is_preload_current():
+                    logging.info("discarding stale preload")
+                    return
+                try:
+                    with lock:
+                        song_bytes = next_song.get_music_bytes()
+                        audio = AudioSegment.from_file(io.BytesIO(song_bytes))
+                except Exception as e:
+                    next_song.content_cache_hash = ""
+                    saveFavorites(favs)
+                    self.next_song_audio = None
+                    self.next_song_gain = None
+                    logging.warning(
+                        f"skipping preload because cached audio is invalid: {e}"
+                    )
+                    if redownload_on_failure:
+                        self.preloadRetryRequested.emit()
+                    return
+
+                if not _is_preload_current():
+                    logging.info("discarding stale preload")
+                    return
+
+                self.next_song_audio = audio
                 if (
                     next_song.loudness_gain == 1.0
                     or next_song.target_lufs != cfg.target_lufs
@@ -1750,7 +1894,11 @@ class PlayingPage(QWidget):
                     f"(Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}"
                 )
 
-            threading.Thread(target=_preload, daemon=True).start()
+            image_missing, music_missing = self._storable_asset_missing(next_song)
+            if image_missing or music_missing:
+                _download_then_preload(image_missing, music_missing)
+            else:
+                _start_preload()
         finally:
             logging.debug("started preload thread")
 
@@ -1775,11 +1923,9 @@ class PlayingPage(QWidget):
 
                 self.sendSongFMAndInfo()
 
-            doWithMultiThreading(
-                _real, (), mwindow, "Parsing...", finished=_fini, dialog=False
-            )
+            doWithMultiThreading(_real, (), mwindow)
 
-        doWithMultiThreading(_parse, (), mwindow, "Loading...", dialog=False)
+        doWithMultiThreading(_parse, (), mwindow)
 
     def downloadMusic(self):
         assert self.cur is not None
@@ -1809,7 +1955,7 @@ class PlayingPage(QWidget):
             self.downloadLyric()
 
         music_url = apis.track.GetTrackAudio(
-            str(self.cur.info["id"]), # type: ignore
+            str(self.cur.info["id"]),  # type: ignore
             bitrate=3200 * 1000,  # type: ignore
         )  # type: ignore
         logging.debug(f"{music_url['data'][0]['url']=}")  # type: ignore
@@ -1821,7 +1967,6 @@ class PlayingPage(QWidget):
             },
             None,
             mwindow,
-            "Loading...",
             _downloaded,
         )
 
@@ -1964,7 +2109,165 @@ class PlayingPage(QWidget):
         song = self.playlist[index]
         self.playStorable(song)
 
+    def _storable_asset_missing(self, song_storable: SongStorable) -> tuple[bool, bool]:
+        song_storable._ensure_cache_fields()
+        image_missing = not song_storable.image_cache_hash or not os.path.exists(
+            os.path.join(IMAGE_DATA_DIR, song_storable.image_cache_hash)
+        )
+        music_missing = not song_storable.content_cache_hash or not os.path.exists(
+            os.path.join(MUSIC_DATA_DIR, song_storable.content_cache_hash)
+        )
+        return image_missing, music_missing
+
+    def _write_storable_asset(self, cache_dir: str, data: bytes) -> str:
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_hash = hashlib.sha256(data).hexdigest()
+        cache_path = os.path.join(cache_dir, cache_hash)
+        if not os.path.exists(cache_path):
+            with open(cache_path, "wb") as f:
+                f.write(data)
+        return cache_hash
+
+    def _downloadStorableMissingAssets(
+        self,
+        song_storable: SongStorable,
+        image_missing: bool,
+        music_missing: bool,
+        finished: Callable[[bool], None],
+    ):
+        prepared: dict[str, bytes | str] = {}
+
+        def _prepare():
+            try:
+                with ncm.GetCurrentSession():
+                    if image_missing:
+                        response = apis.track.GetTrackDetail(
+                            song_ids=[song_storable.id]
+                        )
+                        assert isinstance(response, dict), "Invalid response"
+                        image_url = response["songs"][0]["al"]["picUrl"]  # type: ignore
+                        prepared["image"] = requests.get(
+                            image_url,
+                            headers={
+                                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0",
+                                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                            },
+                        ).content
+
+                    if music_missing:
+                        music_url = apis.track.GetTrackAudio(
+                            str(song_storable.id),  # type: ignore
+                            bitrate=3200 * 1000,
+                        )  # type: ignore
+                        logging.debug(f"{music_url['data'][0]['url']=}")  # type: ignore
+                        prepared["music_url"] = music_url["data"][0]["url"]  # type: ignore
+            except Exception as e:
+                prepared["error"] = str(e)
+
+        def _persist_assets(music_bytes: bytes | None = None) -> bool:
+            try:
+                image_just_persisted = False
+                if image_missing:
+                    image_bytes = prepared.get("image")
+                    if not isinstance(image_bytes, bytes) or not image_bytes:
+                        return False
+                    song_storable.image_base64 = base64.b64encode(image_bytes).decode()
+                    song_storable.image_cache_hash = self._write_storable_asset(
+                        IMAGE_DATA_DIR,
+                        image_bytes,
+                    )
+                    image_just_persisted = True
+
+                if music_missing:
+                    if not music_bytes:
+                        return False
+                    song_storable.content_base64 = base64.b64encode(
+                        music_bytes
+                    ).decode()
+                    song_storable.content_cache_hash = self._write_storable_asset(
+                        MUSIC_DATA_DIR,
+                        music_bytes,
+                    )
+
+                saveFavorites(favs)
+                if image_just_persisted:
+                    self.imageAssetPersisted.emit(song_storable)
+                return True
+            except Exception:
+                logging.exception("failed to persist downloaded storable assets")
+                return False
+
+        def _play_after_persist(music_bytes: bytes | None = None):
+            finished(_persist_assets(music_bytes))
+
+        def _on_prepared():
+            if prepared.get("error"):
+                logging.warning(
+                    f"failed to prepare storable asset download: {prepared['error']}"
+                )
+                finished(False)
+                return
+
+            if music_missing:
+                music_url = prepared.get("music_url")
+                if not isinstance(music_url, str) or not music_url:
+                    finished(False)
+                    return
+                downloadWithMultiThreading(
+                    music_url,
+                    {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                    },
+                    None,
+                    mwindow,
+                    _play_after_persist,
+                )
+            else:
+                _play_after_persist()
+
+        doWithMultiThreading(_prepare, (), mwindow, _on_prepared)
+
+    def _downloadMissingStorableAssets(
+        self,
+        song_storable: SongStorable,
+        image_missing: bool,
+        music_missing: bool,
+    ):
+        self.cur = DummyCard(song_storable)
+        self.title_label.setText(song_storable.name)
+        self.artists_label.setText(song_storable.artists)
+        self.lyric_label.setText("Downloading...")
+        self.transl_label.setText("")
+        QApplication.processEvents()
+
+        def _play_after_download(success: bool):
+            if not success:
+                InfoBar.error(
+                    "Playback failed",
+                    "Failed to download missing cached files.",
+                    parent=mwindow,
+                )
+                return
+            self.playStorable(song_storable)
+
+        self._downloadStorableMissingAssets(
+            song_storable,
+            image_missing,
+            music_missing,
+            _play_after_download,
+        )
+
     def playStorable(self, song_storable: SongStorable):
+        image_missing, music_missing = self._storable_asset_missing(song_storable)
+        if image_missing or music_missing:
+            self._downloadMissingStorableAssets(
+                song_storable,
+                image_missing,
+                music_missing,
+            )
+            return
+
         player.stop()
         self.cur = DummyCard(song_storable)
 
@@ -2352,49 +2655,6 @@ class FavoritesPage(QWidget):
             self.folder_selector.addItem(folder["folder_name"])
 
 
-class DynamicIslandPage(QWidget):
-    def __init__(self) -> None:
-        super().__init__()
-        self.setObjectName("dynamic_island_page")
-
-        self.island_x = cfg.island_x
-        self.island_y = cfg.island_y
-
-        self.show_island = cfg.island_checked
-
-        island.setVisible(self.show_island)
-
-        global_layout = QVBoxLayout()
-        global_layout.addWidget(TitleLabel("Lyric Island"))
-
-        self.island_check = CheckBox("Enable Lyric Island")
-        self.island_check.checkStateChanged.connect(
-            lambda state: self.__setattr__(
-                "show_island", state == Qt.CheckState.Checked
-            )
-        )
-        global_layout.addWidget(self.island_check)
-
-        self.edit_btn = PrimaryPushButton(FluentIcon.EDIT, "Edit island position")
-        self.edit_btn.clicked.connect(self.editIslandPosition)
-        global_layout.addWidget(self.edit_btn)
-
-        self.setLayout(global_layout)
-
-    def editIslandPosition(self):
-        if not self.show_island:
-            InfoBar.warning(
-                "Lyric Island",
-                "enable the lyric island first!",
-                parent=mwindow,
-                duration=2000,
-            )
-            return
-
-        mwindow.hide()
-        island_editing_overlay.show()
-
-
 class SessionPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
@@ -2578,202 +2838,6 @@ class SessionPage(QWidget):
         msgbox.exec()
 
 
-class EditingIslandOverlay(QWidget):
-    def __init__(self) -> None:
-        super().__init__()
-
-        self.setFixedSize(QApplication.primaryScreen().size())
-        self.move(0, 0)
-
-        self.setMouseTracking(True)
-
-        self.dragging = False
-        self.dragging_pos = QPointF(0, 0)
-
-        self.mouse_pos = QPointF(0, 0)
-
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.X11BypassWindowManagerHint
-            | Qt.WindowType.Tool
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.repaint)
-        self.timer.start(int((1 / 60) * 1000))
-
-        InfoBar.info(
-            "Help", "press ESC to quit", isClosable=False, duration=-1, parent=self
-        )
-
-        self.hide()
-
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        self.mouse_pos = event.position()
-        if self.dragging:
-            ip.island_x = int(
-                self.mouse_pos.x() - self.dragging_pos.x() + (island.island_width / 2)
-            )
-            if abs((self.width() / 2) - ip.island_x) < 30:
-                ip.island_x = int(self.width() / 2)
-            ip.island_y = int(self.mouse_pos.y() - self.dragging_pos.y())
-            if abs((self.height() / 2) - ip.island_y) < 30:
-                ip.island_y = int(self.height() / 2)
-        return super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if self.dragging:
-            self.dragging = False
-        return super().mouseReleaseEvent(event)
-
-    def showEvent(self, event: QShowEvent) -> None:
-        self.raise_()
-        self.setFocus(Qt.FocusReason.OtherFocusReason)
-        return super().showEvent(event)
-
-    def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.key() == Qt.Key.Key_Escape:
-            self.hide()
-            mwindow.show()
-            return
-        return super().keyPressEvent(event)
-
-    def mousePressEvent(self, event: QMouseEvent) -> None:
-        if event.button() == Qt.MouseButton.LeftButton:
-            if QRectF(
-                ip.island_x - (island.island_width / 2),
-                ip.island_y,
-                island.island_width,
-                island.island_height,
-            ).contains(event.position()):
-                self.dragging = True
-                self.dragging_pos = event.position() - QPointF(
-                    ip.island_x - (island.island_width / 2), ip.island_y
-                )
-        return super().mousePressEvent(event)
-
-    def paintEvent(self, event: QPaintEvent) -> None:
-        if not self.isVisible():
-            return
-
-        painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(0, 0, 0, 120))
-        painter.setPen(QPen(QColor(255, 255, 255, 100), 1))
-        painter.drawLines(
-            [
-                QLineF(self.mouse_pos.x(), 0, self.mouse_pos.x(), self.height()),
-                QLineF(0, self.mouse_pos.y(), self.width(), self.mouse_pos.y()),
-            ]
-        )
-        painter.drawRoundedRect(
-            ip.island_x - (island.island_width / 2),  # type: ignore
-            ip.island_y,
-            island.island_width,  # type: ignore
-            island.island_height,  # type: ignore
-            (island.island_height / 2),
-            (island.island_height / 2),
-        )
-
-        if ip.island_x == int(self.width() / 2) and self.dragging:
-            painter.setPen(QPen(QColor(255, 255, 255, 50), 1))
-            painter.drawLine(
-                int(self.width() / 2), 0, int(self.width() / 2), self.height()
-            )
-        if ip.island_y == int(self.height() / 2) and self.dragging:
-            painter.setPen(QPen(QColor(255, 255, 255, 50), 1))
-            painter.drawLine(
-                0, int(self.height() / 2), self.width(), int(self.height() / 2)
-            )
-        painter.end()
-
-
-class LyricIslandOverlay(QWidget):
-    def __init__(self) -> None:
-        super().__init__()
-
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.X11BypassWindowManagerHint
-            | Qt.WindowType.Tool
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-
-        self.last_draw = time.perf_counter()
-
-        self.ft = QFont(harmony_font_family, 14)
-        self.me = QFontMetricsF(self.ft)
-        self.island_height = self.me.height() + 5
-
-        self.island_width = 0
-        self.target_width = 0
-
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.repaint)
-        self.timer.start(int((1 / 60) * 1000))
-
-        self.resize(QApplication.primaryScreen().size())
-        self.move(0, 0)
-
-    def paintEvent(self, event: QPaintEvent) -> None:
-        lyric = mgr.getCurrentLyric(player.getPosition())["content"]
-        txt = (
-            (
-                lyric
-                if not island_editing_overlay.isVisible() or lyric
-                else "Example Lyric"
-            )
-            if ip.island_check.isChecked()
-            else ""
-        )
-
-        self.target_width = (
-            (self.me.horizontalAdvance(txt) + (10 if txt else 0))
-            if ip.island_check.isChecked()
-            else 0
-        )
-        self.island_width += (self.target_width - self.island_width) * min(
-            1, (time.perf_counter() - self.last_draw) * 5
-        )
-
-        if not ip.island_check.isChecked() and self.island_width < 1:
-            return
-
-        painter = QPainter(self)
-        painter.setRenderHints(
-            QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing
-        )
-        self.last_draw = time.perf_counter()
-
-        path = QPainterPath()
-        path.addRoundedRect(
-            ip.island_x - (self.island_width / 2),
-            ip.island_y,
-            self.island_width,
-            self.island_height,
-            self.island_height / 2,
-            self.island_height / 2,
-        )
-        painter.setClipPath(path)
-        painter.fillPath(path, QColor(0, 0, 0, 175))
-        painter.setFont(self.ft)
-        painter.setPen(QColor(255, 255, 255))
-        painter.drawText(
-            (ip.island_x - (self.island_width / 2)) + 5,  # type: ignore
-            ip.island_y + self.me.height() - 2.5,  # type: ignore
-            txt,
-        )  # type: ignore # 实际上这个函数可以提供浮点数数据，虽然类型标注为int...
-
-        self.resize(
-            ip.island_x + (self.island_width / 2), # type: ignore
-            ip.island_y + self.island_height,  # type: ignore
-        )  # type: ignore
-
-        painter.end()
-
-
 class SouthsideMusicTitleBar(TitleBar):
     def __init__(self, parent):
         super().__init__(parent)
@@ -2896,12 +2960,6 @@ class MainWindow(FluentWindowBase):
             NavigationItemPosition.BOTTOM,
         )
         self.addSubInterface(
-            ip,
-            getQIcon("island"),
-            "Lyric Island",
-            NavigationItemPosition.SCROLL,
-        )
-        self.addSubInterface(
             sep,
             getQIcon("session"),
             "Session",
@@ -2996,13 +3054,6 @@ class MainWindow(FluentWindowBase):
 
             dp.play_method_box.setCurrentText(cfg.play_method)
 
-            ############################## 世界上最神秘的虫子修复 #####################################
-            ip.island_check.setChecked(True)
-            ip.island_check.setChecked(False)
-            ############################## 世界上最神秘的虫子修复 #####################################
-
-            ip.island_check.setChecked(cfg.island_checked)
-
             nonlocal _last_storable
 
             if cfg.last_playing_song:
@@ -3022,7 +3073,7 @@ class MainWindow(FluentWindowBase):
             launchwindow.deleteLater()
             sep.refreshInformations()
 
-        doWithMultiThreading(_init, (), self, "Loading...", finished=_finish_init)
+        doWithMultiThreading(_init, (), self, finished=_finish_init)
 
         InfoBar.info(
             "Initialization", f"Loaded {len(favs)} folders", parent=self, duration=2000
@@ -3033,7 +3084,6 @@ class MainWindow(FluentWindowBase):
         self.closing = True
 
         self.hide()
-        island.hide()
         player.stop()
 
         ws_server.stop()
@@ -3043,10 +3093,8 @@ class MainWindow(FluentWindowBase):
             dp.cur.storable if isinstance(dp.cur, DummyCard) else None
         )
         cfg.last_playing_time = player.getPosition()
-        cfg.island_checked = ip.island_check.isChecked()
+
         cfg.play_method = dp.play_method_box.currentText()  # type: ignore
-        cfg.island_x = ip.island_x
-        cfg.island_y = ip.island_y
         cfg.window_x = self.x() + (
             253 if dp.controller.expand_btn.text() == "Collapse" else 0
         )
@@ -3059,13 +3107,6 @@ class MainWindow(FluentWindowBase):
 
         saveConfig()
         saveFavorites(favs)
-
-        island_editing_overlay.timer.stop()
-        island_editing_overlay.timer.deleteLater()
-        island_editing_overlay.deleteLater()
-        island.timer.stop()
-        island.timer.deleteLater()
-        island.deleteLater()
 
         ws_server.stop()
         ws_server.join()
@@ -3125,6 +3166,7 @@ class MainWindow(FluentWindowBase):
         else:
             return super().keyPressEvent(event)
 
+
 class LaunchWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -3156,9 +3198,9 @@ class LaunchWindow(QWidget):
 
     def setStatusText(self, text: str, sleep=True):
         self.sublabel.setText(f"Launching...\n{text}")
-        app.processEvents()
         if sleep:
             time.sleep(0.05)
+
 
 class DebugWindow(QWidget):
     def __init__(self) -> None:
@@ -3185,7 +3227,7 @@ class DebugWindow(QWidget):
 
         self.tree = TreeWidget()
         self.tree.setColumnCount(2)
-        self.tree.setHeaderLabels(['Name', 'Value'])
+        self.tree.setHeaderLabels(["Name", "Value"])
         self.tree.header().setStretchLastSection(False)
 
         content_layout.addWidget(self.tree)
@@ -3210,27 +3252,33 @@ class DebugWindow(QWidget):
             return
         if self.selected_object:
             self.tree.clear()
-            
+
             def _recursive(obj: object, layer: int) -> list:
                 res = []
                 if layer > 5:
-                    return [('To deep')]
-                if hasattr(obj, '__dict__'):
+                    return [("To deep")]
+                if hasattr(obj, "__dict__"):
                     for k, v in obj.__dict__.items():
-                        if isinstance(v, int) or isinstance(v, float) or isinstance(v, str) or isinstance(v, bool) or isinstance(v, list):
+                        if (
+                            isinstance(v, int)
+                            or isinstance(v, float)
+                            or isinstance(v, str)
+                            or isinstance(v, bool)
+                            or isinstance(v, list)
+                        ):
                             res.append((k, v))
                         else:
-                            res.append((k, _recursive(v, layer+1)))
+                            res.append((k, _recursive(v, layer + 1)))
                     return res
                 else:
                     return []
-            
+
             def _build_tree(data: list, parent: Union[QTreeWidget, QTreeWidgetItem]):
                 for item in data:
                     if isinstance(item, tuple):
                         key, value = item
                         if isinstance(value, list):
-                            tree_item = QTreeWidgetItem([key, ''])
+                            tree_item = QTreeWidgetItem([key, ""])
                             if isinstance(parent, QTreeWidget):
                                 parent.addTopLevelItem(tree_item)
                             else:
@@ -3245,10 +3293,10 @@ class DebugWindow(QWidget):
                     elif isinstance(item, list):
                         for sub_item in item:
                             _build_tree([sub_item], parent)
-            
+
             result = _recursive(self.selected_object, 1)
             _build_tree(result, self.tree)
-            
+
             self.tree.expandAll()
 
             self.obj_label.setText(str(self.selected_object))
@@ -3262,10 +3310,14 @@ class DebugWindow(QWidget):
         completer.setMaxVisibleItems(20)
         self.objname_inputer.setCompleter(completer)
 
-        try: self.eval_label.setText(str(eval(self.eval_inputer.text())))
-        except: pass
+        try:
+            self.eval_label.setText(str(eval(self.eval_inputer.text())))
+        except:
+            pass
 
-        self.setStyleSheet(f'background: {'white' if darkdetect.isLight() else 'black'}')
+        self.setStyleSheet(
+            f"background: {'white' if darkdetect.isLight() else 'black'}"
+        )
 
     def closeEvent(self, event: QCloseEvent):
         event.ignore()
@@ -3276,6 +3328,7 @@ class DebugWindow(QWidget):
             self.close()
         else:
             return super().keyPressEvent(event)
+
 
 if __name__ == "__main__":
     if cfg.login_status and not ncm.GetCurrentSession().is_anonymous:
@@ -3342,9 +3395,6 @@ if __name__ == "__main__":
     dp = PlayingPage()
     sp = SearchPage()
     fp = FavoritesPage()
-    island_editing_overlay = EditingIslandOverlay()
-    island = LyricIslandOverlay()
-    ip = DynamicIslandPage()
     sep = SessionPage()
     launchwindow.setStatusText("Initializing...\n  Initializing Mainwindow...")
     mwindow = MainWindow()

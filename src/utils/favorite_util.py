@@ -95,9 +95,8 @@ def restoreOldFavoritesFormat() -> None:
             had_embedded_data = bool(
                 song.get("image_base64") or song.get("content_base64")
             )
-            song_dirty = storable.ensure_cached_assets()
             normalized_songs.append(_to_favorite_song_object(storable))
-            data_dirty = data_dirty or song_dirty or had_embedded_data
+            data_dirty = data_dirty or had_embedded_data
 
         normalized_data.append(
             {"folder_name": folder["folder_name"], "songs": normalized_songs}
@@ -252,7 +251,6 @@ def saveFavorites(source: list[FolderInfo]) -> None:
     for folder in source:
         songs = []
         for song in folder["songs"]:
-            song.ensure_cached_assets()
             songs.append(_to_favorite_song_object(song))
 
         data.append({"folder_name": folder["folder_name"], "songs": songs})

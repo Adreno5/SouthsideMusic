@@ -121,7 +121,7 @@ class SongStorable:
                     return f.read(), cache_hash
 
         if not base64_data:
-            raise FileNotFoundError(f'missing asset data for hash {cache_hash}')
+            return b'', ''
 
         data = base64.b64decode(base64_data)
         actual_hash = hashlib.sha256(data).hexdigest()

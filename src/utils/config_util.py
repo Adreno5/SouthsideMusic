@@ -16,11 +16,6 @@ class Config:
     skip_threshold: int = -45
     skip_remain_time: int = 10
 
-    island_checked: bool = False
-    island_x: int = 0
-    island_y: int = 0
-    island_background_alpha: int = 120
-
     last_playing_song: SongStorable | None = None
     last_playing_time: float = 0
 
@@ -44,6 +39,10 @@ class Config:
 
     stereo: bool = True
 
+    show_progress: bool = False
+    progress_inter: bool = False
+    progress: float = 0
+
 cfg = Config()
 
 def restoreOldConfigFormat() -> None:
@@ -57,10 +56,6 @@ def restoreOldConfigFormat() -> None:
         cfg.skip_nosound = data.get('skip_nosound', True)
         cfg.skip_threshold = data.get('skip_threshold', -45)
         cfg.skip_remain_time = data.get('skip_remain_time', 10)
-
-        cfg.island_checked = data['island_checked']
-        cfg.island_x = data['island_x']
-        cfg.island_y = data['island_y']
 
         cfg.last_playing_song = SongStorable.fromObject(data['last_playing_song']) if data['last_playing_song'] else None
         cfg.last_playing_time = data['last_playing_time']
@@ -101,8 +96,6 @@ def loadConfig() -> None:
             data = pickle.load(f)
 
             cfg.__dict__.update(data)
-            if isinstance(cfg.last_playing_song, SongStorable):
-                cfg.last_playing_song.ensure_cached_assets()
 
 def saveConfig() -> None:
     with open('./config.pkl', 'wb') as f:

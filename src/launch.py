@@ -47,6 +47,8 @@ if __name__ == '__main__':
                 for future in as_completed(futures):
                     future.result()
 
+            f.seek(0)
+
             parsed['project']['version'] = f'v{newest}'
             toml.dump(parsed, f)
 

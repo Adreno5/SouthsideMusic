@@ -43,7 +43,7 @@ class Config:
     progress_inter: bool = False
     progress: float = 0
 
-    background_ratio: float = 0.2
+    background_ratio: float = 0.4
 
 cfg = Config()
 

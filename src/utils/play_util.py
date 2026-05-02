@@ -21,7 +21,6 @@ from collections import namedtuple
 
 WavSubChunk = namedtuple("WavSubChunk", ["id", "position", "size"])
 
-
 def extract_wav_headers(data):
     # def search_subchunk(data, subchunk_id):
     pos = 12  # The size of the RIFF chunk descriptor
@@ -303,6 +302,7 @@ class AudioPlayer(QObject):
         self.is_paused: bool = False
         self.stream: Optional[sd.OutputStream] = None
         self.volume_gain: float = 1.0
+        self.loudness_gain: float = 1.0
 
         self.fft_enabled = True
         self.fft_size = 1024
@@ -470,7 +470,7 @@ class AudioPlayer(QObject):
 
     def setGain(self, gain: float):
         with self._lock:
-            self.volume_gain = max(0.0, gain)
+            self.loudness_gain = max(0.0, gain)
 
     def _audio_callback(self, outdata, frames, time, status):
         with self._lock:
@@ -490,7 +490,7 @@ class AudioPlayer(QObject):
                     else:
                         out = chunk[:, :2].copy()
 
-                out *= self.volume_gain
+                out *= self.volume_gain * self.loudness_gain
                 np.clip(out, -1.0, (61.0 + cfg.target_lufs) * 3.0, out=out)
                 outdata[:copy_len, : self.output_channels] = out[
                     :, : self.output_channels

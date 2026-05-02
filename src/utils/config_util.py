@@ -44,6 +44,7 @@ class Config:
     progress: float = 0
 
     background_ratio: float = 0.4
+    volume: float = 1
 
 cfg = Config()
 

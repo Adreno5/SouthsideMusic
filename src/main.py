@@ -1161,6 +1161,7 @@ class PlayingController(QWidget):
             volume = 0
         else:
             volume = math.log(value / 100 * (math.e - 1) + 1)
+        cfg.volume = volume
         player.setVolume(volume)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
@@ -1350,15 +1351,16 @@ class LyricsViewer(QWidget):
                 painter.drawText(0, int(y + self.font_height + 2), transmgr.getCurrentLyric(line['time'])['content'])
                 painter.setFont(self.ft)
 
-            if (self.mouse_pos and self.selecting) and self.mouse_pos.y() > y - self.font_height and self.mouse_pos.y() < y + self.font_height + 5:
+            if self.mouse_pos and self.mouse_pos.y() > y - self.font_height and self.mouse_pos.y() < y + self.font_height + 5:
                 self.hovering_lyric = line
-                painter.setBrush(QColor(255, 255, 255, 100) if darkdetect.isDark() else QColor(0, 0, 0, 100))
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.drawRoundedRect(0, int(y - self.font_height), self.width(), int(self.font_height + 5), 5, 5)
-                painter.setPen(color)
-                info = float2time(self.hovering_lyric['time'])
-                timetxt = f'{f'{info['minutes']}'.zfill(2)}:{f'{info['seconds']}'.zfill(2)}'
-                painter.drawText(int(self.width() - self.metri.horizontalAdvance(timetxt) - 5), y, timetxt)
+                if self.selecting:
+                    painter.setBrush(QColor(255, 255, 255, 100) if darkdetect.isDark() else QColor(0, 0, 0, 100))
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.drawRoundedRect(0, int(y - self.font_height), self.width(), int(self.font_height + 5), 5, 5)
+                    painter.setPen(color)
+                    info = float2time(self.hovering_lyric['time'])
+                    timetxt = f'{f'{info['minutes']}'.zfill(2)}:{f'{info['seconds']}'.zfill(2)}'
+                    painter.drawText(int(self.width() - self.metri.horizontalAdvance(timetxt) - 5), y, timetxt)
 
             y += int(self.font_height * 3)
 
@@ -1377,7 +1379,7 @@ class LyricsViewer(QWidget):
         return super().wheelEvent(event)
     
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        if self.selecting and self.hovering_lyric:
+        if self.hovering_lyric:
             player.setPosition(self.hovering_lyric['time'])
             self.selecting = False
             self.hovering_lyric = None

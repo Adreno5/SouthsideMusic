@@ -1,9 +1,8 @@
 import array
 import logging
-import math
 import struct
 import subprocess
-from colorama import Fore, Style
+from queue import Queue, Full
 import numpy as np
 import sounddevice as sd
 from pathlib import Path
@@ -311,6 +310,11 @@ class AudioPlayer(QObject):
 
         self._lock = threading.RLock()
 
+        self.fft_queue = Queue(maxsize=8)
+        self.fft_thread_running = True
+        self.fft_thread = threading.Thread(target=self._fft_worker, daemon=True)
+        self.fft_thread.start()
+
     def _prepare_samples(self, audio: PatchedAudioSegment) -> np.ndarray:
         samples_raw = np.array(audio.get_array_of_samples(), dtype=np.float32)  # type: ignore
         max_val = np.iinfo(audio.array_type).max if audio.sample_width != 4 else 2**31
@@ -453,7 +457,7 @@ class AudioPlayer(QObject):
                     samplerate=self.sample_rate,
                     channels=channels,
                     callback=self._audio_callback,
-                    blocksize=736,
+                    blocksize=768,
                     dtype="float32",
                 )
             except sd.PortAudioError:
@@ -462,7 +466,7 @@ class AudioPlayer(QObject):
                     samplerate=self.sample_rate,
                     channels=channels,
                     callback=self._audio_callback,
-                    blocksize=736,
+                    blocksize=768,
                     dtype="float32",
                 )
             self.output_channels = channels
@@ -471,6 +475,32 @@ class AudioPlayer(QObject):
     def setGain(self, gain: float):
         with self._lock:
             self.loudness_gain = max(0.0, gain)
+
+    def _fft_worker(self):
+        while self.fft_thread_running:
+            chunk = self.fft_queue.get()
+            if chunk is None:
+                break
+
+            if len(chunk) < self.fft_size:
+                padded = np.zeros(self.fft_size, dtype=np.float32)
+                padded[: len(chunk)] = chunk
+                chunk = padded
+            else:
+                chunk = chunk[: self.fft_size]
+
+            window = np.hanning(len(chunk))
+            windowed = chunk * window
+            fft_vals = np.abs(rfft(windowed)) # type: ignore
+            fft_freqs = rfftfreq(len(chunk), 1 / self.sample_rate)
+
+            self.fftDataReady.emit(fft_freqs, fft_vals)
+
+    def stop_fft_thread(self):
+        self.fft_thread_running = False
+        self.fft_queue.put(None)
+        if self.fft_thread.is_alive():
+            self.fft_thread.join(timeout=1.0)
 
     def _audio_callback(self, outdata, frames, time, status):
         with self._lock:
@@ -496,7 +526,10 @@ class AudioPlayer(QObject):
                     :, : self.output_channels
                 ]
 
-            self.current_index += math.ceil(copy_len * self.play_speed)
+            self.current_index += copy_len
+
+            pos = self.current_index / self.sample_rate
+            self.positionChanged.emit(pos)
 
             if self.current_index >= len(self.samples):
                 self.is_playing = False
@@ -525,17 +558,8 @@ class AudioPlayer(QObject):
                     raise sd.CallbackStop
 
             if self.fft_enabled:
-                chunk_raw = monitor_chunk
-                if len(chunk_raw) < self.fft_size:
-                    chunk_pad = np.zeros(self.fft_size, dtype=np.float32)
-                    chunk_pad[: len(chunk_raw)] = chunk_raw
-                else:
-                    chunk_pad = chunk_raw[: self.fft_size]
-
-                window = np.hanning(len(chunk_pad))
-                chunk_windowed = chunk_pad * window
-
-                fft_vals = np.abs(rfft(chunk_windowed))  # type: ignore
-                fft_freqs = rfftfreq(len(chunk_pad), 1 / self.sample_rate)
-
-                self.fftDataReady.emit(fft_freqs, fft_vals)
+                mono = monitor_chunk
+                try:
+                    self.fft_queue.put_nowait(mono)
+                except Full:
+                    pass

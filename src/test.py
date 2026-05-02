@@ -12,7 +12,7 @@ with open('config.pkl', 'rb') as f:
     pyncm.SetCurrentSession(pyncm.LoadSessionFromString(data['session']))
 
     with open('res.json', 'w') as f:
-        f.write(json.dumps(pyncm.apis.track.GetTrackDetail(['518904426']), indent=4))
+        f.write(json.dumps(pyncm.apis.track.GetTrackLyricsNew('518904426'), indent=4))
 
     # pprint(pyncm.apis.track.GetTrackLyricsNew('518904426'))
 

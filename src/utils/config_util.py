@@ -1,13 +1,16 @@
+
 from dataclasses import dataclass
 import json
 import logging
 import pickle
 import os
-from typing import Literal
-
-import pyncm
+import threading
+import time
+from typing import Any, Literal
 
 from utils.base.base_util import SongStorable
+
+cfg_changed: bool = False
 
 @dataclass
 class Config:
@@ -48,6 +51,11 @@ class Config:
 
     lyrics_smooth_factor: float = 5
     acceleration_smooth_factor: float = 5
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        global cfg_changed
+        cfg_changed = True
+        super().__setattr__(name, value)
 
 cfg = Config()
 
@@ -103,6 +111,21 @@ def loadConfig() -> None:
 
             cfg.__dict__.update(data)
 
+            logging.info(f'loaded config {len(cfg.__dict__)=}')
+
 def saveConfig() -> None:
     with open('./config.pkl', 'wb') as f:
         pickle.dump(cfg.__dict__, f)
+
+        logging.info('saved config')
+
+def autoSave():
+    global cfg_changed
+    while True:
+        time.sleep(1)
+        if cfg_changed:
+            saveConfig()
+            cfg_changed = False
+
+autosave_thread = threading.Thread(target=autoSave)
+autosave_thread.daemon = True

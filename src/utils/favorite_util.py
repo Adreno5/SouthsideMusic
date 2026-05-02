@@ -35,6 +35,7 @@ def _to_favorite_song_object(song: SongStorable) -> dict:
         "content_cache_hash": song.content_cache_hash,
         "lyric": song.lyric,
         "translated_lyric": song.translated_lyric,
+        "y_lyric": getattr(song, "y_lyric", ""),
         "gain": song.loudness_gain,
         "target_lufs": song.target_lufs,
     }

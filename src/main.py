@@ -9,7 +9,14 @@ from PySide6.QtCore import QEvent
 import pydub
 import threading
 from typing import TextIO, Optional
-from PySide6.QtGui import QContextMenuEvent, QKeyEvent, QMouseEvent, QPaintEvent, QResizeEvent, QWheelEvent
+from PySide6.QtGui import (
+    QContextMenuEvent,
+    QKeyEvent,
+    QMouseEvent,
+    QPaintEvent,
+    QResizeEvent,
+    QWheelEvent,
+)
 from colorama import Fore, Style, init
 
 pydub.AudioSegment.converter = r"ffmpeg\bin\ffmpeg.exe"
@@ -234,7 +241,7 @@ from utils.base.base_util import (
     SongStorable,
 )
 from utils.base.base_util import SongDetail
-from utils.lyric_util import LRCLyricParser, LyricInfo
+from utils.lyric_util import LRCLyricParser, LyricInfo, YRCLyricParser
 from utils.time_util import float2time
 from utils.favorite_util import (
     loadFavorites,
@@ -242,7 +249,7 @@ from utils.favorite_util import (
     saveFavorites,
     getFavoriteSong,
 )
-from utils.config_util import loadConfig, saveConfig, cfg
+from utils.config_util import loadConfig, saveConfig, cfg, autosave_thread
 from utils.loudness_balance_util import getAdjustedGainFactor
 from utils.play_util import AudioPlayer
 from utils.play_util import PatchedAudioSegment as AudioSegment
@@ -467,13 +474,14 @@ class SongCard(QWidget):
                 lyric_data = apis.track.GetTrackLyricsNew(song_id=self.info["id"])
                 assert isinstance(lyric_data, dict), "Invalid response"
 
-                lyric = lyric_data["lrc"]["lyric"]  # type: ignore
+                lyric = lyric_data.get("lrc", {}).get("lyric", "[00:00.000]")
                 translated_lyric = lyric_data.get("tlyric", {}).get(
                     "lyric", "[00:00.000]"
                 )
+                y_lyric = lyric_data.get("yrc", {}).get("lyric", "[00:00.000]")
 
                 result_container.append(
-                    (image_bytes, music_bytes, lyric, translated_lyric)
+                    (image_bytes, music_bytes, lyric, y_lyric, translated_lyric)
                 )
 
         def _on_finished():
@@ -483,7 +491,9 @@ class SongCard(QWidget):
                 )
                 return
 
-            image_bytes, music_bytes, lyric, translated_lyric = result_container[0]
+            image_bytes, music_bytes, lyric, y_lyric, translated_lyric = (
+                result_container[0]
+            )
 
             # Prepare folder list for selection
             folder_names = [folder["folder_name"] for folder in favs]
@@ -538,6 +548,7 @@ class SongCard(QWidget):
                         -16, AudioSegment.from_file(io.BytesIO(music_bytes))
                     ),
                     cfg.target_lufs,
+                    y_lyric=y_lyric,
                 )
                 target_folder["songs"].append(song_storable)  # type: ignore
 
@@ -705,7 +716,8 @@ class _SongCardItem(QWidget):
 
 
 def exportSong(card: _SongCardItem):
-    dp.ensureAssets(card.storable)
+    if not dp.ensureAssets(card.storable):
+        return
     with open(
         os.path.join(MUSIC_DATA_DIR, card.storable.content_cache_hash), "rb"
     ) as f:
@@ -1156,7 +1168,8 @@ class PlayingController(QWidget):
         else:
             self.play_pausebtn.setIcon(getQIcon("pause"))
 
-        self.repaint()
+        if mwindow.isVisible():
+            self.repaint()
 
     def updateVol(self):
         value = self.vol_slider.value()
@@ -1281,6 +1294,7 @@ class PlayingController(QWidget):
 
         painter.end()
 
+
 class LyricsViewer(QWidget):
     def __init__(self):
         super().__init__()
@@ -1319,9 +1333,18 @@ class LyricsViewer(QWidget):
         self.hovering_lyric = None
         if not mgr.parsed:
             return
-        
-        self.target_acc = (self.target_draw_offset - self.draw_offset) * self.delta * cfg.lyrics_smooth_factor
-        self.acc += (self.target_acc - self.acc) * self.delta * cfg.acceleration_smooth_factor / max(0.5, min(1, (self.target_acc - self.acc)))
+
+        self.target_acc = (
+            (self.target_draw_offset - self.draw_offset)
+            * self.delta
+            * cfg.lyrics_smooth_factor
+        )
+        self.acc += (
+            (self.target_acc - self.acc)
+            * self.delta
+            * cfg.acceleration_smooth_factor
+            / max(0.5, min(1, (self.target_acc - self.acc)))
+        )
 
         if self.draw_offset != self.target_draw_offset:
             self.draw_offset += self.acc
@@ -1329,7 +1352,8 @@ class LyricsViewer(QWidget):
             self.draw_offset = self.target_draw_offset
 
         lines: list[LyricInfo] = mgr.parsed
-        idx = mgr.getCurrentIndex(player.getPosition())
+        position = player.getPosition()
+        idx = mgr.getCurrentIndex(position)
 
         if not self.selecting:
             self.target_draw_offset = -idx * (self.font_height * 3)
@@ -1343,35 +1367,118 @@ class LyricsViewer(QWidget):
             self.target_draw_offset = -len(lines) * (self.font_height * 3)
 
         painter = QPainter(self)
-        painter.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
+        painter.setRenderHints(
+            QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing
+        )
         painter.setFont(self.ft)
 
+        current_lrc = mgr.getCurrentLyric(position)
+        current_yrc = None
+        if ymgr.parsed and idx >= 0:
+            y_candidates = (
+                y_line
+                for y_line in ymgr.parsed
+                if abs(y_line["time"] - current_lrc["time"]) < 2
+            )
+            current_yrc = min(
+                y_candidates,
+                key=lambda y_line: abs(y_line["time"] - current_lrc["time"]),
+                default=None,
+            )
         y = int(self.draw_offset) + self.height() // 2
         for i, line in enumerate(lines):
-            if line == mgr.getCurrentLyric(player.getPosition()):
-                tar_color = QColor(255, 255, 255) if darkdetect.isDark() else QColor(0, 0, 0)
+            is_current_line = line == current_lrc
+            if is_current_line:
+                tar_color = (
+                    QColor(255, 255, 255) if darkdetect.isDark() else QColor(0, 0, 0)
+                )
             else:
-                tar_color = QColor(240, 240, 240, 120) if darkdetect.isDark() else QColor(55, 55, 55, 120)
-            color = mixColor(mwindow.song_theme, tar_color, cfg.background_ratio / 2) if mwindow.song_theme else tar_color
-            painter.setPen(color)
-            painter.drawText(0, y, line['content'])
+                tar_color = (
+                    QColor(240, 240, 240, 120)
+                    if darkdetect.isDark()
+                    else QColor(55, 55, 55, 120)
+                )
+            color = (
+                mixColor(mwindow.song_theme, tar_color, cfg.background_ratio / 2)
+                if mwindow.song_theme
+                else tar_color
+            )
+            if is_current_line and current_yrc:
+                y_line = current_yrc
+                content = y_line["content"] or line["content"]
+                base_color = QColor(color)
+                base_color.setAlpha(120)
+                painter.setPen(base_color)
+                painter.drawText(0, y, content)
+
+                x = 0.0
+                clip_y = int(y - self.font_height)
+                clip_h = int(self.font_height + 5)
+                for ch in y_line["chars"]:
+                    text_width = self.metri.horizontalAdvance(ch["char"])
+                    duration = ch["duration"]
+                    if duration <= 0:
+                        progress = 1.0 if position >= ch["start"] else 0.0
+                    else:
+                        progress = (position - ch["start"]) / duration
+                    progress = max(0.0, min(1.0, progress))
+                    clip_w = text_width * progress
+                    if clip_w > 0:
+                        painter.save()
+                        painter.setClipRect(
+                            int(x), clip_y, int(math.ceil(clip_w)), clip_h
+                        )
+                        painter.setPen(color)
+                        painter.drawText(0, y, content)
+                        painter.restore()
+                    x += text_width
+            else:
+                painter.setPen(color)
+                painter.drawText(0, y, line["content"])
 
             if transmgr.parsed:
                 painter.setFont(self.tft)
-                painter.setPen(QColor(255, 255, 255, 120) if darkdetect.isDark() else QColor(0, 0, 0, 120))
-                painter.drawText(0, int(y + self.font_height + 2), transmgr.getCurrentLyric(line['time'])['content'])
+                painter.setPen(
+                    QColor(255, 255, 255, 120)
+                    if darkdetect.isDark()
+                    else QColor(0, 0, 0, 120)
+                )
+                painter.drawText(
+                    0,
+                    int(y + self.font_height + 2),
+                    transmgr.getCurrentLyric(line["time"])["content"],
+                )
                 painter.setFont(self.ft)
 
-            if self.mouse_pos and self.mouse_pos.y() > y - self.font_height and self.mouse_pos.y() < y + self.font_height + 5:
+            if (
+                self.mouse_pos
+                and self.mouse_pos.y() > y - self.font_height
+                and self.mouse_pos.y() < y + self.font_height + 5
+            ):
                 self.hovering_lyric = line
                 if self.selecting:
-                    painter.setBrush(QColor(255, 255, 255, 100) if darkdetect.isDark() else QColor(0, 0, 0, 100))
+                    painter.setBrush(
+                        QColor(255, 255, 255, 100)
+                        if darkdetect.isDark()
+                        else QColor(0, 0, 0, 100)
+                    )
                     painter.setPen(Qt.PenStyle.NoPen)
-                    painter.drawRoundedRect(0, int(y - self.font_height), self.width(), int(self.font_height + 5), 5, 5)
+                    painter.drawRoundedRect(
+                        0,
+                        int(y - self.font_height),
+                        self.width(),
+                        int(self.font_height + 5),
+                        5,
+                        5,
+                    )
                     painter.setPen(color)
-                    info = float2time(self.hovering_lyric['time'])
-                    timetxt = f'{f'{info['minutes']}'.zfill(2)}:{f'{info['seconds']}'.zfill(2)}'
-                    painter.drawText(int(self.width() - self.metri.horizontalAdvance(timetxt) - 5), y, timetxt)
+                    info = float2time(self.hovering_lyric["time"])
+                    timetxt = f"{f'{info["minutes"]}'.zfill(2)}:{f'{info["seconds"]}'.zfill(2)}"
+                    painter.drawText(
+                        int(self.width() - self.metri.horizontalAdvance(timetxt) - 5),
+                        y,
+                        timetxt,
+                    )
 
             y += int(self.font_height * 3)
 
@@ -1388,15 +1495,16 @@ class LyricsViewer(QWidget):
         self.target_draw_offset += event.angleDelta().y()
         self.last_wheel = time.time()
         return super().wheelEvent(event)
-    
+
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if self.hovering_lyric:
-            player.setPosition(self.hovering_lyric['time'])
+            player.setPosition(self.hovering_lyric["time"])
             self.selecting = False
             self.hovering_lyric = None
             self.mouse_pos = None
         return super().mousePressEvent(event)
-    
+
+
 class PlayingPage(QWidget):
     imageLoaded = Signal(bytes)
     preloadRetryRequested = Signal()
@@ -1538,29 +1646,36 @@ class PlayingPage(QWidget):
             "skip_remain_time",
         )
 
-        self.addSeparateWidget(TitleLabel('Window'))
+        self.addSeparateWidget(TitleLabel("Window"))
 
         self.addNumberSetting(
-            'Window Background Mix Ratio',
-            'larger value make color of backgound nearly to image of playing song',
-            0, 1, 0.05, 'background_ratio',
-            lambda v: mwindow.repaint()
+            "Window Background Mix Ratio",
+            "larger value make color of backgound nearly to image of playing song",
+            0,
+            1,
+            0.05,
+            "background_ratio",
+            lambda v: mwindow.repaint(),
         )
 
-        self.addSeparateWidget(TitleLabel('Lyrics'))
+        self.addSeparateWidget(TitleLabel("Lyrics"))
 
         self.addNumberSetting(
-            'Lyrics Smooth Factor',
-            'larger value means a more sudden change',
-            0, QApplication.primaryScreen().refreshRate(), 0.5,
-            'lyrics_smooth_factor'
+            "Lyrics Smooth Factor",
+            "larger value means a more sudden change",
+            0,
+            QApplication.primaryScreen().refreshRate(),
+            0.5,
+            "lyrics_smooth_factor",
         )
 
         self.addNumberSetting(
-            'Acceleration Smooth Factor',
-            'smaller value means a more bounce effect',
-            0, QApplication.primaryScreen().refreshRate(), 0.5,
-            'acceleration_smooth_factor'
+            "Acceleration Smooth Factor",
+            "smaller value means a more bounce effect",
+            0,
+            QApplication.primaryScreen().refreshRate(),
+            0.5,
+            "acceleration_smooth_factor",
         )
 
         self.addSeparateWidget(TitleLabel("FFT"))
@@ -1681,7 +1796,7 @@ class PlayingPage(QWidget):
         max: float | int,
         step: float | int,
         configurationName: str,
-        onChanged: Callable[[float], None] | None = None
+        onChanged: Callable[[float], None] | None = None,
     ) -> None:
         box = DoubleSpinBox()
         box.setRange(min, max)  # pyright: ignore[reportArgumentType]
@@ -1925,9 +2040,12 @@ class PlayingPage(QWidget):
                 else:
                     transmgr.cur = "[00:00.000]"
 
+                ymgr.cur = getattr(self.cur.storable, "y_lyric", "[00:00.000]")
+
                 def _parse_local():
                     mgr.parse()
                     transmgr.parse()
+                    ymgr.parse()
 
                 doWithMultiThreading(_parse_local, (), mwindow)
             else:
@@ -1994,7 +2112,9 @@ class PlayingPage(QWidget):
                     daemon=True,
                 ).start()
 
-            def _download_then_preload(image_missing: bool, music_missing: bool):
+            def _download_then_preload(
+                image_missing: bool, music_missing: bool, y_lyric_missing: bool
+            ):
                 logging.info("downloading next song before preload")
                 self.next_song_audio = None
                 self.next_song_gain = None
@@ -2012,6 +2132,7 @@ class PlayingPage(QWidget):
                     next_song,
                     image_missing,
                     music_missing,
+                    y_lyric_missing,
                     _after_download,
                 )
 
@@ -2065,9 +2186,11 @@ class PlayingPage(QWidget):
 
                 self.preloaded = True
 
-            image_missing, music_missing = self._storable_asset_missing(next_song)
-            if image_missing or music_missing:
-                _download_then_preload(image_missing, music_missing)
+            image_missing, music_missing, y_lyric_missing = (
+                self._storable_asset_missing(next_song)
+            )
+            if image_missing or music_missing or y_lyric_missing:
+                _download_then_preload(image_missing, music_missing, y_lyric_missing)
             else:
                 _start_preload()
         finally:
@@ -2084,10 +2207,12 @@ class PlayingPage(QWidget):
                 transmgr.cur = "\n".join(data["tlyric"]["lyric"].splitlines()[1:])
             else:
                 transmgr.cur = "[00:00.000]"
+            ymgr.cur = data.get("yrc", {}).get("lyric", "[00:00.000]")
 
             def _real():
                 mgr.parse()
                 transmgr.parse()
+                ymgr.parse()
 
             def _fini():
                 player.play()
@@ -2221,36 +2346,12 @@ class PlayingPage(QWidget):
         logging.info("using preloaded song")
 
         song_storable = self.playlist[self.current_index + 1]
-        self.cur = DummyCard(song_storable)
 
-        # Update UI
-        self.title_label.setText(song_storable.name)
-        self.artists_label.setText(song_storable.artists)
-        QApplication.processEvents()
+        self.playStorable(song_storable)
 
-        image_bytes = song_storable.get_image_bytes()
-        self.onImageLoaded(image_bytes)
-
-        audio = self.next_song_audio
-
-        player.load(audio)
-        self.total_length = player.getLength()
-
-        mgr.cur = song_storable.lyric
-        if song_storable.translated_lyric:
-            transmgr.cur = song_storable.translated_lyric
-        else:
-            transmgr.cur = "[00:00.000]"
-        try:
-            mgr.parse()
-            transmgr.parse()
-        finally:
-            if not player.isPlaying():
-                player.play()
-
-            self._preload_triggered = False
-            self.next_song_audio = None
-            self.next_song_gain = None
+        self._preload_triggered = False
+        self.next_song_audio = None
+        self.next_song_gain = None
 
     def playLast(self):
         if self.current_index < 1 or self.current_index >= len(self.playlist):
@@ -2278,7 +2379,9 @@ class PlayingPage(QWidget):
         song = self.playlist[index]
         self.playStorable(song)
 
-    def _storable_asset_missing(self, song_storable: SongStorable) -> tuple[bool, bool]:
+    def _storable_asset_missing(
+        self, song_storable: SongStorable
+    ) -> tuple[bool, bool, bool]:
         song_storable._ensure_cache_fields()
         image_missing = not song_storable.image_cache_hash or not os.path.exists(
             os.path.join(IMAGE_DATA_DIR, song_storable.image_cache_hash)
@@ -2286,7 +2389,8 @@ class PlayingPage(QWidget):
         music_missing = not song_storable.content_cache_hash or not os.path.exists(
             os.path.join(MUSIC_DATA_DIR, song_storable.content_cache_hash)
         )
-        return image_missing, music_missing
+        y_lyric_missing = not song_storable.y_lyric
+        return image_missing, music_missing, y_lyric_missing
 
     def _write_storable_asset(self, cache_dir: str, data: bytes) -> str:
         os.makedirs(cache_dir, exist_ok=True)
@@ -2302,6 +2406,7 @@ class PlayingPage(QWidget):
         song_storable: SongStorable,
         image_missing: bool,
         music_missing: bool,
+        y_lyric_missing: bool,
         finished: Callable[[bool], None],
     ):
         prepared: dict[str, bytes | str] = {}
@@ -2326,6 +2431,15 @@ class PlayingPage(QWidget):
                         )  # type: ignore
                         logging.debug(f"{music_url['data'][0]['url']=}")  # type: ignore
                         prepared["music_url"] = music_url["data"][0]["url"]  # type: ignore
+
+                    if y_lyric_missing:
+                        lyric_data = apis.track.GetTrackLyricsNew(
+                            song_id=song_storable.id
+                        )
+                        assert isinstance(lyric_data, dict), "Invalid response"
+                        prepared["y_lyric"] = lyric_data.get("yrc", {}).get(
+                            "lyric", "[00:00.000]"
+                        )
             except Exception as e:
                 prepared["error"] = str(e)
 
@@ -2353,6 +2467,12 @@ class PlayingPage(QWidget):
                         MUSIC_DATA_DIR,
                         music_bytes,
                     )
+
+                if y_lyric_missing:
+                    y_lyric = prepared.get("y_lyric")
+                    if not isinstance(y_lyric, str):
+                        return False
+                    song_storable.y_lyric = y_lyric
 
                 saveFavorites(favs)
                 if image_just_persisted:
@@ -2398,6 +2518,7 @@ class PlayingPage(QWidget):
         song_storable: SongStorable,
         image_missing: bool,
         music_missing: bool,
+        y_lyric_missing: bool,
     ):
         self.cur = DummyCard(song_storable)
         self.title_label.setText(song_storable.name)
@@ -2419,29 +2540,37 @@ class PlayingPage(QWidget):
             song_storable,
             image_missing,
             music_missing,
+            y_lyric_missing,
             _play_after_download,
         )
 
-    def ensureAssets(self, song_storable: SongStorable):
-        image_missing, music_missing = self._storable_asset_missing(song_storable)
-        if image_missing or music_missing:
+    def ensureAssets(self, song_storable: SongStorable) -> bool:
+        image_missing, music_missing, y_lyric_missing = self._storable_asset_missing(
+            song_storable
+        )
+        if image_missing or music_missing or y_lyric_missing:
             self._downloadMissingStorableAssets(
                 song_storable,
                 image_missing,
                 music_missing,
+                y_lyric_missing,
             )
-            return
+            return False
+        return True
 
     def playStorable(self, song_storable: SongStorable):
-        self.ensureAssets(song_storable)
+        if not self.ensureAssets(song_storable):
+            return
 
         player.stop()
         self.cur = DummyCard(song_storable)
 
         mgr.cur = ""
         transmgr.cur = ""
+        ymgr.cur = ""
         mgr.parse()
         transmgr.parse()
+        ymgr.parse()
 
         # Update UI
         self.title_label.setText(song_storable.name)
@@ -2485,9 +2614,11 @@ class PlayingPage(QWidget):
             transmgr.cur = song_storable.translated_lyric
         else:
             transmgr.cur = "[00:00.000]"
+        ymgr.cur = getattr(song_storable, "y_lyric", "")
         try:
             mgr.parse()
             transmgr.parse()
+            ymgr.parse()
         finally:
             if not player.isPlaying():
                 player.play()
@@ -3146,8 +3277,6 @@ class MainWindow(FluentWindowBase):
             NavigationItemPosition.BOTTOM,
         )
 
-        self.show()
-
         if cfg.window_width == 0 and cfg.window_height == 0:
             self.resize(QApplication.primaryScreen().size() * 0.65)
 
@@ -3157,7 +3286,7 @@ class MainWindow(FluentWindowBase):
             cfg.window_height = self.height()
         else:
             self.move(cfg.window_x, cfg.window_y)
-            self.resize(cfg.window_width, cfg.window_height)
+            self.resize(cfg.window_width, 0)
 
             if cfg.window_maximized:
                 QTimer.singleShot(500, self.showMaximized)
@@ -3249,6 +3378,9 @@ class MainWindow(FluentWindowBase):
 
             launchwindow.deleteLater()
             sep.refreshInformations()
+
+            self.show()
+            self.raise_()
 
         doWithMultiThreading(_init, (), self, finished=_finish_init)
 
@@ -3349,8 +3481,13 @@ class MainWindow(FluentWindowBase):
         if self.song_theme == None:
             painter.setBrush(self.backgroundColor)
         else:
-            painter.setBrush(mixColor(self.song_theme, QColor(self.backgroundColor), cfg.background_ratio))  # type: ignore
+            painter.setBrush(
+                mixColor(
+                    self.song_theme, QColor(self.backgroundColor), cfg.background_ratio
+                )
+            )  # type: ignore
         painter.drawRect(self.rect())
+
 
 class LaunchWindow(QWidget):
     def __init__(self):
@@ -3544,11 +3681,13 @@ if __name__ == "__main__":
 
     mgr = LRCLyricParser()
     transmgr = LRCLyricParser()
+    ymgr = YRCLyricParser()
 
     launchwindow.setStatusText("Initializing...\n  Loading favorites...")
     favs: list[FolderInfo] = loadFavoritesWithLaunching(launchwindow)
 
     loadConfig()
+    autosave_thread.start()
 
     player = AudioPlayer()
 

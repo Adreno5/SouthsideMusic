@@ -1424,8 +1424,8 @@ class PlayingPage(QWidget):
 
         ali = Qt.AlignmentFlag
 
-        top_layout = FlowLayout(needAni=True)
-        top_layout.setAnimation(500, QEasingCurve.Type.OutCubic)
+        top_layout = FlowLayout(needAni=False)
+        # top_layout.setAnimation(500, QEasingCurve.Type.OutCubic)
         topleft_layout = QVBoxLayout()
         topright_widget = QWidget()
         topright_widget.setLayout(topleft_layout)

@@ -28,6 +28,11 @@ class Config:
     window_height: int = 0
     window_maximized: bool = False
 
+    enable_desktop_lyrics: bool = False
+    desktop_lyrics_anchor: Literal['top-center', 'bottom-center', 'normal'] = 'normal'
+    desktop_lyrics_x: int = 0
+    desktop_lyrics_y: int = 0
+
     enable_fft: bool = True
     fft_filtering_windowsize: int = 4
     fft_factor: float = 0.4

@@ -2913,23 +2913,20 @@ class DesktopLyricsPage(QWidget):
             self.setFixedHeight(int(self.cheight))
 
             tar_width = 0
+            position = player.getPosition()
             if ymgr.parsed:
+                yidx = ymgr.getCurrentIndex(position)
+                y_line = ymgr.parsed[0] if yidx < 0 else ymgr.getCurrentLyric(position)
                 tar_width = max(
                     10,
-                    int(
-                        self.metri.horizontalAdvance(
-                            ymgr.getCurrentLyric(player.getPosition())["content"]
-                        )
-                    ),
+                    int(self.metri.horizontalAdvance(y_line["content"])),
                 )
             elif mgr.parsed:
+                lidx = mgr.getCurrentIndex(position)
+                l_line = mgr.parsed[0] if lidx < 0 else mgr.getCurrentLyric(position)
                 tar_width = max(
                     10,
-                    int(
-                        self.metri.horizontalAdvance(
-                            mgr.getCurrentLyric(player.getPosition())["content"]
-                        )
-                    ),
+                    int(self.metri.horizontalAdvance(l_line["content"])),
                 )
             tar_width += self.draw_x_offset + self.height() * 0.5 + 10
 

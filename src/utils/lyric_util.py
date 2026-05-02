@@ -83,6 +83,23 @@ class LRCLyricParser:
                 return self.parsed[target_index]
 
         return LyricInfo(time=0, content="")
+    
+    def getCurrentIndex(self, time: float) -> int:
+        return self._getCurrentLyricIndex(time)
+
+    @lru_cache
+    def _getCurrentLyricIndex(self, time: float) -> int:
+        if not self.parsed:
+            return -1
+        
+        if self.parsed[0]["time"] > time:
+            return -1
+        
+        for i, l in enumerate(self.parsed):
+            if l["time"] > time:
+                return i - 1
+        
+        return len(self.parsed) - 1
 
     def parse(self) -> None:
         if not self.cur:
@@ -90,6 +107,7 @@ class LRCLyricParser:
         
         self._getOffsetedLyric.cache_clear()
         self._getCurrentLyric.cache_clear()
+        self._getCurrentLyricIndex.cache_clear()
 
         self.parsed.clear()
 

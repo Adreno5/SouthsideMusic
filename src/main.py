@@ -5,11 +5,15 @@ import logging
 import sys
 import datetime
 import os
+from PySide6.QtCore import QEvent
 import pydub
 import threading
 from typing import TextIO, Optional
-from PySide6.QtGui import QContextMenuEvent, QKeyEvent, QMouseEvent
+from PySide6.QtGui import QContextMenuEvent, QKeyEvent, QMouseEvent, QPaintEvent, QResizeEvent, QWheelEvent
 from colorama import Fore, Style, init
+
+pydub.AudioSegment.converter = r"ffmpeg\bin\ffmpeg.exe"
+pydub.AudioSegment.ffmpeg = r"ffmpeg\bin\ffmpeg.exe"
 
 if getattr(sys, "frozen", False):
     base_dir = os.path.dirname(sys.executable)
@@ -249,6 +253,7 @@ from utils import darkdetect_util as darkdetect
 from utils.soundfile_util import getSongFormat, saveSongWithInformations
 from utils import requests_util as requests
 from utils.color_util import mixColor
+from utils.image_util import getAverageColor
 
 from pyncm import apis
 import pyncm as ncm
@@ -1082,6 +1087,9 @@ class PlayingController(QWidget):
                 dp._preload_triggered = True
                 dp.preloadNextSong()
 
+            if dp.current_index >= len(dp.playlist) - 1:
+                dp.preloaded = True
+
         cl = mgr.getCurrentLyric(player.getPosition())
         nxt = mgr.getOffsetedLyric(player.getPosition(), 1)
         trd = mgr.getOffsetedLyric(player.getPosition(), 2)
@@ -1266,7 +1274,102 @@ class PlayingController(QWidget):
 
         painter.end()
 
+class LyricsViewer(QWidget):
+    def __init__(self):
+        super().__init__()
 
+        self.draw_offset: float = 0
+        self.target_draw_offset: float = 0
+
+        self.nftt = QFont(harmony_font_family, 14)
+        self.font_height = QFontMetricsF(self.nftt).height()
+        self.metri = QFontMetricsF(self.nftt)
+
+        self.selecting: bool = False
+        self.hovering_lyric: LyricInfo | None = None
+        self.mouse_pos: QPointF | None = None
+        self.last_wheel: float = time.time()
+
+        self.setMouseTracking(True)
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.repaint)
+        self.timer.start(16)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        self.mouse_pos = event.position()
+        return super().mouseMoveEvent(event)
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        self.hovering_lyric = None
+        if not mgr.parsed:
+            return
+
+        if self.draw_offset != self.target_draw_offset:
+            self.draw_offset += (self.target_draw_offset - self.draw_offset) * 0.07
+        if abs(self.target_draw_offset - self.draw_offset) < 0.01:
+            self.draw_offset = self.target_draw_offset
+
+        lines: list[LyricInfo] = mgr.parsed
+        idx = mgr.getCurrentIndex(player.getPosition())
+
+        if not self.selecting:
+            self.target_draw_offset = -idx * (self.font_height * 3)
+        else:
+            if time.time() - self.last_wheel > 3:
+                self.selecting = False
+
+        if self.draw_offset > 0:
+            self.target_draw_offset = 0
+        if self.draw_offset < -len(lines) * (self.font_height * 3):
+            self.target_draw_offset = -len(lines) * (self.font_height * 3)
+
+        painter = QPainter(self)
+        painter.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
+        painter.setFont(self.nftt)
+
+        y = int(self.draw_offset) + self.height() // 2
+        for line in lines:
+            if line == mgr.getCurrentLyric(player.getPosition()):
+                tar_color = QColor(255, 255, 255) if darkdetect.isDark() else QColor(0, 0, 0)
+            else:
+                tar_color = QColor(240, 240, 240, 120) if darkdetect.isDark() else QColor(55, 55, 55, 120)
+            color = mixColor(mwindow.song_theme, tar_color, cfg.background_ratio / 2) if mwindow.song_theme else tar_color
+            painter.setPen(color)
+            painter.drawText(int((self.width() - self.metri.horizontalAdvance(line['content'])) / 2), y, line['content'])
+
+            if (self.mouse_pos and self.selecting) and self.mouse_pos.y() > y - self.font_height and self.mouse_pos.y() < y + self.font_height + 5:
+                self.hovering_lyric = line
+                painter.setBrush(QColor(255, 255, 255, 100) if darkdetect.isDark() else QColor(0, 0, 0, 100))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRoundedRect(0, int(y - self.font_height), self.width(), int(self.font_height + 5), 5, 5)
+                painter.setPen(color)
+                info = float2time(self.hovering_lyric['time'])
+                painter.drawText(0, y, f'{f'{info['minutes']}'.zfill(2)}:{f'{info['seconds']}'.zfill(2)}')
+
+            y += int(self.font_height * 3)
+
+        painter.end()
+
+    def leaveEvent(self, event: QEvent) -> None:
+        self.mouse_pos = None
+        self.selecting = False
+        self.hovering_lyric = None
+        return super().leaveEvent(event)
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        self.selecting = True
+        self.target_draw_offset += event.angleDelta().y()
+        self.last_wheel = time.time()
+        return super().wheelEvent(event)
+    
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if self.selecting and self.hovering_lyric:
+            player.setPosition(self.hovering_lyric['time'])
+            self.selecting = False
+            self.hovering_lyric = None
+            self.mouse_pos = None
+        return super().mousePressEvent(event)
 class PlayingPage(QWidget):
     imageLoaded = Signal(bytes)
     preloadRetryRequested = Signal()
@@ -1309,9 +1412,9 @@ class PlayingPage(QWidget):
 
         top_layout = FlowLayout(needAni=False)
         # top_layout.setAnimation(500, QEasingCurve.Type.OutCubic)
-        topright_layout = QVBoxLayout()
+        topleft_layout = QVBoxLayout()
         topright_widget = QWidget()
-        topright_widget.setLayout(topright_layout)
+        topright_widget.setLayout(topleft_layout)
         self.img_label = QLabel()
         self.img_label.hide()
         self.img_label.setFixedSize(200, 200)
@@ -1322,10 +1425,10 @@ class PlayingPage(QWidget):
         top_layout.addWidget(self.img_label)
         self.title_label = SubtitleLabel()
         self.artists_label = QLabel()
-        topright_layout.addWidget(
+        topleft_layout.addWidget(
             self.title_label, alignment=ali.AlignLeft | ali.AlignTop
         )
-        topright_layout.addWidget(
+        topleft_layout.addWidget(
             self.artists_label, alignment=ali.AlignLeft | ali.AlignTop
         )
         top_layout.addWidget(topright_widget)
@@ -1335,6 +1438,8 @@ class PlayingPage(QWidget):
         self.controller.setFixedWidth(self.width())
 
         global_layout.addLayout(contents_layout)
+        self.viewer = LyricsViewer()
+        global_layout.addWidget(self.viewer)
 
         self.expanded_widget = QWidget()
         expanded_layout = QVBoxLayout()
@@ -2300,29 +2405,7 @@ class PlayingPage(QWidget):
         image_bytes = song_storable.get_image_bytes()
         self.onImageLoaded(image_bytes)
 
-        pixmap = self.img_label.pixmap()
-        if pixmap and not pixmap.isNull():
-            image = pixmap.toImage().convertToFormat(
-                QImage.Format.Format_RGBA8888
-            )
-            image = image.scaled(
-                128, 128,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-
-            buf = memoryview(image.bits())[: image.sizeInBytes()]
-            bpl = image.bytesPerLine()
-            arr = np.frombuffer(buf, dtype=np.uint8).reshape(
-                image.height(), bpl
-            )[:, : image.width() * 4].reshape(
-                image.height(), image.width(), 4
-            )
-            avg_color = np.mean(arr[:, :, :3], axis=(0, 1))
-        else:
-            avg_color = np.array([128, 128, 128], dtype=np.uint8)
-        avg_color = avg_color.tolist()
-        logging.debug(f"{avg_color=}")
+        avg_color = getAverageColor(self.img_label.pixmap())
 
         mwindow.song_theme = QColor(
             int(avg_color[0]), int(avg_color[1]), int(avg_color[2])
@@ -3219,7 +3302,7 @@ class MainWindow(FluentWindowBase):
         if self.song_theme == None:
             painter.setBrush(self.backgroundColor)
         else:
-            painter.setBrush(mixColor(QColor(self.backgroundColor), self.song_theme, cfg.background_ratio))  # type: ignore
+            painter.setBrush(mixColor(self.song_theme, QColor(self.backgroundColor), cfg.background_ratio))  # type: ignore
         painter.drawRect(self.rect())
 
 class LaunchWindow(QWidget):

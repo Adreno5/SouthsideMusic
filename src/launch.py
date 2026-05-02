@@ -46,11 +46,12 @@ if __name__ == '__main__':
                 futures = [executor.submit(download_file, path, url) for path, url in file_list]
                 for future in as_completed(futures):
                     future.result()
-
-            f.seek(0)
-
-            parsed['project']['version'] = f'v{newest}'
-            toml.dump(parsed, f)
+            
+            print('[UPDATOR] downloading pyproject.toml')
+            txt = requests.get('https://raw.githubusercontent.com/Adreno5/SouthsideMusic/master/pyproject.toml').text
+            with open('pyproject.toml', 'w', encoding='utf-8') as fp:
+                fp.write(txt)
+            print('[UPDATOR] downloaded all files needed')
 
         else:
             print('[UPDATOR] no update available')

@@ -9,7 +9,7 @@ import uuid
 from PySide6.QtCore import QEvent
 import pydub
 import threading
-from typing import TextIO, Optional
+from typing import Any, TextIO, Optional, TypedDict
 from PySide6.QtGui import (
     QContextMenuEvent,
     QEnterEvent,
@@ -171,7 +171,7 @@ class StderrRedirector:
 
     def _log_line(self, line: str):
         line = line.strip()
-        if "QPixmap::scaled" in line or "QFont" in line or 'DeprecationWarning' in line:
+        if "QPixmap::scaled" in line or "QFont" in line or "DeprecationWarning" in line:
             return
         if line:
             self.logger.error(line)
@@ -222,11 +222,13 @@ import hashlib
 import io
 import os
 import subprocess
+import json
 import time
 import traceback
 from types import FrameType, TracebackType
 from typing import Callable, TextIO, Union, cast
 import numpy as np
+import toml
 from qfluentwidgets import *  # type: ignore
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 from qframelesswindow import TitleBar
@@ -286,6 +288,164 @@ def patched_popen(*args, **kwargs):
 
 subprocess.Popen = patched_popen
 subprocess.call = patched_popen
+
+
+UPDATE_SRC_URL = "https://api.github.com/repos/Adreno5/SouthsideMusic/contents/src"
+UPDATE_PYPROJECT_URL = (
+    "https://api.github.com/repos/Adreno5/SouthsideMusic/contents/pyproject.toml"
+)
+
+
+class UpdateFileInfo(TypedDict):
+    path: str
+    download_url: str
+    sha: str
+
+
+class UpdateInfo(TypedDict):
+    newest: int
+    current: int
+    files: list[UpdateFileInfo]
+
+
+pending_update: UpdateInfo | None = None
+
+
+def _git_blob_sha(path: str) -> str | None:
+    file = Path(path)
+    if not file.exists() or not file.is_file():
+        return None
+    data = file.read_bytes()
+    return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+
+
+def _collect_update_files(api_url: str, file_list: list[UpdateFileInfo]) -> None:
+    items = requests.get(api_url).json()
+    if not isinstance(items, list):
+        return
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "file":
+            download_url = item.get("download_url")
+            path = item.get("path")
+            sha = item.get("sha")
+            if (
+                isinstance(download_url, str)
+                and isinstance(path, str)
+                and isinstance(sha, str)
+            ):
+                file_list.append(
+                    UpdateFileInfo(path=path, download_url=download_url, sha=sha)
+                )
+        elif item.get("type") == "dir" and isinstance(item.get("url"), str):
+            _collect_update_files(item["url"], file_list)
+
+
+def checkForUpdates() -> UpdateInfo | None:
+    with open("pyproject.toml", "r", encoding="utf-8") as f:
+        parsed = toml.load(f)
+    current = int(parsed["project"]["version"].removeprefix("v"))
+    latest = requests.get(
+        "https://api.github.com/repos/Adreno5/SouthsideMusic/releases/latest"
+    ).json()
+    newest = int(latest["tag_name"].removeprefix("v"))
+    if newest <= current:
+        return None
+
+    file_list: list[UpdateFileInfo] = []
+    _collect_update_files(UPDATE_SRC_URL, file_list)
+    pyproject_info = requests.get(UPDATE_PYPROJECT_URL).json()
+    if isinstance(pyproject_info, dict):
+        path = pyproject_info.get("path")
+        download_url = pyproject_info.get("download_url")
+        sha = pyproject_info.get("sha")
+        if (
+            isinstance(path, str)
+            and isinstance(download_url, str)
+            and isinstance(sha, str)
+        ):
+            file_list.append(
+                UpdateFileInfo(path=path, download_url=download_url, sha=sha)
+            )
+
+    changed_files = [
+        item for item in file_list if _git_blob_sha(item["path"]) != item["sha"]
+    ]
+    if not changed_files:
+        return None
+    return UpdateInfo(current=current, newest=newest, files=changed_files)
+
+
+def applyUpdate(update_info: UpdateInfo) -> bool:
+    try:
+        for item in update_info["files"]:
+            if _git_blob_sha(item["path"]) == item["sha"]:
+                continue
+            data = requests.get(item["download_url"]).content
+            path = Path(item["path"])
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        return True
+    except Exception:
+        logging.exception("failed to apply update")
+        return False
+
+
+def startUpdateCheck() -> None:
+    update_result: UpdateInfo | None = None
+
+    def _check():
+        nonlocal update_result
+        try:
+            update_result = checkForUpdates()
+        except Exception:
+            logging.exception("failed to check for updates")
+            update_result = None
+
+    def _finish():
+        global pending_update
+        if update_result is None:
+            return
+        pending_update = update_result
+        reply = QMessageBox.question(
+            mwindow,
+            "Update Available",
+            f"Version v{update_result['newest']} is available. Update now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            applyUpdateImmediately(update_result)
+        else:
+            mwindow.update_deferred = True
+
+    doWithMultiThreading(_check, (), mwindow, _finish)
+
+
+def applyUpdateImmediately(update_info: UpdateInfo) -> None:
+    success = applyUpdate(update_info)
+    if success:
+        QMessageBox.information(
+            mwindow,
+            "Update Complete",
+            "Update completed. Please restart the app.",
+            QMessageBox.StandardButton.Ok,
+        )
+    else:
+        QMessageBox.warning(
+            mwindow,
+            "Update Failed",
+            "Failed to update. Please try again later.",
+            QMessageBox.StandardButton.Ok,
+        )
+    sys.exit(0)
+
+
+def applyDeferredUpdateAndExit() -> None:
+    if pending_update is not None:
+        applyUpdate(pending_update)
+    sys.exit(0)
 
 
 def patchedExceptHook(
@@ -1305,6 +1465,7 @@ class LyricsViewer(QWidget):
 
         self.tft = QFont(harmony_font_family, 10)
         self.theight = QFontMetricsF(self.tft).height()
+        self.tmetri = QFontMetricsF(self.tft)
 
         self.selecting: bool = False
         self.hovering_lyric: LyricInfo | None = None
@@ -1320,6 +1481,20 @@ class LyricsViewer(QWidget):
         self.timer.start(int(1000 / app.primaryScreen().refreshRate()))
 
         self.delta = 1 / app.primaryScreen().refreshRate()
+
+    def _hasTranslation(self) -> bool:
+        return bool(transmgr.parsed)
+
+    def _lineStep(self) -> float:
+        if self._hasTranslation():
+            return self.font_height + self.theight + self.font_height * 0.75
+        return self.font_height * 1.85
+
+    def _currentLineBaseline(self) -> float:
+        block_height = self.font_height
+        if self._hasTranslation():
+            block_height += 2 + self.theight
+        return (self.height() - block_height) * 0.5 + self.metri.ascent()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         self.mouse_pos = event.position()
@@ -1354,16 +1529,19 @@ class LyricsViewer(QWidget):
             ymgr.getCurrentIndex(position) if use_yrc else mgr.getCurrentIndex(position)
         )
 
+        line_step = self._lineStep()
+        current_baseline = self._currentLineBaseline()
+
         if not self.selecting:
-            self.target_draw_offset = -idx * (self.font_height * 3)
+            self.target_draw_offset = -idx * line_step
         else:
             if time.time() - self.last_wheel > 3:
                 self.selecting = False
 
         if self.draw_offset > 0:
             self.target_draw_offset = 0
-        if self.draw_offset < -len(lines) * (self.font_height * 3):
-            self.target_draw_offset = -len(lines) * (self.font_height * 3)
+        if self.draw_offset < -len(lines) * line_step:
+            self.target_draw_offset = -len(lines) * line_step
 
         painter = QPainter(self)
         painter.setRenderHints(
@@ -1374,7 +1552,7 @@ class LyricsViewer(QWidget):
         current_line = (
             ymgr.getCurrentLyric(position) if use_yrc else mgr.getCurrentLyric(position)
         )
-        y = int(self.draw_offset) + self.height() // 2 + int(player.getPosition() * 0.105)
+        y = int(self.draw_offset + current_baseline)
         for i, line in enumerate(lines):
             is_current_line = line == current_line
             if is_current_line:
@@ -1406,8 +1584,8 @@ class LyricsViewer(QWidget):
                 painter.drawText(int(self.draw_x_offset), y, content)
 
                 x = 0.0
-                clip_y = int(y - self.font_height)
-                clip_h = int(self.font_height + 5)
+                clip_y = int(y - self.metri.ascent())
+                clip_h = int(self.font_height)
                 for ch in y_line["chars"]:
                     text_width = self.metri.horizontalAdvance(ch["char"])
                     duration = ch["duration"]
@@ -1420,7 +1598,10 @@ class LyricsViewer(QWidget):
                     if clip_w > 0:
                         painter.save()
                         painter.setClipRect(
-                            int(x + self.draw_x_offset), clip_y, int(math.ceil(clip_w)), clip_h
+                            int(x + self.draw_x_offset),
+                            clip_y,
+                            int(math.ceil(clip_w)),
+                            clip_h,
                         )
                         painter.setPen(color)
                         painter.drawText(int(self.draw_x_offset), y, content)
@@ -1453,15 +1634,15 @@ class LyricsViewer(QWidget):
                 )
                 painter.drawText(
                     int(self.draw_x_offset),
-                    int(y + self.font_height + 2),
+                    int(y + self.metri.descent() + 2 + self.tmetri.ascent()),
                     transmgr.getCurrentLyric(trans_time)["content"].strip(),
                 )
                 painter.setFont(self.ft)
 
             if (
                 self.mouse_pos
-                and self.mouse_pos.y() > y - self.font_height
-                and self.mouse_pos.y() < y + self.font_height + 5
+                and self.mouse_pos.y() > y - self.metri.ascent()
+                and self.mouse_pos.y() < y + self.metri.descent() + self.theight + 5
             ):
                 self.hovering_lyric = line
                 if self.selecting:
@@ -1473,9 +1654,9 @@ class LyricsViewer(QWidget):
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.drawRoundedRect(
                         int(self.draw_x_offset),
-                        int(y - self.font_height),
+                        int(y - self.metri.ascent()),
                         self.width() - int(self.draw_x_offset),
-                        int(self.font_height + 5),
+                        int(self.font_height),
                         5,
                         5,
                     )
@@ -1488,7 +1669,7 @@ class LyricsViewer(QWidget):
                         timetxt,
                     )
 
-            y += int(self.font_height * 3)
+            y += int(line_step)
 
         painter.end()
 
@@ -1511,6 +1692,7 @@ class LyricsViewer(QWidget):
             self.hovering_lyric = None
             self.mouse_pos = None
         return super().mousePressEvent(event)
+
 
 class PlayingPage(QWidget):
     imageLoaded = Signal(bytes)
@@ -1891,33 +2073,54 @@ class PlayingPage(QWidget):
 
         self.target_lufs_label.setText("Reapplying")
 
+        result: dict[str, object] = {}
+
         def _apply():
             if not isinstance(self.cur, DummyCard):
                 return
             if not hasattr(self.cur, "storable"):
                 return
 
+            storable = self.cur.storable
             audio: AudioSegment = AudioSegment.from_file(
-                io.BytesIO(self.cur.storable.get_music_bytes())
+                io.BytesIO(storable.get_music_bytes())
             )
             logging.debug("new lufs -> applying gain")
             gain = getAdjustedGainFactor(cfg.target_lufs, audio)
-            self.cur.storable.loudness_gain = gain
-            self.cur.storable.target_lufs = cfg.target_lufs
+            result["storable"] = storable
+            result["gain"] = gain
+            result["target_lufs"] = cfg.target_lufs
+            result["position"] = player.getPosition()
+            result["playing"] = player.isPlaying()
 
-            p = player.getPosition()
-            playingnow = player.isPlaying()
-            self.playStorable(self.cur.storable)
-            if playingnow:
-                player.play()
+        def _finish():
+            storable = result.get("storable")
+            if not isinstance(storable, SongStorable):
+                self.target_lufs_label.setText(f"Target LUFS: {cfg.target_lufs}")
+                self.target_lufs.show()
+                return
+            if not isinstance(self.cur, DummyCard) or self.cur.storable is not storable:
+                self.target_lufs_label.setText(f"Target LUFS: {cfg.target_lufs}")
+                self.target_lufs.show()
+                return
 
-            self.target_lufs_label.setText(f"Target LUFS: {cfg.target_lufs}")
-            player.setPosition(p)
+            storable.loudness_gain = cast(float, result["gain"])
+            storable.target_lufs = cast(int, result["target_lufs"])
+            position = cast(float, result["position"])
+            playingnow = cast(bool, result["playing"])
 
-            QTimer.singleShot(250, self.preloadNextSong)
-            self.target_lufs.show()
+            def _apply_playback_update():
+                self.playStorable(storable)
+                if playingnow:
+                    player.play()
+                self.target_lufs_label.setText(f"Target LUFS: {cfg.target_lufs}")
+                player.setPosition(position)
+                QTimer.singleShot(250, self.preloadNextSong)
+                self.target_lufs.show()
 
-        threading.Thread(target=_apply).start()
+            mwindow.addScheduledTask(_apply_playback_update)
+
+        doWithMultiThreading(_apply, (), mwindow, _finish)
 
     def onTargetLUFSChanged(self, value: int):
         cfg.target_lufs = value
@@ -2503,7 +2706,7 @@ class PlayingPage(QWidget):
                     parent=mwindow,
                 )
                 return
-            self.playStorable(song_storable)
+            mwindow.addScheduledTask(self.playStorable, song_storable)
 
         self._downloadStorableMissingAssets(
             song_storable,
@@ -2681,38 +2884,69 @@ class PlayingPage(QWidget):
             )
         )
 
+
 class DesktopLyricsPage(QWidget):
     class DesktopLyricsViewer(LyricsViewer):
         def __init__(self):
             super().__init__()
-            self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+            self.setWindowFlags(
+                Qt.WindowType.FramelessWindowHint
+                | Qt.WindowType.WindowStaysOnTopHint
+                | Qt.WindowType.Tool
+            )
             self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
             self.dragging: bool = False
             self.dragging_point: QPoint = QPoint(0, 0)
 
             self.cwidth: float = 10
+            self.cheight: float = 65
 
             self.timer = QTimer(self)
             self.timer.timeout.connect(self.updateDatas)
             self.timer.start(16)
 
         def updateDatas(self):
+            has_translation = bool(transmgr.parsed)
+            tar_height = 65 if has_translation else 46
+            self.cheight += (tar_height - self.cheight) * 0.12
+            self.setFixedHeight(int(self.cheight))
+
             tar_width = 0
             if ymgr.parsed:
-                tar_width = max(10, int(self.metri.horizontalAdvance(ymgr.getCurrentLyric(player.getPosition())['content'])))
+                tar_width = max(
+                    10,
+                    int(
+                        self.metri.horizontalAdvance(
+                            ymgr.getCurrentLyric(player.getPosition())["content"]
+                        )
+                    ),
+                )
             elif mgr.parsed:
-                tar_width = max(10, int(self.metri.horizontalAdvance(mgr.getCurrentLyric(player.getPosition())['content'])))
+                tar_width = max(
+                    10,
+                    int(
+                        self.metri.horizontalAdvance(
+                            mgr.getCurrentLyric(player.getPosition())["content"]
+                        )
+                    ),
+                )
             tar_width += self.draw_x_offset + self.height() * 0.5 + 10
 
             self.cwidth += (tar_width - self.cwidth) * 0.07
             self.setFixedWidth(int(self.cwidth))
 
-            if cfg.desktop_lyrics_anchor == 'top-center':
-                self.move(int(app.primaryScreen().size().width() * 0.5 - self.width() * 0.5), 0)
-            if cfg.desktop_lyrics_anchor == 'bottom-center':
-                self.move(int(app.primaryScreen().size().width() * 0.5 - self.width() * 0.5), app.primaryScreen().size().height() - self.height() - 100)
-            if cfg.desktop_lyrics_anchor == 'normal' and not self.dragging:
+            if cfg.desktop_lyrics_anchor == "top-center":
+                self.move(
+                    int(app.primaryScreen().size().width() * 0.5 - self.width() * 0.5),
+                    0,
+                )
+            if cfg.desktop_lyrics_anchor == "bottom-center":
+                self.move(
+                    int(app.primaryScreen().size().width() * 0.5 - self.width() * 0.5),
+                    app.primaryScreen().size().height() - self.height() - 100,
+                )
+            if cfg.desktop_lyrics_anchor == "normal" and not self.dragging:
                 self.move(int(cfg.desktop_lyrics_x - self.width() * 0.5), self.y())
 
             self.draw_x_offset = self.height() / 2
@@ -2727,35 +2961,44 @@ class DesktopLyricsPage(QWidget):
                 center_x = tp.x() + self.width() * 0.5
                 screen_center_x = app.primaryScreen().size().width() * 0.5
                 if abs(center_x - screen_center_x) < 30 and tp.y() < 15:
-                    cfg.desktop_lyrics_anchor = 'top-center'
-                elif abs(center_x - screen_center_x) < 30 and tp.y() > app.primaryScreen().size().height() - 100 - self.height():
-                    cfg.desktop_lyrics_anchor = 'bottom-center'
+                    cfg.desktop_lyrics_anchor = "top-center"
+                elif (
+                    abs(center_x - screen_center_x) < 30
+                    and tp.y()
+                    > app.primaryScreen().size().height() - 100 - self.height()
+                ):
+                    cfg.desktop_lyrics_anchor = "bottom-center"
                 else:
-                    cfg.desktop_lyrics_anchor = 'normal'
+                    cfg.desktop_lyrics_anchor = "normal"
                     self.move(tp)
 
         def mouseReleaseEvent(self, event: QMouseEvent) -> None:
             self.dragging = False
-        
+
         def moveEvent(self, event: QMoveEvent) -> None:
             if self.dragging:
                 center_x = event.pos().x() + self.width() * 0.5
-                if cfg.desktop_lyrics_anchor == 'normal':
-                    cfg.desktop_lyrics_x, cfg.desktop_lyrics_y = int(center_x), event.pos().y()
+                if cfg.desktop_lyrics_anchor == "normal":
+                    cfg.desktop_lyrics_x, cfg.desktop_lyrics_y = (
+                        int(center_x),
+                        event.pos().y(),
+                    )
             return super().moveEvent(event)
 
         def paintEvent(self, event: QPaintEvent) -> None:
             painter = QPainter(self)
             painter.setPen(Qt.PenStyle.NoPen)
 
-            painter.setBrush(QColor(255, 255, 255) if darkdetect.isLight() else QColor(0, 0, 0))
+            painter.setBrush(
+                QColor(255, 255, 255) if darkdetect.isLight() else QColor(0, 0, 0)
+            )
 
             draw_rect = QRect(12, 0, self.width() - 24, self.height())
 
-            if cfg.desktop_lyrics_anchor == 'normal':
+            if cfg.desktop_lyrics_anchor == "normal":
                 radius = int(self.height() * 0.5)
                 painter.drawRoundedRect(draw_rect, radius, radius)
-            elif cfg.desktop_lyrics_anchor == 'top-center':
+            elif cfg.desktop_lyrics_anchor == "top-center":
                 painter.drawRoundedRect(draw_rect, 20, 20)
 
                 draw_path = QPainterPath()
@@ -2787,13 +3030,13 @@ class DesktopLyricsPage(QWidget):
                 painter.setClipPath(clip_path_r)
                 painter.drawPath(draw_path_r)
                 painter.restore()
-            elif cfg.desktop_lyrics_anchor == 'bottom-center':
+            elif cfg.desktop_lyrics_anchor == "bottom-center":
                 radius = int(self.height() * 0.5)
                 painter.drawRoundedRect(draw_rect, radius, radius)
-            
+
             painter.end()
             return super().paintEvent(event)
-        
+
         def wheelEvent(self, event: QWheelEvent) -> None:
             event.ignore()
 
@@ -2808,13 +3051,13 @@ class DesktopLyricsPage(QWidget):
         self.viewer.resize(app.primaryScreen().size().width(), 65)
 
         global_layout = QVBoxLayout()
-        global_layout.addWidget(TitleLabel('Desktop Lyrics'))
-        self.inputer = CheckBox('Enable Desktop Lyrics')
+        global_layout.addWidget(TitleLabel("Desktop Lyrics"))
+        self.inputer = CheckBox("Enable Desktop Lyrics")
         self.inputer.checkStateChanged.connect(self.onEnableChanged)
         self.inputer.setChecked(cfg.enable_desktop_lyrics)
         global_layout.addWidget(self.inputer)
         buttons_layout = FlowLayout()
-        self.reset_pos = PushButton(FluentIcon.SYNC, 'Reset Position')
+        self.reset_pos = PushButton(FluentIcon.SYNC, "Reset Position")
         self.reset_pos.clicked.connect(self.onResetPos)
         buttons_layout.addWidget(self.reset_pos)
         global_layout.addLayout(buttons_layout)
@@ -2822,11 +3065,12 @@ class DesktopLyricsPage(QWidget):
 
     def onResetPos(self):
         self.viewer.move(0, 0)
-        cfg.desktop_lyrics_anchor = 'normal'
+        cfg.desktop_lyrics_anchor = "normal"
 
     def onEnableChanged(self):
         self.viewer.setVisible(self.inputer.isChecked())
         cfg.enable_desktop_lyrics = self.inputer.isChecked()
+
 
 class FavoritesPage(QWidget):
     def __init__(self) -> None:
@@ -3360,8 +3604,15 @@ class SouthsideMusicTitleBar(TitleBar):
 
 
 class MainWindow(FluentWindowBase):
+    scheduledTaskRequested = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._scheduled_tasks: list[
+            tuple[Callable, tuple[Any, ...], dict[str, Any]]
+        ] = []
+        self._scheduled_tasks_lock = threading.Lock()
+        self.scheduledTaskRequested.connect(self._runScheduledTasks)
         self.setTitleBar(SouthsideMusicTitleBar(self))
 
         self.navigationInterface = NavigationInterface(self, showReturnButton=True)
@@ -3391,6 +3642,7 @@ class MainWindow(FluentWindowBase):
 
         self.closing = False
         self.connected = False
+        self.update_deferred = False
 
         self.setWindowTitle("Southside Music")
 
@@ -3439,6 +3691,22 @@ class MainWindow(FluentWindowBase):
         self.init()
 
         QTimer.singleShot(1750, ws_server.start)
+
+    def addScheduledTask(self, task: Callable, *args, **kwargs) -> None:
+        with self._scheduled_tasks_lock:
+            self._scheduled_tasks.append((task, args, kwargs))
+        self.scheduledTaskRequested.emit()
+
+    def _runScheduledTasks(self) -> None:
+        while True:
+            with self._scheduled_tasks_lock:
+                if not self._scheduled_tasks:
+                    return
+                task, args, kwargs = self._scheduled_tasks.pop(0)
+            try:
+                task(*args, **kwargs)
+            except Exception:
+                logging.exception("scheduled task failed")
 
     def addSubInterface(
         self,
@@ -3511,15 +3779,16 @@ class MainWindow(FluentWindowBase):
                 _last_storable = cfg.last_playing_song
                 dp.playlist.append(_last_storable)
 
-                dp.playSongAtIndex(0)
-                dp.controller.setPlaytime(cfg.last_playing_time)
-                player.stop()
-
             launchwindow.setStatusText("Initializing...\n  Initializing Mainwindow...")
 
         def _finish_init():
             if isinstance(_last_storable, SongStorable):
                 dp.addSongCardToList(_last_storable)
+                mwindow.addScheduledTask(dp.playSongAtIndex, 0)
+                mwindow.addScheduledTask(
+                    dp.controller.setPlaytime, cfg.last_playing_time
+                )
+                mwindow.addScheduledTask(player.stop)
 
             launchwindow.deleteLater()
             sep.refreshInformations()
@@ -3565,6 +3834,10 @@ class MainWindow(FluentWindowBase):
         ws_server.stop()
         ws_server.join()
         player.stop()
+
+        if self.update_deferred and pending_update is not None:
+            threading.Thread(target=applyDeferredUpdateAndExit, daemon=False).start()
+            return
 
         sys.exit(0)
 
@@ -3874,6 +4147,8 @@ if __name__ == "__main__":
     mwindow = MainWindow()
 
     fp.refresh()
+
+    QTimer.singleShot(2000, startUpdateCheck)
 
     logging.debug(f"{sys.path=}")
 

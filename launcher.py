@@ -6,15 +6,15 @@ import sys
 def main() -> int:
     cwd = Path(__file__).resolve().parent
     python = cwd / "python" / "python.exe"
-    launch = cwd / "src" / "launch.py"
+    main = cwd / "src" / "main.py"
 
     if not python.exists():
         return 1
-    if not launch.exists():
+    if not main.exists():
         return 1
 
     process = subprocess.Popen(
-        [str(python), str(launch)],
+        [str(python), str(main)],
         cwd=str(cwd),
         stdin=sys.stdin,
         stdout=sys.stdout,

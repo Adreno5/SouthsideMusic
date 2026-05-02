@@ -1322,7 +1322,7 @@ class LyricsViewer(QWidget):
             return
         
         self.target_acc = (self.target_draw_offset - self.draw_offset) * self.delta * cfg.lyrics_smooth_factor
-        self.acc += (self.target_acc - self.acc) * self.delta * cfg.acceleration_smooth_factor
+        self.acc += (self.target_acc - self.acc) * self.delta * cfg.acceleration_smooth_factor / max(0.5, min(1, (self.target_acc - self.acc)))
 
         if self.draw_offset != self.target_draw_offset:
             self.draw_offset += self.acc

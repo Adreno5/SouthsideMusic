@@ -5,14 +5,24 @@ import logging
 import sys
 import datetime
 import os
+import pydub
 import threading
 from typing import TextIO, Optional
 from PySide6.QtGui import QContextMenuEvent, QKeyEvent, QMouseEvent
 from colorama import Fore, Style, init
 
+if getattr(sys, "frozen", False):
+    base_dir = os.path.dirname(sys.executable)
+else:
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+ffmpeg_dir = os.path.join(base_dir, "ffmpeg", "bin")
+
+os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ["PATH"]
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
 sys.path.append(os.path.dirname(__file__))
-print(f'{sys.path=}')
+print(f"{sys.path=}")
 
 init(autoreset=True)
 
@@ -63,6 +73,7 @@ class LogHandler(logging.Handler):
         assert sys.__stdout__ is not None
         sys.__stdout__.write(final + "\n")
         sys.__stdout__.flush()
+
 
 class LoggingStream:
     def __init__(self, level: int = logging.DEBUG, source: str = "stderr"):
@@ -219,7 +230,7 @@ from utils.base.base_util import (
     SongStorable,
 )
 from utils.base.base_util import SongDetail
-from utils.lyric_util import LRCLyricManager, LyricInfo
+from utils.lyric_util import LRCLyricParser, LyricInfo
 from utils.time_util import float2time
 from utils.favorite_util import (
     loadFavorites,
@@ -235,8 +246,9 @@ from utils.icon_util import getQIcon
 from utils.dialog_util import QRCodeLoginDialog, get_value_bylist, get_text_lineedit
 from utils.websocket_util import WebSocketServer, ws_server, ws_handler
 from utils import darkdetect_util as darkdetect
-from utils.soundfile_util import getSongFormat, saveSongWithMetaInformations
+from utils.soundfile_util import getSongFormat, saveSongWithInformations
 from utils import requests_util as requests
+from utils.color_util import mixColor
 
 from pyncm import apis
 import pyncm as ncm
@@ -434,9 +446,7 @@ class SongCard(QWidget):
                 image_url = response["songs"][0]["al"]["picUrl"]  # type: ignore
 
                 # Download image
-                image_bytes = requests.get(
-                    image_url
-                ).content
+                image_bytes = requests.get(image_url).content
 
                 # Download music
                 music_url = apis.track.GetTrackAudio(
@@ -646,7 +656,7 @@ class _SongCardItem(QWidget):
                 with ncm.GetCurrentSession():
                     response = apis.track.GetTrackDetail(song_ids=[storable.id])
                     assert isinstance(response, dict)
-                    image_url = response["songs"][0]["al"]["picUrl"] # type: ignore
+                    image_url = response["songs"][0]["al"]["picUrl"]  # type: ignore
                     image_bytes = requests.get(
                         image_url,
                     ).content
@@ -689,89 +699,117 @@ class _SongCardItem(QWidget):
             self.clicked.emit(self.storable)
         return super().mousePressEvent(event)
 
+
 def exportSong(card: _SongCardItem):
     dp.ensureAssets(card.storable)
-    with open(os.path.join(MUSIC_DATA_DIR, card.storable.content_cache_hash), 'rb') as f:
+    with open(
+        os.path.join(MUSIC_DATA_DIR, card.storable.content_cache_hash), "rb"
+    ) as f:
         export_path, fmt = QFileDialog.getSaveFileName(
-            mwindow, 'Export song', f'./{card.storable.name} - {card.storable.artists}{getSongFormat(f.read())}', 'Song Files (*.mp3, *.m4a, *.flac, *.wav, *.ogg, *.opus)',
+            mwindow,
+            "Export song",
+            f"./{card.storable.name} - {card.storable.artists}{getSongFormat(f.read())}",
+            "Song Files (*.mp3, *.m4a, *.flac, *.wav, *.ogg, *.opus)",
         )
-        
+
     if export_path:
         try:
+
             def _export():
                 with ncm.GetCurrentSession():
                     response = apis.track.GetTrackDetail(song_ids=[card.storable.id])
                     assert isinstance(response, dict), "Invalid response"
-                    image_url = response["songs"][0]["al"]["picUrl"]  # type: ignore
+                    detail = response["songs"][0]  # pyright: ignore
+                    image_url = detail["al"]["picUrl"]
 
-                    logging.info(f'{image_url=}')
+                    logging.info(f"{image_url=}")
 
-                    # Download image
-                    image_bytes = requests.get(
-                        image_url,
-                    ).content
+                    image_bytes = requests.get(image_url).content
 
-                    with open(os.path.join(MUSIC_DATA_DIR, card.storable.content_cache_hash), 'rb') as song:
-                        saveSongWithMetaInformations(
+                    album = detail["al"]["name"]
+                    track_number = f"{detail['cd']}/{detail['no']}"
+                    publish_time = detail.get("publishTime", 0)
+                    year = ""
+                    if publish_time:
+                        year = str(
+                            datetime.datetime.fromtimestamp(publish_time / 1000).year
+                        )
+
+                    with open(
+                        os.path.join(MUSIC_DATA_DIR, card.storable.content_cache_hash),
+                        "rb",
+                    ) as song:
+                        saveSongWithInformations(
                             song.read(),
                             image_bytes,
                             card.storable.name,
                             card.storable.artists,
-                            export_path
+                            export_path,
+                            card.storable.lyric,
+                            album,
+                            "",
+                            year,
+                            track_number,
+                            "",
+                            "",
                         )
 
             def _final():
-                InfoBar.success('Export', f'Exported song {card.storable.name}', parent=mwindow, duration=5000)
+                InfoBar.success(
+                    "Export",
+                    f"Exported song {card.storable.name}",
+                    parent=mwindow,
+                    duration=5000,
+                )
 
             doWithMultiThreading(_export, (), mwindow, _final)
         except Exception as e:
             raise e
-        
+
+
 def removeSong(card: _SongCardItem) -> None:
-        for i, storable in enumerate(dp.playlist):
-            if storable.id == card.storable.id:
-                dp.playlist.remove(dp.playlist[i])
-                break
+    for i, storable in enumerate(dp.playlist):
+        if storable.id == card.storable.id:
+            dp.playlist.remove(dp.playlist[i])
+            break
 
-        dp.refreshPlaylistWidget()
+    dp.refreshPlaylistWidget()
 
-        if dp.cur:
-            if card.storable.id == dp.cur.storable.id:
-                dp.playSongAtIndex(dp.current_index)
+    if dp.cur:
+        if card.storable.id == dp.cur.storable.id:
+            dp.playSongAtIndex(dp.current_index)
+
 
 class PlaylistSongCard(_SongCardItem):
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         menu = RoundMenu(parent=self)
 
-        export = Action('Export', menu)
-        export.setIcon(getQIcon('export'))
-        rm = Action('Remove', menu)
-        rm.setIcon(getQIcon('remove'))
+        export = Action("Export", menu)
+        export.setIcon(getQIcon("export"))
+        rm = Action("Remove", menu)
+        rm.setIcon(getQIcon("remove"))
 
         export.triggered.connect(lambda: exportSong(self))
         rm.triggered.connect(lambda: removeSong(self))
 
-        menu.addActions([
-            export,
-            rm
-        ])
+        menu.addActions([export, rm])
 
         menu.exec(event.globalPos(), aniType=MenuAnimationType.DROP_DOWN)
+
 
 class FavoriteSongCard(_SongCardItem):
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         menu = RoundMenu(parent=self)
 
-        export = Action('Export', menu)
-        export.setIcon(getQIcon('export'))
+        export = Action("Export", menu)
+        export.setIcon(getQIcon("export"))
 
         export.triggered.connect(lambda: exportSong(self))
 
-        menu.addActions([
-            export
-        ])
+        menu.addActions([export])
 
         menu.exec(event.globalPos(), aniType=MenuAnimationType.DROP_DOWN)
+
 
 class SearchPage(QWidget):
     resultGot = Signal(list)
@@ -1003,10 +1041,9 @@ class PlayingController(QWidget):
                 title_bar.fm_label.setPixmap(QPixmap())
             else:
                 title_bar.song_title.setText(dp.title_label.text())
+                l = mgr.getCurrentLyric(player.getPosition())
                 title_bar.lyric_label.setText(
-                    dp.lyric_label.text()
-                    if dp.lyric_label.text()
-                    else dp.artists_label.text()
+                    l["content"] if l["content"] else dp.artists_label.text()
                 )
                 title_bar.fm_label.setPixmap(
                     dp.img_label.pixmap().scaled(
@@ -1227,15 +1264,6 @@ class PlayingController(QWidget):
                     f"{str(cur_time['minutes']).zfill(2)}:{str(cur_time['seconds']).zfill(2)}"
                 )
 
-        yw = mgr.getCurrentLyric(player.getPosition())["content"]
-        dp.lyric_label.setText(yw)
-        if not yw.strip():
-            dp.transl_label.setText("")
-        else:
-            dp.transl_label.setText(
-                transmgr.getCurrentLyric(player.getPosition())["content"]
-            )
-
         painter.end()
 
 
@@ -1303,20 +1331,6 @@ class PlayingPage(QWidget):
         top_layout.addWidget(topright_widget)
 
         contents_layout.addLayout(top_layout)
-
-        middle_layout = QVBoxLayout()
-        self.lyric_label = SubtitleLabel("null")
-        self.transl_label = QLabel("null")
-        self.lyric_label.setWordWrap(True)
-        self.transl_label.setWordWrap(True)
-
-        middle_layout.addWidget(
-            self.lyric_label, alignment=ali.AlignHCenter | ali.AlignBottom
-        )
-        middle_layout.addWidget(
-            self.transl_label, alignment=ali.AlignHCenter | ali.AlignTop
-        )
-        contents_layout.addLayout(middle_layout)
 
         self.controller.setFixedWidth(self.width())
 
@@ -1386,6 +1400,15 @@ class PlayingPage(QWidget):
             60,
             1,
             "skip_remain_time",
+        )
+
+        self.addSeparateWidget(TitleLabel('Window'))
+
+        self.addNumberSetting(
+            'Window Background Mix Ratio',
+            'larger value make color of backgound nearly to image of playing song',
+            0, 1, 0.05, 'background_ratio',
+            lambda v: mwindow.repaint()
         )
 
         self.addSeparateWidget(TitleLabel("FFT"))
@@ -1506,6 +1529,7 @@ class PlayingPage(QWidget):
         max: float | int,
         step: float | int,
         configurationName: str,
+        onChanged: Callable[[float], None] | None = None
     ) -> None:
         box = DoubleSpinBox()
         box.setRange(min, max)  # pyright: ignore[reportArgumentType]
@@ -1514,6 +1538,8 @@ class PlayingPage(QWidget):
 
         def _valueChanged(value: float | int):
             setattr(cfg, configurationName, value)
+            if onChanged:
+                onChanged(value)
 
         box.valueChanged.connect(_valueChanged)
 
@@ -1565,7 +1591,7 @@ class PlayingPage(QWidget):
 
         self.refreshPlaylistWidget()
 
-        InfoBar.success("Inserted", "Removed all songs", duration=1500, parent=mwindow)
+        InfoBar.success("Removed", "Removed all songs", duration=1500, parent=mwindow)
 
     def addSongCardToList(self, song: SongStorable) -> QListWidgetItem:
         item = QListWidgetItem()
@@ -2048,8 +2074,6 @@ class PlayingPage(QWidget):
         # Update UI
         self.title_label.setText(song_storable.name)
         self.artists_label.setText(song_storable.artists)
-        self.lyric_label.setText("Loading...")
-        self.transl_label.setText("")
         QApplication.processEvents()
 
         image_bytes = song_storable.get_image_bytes()
@@ -2226,8 +2250,7 @@ class PlayingPage(QWidget):
         self.cur = DummyCard(song_storable)
         self.title_label.setText(song_storable.name)
         self.artists_label.setText(song_storable.artists)
-        self.lyric_label.setText("Downloading...")
-        self.transl_label.setText("")
+
         QApplication.processEvents()
 
         def _play_after_download(success: bool):
@@ -2263,20 +2286,48 @@ class PlayingPage(QWidget):
         player.stop()
         self.cur = DummyCard(song_storable)
 
-        mgr.cur = ''
-        transmgr.cur = ''
+        mgr.cur = ""
+        transmgr.cur = ""
         mgr.parse()
         transmgr.parse()
 
         # Update UI
         self.title_label.setText(song_storable.name)
         self.artists_label.setText(song_storable.artists)
-        self.lyric_label.setText("Loading...")
-        self.transl_label.setText("")
+
         QApplication.processEvents()
 
         image_bytes = song_storable.get_image_bytes()
         self.onImageLoaded(image_bytes)
+
+        pixmap = self.img_label.pixmap()
+        if pixmap and not pixmap.isNull():
+            image = pixmap.toImage().convertToFormat(
+                QImage.Format.Format_RGBA8888
+            )
+            image = image.scaled(
+                128, 128,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+
+            buf = memoryview(image.bits())[: image.sizeInBytes()]
+            bpl = image.bytesPerLine()
+            arr = np.frombuffer(buf, dtype=np.uint8).reshape(
+                image.height(), bpl
+            )[:, : image.width() * 4].reshape(
+                image.height(), image.width(), 4
+            )
+            avg_color = np.mean(arr[:, :, :3], axis=(0, 1))
+        else:
+            avg_color = np.array([128, 128, 128], dtype=np.uint8)
+        avg_color = avg_color.tolist()
+        logging.debug(f"{avg_color=}")
+
+        mwindow.song_theme = QColor(
+            int(avg_color[0]), int(avg_color[1]), int(avg_color[2])
+        )
+        mwindow.repaint()
 
         # Load from cache/base64-backed bytes
         if song_storable.target_lufs == cfg.target_lufs:
@@ -2919,6 +2970,8 @@ class MainWindow(FluentWindowBase):
 
         left_layout = QVBoxLayout()
 
+        self.song_theme: QColor | None = None
+
         # initialize layout
         self.hBoxLayout.addWidget(self.navigationInterface)
         self.hBoxLayout.addLayout(self.widgetLayout)
@@ -3028,9 +3081,6 @@ class MainWindow(FluentWindowBase):
 
     def play(self, card: SongCard):
         logging.debug(card.info["id"])
-
-        dp.lyric_label.setText("")
-        dp.transl_label.setText("")
 
         dp.cur = None
 
@@ -3163,6 +3213,14 @@ class MainWindow(FluentWindowBase):
         else:
             return super().keyPressEvent(event)
 
+    def paintEvent(self, e):
+        painter = QPainter(self)
+        painter.setPen(Qt.PenStyle.NoPen)
+        if self.song_theme == None:
+            painter.setBrush(self.backgroundColor)
+        else:
+            painter.setBrush(mixColor(QColor(self.backgroundColor), self.song_theme, cfg.background_ratio))  # type: ignore
+        painter.drawRect(self.rect())
 
 class LaunchWindow(QWidget):
     def __init__(self):
@@ -3354,8 +3412,8 @@ if __name__ == "__main__":
     launchwindow.setStatusText("Initializing...\n  Intializing services...")
     wy = CloudMusicUtil()  # type: ignore
 
-    mgr = LRCLyricManager()
-    transmgr = LRCLyricManager()
+    mgr = LRCLyricParser()
+    transmgr = LRCLyricParser()
 
     launchwindow.setStatusText("Initializing...\n  Loading favorites...")
     favs: list[FolderInfo] = loadFavoritesWithLaunching(launchwindow)
@@ -3398,6 +3456,6 @@ if __name__ == "__main__":
 
     fp.refresh()
 
-    logging.debug(f'{sys.path=}')
+    logging.debug(f"{sys.path=}")
 
     app.exec()

@@ -434,7 +434,7 @@ class AudioPlayer(QObject):
             self.current_index = target_index
 
     def getPosition(self) -> float:
-        return self.current_index / self.sample_rate if self.sample_rate > 0 else 0.0
+        return round((self.current_index / self.sample_rate if self.sample_rate > 0 else 0.0), 2)
 
     def getLength(self) -> float:
         return len(self.samples) / self.sample_rate if self.sample_rate > 0 else 0.0

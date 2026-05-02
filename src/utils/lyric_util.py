@@ -1,3 +1,4 @@
+from functools import lru_cache
 import json
 import logging
 import re
@@ -41,12 +42,16 @@ def _is_json_metadata(line: str) -> bool:
     return isinstance(obj, dict) and "t" in obj and "c" in obj
 
 
-class LRCLyricManager:
+class LRCLyricParser:
     def __init__(self) -> None:
         self.cur: str = ""
         self.parsed: list[LyricInfo] = []
 
     def getCurrentLyric(self, time: float) -> LyricInfo:
+        return self._getCurrentLyric(time)
+    
+    @lru_cache
+    def _getCurrentLyric(self, time: float) -> LyricInfo:
         if not self.parsed:
             return LyricInfo(time=0, content="")
 
@@ -60,6 +65,10 @@ class LRCLyricManager:
         return self.parsed[-1]
 
     def getOffsetedLyric(self, time: float, offset_index: int) -> LyricInfo:
+        return self._getOffsetedLyric(time, offset_index)
+
+    @lru_cache
+    def _getOffsetedLyric(self, time: float, offset_index: int) -> LyricInfo:
         if not self.parsed:
             return LyricInfo(time=0, content="")
 
@@ -78,6 +87,9 @@ class LRCLyricManager:
     def parse(self) -> None:
         if not self.cur:
             return
+        
+        self._getOffsetedLyric.cache_clear()
+        self._getCurrentLyric.cache_clear()
 
         self.parsed.clear()
 

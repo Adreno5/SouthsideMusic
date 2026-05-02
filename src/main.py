@@ -1010,6 +1010,8 @@ class PlayingController(QWidget):
                     )
                 )
                 mwindow_anim.start()
+            else:
+                self.expand_btn.setEnabled(True)
 
             dp.expanded_widget.show()
 
@@ -1032,6 +1034,8 @@ class PlayingController(QWidget):
                     )
                 )
                 mwindow_anim.start()
+            else:
+                self.expand_btn.setEnabled(True)
 
             self.expand_btn.setText("Menu")
             self.expand_btn.setIcon(getQIcon("pl_expand"))
@@ -1301,7 +1305,9 @@ class LyricsViewer(QWidget):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.repaint)
-        self.timer.start(16)
+        self.timer.start(int(1000 / QApplication.primaryScreen().refreshRate()))
+
+        self.delta = 1 / QApplication.primaryScreen().refreshRate()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         self.mouse_pos = event.position()
@@ -1313,7 +1319,7 @@ class LyricsViewer(QWidget):
             return
 
         if self.draw_offset != self.target_draw_offset:
-            self.draw_offset += (self.target_draw_offset - self.draw_offset) * 0.07
+            self.draw_offset += (self.target_draw_offset - self.draw_offset) * self.delta * cfg.lyrics_smooth_factor
         if abs(self.target_draw_offset - self.draw_offset) < 0.01:
             self.draw_offset = self.target_draw_offset
 
@@ -1534,6 +1540,15 @@ class PlayingPage(QWidget):
             'larger value make color of backgound nearly to image of playing song',
             0, 1, 0.05, 'background_ratio',
             lambda v: mwindow.repaint()
+        )
+
+        self.addSeparateWidget(TitleLabel('Lyrics'))
+
+        self.addNumberSetting(
+            'Lyrics Smooth Factor',
+            'larger value means a more sudden change',
+            0, QApplication.primaryScreen().refreshRate(), 0.5,
+            'lyrics_smooth_factor'
         )
 
         self.addSeparateWidget(TitleLabel("FFT"))

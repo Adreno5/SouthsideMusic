@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import TypedDict
 
 
@@ -7,6 +8,10 @@ class TimeInfo(TypedDict):
     millionsecs: int
 
 def float2time(time: float) -> TimeInfo:
+    return _float2time(time)
+
+@lru_cache
+def _float2time(time: float) -> TimeInfo:
     minutes = int(time // 60)
     seconds = int(time % 60)
     millionsecs = int(round((time - int(time)) * 1000))

@@ -46,6 +46,8 @@ class Config:
     background_ratio: float = 0.4
     volume: float = 1
 
+    lyrics_smooth_factor: float = 5
+
 cfg = Config()
 
 def restoreOldConfigFormat() -> None:

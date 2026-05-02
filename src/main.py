@@ -924,6 +924,7 @@ class PlayingController(QWidget):
         self.cur_magnitudes: np.ndarray | None = None
         self.final_magnitudes: np.ndarray = np.zeros(513, dtype=np.float32)
         self.smoothed_magnitudes: np.ndarray = np.zeros(513, dtype=np.float32)
+        self.draw_magnitudes: np.ndarray = np.zeros(513, dtype=np.float32)
         self.last_lyric: LyricInfo = LyricInfo(time=0, content="")
 
         self.time_label = QLabel()
@@ -1139,7 +1140,7 @@ class PlayingController(QWidget):
                         "option": "update_fft",
                         "magnitudes": [
                             float(item) * cfg.sfft_multiple
-                            for item in self.final_magnitudes.tolist()
+                            for item in self.draw_magnitudes.tolist()
                         ],
                     }
                 )
@@ -1218,6 +1219,11 @@ class PlayingController(QWidget):
             and self.cur_freqs is not None
             and self.cur_magnitudes is not None
         ):
+            self.draw_magnitudes = np.maximum(
+                self.final_magnitudes, self.draw_magnitudes
+            )
+            self.draw_magnitudes = np.maximum(self.draw_magnitudes * 0.8, 0)
+
             path = QPainterPath(QPointF(0, 0))
             total = int(self.cur_magnitudes.size * 0.67)
             for i in range(total):
@@ -1226,7 +1232,7 @@ class PlayingController(QWidget):
                     QPointF(
                         x,
                         (
-                            (self.final_magnitudes[i] * ((1 + (i * 0.01)) - 0.1))
+                            (self.draw_magnitudes[i] * ((1 + (i * 0.01)) - 0.1))
                             * cfg.cfft_multiple
                         )
                         + 3.5,
@@ -1495,13 +1501,12 @@ class LyricsViewer(QWidget):
         return super().wheelEvent(event)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        if self.hovering_lyric:
+        if self.hovering_lyric and event.button() == Qt.MouseButton.LeftButton:
             player.setPosition(self.hovering_lyric["time"])
             self.selecting = False
             self.hovering_lyric = None
             self.mouse_pos = None
         return super().mousePressEvent(event)
-
 
 class PlayingPage(QWidget):
     imageLoaded = Signal(bytes)
@@ -2565,29 +2570,6 @@ class PlayingPage(QWidget):
             player.load(audio)
             self.total_length = player.getLength()
 
-        try:
-            data = apis.track.GetTrackLyricsNew(song_storable.id)
-            assert isinstance(data, dict), "Invalid response"
-            mgr.cur = data.get("lrc", {}).get("lyric", "[00:00.000]")
-            tlyric = data.get("tlyric")
-            if isinstance(tlyric, dict):
-                transmgr.cur = "\n".join(tlyric.get("lyric", "").splitlines()[1:])
-            else:
-                transmgr.cur = "[00:00.000]"
-            ymgr.cur = data.get("yrc", {}).get("lyric", "")
-        except Exception:
-            logging.exception("failed to download lyrics for storable playback")
-            mgr.cur = song_storable.lyric
-            if song_storable.translated_lyric:
-                transmgr.cur = song_storable.translated_lyric
-            else:
-                transmgr.cur = "[00:00.000]"
-            ymgr.cur = ""
-        finally:
-            mgr.parse()
-            transmgr.parse()
-            ymgr.parse()
-
         if not player.isPlaying():
             player.play()
 
@@ -2596,6 +2578,46 @@ class PlayingPage(QWidget):
         self.next_song_gain = None
 
         self.sendSongFMAndInfo()
+
+        lyric_target = song_storable
+        lyric_result: dict | None = None
+
+        def _download_lyrics():
+            nonlocal lyric_result
+            try:
+                data = apis.track.GetTrackLyricsNew(song_storable.id)
+                assert isinstance(data, dict), "Invalid response"
+                lyric_result = data
+            except Exception:
+                logging.exception("failed to download lyrics for storable playback")
+                lyric_result = None
+
+        def _apply_lyrics():
+            if self.cur is None or self.cur.storable is not lyric_target:
+                return
+
+            if lyric_result is None:
+                mgr.cur = lyric_target.lyric
+                if lyric_target.translated_lyric:
+                    transmgr.cur = lyric_target.translated_lyric
+                else:
+                    transmgr.cur = "[00:00.000]"
+                ymgr.cur = ""
+            else:
+                mgr.cur = lyric_result.get("lrc", {}).get("lyric", "[00:00.000]")
+                tlyric = lyric_result.get("tlyric")
+                if isinstance(tlyric, dict):
+                    transmgr.cur = "\n".join(tlyric.get("lyric", "").splitlines()[1:])
+                else:
+                    transmgr.cur = "[00:00.000]"
+                ymgr.cur = lyric_result.get("yrc", {}).get("lyric", "")
+
+            mgr.parse()
+            transmgr.parse()
+            ymgr.parse()
+            self.sendSongFMAndInfo()
+
+        doWithMultiThreading(_download_lyrics, (), mwindow, _apply_lyrics)
 
     def loadMusicFromBase64(self, content_base64: str, gain: float):
         music_bytes = base64.b64decode(content_base64)

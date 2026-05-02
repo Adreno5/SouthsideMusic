@@ -205,7 +205,6 @@ import numpy as np
 from qfluentwidgets import *  # type: ignore
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 from qframelesswindow import TitleBar
-import requests
 
 import math
 
@@ -237,6 +236,7 @@ from utils.dialog_util import QRCodeLoginDialog, get_value_bylist, get_text_line
 from utils.websocket_util import WebSocketServer, ws_server, ws_handler
 from utils import darkdetect_util as darkdetect
 from utils.soundfile_util import getSongFormat, saveSongWithMetaInformations
+from utils import requests_util as requests
 
 from pyncm import apis
 import pyncm as ncm
@@ -435,11 +435,7 @@ class SongCard(QWidget):
 
                 # Download image
                 image_bytes = requests.get(
-                    image_url,
-                    headers={
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0",
-                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                    },
+                    image_url
                 ).content
 
                 # Download music
@@ -450,10 +446,6 @@ class SongCard(QWidget):
                 logging.debug(f"{music_url['data'][0]['url']=}")  # type: ignore
                 music_bytes = requests.get(
                     music_url["data"][0]["url"],  # type: ignore
-                    headers={
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0",
-                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                    },
                 ).content
 
                 # Download lyrics
@@ -563,10 +555,6 @@ class SongCard(QWidget):
 
                 image: bytes = requests.get(
                     self.detail["image_url"],
-                    headers={
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0",
-                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                    },
                 ).content
 
                 self.imageLoaded.emit(image)
@@ -661,9 +649,6 @@ class _SongCardItem(QWidget):
                     image_url = response["songs"][0]["al"]["picUrl"] # type: ignore
                     image_bytes = requests.get(
                         image_url,
-                        headers={
-                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0",
-                        },
                     ).content
             except Exception as e:
                 logging.warning(f"failed to auto-download image for {storable.id}: {e}")
@@ -713,17 +698,32 @@ def exportSong(card: _SongCardItem):
         
     if export_path:
         try:
-            with open(os.path.join(MUSIC_DATA_DIR, card.storable.content_cache_hash), 'rb') as song:
-                with open(os.path.join(IMAGE_DATA_DIR, card.storable.image_cache_hash), 'rb') as image:
-                    saveSongWithMetaInformations(
-                        song.read(),
-                        image.read(),
-                        card.storable.name,
-                        card.storable.artists,
-                        export_path
-                    )
+            def _export():
+                with ncm.GetCurrentSession():
+                    response = apis.track.GetTrackDetail(song_ids=[card.storable.id])
+                    assert isinstance(response, dict), "Invalid response"
+                    image_url = response["songs"][0]["al"]["picUrl"]  # type: ignore
 
-            InfoBar.success('Export', f'Exported song {card.storable.name}', parent=mwindow, duration=5000)
+                    logging.info(f'{image_url=}')
+
+                    # Download image
+                    image_bytes = requests.get(
+                        image_url,
+                    ).content
+
+                    with open(os.path.join(MUSIC_DATA_DIR, card.storable.content_cache_hash), 'rb') as song:
+                        saveSongWithMetaInformations(
+                            song.read(),
+                            image_bytes,
+                            card.storable.name,
+                            card.storable.artists,
+                            export_path
+                        )
+
+            def _final():
+                InfoBar.success('Export', f'Exported song {card.storable.name}', parent=mwindow, duration=5000)
+
+            doWithMultiThreading(_export, (), mwindow, _final)
         except Exception as e:
             raise e
         
@@ -1765,10 +1765,6 @@ class PlayingPage(QWidget):
             def _do():
                 img_bytes = requests.get(
                     self.cur.detail["image_url"],  # type: ignore
-                    headers={
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0",
-                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                    },
                 ).content
                 self.imageLoaded.emit(img_bytes)
 
@@ -2145,10 +2141,6 @@ class PlayingPage(QWidget):
                         image_url = response["songs"][0]["al"]["picUrl"]  # type: ignore
                         prepared["image"] = requests.get(
                             image_url,
-                            headers={
-                                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0",
-                                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                            },
                         ).content
 
                     if music_missing:

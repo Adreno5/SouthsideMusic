@@ -229,6 +229,7 @@ from types import FrameType, TracebackType
 from typing import Callable, TextIO, Union, cast
 import numpy as np
 import toml
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from qfluentwidgets import *  # type: ignore
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 from qframelesswindow import TitleBar
@@ -379,67 +380,99 @@ def checkForUpdates() -> UpdateInfo | None:
 
 def applyUpdate(update_info: UpdateInfo) -> bool:
     try:
-        for item in update_info["files"]:
+        total = max(1, len(update_info["files"]))
+        completed = 0
+        progress_lock = threading.Lock()
+        cfg.progress = 0
+        cfg.progress_inter = False
+        cfg.show_progress = True
+
+        def _download_file(item: UpdateFileInfo) -> None:
+            nonlocal completed
             if _git_blob_sha(item["path"]) == item["sha"]:
-                continue
+                with progress_lock:
+                    completed += 1
+                    cfg.progress = completed / total
+                return
             data = requests.get(item["download_url"]).content
             path = Path(item["path"])
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
+            with progress_lock:
+                completed += 1
+                cfg.progress = completed / total
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [
+                executor.submit(_download_file, item) for item in update_info["files"]
+            ]
+            for future in as_completed(futures):
+                future.result()
+
+        cfg.progress = 1
+        cfg.show_progress = False
         return True
     except Exception:
+        cfg.show_progress = False
         logging.exception("failed to apply update")
         return False
 
 
 def startUpdateCheck() -> None:
-    update_result: UpdateInfo | None = None
-
     def _check():
-        nonlocal update_result
         try:
             update_result = checkForUpdates()
         except Exception:
             logging.exception("failed to check for updates")
-            update_result = None
-
-    def _finish():
-        global pending_update
+            return
         if update_result is None:
             return
-        pending_update = update_result
-        reply = QMessageBox.question(
-            mwindow,
-            "Update Available",
-            f"Version v{update_result['newest']} is available. Update now?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            applyUpdateImmediately(update_result)
-        else:
-            mwindow.update_deferred = True
 
-    doWithMultiThreading(_check, (), mwindow, _finish)
+        def _finish():
+            global pending_update
+            pending_update = update_result
+            reply = QMessageBox.question(
+                mwindow,
+                "Update Available",
+                f"Version v{update_result['newest']} is available. Update now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                threading.Thread(
+                    target=applyUpdateImmediately,
+                    args=(update_result,),
+                    daemon=False,
+                ).start()
+            else:
+                mwindow.update_deferred = True
+
+        mwindow.addScheduledTask(_finish)
+
+    threading.Thread(target=_check, daemon=True).start()
 
 
 def applyUpdateImmediately(update_info: UpdateInfo) -> None:
     success = applyUpdate(update_info)
-    if success:
-        QMessageBox.information(
-            mwindow,
-            "Update Complete",
-            "Update completed. Please restart the app.",
-            QMessageBox.StandardButton.Ok,
-        )
-    else:
-        QMessageBox.warning(
-            mwindow,
-            "Update Failed",
-            "Failed to update. Please try again later.",
-            QMessageBox.StandardButton.Ok,
-        )
-    sys.exit(0)
+
+    def _show_result():
+        if success:
+            QMessageBox.information(
+                mwindow,
+                "Update Complete",
+                "Update completed. Please restart the app.",
+                QMessageBox.StandardButton.Ok,
+            )
+            mwindow.close()
+        else:
+            QMessageBox.warning(
+                mwindow,
+                "Update Failed",
+                "Failed to update. Please try again later.",
+                QMessageBox.StandardButton.Ok,
+            )
+
+    mwindow.addScheduledTask(_show_result)
 
 
 def applyDeferredUpdateAndExit() -> None:
@@ -1552,7 +1585,7 @@ class LyricsViewer(QWidget):
         current_line = (
             ymgr.getCurrentLyric(position) if use_yrc else mgr.getCurrentLyric(position)
         )
-        y = int(self.draw_offset + current_baseline)
+        y = self.draw_offset + current_baseline
         for i, line in enumerate(lines):
             is_current_line = line == current_line
             if is_current_line:
@@ -1581,7 +1614,7 @@ class LyricsViewer(QWidget):
                 base_color = QColor(color)
                 base_color.setAlpha(120)
                 painter.setPen(base_color)
-                painter.drawText(int(self.draw_x_offset), y, content)
+                painter.drawText(int(self.draw_x_offset), int(y), content)
 
                 x = 0.0
                 clip_y = int(y - self.metri.ascent())
@@ -1604,12 +1637,14 @@ class LyricsViewer(QWidget):
                             clip_h,
                         )
                         painter.setPen(color)
-                        painter.drawText(int(self.draw_x_offset), y, content)
+                        painter.drawText(int(self.draw_x_offset), int(y), content)
                         painter.restore()
                     x += text_width
             else:
                 painter.setPen(color)
-                painter.drawText(int(self.draw_x_offset), y, line["content"].strip())
+                painter.drawText(
+                    int(self.draw_x_offset), int(y), line["content"].strip()
+                )
 
             if transmgr.parsed:
                 trans_time = line["time"]
@@ -1665,11 +1700,11 @@ class LyricsViewer(QWidget):
                     timetxt = f"{f'{info["minutes"]}'.zfill(2)}:{f'{info["seconds"]}'.zfill(2)}"
                     painter.drawText(
                         int(self.width() - self.metri.horizontalAdvance(timetxt) - 5),
-                        y,
+                        int(y),
                         timetxt,
                     )
 
-            y += int(line_step)
+            y += line_step
 
         painter.end()
 

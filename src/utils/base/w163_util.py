@@ -11,10 +11,6 @@ class CloudMusicUtil(BaseLyricUtil):
         pass
     
     def search(self, keyword: str) -> list[SongInfo]:
-        return self._search_impl(keyword)
-    
-    @lru_cache(maxsize=128)
-    def _search_impl(self, keyword: str) -> list[SongInfo]:
         api = NeteaseCloudMusicApi()
         response = api.search(keyword).data
         assert isinstance(response, dict), 'Invalid response'

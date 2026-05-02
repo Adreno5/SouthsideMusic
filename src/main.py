@@ -560,7 +560,6 @@ class SongCard(QWidget):
     def loadDetailAndImage(self):
         self.load = True
 
-        @lru_cache(maxsize=128)
         def _load():
             with ncm.GetCurrentSession():
                 response = apis.track.GetTrackDetail(song_ids=[self.info["id"]])

@@ -992,13 +992,15 @@ class PlayingController(QWidget):
 
     def toggleExpand(self):
         self.expanded = not self.expanded
+        self.expand_btn.setEnabled(False)
 
         if self.expanded:
             if not mwindow.isMaximized():
                 mwindow_anim = QPropertyAnimation(mwindow, b"geometry", self)
                 mwindow_anim.setDuration(200)
-                mwindow_anim.setEasingCurve(QEasingCurve.Type.OutBack)
+                mwindow_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
                 mwindow_anim.setStartValue(mwindow.geometry())
+                mwindow_anim.finished.connect(lambda: self.expand_btn.setEnabled(True))
                 mwindow_anim.setEndValue(
                     QRect(
                         mwindow.x() - 250,
@@ -1018,8 +1020,9 @@ class PlayingController(QWidget):
             if not mwindow.isMaximized():
                 mwindow_anim = QPropertyAnimation(mwindow, b"geometry", self)
                 mwindow_anim.setDuration(200)
-                mwindow_anim.setEasingCurve(QEasingCurve.Type.OutBack)
+                mwindow_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
                 mwindow_anim.setStartValue(mwindow.geometry())
+                mwindow_anim.finished.connect(lambda: self.expand_btn.setEnabled(True))
                 mwindow_anim.setEndValue(
                     QRect(
                         mwindow.x() + 250,
@@ -1281,9 +1284,12 @@ class LyricsViewer(QWidget):
         self.draw_offset: float = 0
         self.target_draw_offset: float = 0
 
-        self.nftt = QFont(harmony_font_family, 14)
-        self.font_height = QFontMetricsF(self.nftt).height()
-        self.metri = QFontMetricsF(self.nftt)
+        self.ft = QFont(harmony_font_family, 14)
+        self.font_height = QFontMetricsF(self.ft).height()
+        self.metri = QFontMetricsF(self.ft)
+
+        self.tft = QFont(harmony_font_family, 10)
+        self.theight = QFontMetricsF(self.tft).height()
 
         self.selecting: bool = False
         self.hovering_lyric: LyricInfo | None = None
@@ -1326,17 +1332,23 @@ class LyricsViewer(QWidget):
 
         painter = QPainter(self)
         painter.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
-        painter.setFont(self.nftt)
+        painter.setFont(self.ft)
 
         y = int(self.draw_offset) + self.height() // 2
-        for line in lines:
+        for i, line in enumerate(lines):
             if line == mgr.getCurrentLyric(player.getPosition()):
                 tar_color = QColor(255, 255, 255) if darkdetect.isDark() else QColor(0, 0, 0)
             else:
                 tar_color = QColor(240, 240, 240, 120) if darkdetect.isDark() else QColor(55, 55, 55, 120)
             color = mixColor(mwindow.song_theme, tar_color, cfg.background_ratio / 2) if mwindow.song_theme else tar_color
             painter.setPen(color)
-            painter.drawText(int((self.width() - self.metri.horizontalAdvance(line['content'])) / 2), y, line['content'])
+            painter.drawText(0, y, line['content'])
+
+            if transmgr.parsed:
+                painter.setFont(self.tft)
+                painter.setPen(QColor(255, 255, 255, 120) if darkdetect.isDark() else QColor(0, 0, 0, 120))
+                painter.drawText(0, int(y + self.font_height + 2), transmgr.getCurrentLyric(line['time'])['content'])
+                painter.setFont(self.ft)
 
             if (self.mouse_pos and self.selecting) and self.mouse_pos.y() > y - self.font_height and self.mouse_pos.y() < y + self.font_height + 5:
                 self.hovering_lyric = line
@@ -1345,7 +1357,8 @@ class LyricsViewer(QWidget):
                 painter.drawRoundedRect(0, int(y - self.font_height), self.width(), int(self.font_height + 5), 5, 5)
                 painter.setPen(color)
                 info = float2time(self.hovering_lyric['time'])
-                painter.drawText(0, y, f'{f'{info['minutes']}'.zfill(2)}:{f'{info['seconds']}'.zfill(2)}')
+                timetxt = f'{f'{info['minutes']}'.zfill(2)}:{f'{info['seconds']}'.zfill(2)}'
+                painter.drawText(int(self.width() - self.metri.horizontalAdvance(timetxt) - 5), y, timetxt)
 
             y += int(self.font_height * 3)
 
@@ -1370,6 +1383,7 @@ class LyricsViewer(QWidget):
             self.hovering_lyric = None
             self.mouse_pos = None
         return super().mousePressEvent(event)
+    
 class PlayingPage(QWidget):
     imageLoaded = Signal(bytes)
     preloadRetryRequested = Signal()
@@ -1410,8 +1424,8 @@ class PlayingPage(QWidget):
 
         ali = Qt.AlignmentFlag
 
-        top_layout = FlowLayout(needAni=False)
-        # top_layout.setAnimation(500, QEasingCurve.Type.OutCubic)
+        top_layout = FlowLayout(needAni=True)
+        top_layout.setAnimation(500, QEasingCurve.Type.OutCubic)
         topleft_layout = QVBoxLayout()
         topright_widget = QWidget()
         topright_widget.setLayout(topleft_layout)
@@ -1431,15 +1445,19 @@ class PlayingPage(QWidget):
         topleft_layout.addWidget(
             self.artists_label, alignment=ali.AlignLeft | ali.AlignTop
         )
+        self.artists_label.setWordWrap(True)
+        self.title_label.setWordWrap(True)
         top_layout.addWidget(topright_widget)
 
+        contents_widget = QWidget()
         contents_layout.addLayout(top_layout)
 
         self.controller.setFixedWidth(self.width())
 
-        global_layout.addLayout(contents_layout)
+        contents_widget.setLayout(contents_layout)
+        global_layout.addWidget(contents_widget, stretch=-1)
         self.viewer = LyricsViewer()
-        global_layout.addWidget(self.viewer)
+        global_layout.addWidget(self.viewer, stretch=2)
 
         self.expanded_widget = QWidget()
         expanded_layout = QVBoxLayout()

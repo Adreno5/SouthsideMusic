@@ -2,59 +2,95 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import hashlib
 import requests
 import toml
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+
+def file_sha(path: str) -> str | None:
+    file = Path(path)
+    if not file.exists() or not file.is_file():
+        return None
+    data = file.read_bytes()
+    return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+
+
 if __name__ == '__main__':
     print('[UPDATOR] detecting updates')
-    with open('pyproject.toml', 'r+', encoding='utf-8') as f:
-        parsed = toml.load(f)
-        ver: int = int(parsed['project']['version'].removeprefix('v'))
-        print(f'[UPDATOR] current version: v{ver}')
-        data = requests.get('https://api.github.com/repos/Adreno5/SouthsideMusic/releases/latest').json()
-        newest: int = int(data['tag_name'].removeprefix('v'))
-        
-        if newest > ver:
-            print(f'[UPDATOR] update available: v{newest}')
+    try:
+        with open('pyproject.toml', 'r+', encoding='utf-8') as f:
+            parsed = toml.load(f)
+            ver: int = int(parsed['project']['version'].removeprefix('v'))
+            print(f'[UPDATOR] current version: v{ver}')
+            data = requests.get(
+                'https://api.github.com/repos/Adreno5/SouthsideMusic/releases/latest'
+            ).json()
+            newest: int = int(data['tag_name'].removeprefix('v'))
 
-            file_list = []
-            def collect_files(api_url):
-                items = requests.get(api_url).json()
-                for item in items:
-                    if item['type'] == 'file':
-                        file_list.append((item['path'], item['download_url']))
-                    elif item['type'] == 'dir':
-                        collect_files(item['url'])
+            if newest > ver:
+                print(f'[UPDATOR] update available: v{newest}')
 
-            print('[UPDATOR] collecting file list...')
-            collect_files('https://api.github.com/repos/Adreno5/SouthsideMusic/contents/src')
-            print(f'[UPDATOR] {len(file_list)} files to download')
+                file_list = []
 
-            def download_file(path, url):
-                try:
-                    print(f'[UPDATOR] downloading {path}')
-                    Path(path).parent.mkdir(parents=True, exist_ok=True)
-                    txt = requests.get(url).text
-                    with open(path, 'w', encoding='utf-8') as fp:
-                        fp.write(txt)
-                    print(f'[UPDATOR] downloaded {path} ({len(txt)} chars)')
-                except Exception as e:
-                    print(f'[UPDATOR] failed to download {path}: {e}')
+                def collect_files(api_url):
+                    items = requests.get(api_url).json()
+                    for item in items:
+                        if item['type'] == 'file':
+                            file_list.append(
+                                (item['path'], item['download_url'], item['sha'])
+                            )
+                        elif item['type'] == 'dir':
+                            collect_files(item['url'])
 
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                futures = [executor.submit(download_file, path, url) for path, url in file_list]
-                for future in as_completed(futures):
-                    future.result()
-            
-            print('[UPDATOR] downloading pyproject.toml')
-            txt = requests.get('https://raw.githubusercontent.com/Adreno5/SouthsideMusic/master/pyproject.toml').text
-            with open('pyproject.toml', 'w', encoding='utf-8') as fp:
-                fp.write(txt)
-            print('[UPDATOR] downloaded all files needed')
+                print('[UPDATOR] collecting file list...')
+                collect_files(
+                    'https://api.github.com/repos/Adreno5/SouthsideMusic/contents/src'
+                )
+                pyproject_info = requests.get(
+                    'https://api.github.com/repos/Adreno5/SouthsideMusic/contents/pyproject.toml'
+                ).json()
+                file_list.append(
+                    (
+                        pyproject_info['path'],
+                        pyproject_info['download_url'],
+                        pyproject_info['sha'],
+                    )
+                )
+                update_list = [
+                    item for item in file_list if file_sha(item[0]) != item[2]
+                ]
+                print(
+                    f'[UPDATOR] {len(update_list)} / {len(file_list)} files need update'
+                )
 
-        else:
-            print('[UPDATOR] no update available')
+                def download_file(path, url, sha):
+                    try:
+                        if file_sha(path) == sha:
+                            print(f'[UPDATOR] skipped {path}')
+                            return
+                        print(f'[UPDATOR] downloading {path}')
+                        Path(path).parent.mkdir(parents=True, exist_ok=True)
+                        data = requests.get(url).content
+                        with open(path, 'wb') as fp:
+                            fp.write(data)
+                        print(f'[UPDATOR] downloaded {path} ({len(data)} bytes)')
+                    except Exception as e:
+                        print(f'[UPDATOR] failed to download {path}: {e}')
+
+                with ThreadPoolExecutor(max_workers=5) as executor:
+                    futures = [
+                        executor.submit(download_file, path, url, sha)
+                        for path, url, sha in update_list
+                    ]
+                    for future in as_completed(futures):
+                        future.result()
+                print('[UPDATOR] downloaded all files needed')
+
+            else:
+                print('[UPDATOR] no update available')
+    except:
+        print('[UPDATOR] no update available')
 
     print('[LAUNCH] launching')
 
@@ -76,9 +112,10 @@ if __name__ == '__main__':
     powershell_cmd = [
         'powershell.exe',
         '-NoProfile',
-        '-ExecutionPolicy', 'Bypass',
+        '-ExecutionPolicy',
+        'Bypass',
         '-Command',
-        f'cd \'{cwd.as_posix()}\'; & \'{python.as_posix()}\' \'{mainpy.as_posix()}\''
+        f'cd \'{cwd.as_posix()}\'; & \'{python.as_posix()}\' \'{mainpy.as_posix()}\'',
     ]
 
     print(f'[LAUNCH] excution command: {' '.join(powershell_cmd)}')
@@ -92,7 +129,7 @@ if __name__ == '__main__':
         stderr=sys.stderr,
         stdin=sys.stdin,
         text=True,
-        cwd=cwd.as_posix()
+        cwd=cwd.as_posix(),
     )
 
     process.wait()

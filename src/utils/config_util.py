@@ -47,6 +47,7 @@ class Config:
     volume: float = 1
 
     lyrics_smooth_factor: float = 5
+    acceleration_smooth_factor: float = 5
 
 cfg = Config()
 

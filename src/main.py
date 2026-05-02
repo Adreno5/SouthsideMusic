@@ -1289,6 +1289,9 @@ class LyricsViewer(QWidget):
         self.draw_offset: float = 0
         self.target_draw_offset: float = 0
 
+        self.acc: float = 0
+        self.target_acc: float = 0
+
         self.ft = QFont(harmony_font_family, 14)
         self.font_height = QFontMetricsF(self.ft).height()
         self.metri = QFontMetricsF(self.ft)
@@ -1317,9 +1320,12 @@ class LyricsViewer(QWidget):
         self.hovering_lyric = None
         if not mgr.parsed:
             return
+        
+        self.target_acc = (self.target_draw_offset - self.draw_offset) * self.delta * cfg.lyrics_smooth_factor
+        self.acc += (self.target_acc - self.acc) * self.delta * cfg.acceleration_smooth_factor
 
         if self.draw_offset != self.target_draw_offset:
-            self.draw_offset += (self.target_draw_offset - self.draw_offset) * self.delta * cfg.lyrics_smooth_factor
+            self.draw_offset += self.acc
         if abs(self.target_draw_offset - self.draw_offset) < 0.01:
             self.draw_offset = self.target_draw_offset
 
@@ -1549,6 +1555,13 @@ class PlayingPage(QWidget):
             'larger value means a more sudden change',
             0, QApplication.primaryScreen().refreshRate(), 0.5,
             'lyrics_smooth_factor'
+        )
+
+        self.addNumberSetting(
+            'Acceleration Smooth Factor',
+            'smaller value means a more bounce effect',
+            0, QApplication.primaryScreen().refreshRate(), 0.5,
+            'acceleration_smooth_factor'
         )
 
         self.addSeparateWidget(TitleLabel("FFT"))

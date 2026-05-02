@@ -309,9 +309,6 @@ class UpdateInfo(TypedDict):
     files: list[UpdateFileInfo]
 
 
-pending_update: UpdateInfo | None = None
-
-
 def _git_blob_sha(path: str) -> str | None:
     file = Path(path)
     if not file.exists() or not file.is_file():
@@ -427,27 +424,7 @@ def startUpdateCheck() -> None:
             return
         if update_result is None:
             return
-
-        def _finish():
-            global pending_update
-            pending_update = update_result
-            reply = QMessageBox.question(
-                mwindow,
-                "Update Available",
-                f"Version v{update_result['newest']} is available. Update now?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes,
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                threading.Thread(
-                    target=applyUpdateImmediately,
-                    args=(update_result,),
-                    daemon=False,
-                ).start()
-            else:
-                mwindow.update_deferred = True
-
-        mwindow.addScheduledTask(_finish)
+        applyUpdateImmediately(update_result)
 
     threading.Thread(target=_check, daemon=True).start()
 
@@ -473,12 +450,6 @@ def applyUpdateImmediately(update_info: UpdateInfo) -> None:
             )
 
     mwindow.addScheduledTask(_show_result)
-
-
-def applyDeferredUpdateAndExit() -> None:
-    if pending_update is not None:
-        applyUpdate(pending_update)
-    sys.exit(0)
 
 
 def patchedExceptHook(
@@ -3674,7 +3645,6 @@ class MainWindow(FluentWindowBase):
 
         self.closing = False
         self.connected = False
-        self.update_deferred = False
 
         self.setWindowTitle("Southside Music")
 
@@ -3866,10 +3836,6 @@ class MainWindow(FluentWindowBase):
         ws_server.stop()
         ws_server.join()
         player.stop()
-
-        if self.update_deferred and pending_update is not None:
-            threading.Thread(target=applyDeferredUpdateAndExit, daemon=False).start()
-            return
 
         sys.exit(0)
 

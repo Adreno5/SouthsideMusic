@@ -1382,11 +1382,14 @@ class LyricsViewer(QWidget):
         for i, line in enumerate(lines):
             is_current_line = line == current_line
             if is_current_line:
-                tar_color = (
-                    QColor(255, 255, 255) if darkdetect.isDark() else QColor(0, 0, 0)
-                )
-            elif line.get("isMetadata"):
-                tar_color = QColor(255, 255, 255)
+                if line.get("isMetadata"):
+                    tar_color = QColor(255, 255, 255)
+                else:
+                    tar_color = (
+                        QColor(255, 255, 255)
+                        if darkdetect.isDark()
+                        else QColor(0, 0, 0)
+                    )
             else:
                 tar_color = (
                     QColor(240, 240, 240, 120)

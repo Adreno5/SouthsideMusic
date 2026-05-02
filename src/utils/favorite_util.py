@@ -36,6 +36,7 @@ def _to_favorite_song_object(song: SongStorable) -> dict:
         "lyric": song.lyric,
         "translated_lyric": song.translated_lyric,
         "y_lyric": getattr(song, "y_lyric", ""),
+        "y_lyric_unavailable": getattr(song, "y_lyric_unavailable", False),
         "gain": song.loudness_gain,
         "target_lufs": song.target_lufs,
     }

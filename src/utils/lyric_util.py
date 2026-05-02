@@ -2,12 +2,13 @@ from functools import lru_cache
 import json
 import logging
 import re
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 
 class LyricInfo(TypedDict):
     time: float
     content: str
+    isMetadata: NotRequired[bool]
 
 
 class YRCCharInfo(TypedDict):
@@ -21,6 +22,7 @@ class YRCLyricInfo(TypedDict):
     duration: float
     content: str
     chars: list[YRCCharInfo]
+    isMetadata: NotRequired[bool]
 
 
 _LRC_TIME_RE = re.compile(r"^\[(\d+):(\d+)[.:](\d+)\]")
@@ -53,6 +55,27 @@ def _is_json_metadata(line: str) -> bool:
     except json.JSONDecodeError:
         return False
     return isinstance(obj, dict) and "t" in obj and "c" in obj
+
+
+def _try_parse_json_metadata_line(line: str) -> LyricInfo | None:
+    if not line.startswith("{"):
+        return None
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(obj, dict) or "t" not in obj or "c" not in obj:
+        return None
+    cells = obj.get("c")
+    if not isinstance(cells, list):
+        return None
+    content = "".join(
+        cell.get("tx", "") for cell in cells if isinstance(cell, dict)
+    ).strip()
+    if not content:
+        return None
+    content = content.replace(": ", "：").replace(":", "：")
+    return LyricInfo(time=float(obj["t"]) / 1000, content=content, isMetadata=True)
 
 
 _YRC_LINE_RE = re.compile(r"^\[(\d+),(\d+)\](.*)$")
@@ -147,14 +170,14 @@ class YRCLyricParser:
         return len(self.parsed) - 1
 
     def parse(self) -> None:
-        if not self.cur:
-            return
-
         self._getOffsetedLyric.cache_clear()
         self._getCurrentLyric.cache_clear()
         self._getCurrentLyricIndex.cache_clear()
 
         self.parsed.clear()
+
+        if not self.cur:
+            return
 
         for line in self.cur.splitlines():
             stripped = line.strip()
@@ -164,7 +187,17 @@ class YRCLyricParser:
             if _is_metadata_tag(stripped):
                 continue
 
-            if _is_json_metadata(stripped):
+            metadata = _try_parse_json_metadata_line(stripped)
+            if metadata is not None:
+                self.parsed.append(
+                    YRCLyricInfo(
+                        time=metadata["time"],
+                        duration=0,
+                        content=metadata["content"],
+                        chars=[],
+                        isMetadata=True,
+                    )
+                )
                 continue
 
             info = _try_parse_yrc_line(stripped)
@@ -235,14 +268,14 @@ class LRCLyricParser:
         return len(self.parsed) - 1
 
     def parse(self) -> None:
-        if not self.cur:
-            return
-
         self._getOffsetedLyric.cache_clear()
         self._getCurrentLyric.cache_clear()
         self._getCurrentLyricIndex.cache_clear()
 
         self.parsed.clear()
+
+        if not self.cur:
+            return
 
         for line in self.cur.splitlines():
             stripped = line.strip()

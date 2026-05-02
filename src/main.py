@@ -222,7 +222,7 @@ import subprocess
 import time
 import traceback
 from types import FrameType, TracebackType
-from typing import Callable, TextIO, Union
+from typing import Callable, TextIO, Union, cast
 import numpy as np
 from qfluentwidgets import *  # type: ignore
 from qfluentwidgets.window.fluent_window import FluentWindowBase
@@ -241,7 +241,7 @@ from utils.base.base_util import (
     SongStorable,
 )
 from utils.base.base_util import SongDetail
-from utils.lyric_util import LRCLyricParser, LyricInfo, YRCLyricParser
+from utils.lyric_util import LRCLyricParser, LyricInfo, YRCLyricInfo, YRCLyricParser
 from utils.time_util import float2time
 from utils.favorite_util import (
     loadFavorites,
@@ -1351,9 +1351,12 @@ class LyricsViewer(QWidget):
         if abs(self.target_draw_offset - self.draw_offset) < 0.01:
             self.draw_offset = self.target_draw_offset
 
-        lines: list[LyricInfo] = mgr.parsed
         position = player.getPosition()
-        idx = mgr.getCurrentIndex(position)
+        use_yrc = bool(ymgr.parsed)
+        lines = ymgr.parsed if use_yrc else mgr.parsed
+        idx = (
+            ymgr.getCurrentIndex(position) if use_yrc else mgr.getCurrentIndex(position)
+        )
 
         if not self.selecting:
             self.target_draw_offset = -idx * (self.font_height * 3)
@@ -1372,26 +1375,18 @@ class LyricsViewer(QWidget):
         )
         painter.setFont(self.ft)
 
-        current_lrc = mgr.getCurrentLyric(position)
-        current_yrc = None
-        if ymgr.parsed and idx >= 0:
-            y_candidates = (
-                y_line
-                for y_line in ymgr.parsed
-                if abs(y_line["time"] - current_lrc["time"]) < 2
-            )
-            current_yrc = min(
-                y_candidates,
-                key=lambda y_line: abs(y_line["time"] - current_lrc["time"]),
-                default=None,
-            )
+        current_line = (
+            ymgr.getCurrentLyric(position) if use_yrc else mgr.getCurrentLyric(position)
+        )
         y = int(self.draw_offset) + self.height() // 2
         for i, line in enumerate(lines):
-            is_current_line = line == current_lrc
+            is_current_line = line == current_line
             if is_current_line:
                 tar_color = (
                     QColor(255, 255, 255) if darkdetect.isDark() else QColor(0, 0, 0)
                 )
+            elif line.get("isMetadata"):
+                tar_color = QColor(255, 255, 255)
             else:
                 tar_color = (
                     QColor(240, 240, 240, 120)
@@ -1403,9 +1398,9 @@ class LyricsViewer(QWidget):
                 if mwindow.song_theme
                 else tar_color
             )
-            if is_current_line and current_yrc:
-                y_line = current_yrc
-                content = y_line["content"] or line["content"]
+            if is_current_line and use_yrc and not line.get("isMetadata"):
+                y_line = cast(YRCLyricInfo, line)
+                content = (y_line["content"] or line["content"]).strip()
                 base_color = QColor(color)
                 base_color.setAlpha(120)
                 painter.setPen(base_color)
@@ -1434,9 +1429,23 @@ class LyricsViewer(QWidget):
                     x += text_width
             else:
                 painter.setPen(color)
-                painter.drawText(0, y, line["content"])
+                painter.drawText(0, y, line["content"].strip())
 
             if transmgr.parsed:
+                trans_time = line["time"]
+                if use_yrc:
+                    lrc_candidates = [
+                        lrc_line
+                        for lrc_line in mgr.parsed
+                        if lrc_line["content"].strip() == line["content"].strip()
+                    ]
+                    lrc_line = min(
+                        lrc_candidates,
+                        key=lambda lrc_line: abs(lrc_line["time"] - line["time"]),
+                        default=None,
+                    )
+                    if lrc_line:
+                        trans_time = lrc_line["time"]
                 painter.setFont(self.tft)
                 painter.setPen(
                     QColor(255, 255, 255, 120)
@@ -1446,7 +1455,7 @@ class LyricsViewer(QWidget):
                 painter.drawText(
                     0,
                     int(y + self.font_height + 2),
-                    transmgr.getCurrentLyric(line["time"])["content"],
+                    transmgr.getCurrentLyric(trans_time)["content"].strip(),
                 )
                 painter.setFont(self.ft)
 
@@ -2389,7 +2398,11 @@ class PlayingPage(QWidget):
         music_missing = not song_storable.content_cache_hash or not os.path.exists(
             os.path.join(MUSIC_DATA_DIR, song_storable.content_cache_hash)
         )
-        y_lyric_missing = not song_storable.y_lyric
+        y_lyric = song_storable.y_lyric.strip()
+        y_lyric_available = bool(y_lyric and "(" in y_lyric and "," in y_lyric)
+        y_lyric_missing = (
+            not song_storable.y_lyric_unavailable and not y_lyric_available
+        )
         return image_missing, music_missing, y_lyric_missing
 
     def _write_storable_asset(self, cache_dir: str, data: bytes) -> str:
@@ -2437,8 +2450,10 @@ class PlayingPage(QWidget):
                             song_id=song_storable.id
                         )
                         assert isinstance(lyric_data, dict), "Invalid response"
-                        prepared["y_lyric"] = lyric_data.get("yrc", {}).get(
-                            "lyric", "[00:00.000]"
+                        y_lyric = lyric_data.get("yrc", {}).get("lyric", "")
+                        prepared["y_lyric"] = y_lyric
+                        prepared["y_lyric_unavailable"] = str(
+                            not (y_lyric and "(" in y_lyric and "," in y_lyric)
                         )
             except Exception as e:
                 prepared["error"] = str(e)
@@ -2473,6 +2488,9 @@ class PlayingPage(QWidget):
                     if not isinstance(y_lyric, str):
                         return False
                     song_storable.y_lyric = y_lyric
+                    song_storable.y_lyric_unavailable = (
+                        prepared.get("y_lyric_unavailable") == "True"
+                    )
 
                 saveFavorites(favs)
                 if image_just_persisted:
@@ -2520,7 +2538,14 @@ class PlayingPage(QWidget):
         music_missing: bool,
         y_lyric_missing: bool,
     ):
+        player.stop()
         self.cur = DummyCard(song_storable)
+        mgr.cur = ""
+        transmgr.cur = ""
+        ymgr.cur = ""
+        mgr.parse()
+        transmgr.parse()
+        ymgr.parse()
         self.title_label.setText(song_storable.name)
         self.artists_label.setText(song_storable.artists)
 

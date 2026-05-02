@@ -36,6 +36,7 @@ class SongStorable:
         lyric: str
         translated_lyric: str
         y_lyric: str
+        y_lyric_unavailable: NotRequired[bool]
         gain: float
         target_lufs: int
 
@@ -46,6 +47,7 @@ class SongStorable:
     content_base64: str
     lyric: str
     y_lyric: str
+    y_lyric_unavailable: bool
     translated_lyric: str
 
     loudness_gain: float
@@ -67,6 +69,7 @@ class SongStorable:
         image_cache_hash: str = "",
         content_cache_hash: str = "",
         y_lyric: str = "",
+        y_lyric_unavailable: bool = False,
     ) -> None:
         self.name = info["name"]
         self.artists = info["artists"]
@@ -92,6 +95,7 @@ class SongStorable:
         self.lyric = lyric
         self.translated_lyric = translated_lyric
         self.y_lyric = y_lyric
+        self.y_lyric_unavailable = y_lyric_unavailable
         self.loudness_gain = gain
         self.target_lufs = target_lufs
 
@@ -147,6 +151,8 @@ class SongStorable:
             self.content_cache_hash = ""
         if not hasattr(self, "y_lyric"):
             self.y_lyric = ""
+        if not hasattr(self, "y_lyric_unavailable"):
+            self.y_lyric_unavailable = False
 
     def __setstate__(self, state: dict) -> None:
         self.__dict__.update(state)
@@ -195,6 +201,7 @@ class SongStorable:
             "gain": self.loudness_gain,
             "target_lufs": self.target_lufs,
             "y_lyric": self.y_lyric,
+            "y_lyric_unavailable": self.y_lyric_unavailable,
         }
 
     @staticmethod
@@ -213,6 +220,7 @@ class SongStorable:
             lyric=obj["lyric"],
             translated_lyric=obj.get("translated_lyric", ""),
             y_lyric=obj.get("y_lyric", ""),
+            y_lyric_unavailable=obj.get("y_lyric_unavailable", False),
             gain=obj.get("gain", 1.0),
             target_lufs=obj.get("target_lufs", -16),
         )

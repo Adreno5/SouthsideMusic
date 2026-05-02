@@ -5,6 +5,7 @@ import logging
 import sys
 import datetime
 import os
+import uuid
 from PySide6.QtCore import QEvent
 import pydub
 import threading
@@ -470,19 +471,7 @@ class SongCard(QWidget):
                     music_url["data"][0]["url"],  # type: ignore
                 ).content
 
-                # Download lyrics
-                lyric_data = apis.track.GetTrackLyricsNew(song_id=self.info["id"])
-                assert isinstance(lyric_data, dict), "Invalid response"
-
-                lyric = lyric_data.get("lrc", {}).get("lyric", "[00:00.000]")
-                translated_lyric = lyric_data.get("tlyric", {}).get(
-                    "lyric", "[00:00.000]"
-                )
-                y_lyric = lyric_data.get("yrc", {}).get("lyric", "[00:00.000]")
-
-                result_container.append(
-                    (image_bytes, music_bytes, lyric, y_lyric, translated_lyric)
-                )
+                result_container.append((image_bytes, music_bytes))
 
         def _on_finished():
             if not result_container:
@@ -491,9 +480,7 @@ class SongCard(QWidget):
                 )
                 return
 
-            image_bytes, music_bytes, lyric, y_lyric, translated_lyric = (
-                result_container[0]
-            )
+            image_bytes, music_bytes = result_container[0]
 
             # Prepare folder list for selection
             folder_names = [folder["folder_name"] for folder in favs]
@@ -542,13 +529,12 @@ class SongCard(QWidget):
                     self.info,
                     image_bytes,
                     music_bytes,
-                    lyric,
-                    translated_lyric,
+                    "[00:00.000]",
+                    "[00:00.000]",
                     getAdjustedGainFactor(
                         -16, AudioSegment.from_file(io.BytesIO(music_bytes))
                     ),
                     cfg.target_lufs,
-                    y_lyric=y_lyric,
                 )
                 target_folder["songs"].append(song_storable)  # type: ignore
 
@@ -2040,29 +2026,7 @@ class PlayingPage(QWidget):
             else:
                 self.applyNewLUFS()
 
-            # Use local lyrics if available
-            if hasattr(self.cur.storable, "lyric") and self.cur.storable.lyric:
-                mgr.cur = self.cur.storable.lyric
-
-                if (
-                    hasattr(self.cur.storable, "translated_lyric")
-                    and self.cur.storable.translated_lyric
-                ):
-                    transmgr.cur = self.cur.storable.translated_lyric
-                else:
-                    transmgr.cur = "[00:00.000]"
-
-                ymgr.cur = getattr(self.cur.storable, "y_lyric", "[00:00.000]")
-
-                def _parse_local():
-                    mgr.parse()
-                    transmgr.parse()
-                    ymgr.parse()
-
-                doWithMultiThreading(_parse_local, (), mwindow)
-            else:
-                # Fallback to network download
-                self.downloadLyric()
+            self.downloadLyric()
 
             mwindow.switchTo(dp)
         else:
@@ -2124,9 +2088,7 @@ class PlayingPage(QWidget):
                     daemon=True,
                 ).start()
 
-            def _download_then_preload(
-                image_missing: bool, music_missing: bool, y_lyric_missing: bool
-            ):
+            def _download_then_preload(image_missing: bool, music_missing: bool):
                 logging.info("downloading next song before preload")
                 self.next_song_audio = None
                 self.next_song_gain = None
@@ -2144,7 +2106,6 @@ class PlayingPage(QWidget):
                     next_song,
                     image_missing,
                     music_missing,
-                    y_lyric_missing,
                     _after_download,
                 )
 
@@ -2198,11 +2159,9 @@ class PlayingPage(QWidget):
 
                 self.preloaded = True
 
-            image_missing, music_missing, y_lyric_missing = (
-                self._storable_asset_missing(next_song)
-            )
-            if image_missing or music_missing or y_lyric_missing:
-                _download_then_preload(image_missing, music_missing, y_lyric_missing)
+            image_missing, music_missing = self._storable_asset_missing(next_song)
+            if image_missing or music_missing:
+                _download_then_preload(image_missing, music_missing)
             else:
                 _start_preload()
         finally:
@@ -2214,12 +2173,13 @@ class PlayingPage(QWidget):
         def _parse():
             with ncm.GetCurrentSession():
                 data: dict = apis.track.GetTrackLyricsNew(str(self.cur.info["id"]))  # type: ignore
-            mgr.cur = data["lrc"]["lyric"]
-            if data.get("tlyric"):
-                transmgr.cur = "\n".join(data["tlyric"]["lyric"].splitlines()[1:])
+            mgr.cur = data.get("lrc", {}).get("lyric", "[00:00.000]")
+            tlyric = data.get("tlyric")
+            if isinstance(tlyric, dict):
+                transmgr.cur = "\n".join(tlyric.get("lyric", "").splitlines()[1:])
             else:
                 transmgr.cur = "[00:00.000]"
-            ymgr.cur = data.get("yrc", {}).get("lyric", "[00:00.000]")
+            ymgr.cur = data.get("yrc", {}).get("lyric", "")
 
             def _real():
                 mgr.parse()
@@ -2391,9 +2351,7 @@ class PlayingPage(QWidget):
         song = self.playlist[index]
         self.playStorable(song)
 
-    def _storable_asset_missing(
-        self, song_storable: SongStorable
-    ) -> tuple[bool, bool, bool]:
+    def _storable_asset_missing(self, song_storable: SongStorable) -> tuple[bool, bool]:
         song_storable._ensure_cache_fields()
         image_missing = not song_storable.image_cache_hash or not os.path.exists(
             os.path.join(IMAGE_DATA_DIR, song_storable.image_cache_hash)
@@ -2401,12 +2359,7 @@ class PlayingPage(QWidget):
         music_missing = not song_storable.content_cache_hash or not os.path.exists(
             os.path.join(MUSIC_DATA_DIR, song_storable.content_cache_hash)
         )
-        y_lyric = song_storable.y_lyric.strip()
-        y_lyric_available = bool(y_lyric and "(" in y_lyric and "," in y_lyric)
-        y_lyric_missing = (
-            not song_storable.y_lyric_unavailable and not y_lyric_available
-        )
-        return image_missing, music_missing, y_lyric_missing
+        return image_missing, music_missing
 
     def _write_storable_asset(self, cache_dir: str, data: bytes) -> str:
         os.makedirs(cache_dir, exist_ok=True)
@@ -2422,7 +2375,6 @@ class PlayingPage(QWidget):
         song_storable: SongStorable,
         image_missing: bool,
         music_missing: bool,
-        y_lyric_missing: bool,
         finished: Callable[[bool], None],
     ):
         prepared: dict[str, bytes | str] = {}
@@ -2448,16 +2400,6 @@ class PlayingPage(QWidget):
                         logging.debug(f"{music_url['data'][0]['url']=}")  # type: ignore
                         prepared["music_url"] = music_url["data"][0]["url"]  # type: ignore
 
-                    if y_lyric_missing:
-                        lyric_data = apis.track.GetTrackLyricsNew(
-                            song_id=song_storable.id
-                        )
-                        assert isinstance(lyric_data, dict), "Invalid response"
-                        y_lyric = lyric_data.get("yrc", {}).get("lyric", "")
-                        prepared["y_lyric"] = y_lyric
-                        prepared["y_lyric_unavailable"] = str(
-                            not (y_lyric and "(" in y_lyric and "," in y_lyric)
-                        )
             except Exception as e:
                 prepared["error"] = str(e)
 
@@ -2484,15 +2426,6 @@ class PlayingPage(QWidget):
                     song_storable.content_cache_hash = self._write_storable_asset(
                         MUSIC_DATA_DIR,
                         music_bytes,
-                    )
-
-                if y_lyric_missing:
-                    y_lyric = prepared.get("y_lyric")
-                    if not isinstance(y_lyric, str):
-                        return False
-                    song_storable.y_lyric = y_lyric
-                    song_storable.y_lyric_unavailable = (
-                        prepared.get("y_lyric_unavailable") == "True"
                     )
 
                 saveFavorites(favs)
@@ -2539,7 +2472,6 @@ class PlayingPage(QWidget):
         song_storable: SongStorable,
         image_missing: bool,
         music_missing: bool,
-        y_lyric_missing: bool,
     ):
         player.stop()
         self.cur = DummyCard(song_storable)
@@ -2568,20 +2500,16 @@ class PlayingPage(QWidget):
             song_storable,
             image_missing,
             music_missing,
-            y_lyric_missing,
             _play_after_download,
         )
 
     def ensureAssets(self, song_storable: SongStorable) -> bool:
-        image_missing, music_missing, y_lyric_missing = self._storable_asset_missing(
-            song_storable
-        )
-        if image_missing or music_missing or y_lyric_missing:
+        image_missing, music_missing = self._storable_asset_missing(song_storable)
+        if image_missing or music_missing:
             self._downloadMissingStorableAssets(
                 song_storable,
                 image_missing,
                 music_missing,
-                y_lyric_missing,
             )
             return False
         return True
@@ -2637,23 +2565,35 @@ class PlayingPage(QWidget):
             player.load(audio)
             self.total_length = player.getLength()
 
-        mgr.cur = song_storable.lyric
-        if song_storable.translated_lyric:
-            transmgr.cur = song_storable.translated_lyric
-        else:
-            transmgr.cur = "[00:00.000]"
-        ymgr.cur = getattr(song_storable, "y_lyric", "")
         try:
+            data = apis.track.GetTrackLyricsNew(song_storable.id)
+            assert isinstance(data, dict), "Invalid response"
+            mgr.cur = data.get("lrc", {}).get("lyric", "[00:00.000]")
+            tlyric = data.get("tlyric")
+            if isinstance(tlyric, dict):
+                transmgr.cur = "\n".join(tlyric.get("lyric", "").splitlines()[1:])
+            else:
+                transmgr.cur = "[00:00.000]"
+            ymgr.cur = data.get("yrc", {}).get("lyric", "")
+        except Exception:
+            logging.exception("failed to download lyrics for storable playback")
+            mgr.cur = song_storable.lyric
+            if song_storable.translated_lyric:
+                transmgr.cur = song_storable.translated_lyric
+            else:
+                transmgr.cur = "[00:00.000]"
+            ymgr.cur = ""
+        finally:
             mgr.parse()
             transmgr.parse()
             ymgr.parse()
-        finally:
-            if not player.isPlaying():
-                player.play()
 
-            self._preload_triggered = False
-            self.next_song_audio = None
-            self.next_song_gain = None
+        if not player.isPlaying():
+            player.play()
+
+        self._preload_triggered = False
+        self.next_song_audio = None
+        self.next_song_gain = None
 
         self.sendSongFMAndInfo()
 
@@ -3739,6 +3679,10 @@ if __name__ == "__main__":
         ) and cfg.login_status:
             apis.login.WriteLoginInfo(cfg.login_status)  # type: ignore
             logging.info("wrote login info")
+
+    csession = ncm.GetCurrentSession()
+    csession.deviceId = uuid.uuid4().hex
+    ncm.SetCurrentSession(csession)
 
     launchwindow.setStatusText("Initializing...\n  Initializing pages...")
 

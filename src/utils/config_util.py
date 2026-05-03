@@ -57,6 +57,8 @@ class Config:
     lyrics_smooth_factor: float = 5
     acceleration_smooth_factor: float = 5
 
+    play_speed: float = 1
+
     def __setattr__(self, name: str, value: Any) -> None:
         global cfg_changed
         cfg_changed = True

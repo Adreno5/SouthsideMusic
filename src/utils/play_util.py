@@ -20,6 +20,7 @@ from collections import namedtuple
 
 WavSubChunk = namedtuple("WavSubChunk", ["id", "position", "size"])
 
+
 def extract_wav_headers(data):
     # def search_subchunk(data, subchunk_id):
     pos = 12  # The size of the RIFF chunk descriptor
@@ -105,8 +106,11 @@ class PatchedAudioSegment(AudioSegment):
                 elif start_second is None and duration is not None:
                     return cls._from_safe_wav(file)[: duration * 1000]
                 else:
-                    return cls._from_safe_wav(file)[
-                        start_second * 1000 : (start_second + duration) * 1000 # type: ignore
+                    return cls._from_safe_wav(
+                        file
+                    )[
+                        start_second * 1000 : (start_second + duration) # type: ignore
+                        * 1000  # type: ignore
                     ]  # type: ignore
             except:
                 file.seek(0)  # type: ignore
@@ -127,8 +131,11 @@ class PatchedAudioSegment(AudioSegment):
             elif start_second is None and duration is not None:
                 return cls(data=file.read(), metadata=metadata)[: duration * 1000]  # type: ignore
             else:
-                return cls(data=file.read(), metadata=metadata)[ # type: ignore
-                    start_second * 1000 : (start_second + duration) * 1000 # type: ignore
+                return cls(
+                    data=file.read(), metadata=metadata # type: ignore
+                )[  # type: ignore
+                    start_second * 1000 : (start_second + duration)  # type: ignore
+                    * 1000  # type: ignore
                 ]  # type: ignore
 
         conversion_command = [
@@ -297,6 +304,7 @@ class AudioPlayer(QObject):
         self.db: float = 0
 
         self.current_index: int = 0
+        self._playback_time: float = 0.0
         self.is_playing: bool = False
         self.is_paused: bool = False
         self.stream: Optional[sd.OutputStream] = None
@@ -306,7 +314,7 @@ class AudioPlayer(QObject):
         self.fft_enabled = True
         self.fft_size = 1024
 
-        self.play_speed = 1.0
+        self.play_speed = cfg.play_speed
 
         self._lock = threading.RLock()
 
@@ -385,6 +393,7 @@ class AudioPlayer(QObject):
             self.output_channels = 2
 
             self.current_index = 0
+            self._playback_time = 0.0
             self.is_playing = False
             self.is_paused = False
 
@@ -426,6 +435,7 @@ class AudioPlayer(QObject):
             if self.stream and self.stream.active:
                 self.stream.stop()
             self.current_index = 0
+            self._playback_time = 0.0
             self.is_playing = False
             self.is_paused = False
 
@@ -433,12 +443,11 @@ class AudioPlayer(QObject):
         with self._lock:
             if len(self.samples) == 0:
                 return
-            target_index = int(seconds * self.sample_rate)
-            target_index = max(0, min(target_index, len(self.samples) - 1))
-            self.current_index = target_index
+            self._playback_time = max(0.0, seconds)
+            self.current_index = int(self._playback_time * self.sample_rate)
 
     def getPosition(self) -> float:
-        return round((self.current_index / self.sample_rate if self.sample_rate > 0 else 0.0), 2)
+        return round(self._playback_time, 2)
 
     def getLength(self) -> float:
         return len(self.samples) / self.sample_rate if self.sample_rate > 0 else 0.0
@@ -446,8 +455,15 @@ class AudioPlayer(QObject):
     def setVolume(self, volume: float) -> None:
         self.volume_gain = max(0.0, min(1.0, volume))
 
+    def setPlaySpeed(self, speed: float) -> None:
+        with self._lock:
+            self.play_speed = max(0.1, speed)
+
     def isPlaying(self) -> bool:
         return self.is_playing or (self.stream is not None and self.stream.active)
+
+    def _stream_sample_rate(self) -> int:
+        return int(self.sample_rate * self.play_speed)
 
     def _start_stream(self):
         if self.stream is None:
@@ -491,7 +507,7 @@ class AudioPlayer(QObject):
 
             window = np.hanning(len(chunk))
             windowed = chunk * window
-            fft_vals = np.abs(rfft(windowed)) # type: ignore
+            fft_vals = np.abs(rfft(windowed))  # type: ignore
             fft_freqs = rfftfreq(len(chunk), 1 / self.sample_rate)
 
             self.fftDataReady.emit(fft_freqs, fft_vals)
@@ -502,17 +518,39 @@ class AudioPlayer(QObject):
         if self.fft_thread.is_alive():
             self.fft_thread.join(timeout=1.0)
 
+    def _read_speed(self, start_idx: int, frames: int) -> np.ndarray:
+        n = len(self.samples)
+        speed = self.play_speed
+        if n == 0:
+            return np.zeros((0, self.channels), dtype=np.float32)
+        if abs(speed - 1.0) < 1e-6:
+            return self.samples[start_idx : start_idx + frames].copy()
+
+        src_frames = int(round(frames * speed))
+        src_end = min(start_idx + src_frames, n)
+        src_len = src_end - start_idx
+        if src_len <= 0:
+            return np.zeros((0, self.channels), dtype=np.float32)
+
+        src = self.samples[start_idx:src_end]
+        src_indices = np.linspace(0, src_len - 1, frames, dtype=np.float32)
+        low = src_indices.astype(np.intp)
+        high = np.minimum(low + 1, src_len - 1)
+        frac = (src_indices - low).astype(np.float32)
+        frac = frac.reshape(-1, 1)
+
+        out = src[low] * (1 - frac) + src[high] * frac
+        return out
+
     def _audio_callback(self, outdata, frames, time, status):
         with self._lock:
-            start = self.current_index
-            end = start + frames
-            chunk = self.samples[start:end]
+            chunk = self._read_speed(int(self.current_index), frames)
             copy_len = len(chunk)
 
             outdata[:] = 0
             if copy_len > 0:
                 if self.channels == 1:
-                    out = self._apply_stereo_effect(chunk[:, 0], start)
+                    out = self._apply_stereo_effect(chunk[:, 0], self.current_index)
                 else:
                     if not cfg.stereo:
                         mono = chunk.mean(axis=1, keepdims=True)
@@ -526,9 +564,11 @@ class AudioPlayer(QObject):
                     :, : self.output_channels
                 ]
 
-            self.current_index += copy_len
+            src_frames = int(round(frames * self.play_speed))
+            self.current_index = min(self.current_index + src_frames, len(self.samples))
+            self._playback_time = self.current_index / self.sample_rate
 
-            pos = self.current_index / self.sample_rate
+            pos = self._playback_time
             self.positionChanged.emit(pos)
 
             if self.current_index >= len(self.samples):
@@ -544,7 +584,7 @@ class AudioPlayer(QObject):
             else:
                 self.db = -float("inf")
 
-            remain = (len(self.samples) - self.current_index) / self.sample_rate
+            remain = self.getLength() - self._playback_time
             if (
                 ((remain < cfg.skip_remain_time) if cfg.skip_remain_time < 60 else True)
                 and copy_len > 0

@@ -39,7 +39,6 @@ _icon_map = {icon.value: icon for icon in SouthsideIcon}
 
 
 def getQIcon(name: str, theme: Literal["dark", "light", "auto"] = "auto"):
-    logging.info(f"getting icon '{name}' for {theme}")
     icon = getFluentIcon(name)
     if theme == "auto":
         return icon.qicon()

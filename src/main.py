@@ -281,11 +281,13 @@ ws_handler.onDisconnected.connect(lambda: mwindow.onWebsocketDisconnected())
 
 original_popen = subprocess.Popen
 
+
 @lru_cache
 def _toQtInt(value: float | int) -> int:
     if not math.isfinite(value):
         return 0
     return max(_QT_INT_MIN, min(_QT_INT_MAX, int(value)))
+
 
 def patched_popen(*args, **kwargs):
     startupinfo = subprocess.STARTUPINFO()
@@ -953,7 +955,7 @@ def removeSong(card: _SongCardItem) -> None:
             dp.playlist.remove(dp.playlist[i])
             break
 
-    dp.refreshPlaylistWidget()
+    sidebar.refreshPlaylistWidget()
 
     if dp.cur:
         if card.storable.id == dp.cur.storable.id:
@@ -1193,12 +1195,12 @@ class PlayingController(QWidget):
             else:
                 self.expand_btn.setEnabled(True)
 
-            dp.expanded_widget.show()
+            sidebar.show()
 
             self.expand_btn.setText("Collapse")
             bindIcon(self.expand_btn, "pl_collapse")
         else:
-            dp.expanded_widget.hide()
+            sidebar.hide()
             if not mwindow.isMaximized():
                 mwindow_anim = QPropertyAnimation(mwindow, b"geometry", self)
                 mwindow_anim.setDuration(200)
@@ -1247,18 +1249,18 @@ class PlayingController(QWidget):
                 )
 
         try:
-            dp.southsideclient_status_label.setText(
+            sidebar.southsideclient_status_label.setText(
                 "Connection Status: <span style='color: green;'>Connected</span>"
                 if mwindow.connected
                 else "Connection Status: <span style='color: red;'>Disconnected</span>"
             )
-            dp.now_volume.setText(
+            sidebar.now_volume.setText(
                 f"Current volume(db): {(round(player.db * 10) / 10) if player.db != float('-inf') else '-inf'}"
             )
         except:
             pass
 
-        if dp.cur and dp.lst_shoud_set:
+        if dp.cur and sidebar.lst_shoud_set:
             # Highlight the currently playing song in the playlist
             for i, song in enumerate(dp.playlist):
                 if (
@@ -1266,7 +1268,7 @@ class PlayingController(QWidget):
                     and hasattr(dp.cur, "storable")
                     and song.name == dp.cur.storable.name
                 ):
-                    dp.lst.setCurrentRow(i)
+                    sidebar.lst.setCurrentRow(i)
                     break
 
         if player.isPlaying():
@@ -1295,7 +1297,7 @@ class PlayingController(QWidget):
             )
             self.last_lyric = cl
 
-        if dp.enableFFT_box.isChecked():
+        if sidebar.enableFFT_box.isChecked():
             if not player.isPlaying():
                 self.cur_magnitudes = np.zeros(513, dtype=np.float32)
             window_size = int(cfg.fft_filtering_windowsize)
@@ -1397,7 +1399,7 @@ class PlayingController(QWidget):
         isDark = darkdetect.isDark()
 
         if (
-            dp.enableFFT_box.isChecked()
+            sidebar.enableFFT_box.isChecked()
             and self.cur_freqs is not None
             and self.cur_magnitudes is not None
         ):
@@ -1554,9 +1556,7 @@ class LyricsViewer(QWidget):
         use_yrc = bool(ymgr.parsed)
         lines = ymgr.parsed if use_yrc else mgr.parsed
         idx = (
-            ymgr.getCurrentIndex(position)
-            if use_yrc
-            else mgr.getCurrentIndex(position)
+            ymgr.getCurrentIndex(position) if use_yrc else mgr.getCurrentIndex(position)
         )
 
         line_step = self._lineStep()
@@ -1589,9 +1589,7 @@ class LyricsViewer(QWidget):
         painter.setFont(self.ft)
 
         current_line = (
-            ymgr.getCurrentLyric(position)
-            if use_yrc
-            else mgr.getCurrentLyric(position)
+            ymgr.getCurrentLyric(position) if use_yrc else mgr.getCurrentLyric(position)
         )
         y = self.draw_offset + current_baseline
         for i, line in enumerate(lines):
@@ -1599,6 +1597,7 @@ class LyricsViewer(QWidget):
             if is_current_line:
                 if line.get("isMetadata"):
                     tar_color = QColor(255, 255, 255)
+                    y += 5
                 else:
                     tar_color = (
                         QColor(255, 255, 255)
@@ -1743,6 +1742,370 @@ class LyricsViewer(QWidget):
         return super().mousePressEvent(event)
 
 
+class Sidebar(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.lst_shoud_set: bool = True
+        self.setFixedWidth(500)
+
+        layout = QVBoxLayout()
+        self.pivot = Pivot(self)
+        self.stacked_widget = QStackedWidget(self)
+        layout.addWidget(self.pivot)
+        layout.addWidget(self.stacked_widget)
+        layout.setContentsMargins(30, 0, 30, 30)
+
+        self.lst_interface = QWidget()
+        self.lst_layout = QVBoxLayout()
+        self.lst = ListWidget()
+        self.lst.setFixedWidth(500)
+        self.lst.entered.connect(lambda: self.__setattr__("lst_shoud_set", False))
+        self.lst.leaveEvent = lambda e: self.__setattr__("lst_shoud_set", True)
+        self.lst.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.lst_layout.addWidget(self.lst)
+
+        btn_layout = QHBoxLayout()
+        self.removeall_btn = TransparentPushButton("Remove All")
+        bindIcon(self.removeall_btn, "clearall")
+        self.removeall_btn.clicked.connect(self.removeAllSongs)
+        btn_layout.addWidget(self.removeall_btn)
+        self.lst_layout.addLayout(btn_layout)
+        self.lst_interface.setLayout(self.lst_layout)
+
+        self.playing_scrollarea = SmoothScrollArea()
+        self.options_interface = QWidget()
+        self.updateTheme()
+        self.playing_layout = QGridLayout()
+        self.options_interface.setLayout(self.playing_layout)
+        self.playing_scrollarea.setWidget(self.options_interface)
+        self.playing_scrollarea.setWidgetResizable(True)
+
+        self._initOptions()
+
+        self.addSubInterface(self.lst_interface, "playlist_listwidget", "Playlist")
+        self.addSubInterface(self.playing_scrollarea, "options_interface", "Options")
+        self.stacked_widget.setCurrentWidget(self.lst_interface)
+        self.pivot.setCurrentItem("playlist_listwidget")
+        self.pivot.currentItemChanged.connect(
+            lambda k: self.stacked_widget.setCurrentWidget(
+                self.findChild(QWidget, k)  # type: ignore
+            )
+        )  # type: ignore
+
+        self.setLayout(layout)
+        self.hide()
+
+    def addSubInterface(self, widget: QWidget, objectName, text):
+        widget.setObjectName(objectName)
+        self.stacked_widget.addWidget(widget)
+        self.pivot.addItem(routeKey=objectName, text=text)
+
+    def updateTheme(self) -> None:
+        self.options_interface.setStyleSheet(
+            f"background: #{'000000' if darkdetect.isDark() else 'FFFFFF'}"
+        )
+
+    def _initOptions(self) -> None:
+        self.addSeparateWidget(TitleLabel("Playing"))
+
+        self.play_method_box = ComboBox()
+        self.play_method_box.addItems(
+            ["Repeat one", "Repeat list", "Shuffle", "Play in order"]
+        )
+        self.play_method_box.setCurrentText("Repeat list")
+        self.addSetting("Play order", "the order of play", self.play_method_box)
+
+        self.addCheckSetting("Enable Stereo", "enable stereo effect", "stereo")
+        self.addCheckSetting(
+            "Smart Skip", "Skip the no sound section when song ends", "skip_nosound"
+        )
+        self.addNumberSetting('Playback Speed', 'speed of playing', 0.1, 3, 0.1, 'play_speed',
+            lambda val: player.setPlaySpeed(val)
+        )
+        self.addNumberSetting(
+            "Skip Threshold", "the threshold of the skip", -100, 0, 1, "skip_threshold"
+        )
+        self.now_volume = QLabel(f"Current volume(db): {0}")
+        self.addSeparateWidget(self.now_volume)
+
+        self.addNumberSetting(
+            "Remain time to Skip",
+            "start detecting volume during the remaining specified seconds",
+            1,
+            60,
+            1,
+            "skip_remain_time",
+        )
+
+        self.addSeparateWidget(TitleLabel("Window"))
+        self.addNumberSetting(
+            "Window Background Mix Ratio",
+            "larger value make color of backgound nearly to image of playing song",
+            0,
+            1,
+            0.05,
+            "background_ratio",
+            lambda v: mwindow.repaint(),
+        )
+
+        self.addSeparateWidget(TitleLabel("Lyrics"))
+        self.addNumberSetting(
+            "Lyrics Smooth Factor",
+            "larger value means a more sudden change",
+            0,
+            app.primaryScreen().refreshRate(),
+            0.5,
+            "lyrics_smooth_factor",
+        )
+        self.addNumberSetting(
+            "Acceleration Smooth Factor",
+            "smaller value means a more bounce effect",
+            0,
+            app.primaryScreen().refreshRate(),
+            0.5,
+            "acceleration_smooth_factor",
+        )
+
+        self.addSeparateWidget(TitleLabel("FFT"))
+        self.enableFFT_box = CheckBox("Enable Frequency Graphics")
+        self.addSeparateWidget(self.enableFFT_box)
+        self.enableFFT_box.setChecked(cfg.enable_fft)
+        self.addNumberSetting(
+            "FFT Filtering Window size",
+            "larger value means more smoothing",
+            1,
+            200,
+            1,
+            "fft_filtering_windowsize",
+        )
+        self.addNumberSetting(
+            "FFT Smoothing Factor",
+            "larger value means a more sudden change",
+            0.01,
+            1.0,
+            0.05,
+            "fft_factor",
+        )
+        self.addNumberSetting(
+            "SouthsideMusic side FFT Multiple Factor",
+            "larger value means more intense changing(only on SouthsideMusic side)",
+            0,
+            15.0,
+            0.05,
+            "cfft_multiple",
+        )
+        self.addNumberSetting(
+            "SouthsideClient side FFT Multiple Factor",
+            "larger value means more intense changing(only on SouthsideClient side)",
+            00,
+            15.0,
+            0.05,
+            "sfft_multiple",
+        )
+
+        self.addSeparateWidget(TitleLabel("Loudness Balance"))
+        self.target_lufs = Slider(Qt.Orientation.Horizontal)
+        self.target_lufs.setRange(-60, 0)
+        self.target_lufs.setSingleStep(1)
+        self.target_lufs.valueChanged.connect(self.onTargetLUFSChanged)
+        self.target_lufs.setValue(cfg.target_lufs)
+        self.addSeparateWidget(self.target_lufs)
+        self.target_lufs_label = SubtitleLabel(f"Target LUFS: {cfg.target_lufs}")
+        self.addSeparateWidget(self.target_lufs_label)
+        self.addSeparateWidget(
+            QLabel(
+                "Target LUFS Help:\nRange: -60(quietest)~0(loudest)\nRecommend: -16~-18"
+                "\nReference:\nYoutube > -14LUFS\nNetflix > -27LUFS\nTikTok / Instagram Reels > -13LUFS\nApple Music (Video) > -16LUFS"
+                "\nSpotify (Video): -14LUFS / -16LUFS"
+            )
+        )
+
+        self.addSeparateWidget(QLabel())
+        self.addSeparateWidget(TitleLabel("SouthsideClient Connection"))
+        self.southsideclient_status_label = SubtitleLabel(
+            "Connection Status: <span style='color: red;'>Disconnected</span>"
+        )
+        self.addSeparateWidget(self.southsideclient_status_label)
+        self.disconnect_btn = TransparentPushButton("Disconnect")
+        bindIcon(self.disconnect_btn, "disc")
+        self.disconnect_btn.clicked.connect(self.disconnectFromSouthsideClient)
+        self.disconnect_btn.setEnabled(False)
+        self.addSeparateWidget(self.disconnect_btn)
+        self.connect_btn = TransparentPushButton("Try connect")
+        bindIcon(self.connect_btn, "cnnt")
+        self.connect_btn.clicked.connect(self.connectToSouthsideClient)
+        self.connect_btn.setEnabled(False)
+        self.addSeparateWidget(self.connect_btn)
+
+        for slider in self.options_interface.findChildren(QSlider):
+            slider.wheelEvent = lambda e: e.ignore()
+
+    def addNumberSetting(
+        self,
+        title: str,
+        description: str,
+        min: float | int,
+        max: float | int,
+        step: float | int,
+        configurationName: str,
+        onChanged: Callable[[float], None] | None = None,
+    ) -> None:
+        box = DoubleSpinBox()
+        box.setRange(min, max)  # pyright: ignore[reportArgumentType]
+        box.setValue(getattr(cfg, configurationName))
+        box.setSingleStep(step)  # pyright: ignore[reportArgumentType]
+
+        def _valueChanged(value: float | int):
+            setattr(cfg, configurationName, value)
+            if onChanged:
+                onChanged(value)
+
+        box.valueChanged.connect(_valueChanged)
+        self.addSetting(title, description, box)
+
+    def addCheckSetting(
+        self, title: str, description: str, configurationName: str
+    ) -> None:
+        box = CheckBox(title)
+
+        def __valueChanged():
+            setattr(cfg, configurationName, box.checkState() == Qt.CheckState.Checked)
+
+        box.stateChanged.connect(__valueChanged)
+        box.setChecked(getattr(cfg, configurationName))
+        self.addSetting(title, description, box)
+
+    def addSetting(self, name: str, description: str, widget: QWidget) -> None:
+        card = CardWidget()
+        card.paintEvent = lambda e: PlayingPage.patchedPaintEvent(card, e)
+        card.setBackgroundColor(QColor(255, 255, 255, 0))
+        card._normalBackgroundColor = lambda: QColor(255, 255, 255, 0)
+        card._hoverBackgroundColor = lambda: QColor(255, 255, 255, 0)
+        card._pressedBackgroundColor = lambda: QColor(255, 255, 255, 0)
+        card._focusInBackgroundColor = lambda: QColor(255, 255, 255, 0)
+        global_layout = QVBoxLayout()
+        top_layout = QHBoxLayout()
+        name_l = QLabel(name)
+        name_l.setStyleSheet("font-weight: bold;")
+        name_l.setWordWrap(True)
+        top_layout.addWidget(name_l)
+        top_layout.addWidget(widget)
+        global_layout.addLayout(top_layout)
+        desc_l = QLabel(description)
+        desc_l.setWordWrap(True)
+        global_layout.addWidget(desc_l)
+        card.setLayout(global_layout)
+        self.playing_layout.addWidget(card, self.playing_layout.rowCount(), 0, 2, 2)
+
+    def addSeparateWidget(self, widget: QWidget) -> None:
+        self.playing_layout.addWidget(widget, self.playing_layout.rowCount(), 0, 1, 2)
+
+    def disconnectFromSouthsideClient(self):
+        ws_server.tryGetHandler()
+        ws_server.stop()
+        ws_server.join()
+        ws_handler.onDisconnected.emit()
+
+        self.disconnect_btn.setEnabled(False)
+        self.connect_btn.setEnabled(True)
+
+    def connectToSouthsideClient(self):
+        ws_server = WebSocketServer(port=15489)
+        ws_server.start()
+
+        self.connect_btn.setEnabled(False)
+
+    def removeAllSongs(self) -> None:
+        dp.playlist.clear()
+        if isinstance(dp.cur, DummyCard) and isinstance(dp.cur.storable, SongStorable):
+            dp.playlist.append(dp.cur.storable)
+
+        self.refreshPlaylistWidget()
+
+        InfoBar.success("Removed", "Removed all songs", duration=1500, parent=mwindow)
+
+    def addSongCardToList(self, song: SongStorable) -> QListWidgetItem:
+        item = QListWidgetItem()
+        item.setData(Qt.ItemDataRole.UserRole, song)
+        item.setSizeHint(QSize(0, 62))
+        card = PlaylistSongCard(song)
+        card.clicked.connect(lambda s, it=item: dp.onPlaylistCardClicked(s, it))
+        self.lst.addItem(item)
+        self.lst.setItemWidget(item, card)
+        return item
+
+    def refreshPlaylistWidget(self):
+        val = self.lst.verticalScrollBar().value()
+        self.lst.clear()
+
+        for song in dp.playlist:
+            self.addSongCardToList(song)
+
+        dp._preload_triggered = False
+        self.lst.verticalScrollBar().setValue(val)
+
+    def applyNewLUFS(self):
+        dp.lufs_changed_timer.stop()
+        self.target_lufs.hide()
+
+        self.target_lufs_label.setText("Reapplying")
+
+        result: dict[str, object] = {}
+
+        def _apply():
+            if not isinstance(dp.cur, DummyCard):
+                return
+            if not hasattr(dp.cur, "storable"):
+                return
+
+            storable = dp.cur.storable
+            audio: AudioSegment = AudioSegment.from_file(
+                io.BytesIO(storable.get_music_bytes())
+            )
+            logging.debug("new lufs -> applying gain")
+            gain = getAdjustedGainFactor(cfg.target_lufs, audio)
+            result["storable"] = storable
+            result["gain"] = gain
+            result["target_lufs"] = cfg.target_lufs
+            result["position"] = player.getPosition()
+            result["playing"] = player.isPlaying()
+
+        def _finish():
+            storable = result.get("storable")
+            if not isinstance(storable, SongStorable):
+                self.target_lufs_label.setText(f"Target LUFS: {cfg.target_lufs}")
+                self.target_lufs.show()
+                return
+            if not isinstance(dp.cur, DummyCard) or dp.cur.storable is not storable:
+                self.target_lufs_label.setText(f"Target LUFS: {cfg.target_lufs}")
+                self.target_lufs.show()
+                return
+
+            storable.loudness_gain = cast(float, result["gain"])
+            storable.target_lufs = cast(int, result["target_lufs"])
+            position = cast(float, result["position"])
+            playingnow = cast(bool, result["playing"])
+
+            def _apply_playback_update():
+                dp.playStorable(storable)
+                if playingnow:
+                    player.play()
+                self.target_lufs_label.setText(f"Target LUFS: {cfg.target_lufs}")
+                player.setPosition(position)
+                QTimer.singleShot(250, dp.preloadNextSong)
+                self.target_lufs.show()
+
+            mwindow.addScheduledTask(_apply_playback_update)
+
+        doWithMultiThreading(_apply, (), mwindow, _finish)
+
+    def onTargetLUFSChanged(self, value: int):
+        cfg.target_lufs = value
+        if hasattr(self, "target_lufs_label"):
+            self.target_lufs_label.setText(f"Target LUFS: {value}")
+            dp.lufs_changed_timer.start(1000)
+
+
 class PlayingPage(QWidget):
     imageLoaded = Signal(bytes)
     preloadRetryRequested = Signal()
@@ -1818,203 +2181,8 @@ class PlayingPage(QWidget):
         self.viewer = LyricsViewer()
         global_layout.addWidget(self.viewer, stretch=2)
 
-        self.expanded_widget = QWidget()
-        expanded_layout = QVBoxLayout()
-        self.pivot = Pivot(self)
-        self.stacked_widget = QStackedWidget(self)
-
-        self.expanded_widget.setFixedWidth(500)
-
-        expanded_layout.addWidget(self.pivot)
-        expanded_layout.addWidget(self.stacked_widget)
-        expanded_layout.setContentsMargins(30, 0, 30, 30)
-
-        self.lst_interface = QWidget()
-        self.lst_layout = QVBoxLayout()
-        self.lst = ListWidget()
-        self.lst.setFixedWidth(500)
-        self.lst.entered.connect(lambda: self.__setattr__("lst_shoud_set", False))
-        self.lst.leaveEvent = lambda e: self.__setattr__("lst_shoud_set", True)
-        self.lst.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-        self.lst_layout.addWidget(self.lst)
-
-        btn_layout = QHBoxLayout()
-        self.removeall_btn = TransparentPushButton("Remove All")
-        bindIcon(self.removeall_btn, "clearall")
-        self.removeall_btn.clicked.connect(self.removeAllSongs)
-        btn_layout.addWidget(self.removeall_btn)
-        self.lst_layout.addLayout(btn_layout)
-
-        self.lst_interface.setLayout(self.lst_layout)
-
-        self.playing_scrollarea = SmoothScrollArea()
-
-        self.options_interface = QWidget()
-        self.options_interface.setStyleSheet(
-            f"background: #{'000000' if darkdetect.isDark() else 'FFFFFF'}"
-        )
-        self.playing_layout = QGridLayout()
-
-        self.addSeparateWidget(TitleLabel("Playing"))
-
-        self.play_method_box = ComboBox()
-        self.play_method_box.addItems(
-            ["Repeat one", "Repeat list", "Shuffle", "Play in order"]
-        )
-        self.play_method_box.setCurrentText("Repeat list")
-        self.addSetting("Play order", "the order of play", self.play_method_box)
-
-        self.addCheckSetting("Enable Stereo", "enable stereo effect", "stereo")
-
-        self.addCheckSetting(
-            "Smart Skip", "Skip the no sound section when song ends", "skip_nosound"
-        )
-
-        self.addNumberSetting(
-            "Skip Threshold", "the threshold of the skip", -100, 0, 1, "skip_threshold"
-        )
-        self.now_volume = QLabel(f"Current volume(db): {0}")
-        self.addSeparateWidget(self.now_volume)
-
-        self.addNumberSetting(
-            "Remain time to Skip",
-            "start detecting volume during the remaining specified seconds",
-            1,
-            60,
-            1,
-            "skip_remain_time",
-        )
-
-        self.addSeparateWidget(TitleLabel("Window"))
-
-        self.addNumberSetting(
-            "Window Background Mix Ratio",
-            "larger value make color of backgound nearly to image of playing song",
-            0,
-            1,
-            0.05,
-            "background_ratio",
-            lambda v: mwindow.repaint(),
-        )
-
-        self.addSeparateWidget(TitleLabel("Lyrics"))
-
-        self.addNumberSetting(
-            "Lyrics Smooth Factor",
-            "larger value means a more sudden change",
-            0,
-            app.primaryScreen().refreshRate(),
-            0.5,
-            "lyrics_smooth_factor",
-        )
-
-        self.addNumberSetting(
-            "Acceleration Smooth Factor",
-            "smaller value means a more bounce effect",
-            0,
-            app.primaryScreen().refreshRate(),
-            0.5,
-            "acceleration_smooth_factor",
-        )
-
-        self.addSeparateWidget(TitleLabel("FFT"))
-
-        self.enableFFT_box = CheckBox("Enable Frequency Graphics")
-        self.addSeparateWidget(self.enableFFT_box)
-        self.enableFFT_box.setChecked(cfg.enable_fft)
-
-        self.addNumberSetting(
-            "FFT Filtering Window size",
-            "larger value means more smoothing",
-            1,
-            200,
-            1,
-            "fft_filtering_windowsize",
-        )
-
-        self.addNumberSetting(
-            "FFT Smoothing Factor",
-            "larger value means a more sudden change",
-            0.01,
-            1.0,
-            0.05,
-            "fft_factor",
-        )
-
-        self.addNumberSetting(
-            "SouthsideMusic side FFT Multiple Factor",
-            "larger value means more intense changing(only on SouthsideMusic side)",
-            0,
-            15.0,
-            0.05,
-            "cfft_multiple",
-        )
-
-        self.addNumberSetting(
-            "SouthsideClient side FFT Multiple Factor",
-            "larger value means more intense changing(only on SouthsideClient side)",
-            00,
-            15.0,
-            0.05,
-            "sfft_multiple",
-        )
-
-        self.addSeparateWidget(TitleLabel("Loudness Balance"))
-
-        self.target_lufs = Slider(Qt.Orientation.Horizontal)
-        self.target_lufs.setRange(-60, 0)
-        self.target_lufs.setSingleStep(1)
-        self.target_lufs.valueChanged.connect(self.onTargetLUFSChanged)
-        self.target_lufs.setValue(cfg.target_lufs)
-        self.addSeparateWidget(self.target_lufs)
-        self.target_lufs_label = SubtitleLabel(f"Target LUFS: {cfg.target_lufs}")
-        self.addSeparateWidget(self.target_lufs_label)
-        self.addSeparateWidget(
-            QLabel(
-                "Target LUFS Help:\nRange: -60(quietest)~0(loudest)\nRecommend: -16~-18"
-                "\nReference:\nYoutube > -14LUFS\nNetflix > -27LUFS\nTikTok / Instagram Reels > -13LUFS\nApple Music (Video) > -16LUFS"
-                "\nSpotify (Video): -14LUFS / -16LUFS"
-            )
-        )
-
-        self.addSeparateWidget(QLabel())
-        self.addSeparateWidget(TitleLabel("SouthsideClient Connection"))
-        self.southsideclient_status_label = SubtitleLabel(
-            "Connection Status: <span style='color: red;'>Disconnected</span>"
-        )
-        self.addSeparateWidget(self.southsideclient_status_label)
-        self.disconnect_btn = TransparentPushButton("Disconnect")
-        bindIcon(self.disconnect_btn, "disc")
-        self.disconnect_btn.clicked.connect(self.disconnectFromSouthsideClient)
-        self.disconnect_btn.setEnabled(False)
-        self.addSeparateWidget(self.disconnect_btn)
-        self.connect_btn = TransparentPushButton("Try connect")
-        bindIcon(self.connect_btn, "cnnt")
-        self.connect_btn.clicked.connect(self.connectToSouthsideClient)
-        self.connect_btn.setEnabled(False)
-        self.addSeparateWidget(self.connect_btn)
-
         self.song_randomer = AdvancedRandom()
         self.song_randomer.init(self.playlist)
-
-        self.options_interface.setLayout(self.playing_layout)
-        self.playing_scrollarea.setWidget(self.options_interface)
-        self.playing_scrollarea.setWidgetResizable(True)
-
-        self.addSubInterface(self.lst_interface, "playlist_listwidget", "Playlist")
-        self.addSubInterface(self.playing_scrollarea, "options_interface", "Options")
-
-        self.stacked_widget.setCurrentWidget(self.lst)
-        self.pivot.setCurrentItem("playlist_listwidget")
-        self.pivot.currentItemChanged.connect(
-            lambda k: self.stacked_widget.setCurrentWidget(
-                mwindow.findChild(QWidget, k)  # type: ignore
-            )
-        )  # type: ignore
-
-        self.expanded_widget.setLayout(expanded_layout)
-
-        self.expanded_widget.hide()
 
         self.setLayout(global_layout)
 
@@ -2024,47 +2192,7 @@ class PlayingPage(QWidget):
         self.controller.playNextSignal.connect(lambda: self.playNext(True))
 
         self.lufs_changed_timer = QTimer(self)
-        self.lufs_changed_timer.timeout.connect(self.applyNewLUFS)
-
-        for slider in self.options_interface.findChildren(QSlider):
-            slider.wheelEvent = lambda e: e.ignore()  # 防止滚动时触发
-
-    def addNumberSetting(
-        self,
-        title: str,
-        description: str,
-        min: float | int,
-        max: float | int,
-        step: float | int,
-        configurationName: str,
-        onChanged: Callable[[float], None] | None = None,
-    ) -> None:
-        box = DoubleSpinBox()
-        box.setRange(min, max)  # pyright: ignore[reportArgumentType]
-        box.setValue(getattr(cfg, configurationName))
-        box.setSingleStep(step)  # pyright: ignore[reportArgumentType]
-
-        def _valueChanged(value: float | int):
-            setattr(cfg, configurationName, value)
-            if onChanged:
-                onChanged(value)
-
-        box.valueChanged.connect(_valueChanged)
-
-        self.addSetting(title, description, box)
-
-    def addCheckSetting(
-        self, title: str, description: str, configurationName: str
-    ) -> None:
-        box = CheckBox(title)
-
-        def __valueChanged():
-            setattr(cfg, configurationName, box.checkState() == Qt.CheckState.Checked)
-
-        box.stateChanged.connect(__valueChanged)
-        box.setChecked(getattr(cfg, configurationName))
-
-        self.addSetting(title, description, box)
+        self.lufs_changed_timer.timeout.connect(sidebar.applyNewLUFS)
 
     def onNosoundSkipChanged(self, state: Qt.CheckState):
         checked = state == Qt.CheckState.Checked
@@ -2074,111 +2202,6 @@ class PlayingPage(QWidget):
         if not cfg.skip_nosound:
             return
         self.controller.onSongFinish.emit()
-
-    def disconnectFromSouthsideClient(self):
-        ws_server.tryGetHandler()
-        ws_server.stop()
-        ws_server.join()
-        ws_handler.onDisconnected.emit()
-
-        self.disconnect_btn.setEnabled(False)
-        self.connect_btn.setEnabled(True)
-
-    def connectToSouthsideClient(self):
-        ws_server = WebSocketServer(port=15489)
-        ws_server.start()
-
-        self.connect_btn.setEnabled(False)
-
-    def removeAllSongs(self) -> None:
-        self.playlist.clear()
-        if isinstance(self.cur, DummyCard) and isinstance(
-            self.cur.storable, SongStorable
-        ):
-            self.playlist.append(self.cur.storable)
-
-        self.refreshPlaylistWidget()
-
-        InfoBar.success("Removed", "Removed all songs", duration=1500, parent=mwindow)
-
-    def addSongCardToList(self, song: SongStorable) -> QListWidgetItem:
-        item = QListWidgetItem()
-        item.setData(Qt.ItemDataRole.UserRole, song)
-        item.setSizeHint(QSize(0, 62))
-        card = PlaylistSongCard(song)
-        card.clicked.connect(lambda s, it=item: self.onPlaylistCardClicked(s, it))
-        self.lst.addItem(item)
-        self.lst.setItemWidget(item, card)
-        return item
-
-    def refreshPlaylistWidget(self):
-        self.lst.clear()
-
-        for song in self.playlist:
-            self.addSongCardToList(song)
-
-        self._preload_triggered = False
-
-    def applyNewLUFS(self):
-        self.lufs_changed_timer.stop()
-        self.target_lufs.hide()
-
-        self.target_lufs_label.setText("Reapplying")
-
-        result: dict[str, object] = {}
-
-        def _apply():
-            if not isinstance(self.cur, DummyCard):
-                return
-            if not hasattr(self.cur, "storable"):
-                return
-
-            storable = self.cur.storable
-            audio: AudioSegment = AudioSegment.from_file(
-                io.BytesIO(storable.get_music_bytes())
-            )
-            logging.debug("new lufs -> applying gain")
-            gain = getAdjustedGainFactor(cfg.target_lufs, audio)
-            result["storable"] = storable
-            result["gain"] = gain
-            result["target_lufs"] = cfg.target_lufs
-            result["position"] = player.getPosition()
-            result["playing"] = player.isPlaying()
-
-        def _finish():
-            storable = result.get("storable")
-            if not isinstance(storable, SongStorable):
-                self.target_lufs_label.setText(f"Target LUFS: {cfg.target_lufs}")
-                self.target_lufs.show()
-                return
-            if not isinstance(self.cur, DummyCard) or self.cur.storable is not storable:
-                self.target_lufs_label.setText(f"Target LUFS: {cfg.target_lufs}")
-                self.target_lufs.show()
-                return
-
-            storable.loudness_gain = cast(float, result["gain"])
-            storable.target_lufs = cast(int, result["target_lufs"])
-            position = cast(float, result["position"])
-            playingnow = cast(bool, result["playing"])
-
-            def _apply_playback_update():
-                self.playStorable(storable)
-                if playingnow:
-                    player.play()
-                self.target_lufs_label.setText(f"Target LUFS: {cfg.target_lufs}")
-                player.setPosition(position)
-                QTimer.singleShot(250, self.preloadNextSong)
-                self.target_lufs.show()
-
-            mwindow.addScheduledTask(_apply_playback_update)
-
-        doWithMultiThreading(_apply, (), mwindow, _finish)
-
-    def onTargetLUFSChanged(self, value: int):
-        cfg.target_lufs = value
-        if hasattr(self, "target_lufs_label"):
-            self.target_lufs_label.setText(f"Target LUFS: {value}")
-            self.lufs_changed_timer.start(1000)
 
     @staticmethod
     def patchedPaintEvent(card: CardWidget, e):
@@ -2234,36 +2257,6 @@ class PlayingPage(QWidget):
         painter.setBrush(card.backgroundColor)
         painter.drawRoundedRect(rect, r, r)
 
-    def addSetting(self, name: str, description: str, widget: QWidget) -> None:
-        card = CardWidget()
-        card.paintEvent = lambda e: self.patchedPaintEvent(card, e)
-        card.setBackgroundColor(QColor(255, 255, 255, 0))
-        card._normalBackgroundColor = lambda: QColor(255, 255, 255, 0)
-        card._hoverBackgroundColor = lambda: QColor(255, 255, 255, 0)
-        card._pressedBackgroundColor = lambda: QColor(255, 255, 255, 0)
-        card._focusInBackgroundColor = lambda: QColor(255, 255, 255, 0)
-        global_layout = QVBoxLayout()
-        top_layout = QHBoxLayout()
-        name_l = QLabel(name)
-        name_l.setStyleSheet("font-weight: bold;")
-        name_l.setWordWrap(True)
-        top_layout.addWidget(name_l)
-        top_layout.addWidget(widget)
-        global_layout.addLayout(top_layout)
-        desc_l = QLabel(description)
-        desc_l.setWordWrap(True)
-        global_layout.addWidget(desc_l)
-        card.setLayout(global_layout)
-        self.playing_layout.addWidget(card, self.playing_layout.rowCount(), 0, 2, 2)
-
-    def addSeparateWidget(self, widget: QWidget) -> None:
-        self.playing_layout.addWidget(widget, self.playing_layout.rowCount(), 0, 1, 2)
-
-    def addSubInterface(self, widget: QWidget, objectName, text):
-        widget.setObjectName(objectName)
-        self.stacked_widget.addWidget(widget)
-        self.pivot.addItem(routeKey=objectName, text=text)
-
     def onPlaylistCardClicked(self, storable: SongStorable, item: QListWidgetItem):
         self.current_index = self.playlist.index(storable)
         self.playSongAtIndex(self.current_index)
@@ -2288,7 +2281,7 @@ class PlayingPage(QWidget):
                     self.cur.storable.get_music_bytes(), self.cur.storable.loudness_gain
                 )
             else:
-                self.applyNewLUFS()
+                sidebar.applyNewLUFS()
 
             self.downloadLyric()
 
@@ -2322,10 +2315,10 @@ class PlayingPage(QWidget):
 
             logging.debug(next_song)
 
-            if self.play_method_box.currentText() == "Play in order":
+            if sidebar.play_method_box.currentText() == "Play in order":
                 if self.current_index + 1 >= len(self.playlist):
                     return
-            elif self.play_method_box.currentText() == "Repeat list":
+            elif sidebar.play_method_box.currentText() == "Repeat list":
                 if self.current_index + 1 >= len(self.playlist):
                     next_song = self.playlist[0]
                 else:
@@ -2333,7 +2326,8 @@ class PlayingPage(QWidget):
             else:
                 next_song = self.playlist[self.current_index + 1]
             if not (
-                self.play_method_box.currentText() in ["Play in order", "Repeat list"]
+                sidebar.play_method_box.currentText()
+                in ["Play in order", "Repeat list"]
             ):
                 return
 
@@ -2534,14 +2528,17 @@ class PlayingPage(QWidget):
         if (
             isinstance(self.next_song_audio, AudioSegment)
             and isinstance(self.next_song_gain, float)
-            and (dp.play_method_box.currentText() in ["Play in order", "Repeat list"])
+            and (
+                sidebar.play_method_box.currentText()
+                in ["Play in order", "Repeat list"]
+            )
         ):
             self.playPreloadedSong()
             self.current_index += 1
             return
 
         if self.current_index < 0 or self.current_index >= len(self.playlist) - 1:
-            if dp.play_method_box.currentText() == "Play in order":
+            if sidebar.play_method_box.currentText() == "Play in order":
                 # No next song, reset and pause
                 InfoBar.warning(
                     "Warning",
@@ -2550,15 +2547,15 @@ class PlayingPage(QWidget):
                 )
                 self.controller.setPlaytime(0)
                 return
-            elif dp.play_method_box.currentText() == "Repeat list":
+            elif sidebar.play_method_box.currentText() == "Repeat list":
                 self.current_index = 0
                 self.playSongAtIndex(self.current_index)
                 return
 
-        if dp.play_method_box.currentText() == "Repeat one" and not byuser:
+        if sidebar.play_method_box.currentText() == "Repeat one" and not byuser:
             self.playSongAtIndex(self.current_index)
             return
-        elif dp.play_method_box.currentText() == "Shuffle":
+        elif sidebar.play_method_box.currentText() == "Shuffle":
             start_storable: SongStorable = self.playlist[self.current_index]
             cur_storable: SongStorable = self.playlist[self.current_index]
             while self.current_index == self.playlist.index(start_storable):
@@ -2808,6 +2805,8 @@ class PlayingPage(QWidget):
         )
         mwindow.repaint()
 
+        sidebar.refreshPlaylistWidget()
+
         # Load from cache/base64-backed bytes
         if song_storable.target_lufs == cfg.target_lufs:
             self.loadMusicFromBytes(
@@ -2959,8 +2958,19 @@ class DesktopLyricsPage(QWidget):
             self.timer.start(16)
 
         def updateDatas(self):
+            cur_line: YRCLyricInfo | LyricInfo | None = (
+                ymgr.getCurrentLyric(player.getPosition())
+                if ymgr.parsed
+                else mgr.getCurrentLyric(player.getPosition())
+                if mgr.parsed
+                else None
+            )
+            meta = cur_line.get("isMetadata") if cur_line else False
+
             has_translation = bool(transmgr.parsed)
             tar_height = 65 if has_translation else 46
+            if meta:
+                tar_height = self.font_height + 2
             self.cheight += (tar_height - self.cheight) * 0.12
             self.setFixedHeight(int(self.cheight))
 
@@ -3053,7 +3063,7 @@ class DesktopLyricsPage(QWidget):
                 draw_path = QPainterPath()
                 draw_path.moveTo(4, 0)
                 draw_path.lineTo(36, 0)
-                draw_path.lineTo(12, 25)
+                draw_path.lineTo(12, 16)
                 draw_path.closeSubpath()
 
                 exclude_path = QPainterPath()
@@ -3068,7 +3078,7 @@ class DesktopLyricsPage(QWidget):
                 draw_path_r = QPainterPath()
                 draw_path_r.moveTo(self.width() - 4, 0)
                 draw_path_r.lineTo(self.width() - 36, 0)
-                draw_path_r.lineTo(self.width() - 12, 25)
+                draw_path_r.lineTo(self.width() - 12, 16)
                 draw_path_r.closeSubpath()
 
                 exclude_path_r = QPainterPath()
@@ -3350,7 +3360,7 @@ class FavoritesPage(QWidget):
             # Check for duplicates
             if not any(s.name == song.name for s in dp.playlist):
                 dp.playlist.append(song)
-                dp.addSongCardToList(song)
+                sidebar.addSongCardToList(song)
                 added_count += 1
 
         if added_count > 0:
@@ -3375,7 +3385,7 @@ class FavoritesPage(QWidget):
             for song in folder["songs"]:
                 if not any(s.name == song.name for s in dp.playlist):
                     dp.playlist.append(song)
-                    dp.addSongCardToList(song)
+                    sidebar.addSongCardToList(song)
         InfoBar.success(
             "Songs added",
             "Added all songs from favorites to playlist",
@@ -3682,7 +3692,7 @@ class MainWindow(FluentWindowBase):
 
         left_layout.addWidget(dp.controller, alignment=Qt.AlignmentFlag.AlignHCenter)
         contents_layout.addLayout(left_layout)
-        contents_layout.addWidget(dp.expanded_widget)
+        contents_layout.addWidget(sidebar)
         self.widgetLayout.addLayout(contents_layout)
 
         self.navigationInterface.displayModeChanged.connect(self.titleBar.raise_)
@@ -3818,7 +3828,7 @@ class MainWindow(FluentWindowBase):
 
             wy.init()
 
-            dp.play_method_box.setCurrentText(cfg.play_method)
+            sidebar.play_method_box.setCurrentText(cfg.play_method)
 
             nonlocal _last_storable
 
@@ -3830,7 +3840,7 @@ class MainWindow(FluentWindowBase):
 
         def _finish_init():
             if isinstance(_last_storable, SongStorable):
-                dp.addSongCardToList(_last_storable)
+                sidebar.addSongCardToList(_last_storable)
                 mwindow.addScheduledTask(dp.playSongAtIndex, 0)
                 mwindow.addScheduledTask(
                     dp.controller.setPlaytime, cfg.last_playing_time
@@ -3864,7 +3874,7 @@ class MainWindow(FluentWindowBase):
         )
         cfg.last_playing_time = player.getPosition()
 
-        cfg.play_method = dp.play_method_box.currentText()  # type: ignore
+        cfg.play_method = sidebar.play_method_box.currentText()  # type: ignore
         cfg.window_x = self.x() + (
             253 if dp.controller.expand_btn.text() == "Collapse" else 0
         )
@@ -3900,7 +3910,7 @@ class MainWindow(FluentWindowBase):
             lambda: ws_handler.send(
                 json.dumps(
                     {
-                        "option": f"{'disable' if not dp.enableFFT_box.isChecked() else 'enable'}_fft"
+                        "option": f"{'disable' if not sidebar.enableFFT_box.isChecked() else 'enable'}_fft"
                     }
                 )
             ),
@@ -3910,8 +3920,8 @@ class MainWindow(FluentWindowBase):
 
         self.connected = True
 
-        dp.disconnect_btn.setEnabled(True)
-        dp.connect_btn.setEnabled(False)
+        sidebar.disconnect_btn.setEnabled(True)
+        sidebar.connect_btn.setEnabled(False)
 
     def onWebsocketDisconnected(self):
         InfoBar.warning(
@@ -3923,8 +3933,8 @@ class MainWindow(FluentWindowBase):
 
         self.connected = False
 
-        dp.connect_btn.setEnabled(True)
-        dp.disconnect_btn.setEnabled(False)
+        sidebar.connect_btn.setEnabled(True)
+        sidebar.disconnect_btn.setEnabled(False)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_F3:
@@ -4127,6 +4137,7 @@ if __name__ == "__main__":
             app.setStyleSheet(
                 f"QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}"
             )
+            sidebar.updateTheme()
             refreshBoundIcons()
 
         mwindow.addScheduledTask(_updateTheme)
@@ -4198,6 +4209,7 @@ if __name__ == "__main__":
 
     debug_window = DebugWindow()
 
+    sidebar = Sidebar()
     dp = PlayingPage()
     sp = SearchPage()
     dsp = DesktopLyricsPage()

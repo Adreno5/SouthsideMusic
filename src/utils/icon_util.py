@@ -24,6 +24,8 @@ class SouthsideIcon(FluentIconBase, Enum):
     STUDIO = "studio"
     ISLAND = "island"
     SESSION = "session"
+    DROP_UP = "drop_up"
+    DROP_DOWN = "drop_down"
 
     def path(self, theme=Theme.AUTO) -> str:
         if theme == Theme.AUTO:

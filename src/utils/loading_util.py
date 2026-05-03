@@ -247,8 +247,9 @@ class _TaskWorker(QObject):
     def run(self):
         try:
             self.task(*self.args)
-        except Exception:
+        except Exception as e:
             logging.exception("Background task failed")
+            raise e
         finally:
             self.finished.emit()
 

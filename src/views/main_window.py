@@ -23,7 +23,7 @@ from qfluentwidgets.window.fluent_window import FluentWindowBase
 from utils.base.base_util import SongStorable
 from utils.color_util import mixColor
 from utils.config_util import saveConfig, cfg
-from utils.favorite_util import saveFavorites
+from utils.favorite_util import saveFavorites, favs
 from utils.icon_util import getQIcon
 from utils.loading_util import doWithMultiThreading
 from views.playing_page import PlayingPage
@@ -47,10 +47,9 @@ class MainWindow(FluentWindowBase):
         wy,
         ws_server,
         ws_handler,
-        favs_ref: list,
         launchwindow,
         debug_window,
-        parent=None, 
+        parent=None,
     ):
         super().__init__(parent)
         self._app = app
@@ -64,7 +63,6 @@ class MainWindow(FluentWindowBase):
         self._wy = wy
         self._ws_server = ws_server
         self._ws_handler = ws_handler
-        self._favs_ref = favs_ref
         self._launchwindow = launchwindow
         self._debug_window = debug_window
 
@@ -217,32 +215,37 @@ class MainWindow(FluentWindowBase):
 
     def init(self) -> None:
         self._launchwindow.clear()
-        self._launchwindow.push('Initializing main window...')
-        _last_storable: SongStorable | None = None
+        self._launchwindow.push("Initializing main window...")
+        last_playlist: list[SongStorable] = []
+        last_playing_index = -1
 
         def _init():
-            self._launchwindow.push('Initializing services...')
+            self._launchwindow.push("Initializing services...")
             self._wy.init()
 
             self._sidebar.play_method_box.setCurrentText(cfg.play_method)
 
-            nonlocal _last_storable
+            nonlocal last_playlist, last_playing_index
 
-            if cfg.last_playing_song:
-                _last_storable = cfg.last_playing_song
-                self._dp.playlist.append(_last_storable)
+            if cfg.last_playlist:
+                last_playlist = cfg.last_playlist
+                last_playing_index = cfg.last_playing_index
+                self._dp.playlist.extend(last_playlist)
 
         def _finish_init():
-            if isinstance(_last_storable, SongStorable):
-                self._launchwindow.top('continue last song...')
-                self._sidebar.addSongCardToList(_last_storable)
-                self.addScheduledTask(self._dp.playSongAtIndex, 0)
-                self.addScheduledTask(
-                    self._dp.controller.setPlaytime, cfg.last_playing_time
-                )
-                self.addScheduledTask(self._player.stop)
+            if last_playlist:
+                self._launchwindow.top("restore playlist...")
+                for storable in last_playlist:
+                    self._sidebar.addSongCardToList(storable)
+                if 0 <= last_playing_index < len(last_playlist):
+                    self._launchwindow.top("continue last song...")
+                    self.addScheduledTask(self._dp.playSongAtIndex, last_playing_index)
+                    self.addScheduledTask(
+                        self._dp.controller.setPlaytime, cfg.last_playing_time
+                    )
+                    self.addScheduledTask(self._player.stop)
 
-            self._launchwindow.top('refreshing login information')
+            self._launchwindow.top("refreshing login information")
             self._sep.refreshInformations()
 
             def _show():
@@ -257,7 +260,7 @@ class MainWindow(FluentWindowBase):
 
         InfoBar.info(
             "Initialization",
-            f"Loaded {len(self._favs_ref)} folders",
+            f"Loaded {len(favs)} folders",
             parent=self,
             duration=2000,
         )
@@ -272,9 +275,8 @@ class MainWindow(FluentWindowBase):
         self._ws_server.stop()
         self._ws_server.join()
 
-        cfg.last_playing_song = (
-            self._dp.cur.storable if isinstance(self._dp.cur, DummyCard) else None
-        )
+        cfg.last_playlist = self._dp.playlist.copy()
+        cfg.last_playing_index = self._dp.current_index
         cfg.last_playing_time = self._player.getPosition()
 
         cfg.play_method = self._sidebar.play_method_box.currentText()
@@ -289,7 +291,7 @@ class MainWindow(FluentWindowBase):
         cfg.window_maximized = self.isMaximized()
 
         saveConfig()
-        saveFavorites(self._favs_ref)
+        saveFavorites()
 
         self._ws_server.stop()
         self._ws_server.join()

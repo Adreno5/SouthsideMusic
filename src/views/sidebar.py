@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from utils.websocket_util import WebSocketHandler
 
 import numpy as np
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QGridLayout,
@@ -66,8 +66,6 @@ class Sidebar(QWidget):
         player: AudioPlayer | None = None,
         ws_server=None,
         ws_handler=None,
-        favs_ref=None,
-        save_favorites_fn=None,
         app=None,
         launchwindow=None,
     ):
@@ -82,11 +80,8 @@ class Sidebar(QWidget):
         self._player: AudioPlayer = player  # type: ignore
         self._ws_server: WebSocketServer = ws_server  # type: ignore
         self._ws_handler: QObjectHandler = ws_handler  # type: ignore
-        self._favs_ref = favs_ref
-        self._save_favorites_fn = save_favorites_fn
         self._app = app
 
-        self.lst_shoud_set: bool = True
         self.setFixedWidth(500)
 
         layout = QVBoxLayout()
@@ -100,10 +95,13 @@ class Sidebar(QWidget):
         self.lst_layout = QVBoxLayout()
         self.lst = ListWidget()
         self.lst.setFixedWidth(500)
-        self.lst.entered.connect(lambda: self.__setattr__("lst_shoud_set", False))
-        self.lst.leaveEvent = lambda e: self.__setattr__("lst_shoud_set", True)
         self.lst.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.lst_layout.addWidget(self.lst)
+
+        self._song_cards: list[PlaylistSongCard] = []
+        self._lazy_timer = QTimer(self)
+        self._lazy_timer.timeout.connect(self._checkVisibleCards)
+        self._lazy_timer.start(50)
 
         btn_layout = QHBoxLayout()
         self.removeall_btn = TransparentPushButton("Remove All")
@@ -444,15 +442,30 @@ class Sidebar(QWidget):
         item.setData(Qt.ItemDataRole.UserRole, song)
         item.setSizeHint(QSize(0, 62))
         card = PlaylistSongCard(
-            song, self._dp, self._favs_ref, self._save_favorites_fn, self._mwindow, self
+            song, self._dp, mwindow=self._mwindow, sidebar=self, lazy=True
         )
         card.clicked.connect(lambda s, it=item: self._dp.onPlaylistCardClicked(s, it))
         self.lst.addItem(item)
         self.lst.setItemWidget(item, card)
+        self._song_cards.append(card)
         return item
+
+    def _checkVisibleCards(self):
+        for card in self._song_cards:
+            if card.load:
+                continue
+            idx = self._song_cards.index(card)
+            item = self.lst.item(idx)
+            if item is None:
+                continue
+            item_rect = self.lst.visualItemRect(item)
+            viewport_rect = self.lst.viewport().rect()
+            if viewport_rect.intersects(item_rect):
+                card.loadDetailAndImage()
 
     def refreshPlaylistWidget(self):
         val = self.lst.verticalScrollBar().value()
+        self._song_cards = []
         self.lst.clear()
 
         for song in self._dp.playlist:
@@ -460,6 +473,37 @@ class Sidebar(QWidget):
 
         self._dp._preload_triggered = False
         self.lst.verticalScrollBar().setValue(val)
+
+    def movePlaylistSong(self, song: SongStorable, delta: int):
+        playlist = self._dp.playlist
+        try:
+            old_index = playlist.index(song)
+        except ValueError:
+            return
+
+        new_index = old_index + delta
+        if new_index < 0 or new_index >= len(playlist):
+            return
+
+        current_song = None
+        if 0 <= self._dp.current_index < len(playlist):
+            current_song = playlist[self._dp.current_index]
+
+        playlist[old_index], playlist[new_index] = (
+            playlist[new_index],
+            playlist[old_index],
+        )
+        if current_song is not None:
+            self._dp.current_index = playlist.index(current_song)
+        self._dp.song_randomer.init(playlist)
+
+        self.refreshPlaylistWidget()
+        self.lst.setCurrentRow(new_index)
+
+        if current_song is song:
+            position = self._player.getPosition()
+            self._dp.playSongAtIndex(self._dp.current_index)
+            self._player.setPosition(position)
 
     def applyNewLUFS(self):
         self._dp.lufs_changed_timer.stop()

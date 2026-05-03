@@ -1,8 +1,6 @@
-
 from dataclasses import dataclass
 import json
 import logging
-import pickle
 import os
 import threading
 import time
@@ -12,14 +10,18 @@ from utils.base.base_util import SongStorable
 
 cfg_changed: bool = False
 
+
 @dataclass
 class Config:
-    play_method: Literal['Repeat one', 'Repeat list', 'Shuffle', 'Play in order'] = 'Repeat list'
+    play_method: Literal["Repeat one", "Repeat list", "Shuffle", "Play in order"] = (
+        "Repeat list"
+    )
     skip_nosound: bool = True
     skip_threshold: int = -45
     skip_remain_time: int = 10
 
-    last_playing_song: SongStorable | None = None
+    last_playlist: list[SongStorable] | None = None
+    last_playing_index: int = -1
     last_playing_time: float = 0
 
     window_x: int = 0
@@ -29,7 +31,7 @@ class Config:
     window_maximized: bool = False
 
     enable_desktop_lyrics: bool = False
-    desktop_lyrics_anchor: Literal['top-center', 'bottom-center', 'normal'] = 'normal'
+    desktop_lyrics_anchor: Literal["top-center", "bottom-center", "normal"] = "normal"
     desktop_lyrics_x: int = 0
     desktop_lyrics_y: int = 0
 
@@ -43,7 +45,7 @@ class Config:
 
     session: str | None = None
     login_status: dict | None = None
-    login_method: Literal['anonymous', 'cell phone', 'QR code'] = 'anonymous'
+    login_method: Literal["anonymous", "cell phone", "QR code"] = "anonymous"
 
     stereo: bool = True
 
@@ -64,67 +66,92 @@ class Config:
         cfg_changed = True
         super().__setattr__(name, value)
 
+
 cfg = Config()
 
-def restoreOldConfigFormat() -> None:
-    if not os.path.exists('./config.json'):
+
+CONFIG_PATH = "./config.json"
+LEGACY_PICKLE_CONFIG_PATH = "./config.pkl"
+
+
+def _song_to_object(song: SongStorable | None):
+    return song.toObject() if isinstance(song, SongStorable) else None
+
+
+def _song_from_object(data: Any) -> SongStorable | None:
+    if not isinstance(data, dict):
+        return None
+    try:
+        return SongStorable.fromObject(data)  # type: ignore[arg-type]
+    except Exception as e:
+        logging.warning(f"failed to restore song from config: {e}")
+        return None
+
+
+def _config_to_json_object() -> dict[str, Any]:
+    data = cfg.__dict__.copy()
+    data["last_playlist"] = [
+        song.toObject()
+        for song in (cfg.last_playlist or [])
+        if isinstance(song, SongStorable)
+    ]
+    data.pop("last_playing_song", None)
+    return data
+
+
+def _apply_config_json_object(data: dict[str, Any]) -> None:
+    if "last_playlist" in data:
+        data["last_playlist"] = [
+            song
+            for song in (
+                _song_from_object(item) for item in data.get("last_playlist", [])
+            )
+            if song is not None
+        ]
+    elif "last_playing_song" in data:
+        song = _song_from_object(data.get("last_playing_song"))
+        data["last_playlist"] = [song] if song else []
+        data["last_playing_index"] = 0 if song else -1
+    data.pop("last_playing_song", None)
+    cfg.__dict__.update(data)
+
+
+def _delete_legacy_pickle_config() -> None:
+    if not os.path.exists(LEGACY_PICKLE_CONFIG_PATH):
         return
-    
-    with open('./config.json', 'r', encoding='utf-8') as f:
-        data = json.load(f)
+    try:
+        os.remove(LEGACY_PICKLE_CONFIG_PATH)
+        logging.info("deleted legacy config.pkl")
+    except OSError as e:
+        logging.warning(f"failed to delete legacy config.pkl: {e}")
 
-        cfg.play_method = data['play_method']
-        cfg.skip_nosound = data.get('skip_nosound', True)
-        cfg.skip_threshold = data.get('skip_threshold', -45)
-        cfg.skip_remain_time = data.get('skip_remain_time', 10)
-
-        cfg.last_playing_song = SongStorable.fromObject(data['last_playing_song']) if data['last_playing_song'] else None
-        cfg.last_playing_time = data['last_playing_time']
-
-        cfg.window_x = data.get('window_x', 0)
-        cfg.window_y = data.get('window_y', 0)
-        cfg.window_width = data.get('window_width', 0)
-        cfg.window_height = data.get('window_height', 0)
-        cfg.window_maximized = data.get('window_maximized', False)
-
-        cfg.enable_fft = data.get('enable_fft', True)
-        cfg.fft_filtering_windowsize = data.get('fft_filtering_windowsize', 4)
-        cfg.fft_factor = data.get('fft_factor', 0.4)
-        cfg.cfft_multiple = data.get('cfft_multiple', 1.0)
-        cfg.sfft_multiple = data.get('sfft_multiple', 1.0)
-
-        cfg.target_lufs = data.get('target_lufs', -16)
-
-        cfg.session = None
-        cfg.login_status = None
-
-        cfg.stereo = True
-
-        saveConfig()
-
-        logging.info('restored old config.json to pickle format')
-
-    os.remove('./config.json')
 
 def loadConfig() -> None:
-    global cfg
-    restoreOldConfigFormat()
+    global cfg, cfg_changed
 
-    if not os.path.exists('./config.pkl'):
+    if not os.path.exists(CONFIG_PATH):
         saveConfig()
     else:
-        with open('./config.pkl', 'rb') as f:
-            data = pickle.load(f)
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
 
-            cfg.__dict__.update(data)
+        if isinstance(data, dict):
+            _apply_config_json_object(data)
+            logging.info(f"loaded config {len(cfg.__dict__)=}")
+        else:
+            logging.warning("invalid config.json, using defaults")
+            saveConfig()
 
-            logging.info(f'loaded config {len(cfg.__dict__)=}')
+    _delete_legacy_pickle_config()
+    cfg_changed = False
+
 
 def saveConfig() -> None:
-    with open('./config.pkl', 'wb') as f:
-        pickle.dump(cfg.__dict__, f)
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(_config_to_json_object(), f, ensure_ascii=False, indent=2)
 
-        logging.info('saved config')
+        logging.info("saved config")
+
 
 def autoSave():
     global cfg_changed
@@ -133,6 +160,7 @@ def autoSave():
         if cfg_changed:
             saveConfig()
             cfg_changed = False
+
 
 autosave_thread = threading.Thread(target=autoSave)
 autosave_thread.daemon = True

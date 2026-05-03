@@ -365,7 +365,7 @@ class PlayingPage(QWidget):
                         audio = AudioSegment_.from_file(io.BytesIO(song_bytes))
                 except Exception as e:
                     next_song.content_cache_hash = ""
-                    saveFavorites(self._favs_ref)
+                    saveFavorites()
                     self.next_song_audio = None
                     self.next_song_gain = None
                     logging.warning(
@@ -417,9 +417,10 @@ class PlayingPage(QWidget):
         assert self.cur is not None
 
         def _parse():
+            data: dict = {}
             with ncm.GetCurrentSession():
                 if self.cur:
-                    data: dict = apis.track.GetTrackLyricsNew(str(self.cur.info["id"]))  # type: ignore
+                    data = apis.track.GetTrackLyricsNew(str(self.cur.info["id"]))  # type: ignore
             self._mgr.cur = data.get("lrc", {}).get("lyric", "[00:00.000]")
             tlyric = data.get("tlyric")
             if isinstance(tlyric, dict):
@@ -654,7 +655,6 @@ class PlayingPage(QWidget):
                     image_bytes = prepared.get("image")
                     if not isinstance(image_bytes, bytes) or not image_bytes:
                         return False
-                    song_storable.image_base64 = base64.b64encode(image_bytes).decode()
                     song_storable.image_cache_hash = self._write_storable_asset(
                         IMAGE_DATA_DIR,
                         image_bytes,
@@ -664,15 +664,12 @@ class PlayingPage(QWidget):
                 if music_missing:
                     if not music_bytes:
                         return False
-                    song_storable.content_base64 = base64.b64encode(
-                        music_bytes
-                    ).decode()
                     song_storable.content_cache_hash = self._write_storable_asset(
                         MUSIC_DATA_DIR,
                         music_bytes,
                     )
 
-                saveFavorites(self._favs_ref)
+                saveFavorites()
                 if image_just_persisted:
                     self.imageAssetPersisted.emit(song_storable)
                 return True
@@ -823,6 +820,8 @@ class PlayingPage(QWidget):
 
         def _download_lyrics():
             nonlocal lyric_result
+            if not song_storable.yrc_lyrics_missing():
+                return
             try:
                 data = apis.track.GetTrackLyricsNew(song_storable.id)
                 assert isinstance(data, dict), "Invalid response"
@@ -836,12 +835,13 @@ class PlayingPage(QWidget):
                 return
 
             if lyric_result is None:
-                self._mgr.cur = lyric_target.lyric
-                if lyric_target.translated_lyric:
-                    self._transmgr.cur = lyric_target.translated_lyric
+                lyrics = lyric_target.get_lyrics()
+                self._mgr.cur = lyrics["lyric"] or "[00:00.000]"
+                if lyrics["translated_lyric"]:
+                    self._transmgr.cur = lyrics["translated_lyric"]
                 else:
                     self._transmgr.cur = "[00:00.000]"
-                self._ymgr.cur = ""
+                self._ymgr.cur = lyrics["yrc_lyric"]
             else:
                 self._mgr.cur = lyric_result.get("lrc", {}).get("lyric", "[00:00.000]")
                 tlyric = lyric_result.get("tlyric")
@@ -852,6 +852,12 @@ class PlayingPage(QWidget):
                 else:
                     self._transmgr.cur = "[00:00.000]"
                 self._ymgr.cur = lyric_result.get("yrc", {}).get("lyric", "")
+                lyric_target.write_lyrics(
+                    self._mgr.cur,
+                    self._transmgr.cur if self._transmgr.cur != "[00:00.000]" else "",
+                    self._ymgr.cur,
+                )
+                saveFavorites()
 
             self._mgr.parse()
             self._transmgr.parse()

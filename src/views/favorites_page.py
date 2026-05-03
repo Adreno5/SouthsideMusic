@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt
+import logging
+
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -24,13 +26,13 @@ from qfluentwidgets import (
 )
 
 from utils.base.base_util import FolderInfo, SongStorable
-from utils.favorite_util import loadFavorites, saveFavorites
+from utils.favorite_util import loadFavorites, saveFavorites, favs
 from utils.icon_util import bindIcon
 from views.song_card import FavoriteSongCard
 
 
 class FavoritesPage(QWidget):
-    def __init__(self, dp, sidebar, mwindow, favs_ref, launchwindow=None) -> None:
+    def __init__(self, dp, sidebar, mwindow, launchwindow=None) -> None:
         super().__init__()
         lw = launchwindow
         if lw:
@@ -38,7 +40,6 @@ class FavoritesPage(QWidget):
         self._dp = dp
         self._sidebar = sidebar
         self._mwindow = mwindow
-        self._favs_ref = favs_ref
         self.setObjectName("favorites_page")
 
         if lw:
@@ -85,12 +86,14 @@ class FavoritesPage(QWidget):
         self.song_viewer = ListWidget()
         self.song_viewer.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         right_layout.addWidget(self.song_viewer, 1)
-        self.deletesong_btn = PushButton(FluentIcon.DELETE, "Delete Song")
-        self.deletesong_btn.clicked.connect(self.deleteSong)
-        right_layout.addWidget(self.deletesong_btn)
         bottom_layout.addLayout(right_layout, 7)
         global_layout.addLayout(bottom_layout)
         self.setLayout(global_layout)
+
+        self._song_cards: list[FavoriteSongCard] = []
+        self._lazy_timer = QTimer(self)
+        self._lazy_timer.timeout.connect(self._checkVisibleCards)
+        self._lazy_timer.start(50)
 
     def renameFolder(self):
         from utils.dialog_util import get_text_lineedit
@@ -111,39 +114,81 @@ class FavoritesPage(QWidget):
                 ):
                     favs[i]["folder_name"] = got
                     break
-            saveFavorites(favs)
-            self._set_favs(favs)
+            saveFavorites()
             self.refresh()
 
     def _get_favs(self):
-        return loadFavorites()
-
-    def _set_favs(self, favs):
-        self._favs_ref.clear()
-        self._favs_ref.extend(favs)
+        return favs
 
     def viewSongs(self, i: QListWidgetItem):
+        self._song_cards = []
         favs = loadFavorites()
         self.song_viewer.clear()
+
         for f in favs:
             if i.text() == f["folder_name"]:
-                for song in f["songs"]:
+                folder_name = i.text()
+                songs = f["songs"]
+                for song in songs:
                     item = QListWidgetItem()
                     item.setData(Qt.ItemDataRole.UserRole, song)
                     item.setSizeHint(QSize(0, 62))
                     card = FavoriteSongCard(
                         song,
                         self._dp,
-                        favs,
-                        saveFavorites,
                         self._mwindow,
                         self._sidebar,
+                        remove_callback=lambda s=song, fn=folder_name: self.deleteSong(
+                            fn, s
+                        ),
+                        move_callback=lambda d, s=song, fn=folder_name: self.moveSong(
+                            fn, s, d
+                        ),
+                        lazy=True,
                     )
                     card.clicked.connect(
                         lambda s, it=item: self.song_viewer.setCurrentItem(it)
                     )
                     self.song_viewer.addItem(item)
                     self.song_viewer.setItemWidget(item, card)
+                    self._song_cards.append(card)
+
+    def _checkVisibleCards(self):
+        for card in self._song_cards:
+            if card.load:
+                continue
+            idx = self._song_cards.index(card)
+            item = self.song_viewer.item(idx)
+            if item is None:
+                continue
+            item_rect = self.song_viewer.visualItemRect(item)
+            viewport_rect = self.song_viewer.viewport().rect()
+            if viewport_rect.intersects(item_rect):
+                card.loadDetailAndImage()
+
+    def moveSong(self, folder_name: str, song_storable: SongStorable, delta: int):
+        favs = self._get_favs()
+        for folder in favs:
+            if folder["folder_name"] != folder_name:
+                continue
+
+            songs = folder["songs"]
+            try:
+                old_index = songs.index(song_storable)
+            except ValueError:
+                return
+
+            new_index = old_index + delta
+            if new_index < 0 or new_index >= len(songs):
+                return
+
+            songs[old_index], songs[new_index] = songs[new_index], songs[old_index]
+            saveFavorites()
+            selected = self.folder_selector.currentItem()
+            if selected:
+                self.viewSongs(selected)
+                self.song_viewer.setCurrentRow(new_index)
+            return
 
     def newFolder(self):
         from utils.base.base_util import FolderInfo
@@ -166,7 +211,7 @@ class FavoritesPage(QWidget):
                     )
                     return
             favs.append(FolderInfo(folder_name=name, songs=[]))
-            saveFavorites(favs)
+            saveFavorites()
             self.refresh()
             InfoBar.success(
                 "Folder created", f"Folder {name} created", parent=self._mwindow
@@ -190,33 +235,14 @@ class FavoritesPage(QWidget):
         )
         if reply == QMessageBox.StandardButton.Yes:
             favs = [f for f in favs if f["folder_name"] != folder_name]
-            saveFavorites(favs)
+            saveFavorites()
             self.refresh()
             InfoBar.success(
                 "Folder deleted", f"Folder {folder_name} deleted", parent=self._mwindow
             )
 
-    def deleteSong(self):
+    def deleteSong(self, folder_name: str, song_storable: SongStorable):
         favs = loadFavorites()
-        selected_folder = self.folder_selector.currentItem()
-        if not selected_folder:
-            InfoBar.warning(
-                "No folder selected",
-                "Please select a folder first",
-                parent=self._mwindow,
-            )
-            return
-        selected_song = self.song_viewer.currentItem()
-        if not selected_song:
-            InfoBar.warning(
-                "No song selected",
-                "Please select a song to delete",
-                parent=self._mwindow,
-            )
-            return
-
-        folder_name = selected_folder.text()
-        song_storable: SongStorable = selected_song.data(Qt.ItemDataRole.UserRole)
         song_name = song_storable.name
 
         reply = QMessageBox.question(
@@ -232,20 +258,10 @@ class FavoritesPage(QWidget):
                         s for s in folder["songs"] if s.name != song_name
                     ]
                     break
-            saveFavorites(favs)
-            self.viewSongs(selected_folder)
-            InfoBar.success(
-                "Song deleted", f"Song {song_name} deleted", parent=self._mwindow
-            )
-        if reply == QMessageBox.StandardButton.Yes:
-            for folder in favs:
-                if folder["folder_name"] == folder_name:
-                    folder["songs"] = [
-                        s for s in folder["songs"] if s.name != song_name
-                    ]
-                    break
-            saveFavorites(favs)
-            self.viewSongs(selected_folder)
+            saveFavorites()
+            selected = self.folder_selector.currentItem()
+            if selected:
+                self.viewSongs(selected)
             InfoBar.success(
                 "Song deleted", f"Song {song_name} deleted", parent=self._mwindow
             )

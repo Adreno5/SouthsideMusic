@@ -5,7 +5,7 @@ import hashlib
 import logging
 import os
 import threading
-from typing import Callable, TYPE_CHECKING, cast as _cast
+from typing import Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from views.main_window import MainWindow
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from views.playing_page import PlayingPage
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QMouseEvent, QPixmap
+from PySide6.QtGui import QImage, QMouseEvent, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -33,6 +33,7 @@ from qfluentwidgets import (
     RoundMenu,
     SubtitleLabel,
     TransparentToolButton,
+    ToolButton,
 )
 
 from utils.base.base_util import (
@@ -47,6 +48,7 @@ from utils import darkdetect_util as darkdetect
 from utils.loading_util import doWithMultiThreading
 from utils.soundfile_util import getSongFormat, saveSongWithInformations
 from utils import requests_util as requests
+from utils.favorite_util import favs, saveFavorites
 
 from pyncm import apis
 import pyncm as ncm
@@ -142,6 +144,8 @@ class SongCard(QWidget):
         self._play_callback(self)
 
     def addToFavorites(self):
+        from utils.dialog_util import get_value_bylist
+
         if self.info["privilege"] > ncm.GetCurrentSession().vipType:
             InfoBar.warning(
                 "Cannot add to favorites",
@@ -149,6 +153,26 @@ class SongCard(QWidget):
                 parent=self._mwindow,
             )
             return
+
+        if not favs:
+            InfoBar.warning(
+                "No folders",
+                "Create a folder first in Favorites page",
+                parent=self._mwindow,
+            )
+            return
+
+        folder_names = [f["folder_name"] for f in favs]
+        chosen = get_value_bylist(
+            self._mwindow,
+            "Choose Folder",
+            "Which folder to save this song?",
+            folder_names,
+        )
+        if chosen is None:
+            return
+
+        target_folder = next(f for f in favs if f["folder_name"] == chosen)
 
         result_container = []
 
@@ -169,13 +193,8 @@ class SongCard(QWidget):
                 result_container.append((image_bytes, music_bytes))
 
         def _finish():
-            from utils.favorite_util import loadFavorites, saveFavorites
-            from utils.base.base_util import FolderInfo
-
             image_bytes, music_bytes = result_container[0]
 
-            image_base64 = base64.b64encode(image_bytes).decode()
-            content_base64 = base64.b64encode(music_bytes).decode()
             image_cache_hash = hashlib.sha256(image_bytes).hexdigest()
             content_cache_hash = hashlib.sha256(music_bytes).hexdigest()
 
@@ -187,24 +206,22 @@ class SongCard(QWidget):
                 f.write(music_bytes)
 
             storable = SongStorable(
-                image_base64=image_base64,
-                content_base64=content_base64,
+                info={
+                    "name": self.info["name"],
+                    "artists": self.info["artists"],
+                    "id": self.info["id"],
+                    "privilege": -1,
+                },
                 image_cache_hash=image_cache_hash,
                 content_cache_hash=content_cache_hash,
-                gain=1.0,
-                target_lufs=-16,
                 lyric="",
-                translated_lyric="",
-                info=self.info,
             )
-
-            favs = loadFavorites()
-            favs[0]["songs"].append(storable)
-            saveFavorites(favs)
+            target_folder["songs"].append(storable)
+            saveFavorites()
 
             InfoBar.success(
                 "Favorited",
-                f"Added {self.info['name']} to favorites",
+                f"Added {self.info['name']} to '{chosen}'",
                 parent=self._mwindow,
                 duration=3000,
             )
@@ -212,6 +229,8 @@ class SongCard(QWidget):
         doWithMultiThreading(_download, (), self._mwindow, _finish)
 
     def loadDetailAndImage(self):
+        self.load = True
+
         def _do():
             with ncm.GetCurrentSession():
                 response = apis.track.GetTrackDetail(song_ids=[self.info["id"]])
@@ -247,22 +266,35 @@ class _SongCardItem(QWidget):
         self,
         storable: SongStorable,
         dp: PlayingPage | None = None,
-        favs_ref=None,
-        save_favorites_fn=None,
         mwindow: MainWindow | None = None,
         sidebar: Sidebar | None = None,
         parent=None,
+        lazy: bool = False,
     ):
         super().__init__(parent)
         self.storable = storable
         self._dp: PlayingPage = dp  # type: ignore
-        self._favs_ref = favs_ref
-        self._save_favorites_fn = save_favorites_fn
         self._mwindow: MainWindow = mwindow  # type: ignore
         self._sidebar: Sidebar = sidebar  # type: ignore
+        self.load = False
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
+
+        order_layout = QVBoxLayout()
+        order_layout.setContentsMargins(0, 0, 0, 0)
+        order_layout.setSpacing(0)
+        self.move_up_btn = TransparentToolButton()
+        self.move_down_btn = TransparentToolButton()
+        bindIcon(self.move_up_btn, "drop_up")
+        bindIcon(self.move_down_btn, "drop_down")
+        self.move_up_btn.setFixedSize(24, 24)
+        self.move_down_btn.setFixedSize(24, 24)
+        self.move_up_btn.clicked.connect(lambda: self.moveRequested(-1))
+        self.move_down_btn.clicked.connect(lambda: self.moveRequested(1))
+        order_layout.addWidget(self.move_up_btn)
+        order_layout.addWidget(self.move_down_btn)
+        layout.addLayout(order_layout)
 
         self.img_label = QLabel()
         self.img_label.setFixedSize(50, 50)
@@ -277,6 +309,20 @@ class _SongCardItem(QWidget):
         text_layout.addWidget(artists_label)
         layout.addLayout(text_layout, 1)
 
+        if not lazy:
+            self.load = True
+            self.loadImage()
+            if self._dp:
+                self._dp.imageAssetPersisted.connect(self._on_image_asset_persisted)
+            if self.img_label.pixmap() is None or self.img_label.pixmap().isNull():
+                threading.Thread(
+                    target=self._auto_download_missing_image, daemon=True
+                ).start()
+
+    def loadDetailAndImage(self):
+        if self.load:
+            return
+        self.load = True
         self.loadImage()
         if self._dp:
             self._dp.imageAssetPersisted.connect(self._on_image_asset_persisted)
@@ -288,6 +334,9 @@ class _SongCardItem(QWidget):
     def _on_image_asset_persisted(self, storable: SongStorable):
         if storable is self.storable:
             self.loadImage()
+
+    def moveRequested(self, delta: int):
+        pass
 
     def _auto_download_missing_image(self):
         storable = self.storable
@@ -324,25 +373,46 @@ class _SongCardItem(QWidget):
             if not os.path.exists(cache_path):
                 with open(cache_path, "wb") as f:
                     f.write(image_bytes)
-            storable.image_base64 = base64.b64encode(image_bytes).decode()
             storable.image_cache_hash = cache_hash
-            self._save_favorites_fn(self._favs_ref)  # type: ignore
+            saveFavorites()
             self._dp.imageAssetPersisted.emit(storable)
         finally:
             lock.release()
 
     def loadImage(self):
-        try:
+        if self._mwindow is None:
+            return
+
+        result: dict[str, QImage] = {}
+
+        def _decode():
             image_bytes = self.storable.get_image_bytes()
-            pixmap = QPixmap()
-            pixmap.loadFromData(image_bytes)
-            if not pixmap.isNull():
-                scaled = pixmap.scaled(
-                    self.img_label.size(),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-                self.img_label.setPixmap(scaled)
+            image = QImage()
+            image.loadFromData(image_bytes)
+            if not image.isNull():
+                result["image"] = image
+
+        def _finish():
+            image = result.get("image")
+            if image is None:
+                return
+
+            def _apply_pixmap():
+                if not self.load:
+                    return
+                pixmap = QPixmap.fromImage(image)
+                if not pixmap.isNull():
+                    scaled = pixmap.scaled(
+                        self.img_label.size(),
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    self.img_label.setPixmap(scaled)
+
+            self._mwindow.addScheduledTask(_apply_pixmap)
+
+        try:
+            doWithMultiThreading(_decode, (), self._mwindow, _finish)
         except Exception:
             pass
 
@@ -353,18 +423,24 @@ class _SongCardItem(QWidget):
 
 
 class PlaylistSongCard(_SongCardItem):
+    def moveRequested(self, delta: int):
+        self._sidebar.movePlaylistSong(self.storable, delta)
+
     def contextMenuEvent(self, event):
         menu = RoundMenu(parent=self)
 
         export = Action("Export", menu)
         export.setIcon(getQIcon("export"))
+        repeat = Action("Repeat", menu)
+        repeat.setIcon(FluentIcon.SYNC.icon())
         rm = Action("Remove", menu)
         rm.setIcon(getQIcon("remove"))
 
         export.triggered.connect(lambda: self._exportSong())
+        repeat.triggered.connect(lambda: self._repeatSong())
         rm.triggered.connect(lambda: self._removeSong())
 
-        menu.addActions([export, rm])
+        menu.addActions([export, repeat, rm])
 
         menu.exec(event.globalPos(), aniType=MenuAnimationType.DROP_DOWN)
 
@@ -432,6 +508,20 @@ class PlaylistSongCard(_SongCardItem):
 
             doWithMultiThreading(_export, (), self._mwindow, _final)
 
+    def _repeatSong(self):
+        try:
+            index = self._dp.playlist.index(self.storable)
+        except ValueError:
+            return
+
+        insert_index = index + 1
+        self._dp.playlist.insert(insert_index, self.storable)
+        if self._dp.current_index >= insert_index:
+            self._dp.current_index += 1
+        self._dp.song_randomer.init(self._dp.playlist)
+        self._sidebar.refreshPlaylistWidget()
+        self._sidebar.lst.setCurrentRow(insert_index)
+
     def _removeSong(self):
         for i, storable in enumerate(self._dp.playlist):
             if storable.id == self.storable.id:
@@ -446,17 +536,43 @@ class PlaylistSongCard(_SongCardItem):
 
 
 class FavoriteSongCard(_SongCardItem):
+    def __init__(
+        self,
+        storable,
+        dp,
+        mwindow,
+        sidebar,
+        remove_callback=None,
+        move_callback=None,
+        parent=None,
+        lazy=False,
+    ):
+        super().__init__(storable, dp, mwindow, sidebar, parent, lazy=lazy)
+        self._remove_callback = remove_callback
+        self._move_callback = move_callback
+
+    def moveRequested(self, delta: int):
+        if self._move_callback:
+            self._move_callback(delta)
+
     def contextMenuEvent(self, event):
         menu = RoundMenu(parent=self)
 
         export = Action("Export", menu)
         export.setIcon(getQIcon("export"))
-
         export.triggered.connect(lambda: self._exportSong())
 
-        menu.addActions([export])
+        remove = Action("Remove", menu)
+        remove.setIcon(getQIcon("remove"))
+        remove.triggered.connect(self._removeSong)
+
+        menu.addActions([export, remove])
 
         menu.exec(event.globalPos(), aniType=MenuAnimationType.DROP_DOWN)
+
+    def _removeSong(self):
+        if self._remove_callback:
+            self._remove_callback()
 
     def _exportSong(self):
         if not self._dp.ensureAssets(self.storable):

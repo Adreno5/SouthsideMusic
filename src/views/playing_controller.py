@@ -244,16 +244,28 @@ class PlayingController(QWidget):
             )
         except:
             pass
-
-        if self._dp.cur and self._sidebar.lst_shoud_set:
-            for i, song in enumerate(self._dp.playlist):
-                if (
-                    self._dp.cur
-                    and hasattr(self._dp.cur, "storable")
-                    and song.name == self._dp.cur.storable.name
-                ):
-                    self._sidebar.lst.setCurrentRow(i)
-                    break
+        
+        selected_items = self._sidebar.lst.selectedItems()
+        if len(selected_items) > 0:
+            selected_item = selected_items[0]
+            selected_card = self._sidebar.lst.itemWidget(selected_item)
+            if self._dp.cur and self._dp.cur.storable.id != getattr(getattr(selected_card, 'storable', None), 'id', -1):
+                for i, song in enumerate(self._dp.playlist):
+                    if (
+                        self._dp.cur
+                        and hasattr(self._dp.cur, "storable")
+                        and song.name == self._dp.cur.storable.name
+                    ):
+                        self._sidebar.lst.setCurrentRow(i)
+        else:
+            if self._dp.cur:
+                for i, song in enumerate(self._dp.playlist):
+                    if (
+                        self._dp.cur
+                        and hasattr(self._dp.cur, "storable")
+                        and song.name == self._dp.cur.storable.name
+                    ):
+                        self._sidebar.lst.setCurrentRow(i)
 
         if self._player.isPlaying():
             if (

@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import shutil
 import stat
@@ -9,6 +10,7 @@ from utils.base.base_util import (
     LEGACY_CACHE_DIR,
     LEGACY_IMAGE_CACHE_DIR,
     LEGACY_MUSIC_CACHE_DIR,
+    LYRIC_DATA_DIR,
     MUSIC_DATA_DIR,
     SongStorable,
 )
@@ -19,25 +21,18 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QVBoxLayout
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _FAVORITES_PATH = os.path.join(_PROJECT_ROOT, "favorites.json")
 
+favs: list[FolderInfo] = []
+
 
 def _ensure_favorite_dirs() -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(MUSIC_DATA_DIR, exist_ok=True)
     os.makedirs(IMAGE_DATA_DIR, exist_ok=True)
+    os.makedirs(LYRIC_DATA_DIR, exist_ok=True)
 
 
 def _to_favorite_song_object(song: SongStorable) -> dict:
-    return {
-        "name": song.name,
-        "artists": song.artists,
-        "id": song.id,
-        "image_cache_hash": song.image_cache_hash,
-        "content_cache_hash": song.content_cache_hash,
-        "lyric": song.lyric,
-        "translated_lyric": song.translated_lyric,
-        "gain": song.loudness_gain,
-        "target_lufs": song.target_lufs,
-    }
+    return song.toObject()
 
 
 def _write_favorites_data(data: list[dict]) -> None:
@@ -190,13 +185,13 @@ def getFavoriteSong(mwindow, favs) -> SongStorable | None:
 
 
 def loadFavorites() -> list[FolderInfo]:
+    global favs
     restoreOldFavoritesFormat()
 
     with open(_FAVORITES_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-        result: list[FolderInfo] = []
-
+        favs.clear()
         for folder in data:
             songs = []
             for song in folder["songs"]:
@@ -204,16 +199,21 @@ def loadFavorites() -> list[FolderInfo]:
                 songs.append(storable)
 
             folder_info = FolderInfo(folder_name=folder["folder_name"], songs=songs)
+            favs.append(folder_info)
+    return favs
 
-            result.append(folder_info)
 
-        return result
+def saveFavorites() -> None:
+    global favs
 
-def saveFavorites(source: list[FolderInfo]) -> None:
+    if not favs:
+        logging.warning("[favorites] saveFavorites called with EMPTY favs! skipping")
+        return
+
     _ensure_favorite_dirs()
     data: list[dict] = []
 
-    for folder in source:
+    for folder in favs:
         songs = []
         for song in folder["songs"]:
             songs.append(_to_favorite_song_object(song))

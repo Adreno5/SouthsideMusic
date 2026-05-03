@@ -17,7 +17,7 @@ from qfluentwidgets import setTheme, Theme
 import shiboken6
 
 from utils.config_util import loadConfig, saveConfig, cfg, autosave_thread
-from utils.favorite_util import loadFavorites, saveFavorites
+from utils.favorite_util import loadFavorites, saveFavorites, favs
 from utils.icon_util import refreshBoundIcons
 from utils.play_util import AudioPlayer
 import pyncm as ncm
@@ -88,7 +88,6 @@ dsp: DesktopLyricsPage | None = None
 fp: FavoritesPage | None = None
 sep: SessionPage | None = None
 debug_window: DebugWindow | None = None
-favs: list = []
 lock: threading.Lock = threading.Lock()
 
 
@@ -229,6 +228,9 @@ if __name__ == "__main__":
 
     app.processEvents()
 
+    loadConfig()
+    launchwindow.push("Loading config...")
+
     launchwindow.push("Loading fonts...")
     harmony_font_family = QFontDatabase.applicationFontFamilies(
         QFontDatabase.addApplicationFont("fonts/HARMONYOS_SANS_SC_REGULAR.ttf")
@@ -247,9 +249,8 @@ if __name__ == "__main__":
     player = AudioPlayer()
 
     launchwindow.push("Loading favorites...")
-    favs = loadFavorites()
+    loadFavorites()
 
-    loadConfig()
     autosave_thread.start()
 
     launchwindow.push("Logging in...")
@@ -261,7 +262,7 @@ if __name__ == "__main__":
         logging.info("logged into generated anonymous account")
     else:
         ncm.SetCurrentSession(ncm.LoadSessionFromString(cfg.session))
-        logging.info("loaded session from pickle")
+        logging.info("loaded session from config")
 
         if (
             cfg.login_method == "cell phone" or cfg.login_method == "QR code"
@@ -284,8 +285,6 @@ if __name__ == "__main__":
         player,
         ws_server,
         ws_handler,
-        favs,
-        saveFavorites,
         app,
         launchwindow=launchwindow,
     )
@@ -319,7 +318,7 @@ if __name__ == "__main__":
         launchwindow=launchwindow,
     )
     launchwindow.push("Initializing favorites page...")
-    fp = FavoritesPage(dp, sidebar, None, favs, launchwindow)
+    fp = FavoritesPage(dp, sidebar, None, launchwindow)
     launchwindow.push("Initializing session page...")
     sep = SessionPage(None, launchwindow)
 
@@ -336,7 +335,6 @@ if __name__ == "__main__":
         wy,
         ws_server,
         ws_handler,
-        favs,
         launchwindow,
         debug_window,
     )
@@ -345,23 +343,23 @@ if __name__ == "__main__":
     launchwindow.push("Phase 3 (inject dependencies...)")
     launchwindow.push("injecting Playing Page to sidebar")
     sidebar._dp = dp
-    launchwindow.top('injecting Main Window to sidebar')
+    launchwindow.top("injecting Main Window to sidebar")
     sidebar._mwindow = mwindow
-    launchwindow.top('injecting Main Window to Playing Page')
+    launchwindow.top("injecting Main Window to Playing Page")
     dp._mwindow_obj = mwindow
-    launchwindow.top('injecting Main Window to Playing Controller')
+    launchwindow.top("injecting Main Window to Playing Controller")
     dp.controller._mwindow = mwindow
-    launchwindow.top('injecting Main Window to Playing Lyrics Viewer')
+    launchwindow.top("injecting Main Window to Playing Lyrics Viewer")
     dp.viewer._mwindow = mwindow
-    launchwindow.top('injecting Main Window to Desktop Lyrics Viewer')
+    launchwindow.top("injecting Main Window to Desktop Lyrics Viewer")
     dsp.viewer._mwindow = mwindow
-    launchwindow.top('injecting Favorites page to Playing Page')
+    launchwindow.top("injecting Favorites page to Playing Page")
     dp._fp = fp
-    launchwindow.top('injecting Main Window to Search Page')
+    launchwindow.top("injecting Main Window to Search Page")
     sp._mwindow = mwindow
-    launchwindow.top('injecting Main Window to Favorites Page')
+    launchwindow.top("injecting Main Window to Favorites Page")
     fp._mwindow = mwindow
-    launchwindow.top('injecting Main Window to Session Page')
+    launchwindow.top("injecting Main Window to Session Page")
     sep._mwindow = mwindow
 
     mwindow.init()

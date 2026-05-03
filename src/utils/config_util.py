@@ -54,8 +54,8 @@ class Config:
     background_ratio: float = 0.4
     volume: float = 1
 
-    lyrics_smooth_factor: float = 5
-    acceleration_smooth_factor: float = 5
+    lyrics_smooth_factor: float = 8.5
+    acceleration_smooth_factor: float = 9.5
 
     play_speed: float = 1
 

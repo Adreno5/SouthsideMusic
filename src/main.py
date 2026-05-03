@@ -8,6 +8,7 @@ import time
 import uuid
 from types import FrameType, TracebackType
 from typing import Any, TextIO
+import glob
 
 import pydub
 from PySide6.QtCore import QTimer
@@ -219,7 +220,24 @@ if __name__ == "__main__":
     def _startListen():
         darkdetect.getDarkdetect().listener(_themeChanged)
 
+    def _cleanCaches():
+        while True:
+            if mwindow:
+                while mwindow._loading_song:
+                    time.sleep(1)
+                files = glob.glob('*')
+                caches = []
+                for file in files:
+                    if file.startswith('ffcache'):
+                        caches.append(file)
+                for cache in caches:
+                    os.remove(cache)
+                logging.info(f'cleared {len(caches)} caches')
+
+            time.sleep(10)
+
     threading.Thread(target=_startListen, daemon=True).start()
+    threading.Thread(target=_cleanCaches, daemon=True).start()
 
     app.setStyleSheet(
         f"QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}"

@@ -500,11 +500,6 @@ class Sidebar(QWidget):
         self.refreshPlaylistWidget()
         self.lst.setCurrentRow(new_index)
 
-        if current_song is song:
-            position = self._player.getPosition()
-            self._dp.playSongAtIndex(self._dp.current_index)
-            self._player.setPosition(position)
-
     def applyNewLUFS(self):
         self._dp.lufs_changed_timer.stop()
         self.target_lufs.hide()

@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 import numpy as np
 from PySide6.QtCore import QBuffer, QIODevice, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -35,9 +35,14 @@ from qfluentwidgets import (
     SubtitleLabel,
 )
 
-from utils.base.base_util import IMAGE_DATA_DIR, MUSIC_DATA_DIR, SongStorable
+from utils.base.base_util import (
+    IMAGE_DATA_DIR,
+    LYRIC_DATA_DIR,
+    MUSIC_DATA_DIR,
+    SongStorable,
+)
 from utils.color_util import mixColor
-from utils.image_util import getAverageColor
+from utils.image_util import getAverageColorFromBytes
 from utils.config_util import cfg
 from utils.favorite_util import saveFavorites
 from utils.icon_util import bindIcon
@@ -567,11 +572,7 @@ class PlayingPage(QWidget):
 
         song_storable = self.playlist[self.current_index + 1]
 
-        self.playStorable(song_storable)
-
-        self._preload_triggered = False
-        self.next_song_audio = None
-        self.next_song_gain = None
+        self.playStorable(song_storable, preloaded_audio=self.next_song_audio)
 
     def playLast(self):
         if self.current_index < 1 or self.current_index >= len(self.playlist):
@@ -755,7 +756,11 @@ class PlayingPage(QWidget):
             return False
         return True
 
-    def playStorable(self, song_storable: SongStorable):
+    def playStorable(
+        self,
+        song_storable: SongStorable,
+        preloaded_audio: AudioSegment_ | None = None,
+    ):
         if not self.ensureAssets(song_storable):
             return
 
@@ -774,51 +779,77 @@ class PlayingPage(QWidget):
 
         self._app.processEvents()
 
-        image_bytes = song_storable.get_image_bytes()
-        self.onImageLoaded(image_bytes)
+        result: dict = {}
 
-        avg_color = getAverageColor(self.img_label.pixmap())
+        def _prepare():
+            if preloaded_audio is not None:
+                audio = preloaded_audio
+            else:
+                self._mwindow_obj._loading_song = True
+                music_bytes = song_storable.get_music_bytes()
+                if song_storable.target_lufs == cfg.target_lufs:
+                    audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
+                    audio = audio.apply_gain(20 * np.log10(song_storable.loudness_gain))
+                else:
+                    audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
+                    gain = getAdjustedGainFactor(cfg.target_lufs, audio)
+                    audio = audio.apply_gain(20 * np.log10(gain))
+                    song_storable.target_lufs = cfg.target_lufs
+                    song_storable.loudness_gain = gain
+                    self._mwindow_obj._loading_song = False
 
-        self._mwindow_obj.song_theme = QColor(
-            int(avg_color[0]), int(avg_color[1]), int(avg_color[2])
-        )
-        self._mwindow_obj.repaint()
-
-        self._sidebar.refreshPlaylistWidget()
-
-        if song_storable.target_lufs == cfg.target_lufs:
-            self.loadMusicFromBytes(
-                song_storable.get_music_bytes(), song_storable.loudness_gain
-            )
-        else:
-            music_bytes = song_storable.get_music_bytes()
-            logging.debug(f"loading data {len(music_bytes)}")
-            with self._lock:
-                audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
-
-            song_storable.target_lufs = cfg.target_lufs
-            song_storable.loudness_gain = getAdjustedGainFactor(cfg.target_lufs, audio)
-            gain = song_storable.loudness_gain
-
-            logging.debug(f"applying gain {gain} {cfg.target_lufs=}")
-            audio = audio.apply_gain(20 * np.log10(gain))
-
+            result["audio"] = audio
             self._player.load(audio)
             self.total_length = self._player.getLength()
+            if not self._player.isPlaying():
+                self._player.play()
 
-        if not self._player.isPlaying():
-            self._player.play()
+            image_bytes = song_storable.get_image_bytes()
+            from PySide6.QtGui import QImage
 
-        self._preload_triggered = False
-        self.next_song_audio = None
-        self.next_song_gain = None
+            qimg = QImage()
+            qimg.loadFromData(image_bytes)
+            if not qimg.isNull():
+                result["qimg"] = qimg
+                result["avg_color"] = getAverageColorFromBytes(image_bytes)
 
-        self.sendSongFMAndInfo()
+        def _finish():
+            if self.cur is None or self.cur.storable is not song_storable:
+                return
 
+            self._preload_triggered = False
+            self.next_song_audio = None
+            self.next_song_gain = None
+
+            self._sidebar.refreshPlaylistWidget()
+            self.sendSongFMAndInfo()
+            self._download_update_lyrics(song_storable)
+
+            qimg = result.get("qimg")
+            if isinstance(qimg, QImage) and not qimg.isNull():
+                pixmap = QPixmap.fromImage(qimg)
+                scaled = pixmap.scaled(
+                    self.img_label.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                self.img_label.setPixmap(scaled)
+                self.img_label.show()
+                self.ring.hide()
+
+                avg_color = result.get("avg_color", [128, 128, 128])
+                self._mwindow_obj.song_theme = QColor(
+                    int(avg_color[0]), int(avg_color[1]), int(avg_color[2])
+                )
+                self._mwindow_obj.repaint()
+
+        doWithMultiThreading(_prepare, (), self._mwindow_obj, _finish)
+
+    def _download_update_lyrics(self, song_storable: SongStorable) -> None:
         lyric_target = song_storable
         lyric_result: dict | None = None
 
-        def _download_lyrics():
+        def _download():
             nonlocal lyric_result
             if not song_storable.yrc_lyrics_missing():
                 return
@@ -830,7 +861,7 @@ class PlayingPage(QWidget):
                 logging.exception("failed to download lyrics for storable playback")
                 lyric_result = None
 
-        def _apply_lyrics():
+        def _apply():
             if self.cur is None or self.cur.storable is not lyric_target:
                 return
 
@@ -862,9 +893,8 @@ class PlayingPage(QWidget):
             self._mgr.parse()
             self._transmgr.parse()
             self._ymgr.parse()
-            self.sendSongFMAndInfo()
 
-        doWithMultiThreading(_download_lyrics, (), self._mwindow_obj, _apply_lyrics)
+        doWithMultiThreading(_download, (), self._mwindow_obj, _apply)
 
     def loadMusicFromBase64(self, content_base64: str, gain: float):
         music_bytes = base64.b64decode(content_base64)

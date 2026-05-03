@@ -6,7 +6,7 @@ import sys
 import threading
 from typing import Any, Callable
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal, QMutex
 from PySide6.QtGui import QCloseEvent, QColor, QIcon, QKeyEvent, QPainter
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
@@ -65,6 +65,7 @@ class MainWindow(FluentWindowBase):
         self._ws_handler = ws_handler
         self._launchwindow = launchwindow
         self._debug_window = debug_window
+        self._loading_song: bool = False
 
         self._scheduled_tasks: list[
             tuple[Callable, tuple[Any, ...], dict[str, Any]]
@@ -239,11 +240,13 @@ class MainWindow(FluentWindowBase):
                     self._sidebar.addSongCardToList(storable)
                 if 0 <= last_playing_index < len(last_playlist):
                     self._launchwindow.top("continue last song...")
-                    self.addScheduledTask(self._dp.playSongAtIndex, last_playing_index)
-                    self.addScheduledTask(
-                        self._dp.controller.setPlaytime, cfg.last_playing_time
-                    )
-                    self.addScheduledTask(self._player.stop)
+
+                    def _continue():
+                        self._dp.playSongAtIndex(last_playing_index)
+                        self._dp.controller.setPlaytime(cfg.last_playing_time)
+                        self._player.stop()
+
+                    self.addScheduledTask(_continue)
 
             self._launchwindow.top("refreshing login information")
             self._sep.refreshInformations()

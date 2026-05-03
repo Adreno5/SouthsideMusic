@@ -348,7 +348,7 @@ class AudioPlayer(QObject):
             return stereo_chunk
 
         delay = min(max(1, self.sample_rate // 200), max(1, len(self.samples) // 8))
-        delayed_indices = np.arange(len(mono_chunk)) + absolute_start - delay
+        delayed_indices = np.arange(len(mono_chunk)) + absolute_start - delay # type: ignore
         valid = delayed_indices >= 0
 
         right = stereo_chunk[:, 1]

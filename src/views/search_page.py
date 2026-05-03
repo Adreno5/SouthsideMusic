@@ -31,17 +31,17 @@ class SearchPage(QWidget):
 
     def __init__(self, wy, mwindow, launchwindow=None) -> None:
         super().__init__()
-        if launchwindow:
-            launchwindow.top("Initializing search page...")
+        lw = launchwindow
+        if lw:
+            lw.top("Initializing search page...")
         self._wy = wy
         self._mwindow = mwindow
         self.setObjectName("search_page")
         self.img_card_map: dict[str, SongCard] = {}
 
-        if launchwindow:
-            launchwindow.top("  Building search UI...")
+        if lw:
+            lw.top("  creating search input")
         global_layout = QVBoxLayout()
-
         top_layout = QHBoxLayout()
         self.inputer = LineEdit()
         self.search_btn = PrimaryPushButton(FluentIcon.SEARCH, "Search")
@@ -51,19 +51,19 @@ class SearchPage(QWidget):
         top_layout.addWidget(self.search_btn)
         global_layout.addLayout(top_layout)
 
+        if lw:
+            lw.top("  creating results list")
         self.lst = ListWidget()
         self.lst.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.lst.verticalScrollBar().setSingleStep(14)
         self.lst.setResizeMode(QListWidget.ResizeMode.Adjust)
         self.lst.setSelectionMode(QListWidget.SelectionMode.NoSelection)
         global_layout.addWidget(self.lst)
-
         self.setLayout(global_layout)
-
         self.resultGot.connect(self.addSongs)
 
-        if launchwindow:
-            launchwindow.top("  Starting scroll monitor...")
+        if lw:
+            lw.top("  starting scroll monitor")
         self.check_timer = QTimer(self)
         self.check_timer.timeout.connect(self.checkRect)
         self.check_timer.start(50)

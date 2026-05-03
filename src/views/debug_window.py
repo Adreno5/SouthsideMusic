@@ -13,53 +13,55 @@ from utils import darkdetect_util as darkdetect
 class DebugWindow(QWidget):
     def __init__(self, app, launchwindow=None) -> None:
         super().__init__()
-        if launchwindow:
-            launchwindow.top("Initializing debug window...")
+        lw = launchwindow
+        if lw:
+            lw.top("Initializing debug window...")
 
         self._app = app
-        if launchwindow:
-            launchwindow.top("  Configuring layouts...")
-        self.setFixedSize(app.primaryScreen().size() * 0.7)
-
+        if lw:
+            lw.top("  allocating global layout")
         global_layout = QVBoxLayout()
+        if lw:
+            lw.top("  creating object name input")
         self.objname_inputer = LineEdit()
         global_layout.addWidget(self.objname_inputer)
-
+        if lw:
+            lw.top("  creating object label")
         self.obj_label = QLabel()
         global_layout.addWidget(self.obj_label)
-
+        if lw:
+            lw.top("  creating scroll area")
         scroll_widget = SmoothScrollArea()
         content_widget = QWidget()
         content_layout = QVBoxLayout()
-
+        if lw:
+            lw.top("  creating eval input")
         self.eval_inputer = LineEdit()
         self.eval_label = QLabel()
-
         content_layout.addWidget(self.eval_inputer)
         content_layout.addWidget(self.eval_label)
-
+        if lw:
+            lw.top("  creating property tree")
         self.tree = TreeWidget()
         self.tree.setColumnCount(2)
         self.tree.setHeaderLabels(["Name", "Value"])
         self.tree.header().setStretchLastSection(False)
-
         content_layout.addWidget(self.tree)
-
         content_widget.setLayout(content_layout)
         scroll_widget.setWidget(content_widget)
         scroll_widget.setWidgetResizable(True)
         global_layout.addWidget(scroll_widget)
-
         self.selected_object: Optional[object] = None
-
         self.setLayout(global_layout)
 
-        if launchwindow:
-            launchwindow.top("  Starting update timer...")
+        if lw:
+            lw.top("  starting update timer")
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.updateDatas)
         self.update_timer.start(500)
 
+        if lw:
+            lw.top("  hiding debug window")
         self.hide()
 
     def updateDatas(self) -> None:

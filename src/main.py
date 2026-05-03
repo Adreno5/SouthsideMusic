@@ -343,15 +343,25 @@ if __name__ == "__main__":
 
     launchwindow.clear()
     launchwindow.push("Phase 3 (inject dependencies...)")
+    launchwindow.push("injecting Playing Page to sidebar")
     sidebar._dp = dp
+    launchwindow.top('injecting Main Window to sidebar')
     sidebar._mwindow = mwindow
+    launchwindow.top('injecting Main Window to Playing Page')
     dp._mwindow_obj = mwindow
+    launchwindow.top('injecting Main Window to Playing Controller')
     dp.controller._mwindow = mwindow
+    launchwindow.top('injecting Main Window to Playing Lyrics Viewer')
     dp.viewer._mwindow = mwindow
+    launchwindow.top('injecting Main Window to Desktop Lyrics Viewer')
     dsp.viewer._mwindow = mwindow
+    launchwindow.top('injecting Favorites page to Playing Page')
     dp._fp = fp
+    launchwindow.top('injecting Main Window to Search Page')
     sp._mwindow = mwindow
+    launchwindow.top('injecting Main Window to Favorites Page')
     fp._mwindow = mwindow
+    launchwindow.top('injecting Main Window to Session Page')
     sep._mwindow = mwindow
 
     mwindow.init()

@@ -32,18 +32,18 @@ from views.song_card import FavoriteSongCard
 class FavoritesPage(QWidget):
     def __init__(self, dp, sidebar, mwindow, favs_ref, launchwindow=None) -> None:
         super().__init__()
-        if launchwindow:
-            launchwindow.top("Initializing favorites page...")
+        lw = launchwindow
+        if lw:
+            lw.top("Initializing favorites page...")
         self._dp = dp
         self._sidebar = sidebar
         self._mwindow = mwindow
         self._favs_ref = favs_ref
         self.setObjectName("favorites_page")
 
-        if launchwindow:
-            launchwindow.top("  Building toolbar...")
+        if lw:
+            lw.top("  building toolbar")
         global_layout = QVBoxLayout(self)
-
         top_layout = FlowLayout()
         top_layout.addWidget(TitleLabel("Favorites"))
         self.refresh_btn = PrimaryPushButton(FluentIcon.SYNC, "Refresh")
@@ -60,10 +60,9 @@ class FavoritesPage(QWidget):
         top_layout.addWidget(self.renamefolder_btn)
         global_layout.addLayout(top_layout)
 
-        if launchwindow:
-            launchwindow.top("  Setting up folder & song lists...")
+        if lw:
+            lw.top("  setting up folder selector")
         bottom_layout = QHBoxLayout()
-
         left_layout = QVBoxLayout()
         self.folder_selector = ListWidget()
         self.folder_selector.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
@@ -78,9 +77,10 @@ class FavoritesPage(QWidget):
         self.addall_btn.clicked.connect(self.addAllToPlaylist)
         left_layout.addWidget(self.addall_btn)
         bottom_layout.addLayout(left_layout, 3)
-
         bottom_layout.addWidget(QLabel(">"), alignment=Qt.AlignmentFlag.AlignVCenter)
 
+        if lw:
+            lw.top("  setting up song viewer")
         right_layout = QVBoxLayout()
         self.song_viewer = ListWidget()
         self.song_viewer.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
@@ -89,9 +89,7 @@ class FavoritesPage(QWidget):
         self.deletesong_btn.clicked.connect(self.deleteSong)
         right_layout.addWidget(self.deletesong_btn)
         bottom_layout.addLayout(right_layout, 7)
-
         global_layout.addLayout(bottom_layout)
-
         self.setLayout(global_layout)
 
     def renameFolder(self):

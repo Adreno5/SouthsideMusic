@@ -65,4 +65,4 @@ class LaunchWindow(QWidget):
             text = "...\n" + text
         self.sublabel.setText(text)
         self._app.processEvents()
-        time.sleep(0.01)
+        time.sleep(0.2)

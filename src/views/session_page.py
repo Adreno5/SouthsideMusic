@@ -20,19 +20,18 @@ from pyncm import apis
 class SessionPage(QWidget):
     def __init__(self, mwindow, launchwindow=None) -> None:
         super().__init__()
-        if launchwindow:
-            launchwindow.top("Initializing session page...")
+        lw = launchwindow
+        if lw:
+            lw.top("Initializing session page...")
         self._mwindow = mwindow
         self.setObjectName("session_page")
 
-        if launchwindow:
-            launchwindow.top("  Setting up user info panel...")
+        if lw:
+            lw.top("  creating user avatar and nickname")
         self.nickname = TitleLabel()
         self.avatar = QLabel()
         global_layout = QVBoxLayout()
-
         user_layout = QHBoxLayout()
-
         user_layout.addWidget(
             self.avatar,
             alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
@@ -41,35 +40,31 @@ class SessionPage(QWidget):
             self.nickname,
             alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
         )
-
         self.avatar.setFixedSize(self.nickname.height() - 3, self.nickname.height() - 3)
-
         global_layout.addLayout(user_layout)
 
+        if lw:
+            lw.top("  creating VIP level label")
         bottom_layout = QHBoxLayout()
-
         self.vip = SubtitleLabel("VIP Level: Loading...")
         bottom_layout.addWidget(
             self.vip, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
         )
 
-        if launchwindow:
-            launchwindow.top("  Configuring login button...")
+        if lw:
+            lw.top("  creating login button")
         self.login_btn = PrimaryPushButton("Login")
         bindIcon(self.login_btn, "login", "light")
         self.login_btn.clicked.connect(self.login)
-
         bottom_layout.addWidget(
             self.login_btn,
             alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
         )
-
         global_layout.addLayout(bottom_layout)
-
         self.setLayout(global_layout)
 
-        if launchwindow:
-            launchwindow.top("  Loading user info...")
+        if lw:
+            lw.top("  loading user info from server")
         self.refreshInformations()
 
     def refreshInformations(self):

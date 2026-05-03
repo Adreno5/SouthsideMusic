@@ -171,7 +171,7 @@ class StderrRedirector:
 
     def _log_line(self, line: str):
         line = line.strip()
-        if "QPixmap::scaled" in line or "QFont" in line or "DeprecationWarning" in line:
+        if "QPixmap::scaled" in line or "QFont" in line or "QBasicTimer::" in line:
             return
         if line:
             self.logger.error(line)
@@ -233,10 +233,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from qfluentwidgets import *  # type: ignore
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 from qframelesswindow import TitleBar
+import shiboken6
 
 import math
 
 from utils.random_util import AdvancedRandom
+
+
+_QT_INT_MIN = -(2**31)
+_QT_INT_MAX = 2**31 - 1
 
 from functools import lru_cache
 from utils.base.base_util import (
@@ -259,7 +264,7 @@ from utils.config_util import loadConfig, saveConfig, cfg, autosave_thread
 from utils.loudness_balance_util import getAdjustedGainFactor
 from utils.play_util import AudioPlayer
 from utils.play_util import PatchedAudioSegment as AudioSegment
-from utils.icon_util import getQIcon
+from utils.icon_util import bindIcon, getQIcon, refreshBoundIcons
 from utils.dialog_util import QRCodeLoginDialog, get_value_bylist, get_text_lineedit
 from utils.websocket_util import WebSocketServer, ws_server, ws_handler
 from utils import darkdetect_util as darkdetect
@@ -276,6 +281,11 @@ ws_handler.onDisconnected.connect(lambda: mwindow.onWebsocketDisconnected())
 
 original_popen = subprocess.Popen
 
+@lru_cache
+def _toQtInt(value: float | int) -> int:
+    if not math.isfinite(value):
+        return 0
+    return max(_QT_INT_MIN, min(_QT_INT_MAX, int(value)))
 
 def patched_popen(*args, **kwargs):
     startupinfo = subprocess.STARTUPINFO()
@@ -516,7 +526,8 @@ def patchedExceptHook(
         sys.exit()
 
     txt = "\n".join(inf)
-    launchwindow.deleteLater()
+    if "launchwindow" in globals() and shiboken6.isValid(launchwindow):
+        launchwindow.deleteLater()
     QMessageBox.critical(
         None,
         "Error Occured",
@@ -591,7 +602,8 @@ class SongCard(QWidget):
         bottom_layout.addWidget(self.playbtn)
         self.playbtn.clicked.connect(self.play)
 
-        self.favbtn = TransparentToolButton(getQIcon("fav"))
+        self.favbtn = TransparentToolButton()
+        bindIcon(self.favbtn, "fav")
         self.favbtn.setEnabled(True)
         bottom_layout.addWidget(self.favbtn)
         self.favbtn.clicked.connect(self.addToFavorites)
@@ -1099,12 +1111,15 @@ class PlayingController(QWidget):
             alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
         )
 
-        self.last_btn = TransparentToolButton(getQIcon("last"))
-        self.next_btn = TransparentToolButton(getQIcon("next"))
+        self.last_btn = TransparentToolButton()
+        bindIcon(self.last_btn, "last")
+        self.next_btn = TransparentToolButton()
+        bindIcon(self.next_btn, "next")
         self.last_btn.clicked.connect(self.playLastSignal.emit)
         self.next_btn.clicked.connect(self.playNextSignal.emit)
 
-        self.play_pausebtn = TransparentToolButton(getQIcon("playa"))
+        self.play_pausebtn = TransparentToolButton()
+        bindIcon(self.play_pausebtn, "playa")
         self.play_pausebtn.setIconSize(QSize(30, 30))
         self.last_btn.setIconSize(QSize(30, 30))
         self.next_btn.setIconSize(QSize(30, 30))
@@ -1132,7 +1147,8 @@ class PlayingController(QWidget):
             self.vol_slider,
             alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
         )
-        self.expand_btn = PushButton(getQIcon("pl_expand"), "Menu")
+        self.expand_btn = PushButton("Menu")
+        bindIcon(self.expand_btn, "pl_expand")
         right_layout.addWidget(
             self.expand_btn,
             alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom,
@@ -1180,7 +1196,7 @@ class PlayingController(QWidget):
             dp.expanded_widget.show()
 
             self.expand_btn.setText("Collapse")
-            self.expand_btn.setIcon(getQIcon("pl_collapse"))
+            bindIcon(self.expand_btn, "pl_collapse")
         else:
             dp.expanded_widget.hide()
             if not mwindow.isMaximized():
@@ -1202,7 +1218,7 @@ class PlayingController(QWidget):
                 self.expand_btn.setEnabled(True)
 
             self.expand_btn.setText("Menu")
-            self.expand_btn.setIcon(getQIcon("pl_expand"))
+            bindIcon(self.expand_btn, "pl_expand")
 
     def updateWidgets(self):
         title_bar = None
@@ -1317,9 +1333,9 @@ class PlayingController(QWidget):
             dp.sendSongFMAndInfo()
 
         if not player.isPlaying():
-            self.play_pausebtn.setIcon(getQIcon("playa"))
+            bindIcon(self.play_pausebtn, "playa")
         else:
-            self.play_pausebtn.setIcon(getQIcon("pause"))
+            bindIcon(self.play_pausebtn, "pause")
 
         if mwindow.isVisible():
             self.repaint()
@@ -1478,6 +1494,8 @@ class LyricsViewer(QWidget):
 
         self.draw_x_offset: float = 0
 
+        self.last_draw: int = time.perf_counter_ns()
+
         self.setMouseTracking(True)
 
         self.timer = QTimer(self)
@@ -1509,6 +1527,11 @@ class LyricsViewer(QWidget):
         if not mgr.parsed:
             return
 
+        now = time.perf_counter_ns()
+        _elapsed: float = (now - self.last_draw) / 1_000_000_000
+        self.last_draw = now
+        multiple_factor = max(0.0, min(5.0, _elapsed / self.delta))
+
         self.target_acc = (
             (self.target_draw_offset - self.draw_offset)
             * self.delta
@@ -1519,6 +1542,7 @@ class LyricsViewer(QWidget):
             * self.delta
             * cfg.acceleration_smooth_factor
             / max(0.5, min(1, (self.target_acc - self.acc)))
+            * multiple_factor
         )
 
         if self.draw_offset != self.target_draw_offset:
@@ -1530,11 +1554,21 @@ class LyricsViewer(QWidget):
         use_yrc = bool(ymgr.parsed)
         lines = ymgr.parsed if use_yrc else mgr.parsed
         idx = (
-            ymgr.getCurrentIndex(position) if use_yrc else mgr.getCurrentIndex(position)
+            ymgr.getCurrentIndex(position)
+            if use_yrc
+            else mgr.getCurrentIndex(position)
         )
 
         line_step = self._lineStep()
         current_baseline = self._currentLineBaseline()
+
+        if not all(
+            math.isfinite(value)
+            for value in (self.draw_offset, self.target_draw_offset, self.acc)
+        ):
+            self.draw_offset = 0
+            self.target_draw_offset = 0
+            self.acc = 0
 
         if not self.selecting:
             self.target_draw_offset = -idx * line_step
@@ -1546,6 +1580,7 @@ class LyricsViewer(QWidget):
             self.target_draw_offset = 0
         if self.draw_offset < -len(lines) * line_step:
             self.target_draw_offset = -len(lines) * line_step
+        self.draw_offset = max(-len(lines) * line_step, min(0, self.draw_offset))
 
         painter = QPainter(self)
         painter.setRenderHints(
@@ -1554,7 +1589,9 @@ class LyricsViewer(QWidget):
         painter.setFont(self.ft)
 
         current_line = (
-            ymgr.getCurrentLyric(position) if use_yrc else mgr.getCurrentLyric(position)
+            ymgr.getCurrentLyric(position)
+            if use_yrc
+            else mgr.getCurrentLyric(position)
         )
         y = self.draw_offset + current_baseline
         for i, line in enumerate(lines):
@@ -1585,11 +1622,11 @@ class LyricsViewer(QWidget):
                 base_color = QColor(color)
                 base_color.setAlpha(120)
                 painter.setPen(base_color)
-                painter.drawText(int(self.draw_x_offset), int(y), content)
+                painter.drawText(_toQtInt(self.draw_x_offset), _toQtInt(y), content)
 
                 x = 0.0
-                clip_y = int(y - self.metri.ascent())
-                clip_h = int(self.font_height)
+                clip_y = _toQtInt(y - self.metri.ascent())
+                clip_h = _toQtInt(self.font_height)
                 for ch in y_line["chars"]:
                     text_width = self.metri.horizontalAdvance(ch["char"])
                     duration = ch["duration"]
@@ -1602,19 +1639,23 @@ class LyricsViewer(QWidget):
                     if clip_w > 0:
                         painter.save()
                         painter.setClipRect(
-                            int(x + self.draw_x_offset),
+                            _toQtInt(x + self.draw_x_offset),
                             clip_y,
-                            int(math.ceil(clip_w)),
+                            _toQtInt(math.ceil(clip_w)),
                             clip_h,
                         )
                         painter.setPen(color)
-                        painter.drawText(int(self.draw_x_offset), int(y), content)
+                        painter.drawText(
+                            _toQtInt(self.draw_x_offset), _toQtInt(y), content
+                        )
                         painter.restore()
                     x += text_width
             else:
                 painter.setPen(color)
                 painter.drawText(
-                    int(self.draw_x_offset), int(y), line["content"].strip()
+                    _toQtInt(self.draw_x_offset),
+                    _toQtInt(y),
+                    line["content"].strip(),
                 )
 
             if transmgr.parsed:
@@ -1639,8 +1680,8 @@ class LyricsViewer(QWidget):
                     else QColor(0, 0, 0, 120)
                 )
                 painter.drawText(
-                    int(self.draw_x_offset),
-                    int(y + self.metri.descent() + 2 + self.tmetri.ascent()),
+                    _toQtInt(self.draw_x_offset),
+                    _toQtInt(y + self.metri.descent() + 2 + self.tmetri.ascent()),
                     transmgr.getCurrentLyric(trans_time)["content"].strip(),
                 )
                 painter.setFont(self.ft)
@@ -1659,10 +1700,10 @@ class LyricsViewer(QWidget):
                     )
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.drawRoundedRect(
-                        int(self.draw_x_offset),
-                        int(y - self.metri.ascent()),
-                        self.width() - int(self.draw_x_offset),
-                        int(self.font_height),
+                        _toQtInt(self.draw_x_offset),
+                        _toQtInt(y - self.metri.ascent()),
+                        _toQtInt(self.width() - self.draw_x_offset),
+                        _toQtInt(self.font_height),
                         5,
                         5,
                     )
@@ -1670,8 +1711,10 @@ class LyricsViewer(QWidget):
                     info = float2time(self.hovering_lyric["time"])
                     timetxt = f"{f'{info["minutes"]}'.zfill(2)}:{f'{info["seconds"]}'.zfill(2)}"
                     painter.drawText(
-                        int(self.width() - self.metri.horizontalAdvance(timetxt) - 5),
-                        int(y),
+                        _toQtInt(
+                            self.width() - self.metri.horizontalAdvance(timetxt) - 5
+                        ),
+                        _toQtInt(y),
                         timetxt,
                     )
 
@@ -1796,7 +1839,8 @@ class PlayingPage(QWidget):
         self.lst_layout.addWidget(self.lst)
 
         btn_layout = QHBoxLayout()
-        self.removeall_btn = TransparentPushButton(getQIcon("clearall"), "Remove All")
+        self.removeall_btn = TransparentPushButton("Remove All")
+        bindIcon(self.removeall_btn, "clearall")
         self.removeall_btn.clicked.connect(self.removeAllSongs)
         btn_layout.addWidget(self.removeall_btn)
         self.lst_layout.addLayout(btn_layout)
@@ -1939,11 +1983,13 @@ class PlayingPage(QWidget):
             "Connection Status: <span style='color: red;'>Disconnected</span>"
         )
         self.addSeparateWidget(self.southsideclient_status_label)
-        self.disconnect_btn = TransparentPushButton(getQIcon("disc"), "Disconnect")
+        self.disconnect_btn = TransparentPushButton("Disconnect")
+        bindIcon(self.disconnect_btn, "disc")
         self.disconnect_btn.clicked.connect(self.disconnectFromSouthsideClient)
         self.disconnect_btn.setEnabled(False)
         self.addSeparateWidget(self.disconnect_btn)
-        self.connect_btn = TransparentPushButton(getQIcon("cnnt"), "Try connect")
+        self.connect_btn = TransparentPushButton("Try connect")
+        bindIcon(self.connect_btn, "cnnt")
         self.connect_btn.clicked.connect(self.connectToSouthsideClient)
         self.connect_btn.setEnabled(False)
         self.addSeparateWidget(self.connect_btn)
@@ -3105,14 +3151,12 @@ class FavoritesPage(QWidget):
         self.folder_selector.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.folder_selector.itemClicked.connect(self.viewSongs)
         left_layout.addWidget(self.folder_selector, 1)
-        self.addplaylist_btn = PushButton(
-            getQIcon("pl"), "Add selected folder to playlist"
-        )
+        self.addplaylist_btn = PushButton("Add selected folder to playlist")
+        bindIcon(self.addplaylist_btn, "pl")
         self.addplaylist_btn.clicked.connect(self.addFolderToPlaylist)
         left_layout.addWidget(self.addplaylist_btn)
-        self.addall_btn = PrimaryPushButton(
-            getQIcon("pl", "light"), "Add all folder to playlist"
-        )
+        self.addall_btn = PrimaryPushButton("Add all folder to playlist")
+        bindIcon(self.addall_btn, "pl", "light")
         self.addall_btn.clicked.connect(self.addAllToPlaylist)
         left_layout.addWidget(self.addall_btn)
         bottom_layout.addLayout(left_layout, 3)
@@ -3382,7 +3426,8 @@ class SessionPage(QWidget):
             self.vip, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
         )
 
-        self.login_btn = PrimaryPushButton(getQIcon("login", "light"), "Login")
+        self.login_btn = PrimaryPushButton("Login")
+        bindIcon(self.login_btn, "login", "light")
         self.login_btn.clicked.connect(self.login)
 
         bottom_layout.addWidget(
@@ -4074,10 +4119,27 @@ if __name__ == "__main__":
     else:
         cfg.login_status = apis.login.GetCurrentLoginStatus()  # type: ignore
 
+    def _themeChanged(theme: str):
+        def _updateTheme():
+            darkdetect._is_dark = darkdetect.getDarkdetect().isDark()
+
+            setTheme(Theme.LIGHT if theme == "Light" else Theme.DARK)
+            app.setStyleSheet(
+                f"QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}"
+            )
+            refreshBoundIcons()
+
+        mwindow.addScheduledTask(_updateTheme)
+
+    def _startListen():
+        darkdetect.getDarkdetect().listener(_themeChanged)
+
+    threading.Thread(target=_startListen, daemon=True).start()
+
     app.setStyleSheet(
         f"QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}"
     )
-    setTheme(Theme.AUTO)
+    setTheme(Theme.LIGHT if darkdetect.isLight() else Theme.DARK)
 
     launchwindow = LaunchWindow()
     launchwindow.setStatusText("Initializing...")

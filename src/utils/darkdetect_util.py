@@ -1,4 +1,5 @@
 from darkdetect import isDark as isDarkDarkdetect
+import darkdetect
 
 _is_dark = isDarkDarkdetect()
 
@@ -7,3 +8,6 @@ def isDark():
 
 def isLight():
     return not _is_dark
+
+def getDarkdetect():
+    return darkdetect

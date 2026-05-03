@@ -12,8 +12,8 @@ from utils.base.base_util import (
     MUSIC_DATA_DIR,
     SongStorable,
 )
-from qfluentwidgets import *  # type: ignore
-from PySide6.QtWidgets import *  # type: ignore
+from qfluentwidgets import ListWidget, MessageBoxBase, SubtitleLabel
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QVBoxLayout
 
 
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -208,41 +208,6 @@ def loadFavorites() -> list[FolderInfo]:
             result.append(folder_info)
 
         return result
-
-
-def loadFavoritesWithLaunching(launchwindow) -> list[FolderInfo]:
-    restoreOldFavoritesFormat()
-
-    with open(_FAVORITES_PATH, "r", encoding="utf-8") as f:
-        launchwindow.setStatusText(
-            "Initializing...\n  Loading favorites...\n    Parsing file...", sleep=False
-        )
-        data = json.load(f)
-
-        result: list[FolderInfo] = []
-        length = len(data)
-
-        for i, folder in enumerate(data):
-            launchwindow.setStatusText(
-                f"Initializing...\n  Loading favorites...\n    Parsing file...\n    Loading folder...({i + 1}/{length})"
-            )
-
-            songs = []
-            songlength = len(folder["songs"])
-            for i2, song in enumerate(folder["songs"]):
-                launchwindow.setStatusText(
-                    f"Initializing...\n  Loading favorites...\n    Parsing file...\n    Loading folder...({i + 1}/{length})\n      Loading song...({i2 + 1}/{songlength})",
-                    sleep=False,
-                )
-                storable = SongStorable.fromObject(song)
-                songs.append(storable)
-
-            folder_info = FolderInfo(folder_name=folder["folder_name"], songs=songs)
-
-            result.append(folder_info)
-
-        return result
-
 
 def saveFavorites(source: list[FolderInfo]) -> None:
     _ensure_favorite_dirs()

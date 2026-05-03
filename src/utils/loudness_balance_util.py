@@ -6,9 +6,10 @@ import scipy.signal
 import warnings
 import numpy as np
 
+
 def valid_audio(data, rate, block_size):
-    """ Validate input audio data.
-    
+    """Validate input audio data.
+
     Ensure input is numpy array of floating point data bewteen -1 and 1
 
     Params
@@ -18,17 +19,17 @@ def valid_audio(data, rate, block_size):
     rate : int
         Sampling rate of the input audio in Hz
     block_size : int
-        Analysis block size in seconds 
+        Analysis block size in seconds
 
     Returns
     -------
     valid : bool
         True if valid audio
-        
+
     """
     if not isinstance(data, np.ndarray):
         raise ValueError("Data must be of type numpy.ndarray.")
-    
+
     if not np.issubdtype(data.dtype, np.floating):
         raise ValueError("Data must be floating point.")
 
@@ -37,15 +38,16 @@ def valid_audio(data, rate, block_size):
 
     if data.shape[0] < block_size * rate:
         raise ValueError("Audio must have length greater than the block size.")
-    
+
     return True
 
+
 class IIRfilter(object):
-    """ IIR Filter object to pre-filtering
-    
+    """IIR Filter object to pre-filtering
+
     This class allows for the generation of various IIR filters
-	in order to apply different frequency weighting to audio data
-	before measuring the loudness. 
+        in order to apply different frequency weighting to audio data
+        before measuring the loudness.
 
     Parameters
     ----------
@@ -62,15 +64,16 @@ class IIRfilter(object):
     """
 
     def __init__(self, G, Q, fc, rate, filter_type, passband_gain=1.0):
-        self.G  = G
-        self.Q  = Q
+        self.G = G
+        self.Q = Q
         self.fc = fc
         self.rate = rate
         self.filter_type = filter_type
         self.passband_gain = passband_gain
 
     def __str__(self):
-        filter_info = dedent("""
+        filter_info = dedent(
+            """
         ------------------------------
         type: {type}
         ------------------------------
@@ -87,16 +90,26 @@ class IIRfilter(object):
         a1 = {_a1}
         a2 = {_a2}
         ------------------------------
-        """.format(type = self.filter_type, 
-        G=self.G, Q=self.Q, fc=self.fc, rate=self.rate,
-        passband_gain=self.passband_gain, 
-        _b0=self.b[0], _b1=self.b[1], _b2=self.b[2], 
-        _a0=self.a[0], _a1=self.a[1], _a2=self.a[2]))
+        """.format(
+                type=self.filter_type,
+                G=self.G,
+                Q=self.Q,
+                fc=self.fc,
+                rate=self.rate,
+                passband_gain=self.passband_gain,
+                _b0=self.b[0],
+                _b1=self.b[1],
+                _b2=self.b[2],
+                _a0=self.a[0],
+                _a1=self.a[1],
+                _a2=self.a[2],
+            )
+        )
 
         return filter_info
 
     def generate_coefficients(self):
-        """ Generates biquad filter coefficients using instance filter parameters. 
+        """Generates biquad filter coefficients using instance filter parameters.
 
         This method is called whenever an IIRFilter is instantiated and then sets
         the coefficients for the filter instance.
@@ -122,78 +135,78 @@ class IIRfilter(object):
         a : ndarray
             Denominator filter coefficients stored as [a0, a1, a2]
         """
-        A  = 10**(self.G/40.0)
+        A = 10 ** (self.G / 40.0)
         w0 = 2.0 * np.pi * (self.fc / self.rate)
         alpha = np.sin(w0) / (2.0 * self.Q)
 
-        if self.filter_type == 'high_shelf':
-            b0 =      A * ( (A+1) + (A-1) * np.cos(w0) + 2 * np.sqrt(A) * alpha )
-            b1 = -2 * A * ( (A-1) + (A+1) * np.cos(w0)                          )
-            b2 =      A * ( (A+1) + (A-1) * np.cos(w0) - 2 * np.sqrt(A) * alpha )
-            a0 =            (A+1) - (A-1) * np.cos(w0) + 2 * np.sqrt(A) * alpha
-            a1 =      2 * ( (A-1) - (A+1) * np.cos(w0)                          )
-            a2 =            (A+1) - (A-1) * np.cos(w0) - 2 * np.sqrt(A) * alpha
-        elif self.filter_type == 'low_shelf':
-            b0 =      A * ( (A+1) - (A-1) * np.cos(w0) + 2 * np.sqrt(A) * alpha )
-            b1 =  2 * A * ( (A-1) - (A+1) * np.cos(w0)                          )
-            b2 =      A * ( (A+1) - (A-1) * np.cos(w0) - 2 * np.sqrt(A) * alpha )
-            a0 =            (A+1) + (A-1) * np.cos(w0) + 2 * np.sqrt(A) * alpha
-            a1 =     -2 * ( (A-1) + (A+1) * np.cos(w0)                          )
-            a2 =            (A+1) + (A-1) * np.cos(w0) - 2 * np.sqrt(A) * alpha
-        elif self.filter_type == 'high_pass':
-            b0 =  (1 + np.cos(w0))/2
+        if self.filter_type == "high_shelf":
+            b0 = A * ((A + 1) + (A - 1) * np.cos(w0) + 2 * np.sqrt(A) * alpha)
+            b1 = -2 * A * ((A - 1) + (A + 1) * np.cos(w0))
+            b2 = A * ((A + 1) + (A - 1) * np.cos(w0) - 2 * np.sqrt(A) * alpha)
+            a0 = (A + 1) - (A - 1) * np.cos(w0) + 2 * np.sqrt(A) * alpha
+            a1 = 2 * ((A - 1) - (A + 1) * np.cos(w0))
+            a2 = (A + 1) - (A - 1) * np.cos(w0) - 2 * np.sqrt(A) * alpha
+        elif self.filter_type == "low_shelf":
+            b0 = A * ((A + 1) - (A - 1) * np.cos(w0) + 2 * np.sqrt(A) * alpha)
+            b1 = 2 * A * ((A - 1) - (A + 1) * np.cos(w0))
+            b2 = A * ((A + 1) - (A - 1) * np.cos(w0) - 2 * np.sqrt(A) * alpha)
+            a0 = (A + 1) + (A - 1) * np.cos(w0) + 2 * np.sqrt(A) * alpha
+            a1 = -2 * ((A - 1) + (A + 1) * np.cos(w0))
+            a2 = (A + 1) + (A - 1) * np.cos(w0) - 2 * np.sqrt(A) * alpha
+        elif self.filter_type == "high_pass":
+            b0 = (1 + np.cos(w0)) / 2
             b1 = -(1 + np.cos(w0))
-            b2 =  (1 + np.cos(w0))/2
-            a0 =   1 + alpha
-            a1 =  -2 * np.cos(w0)
-            a2 =   1 - alpha
-        elif self.filter_type == 'low_pass':
-            b0 =  (1 - np.cos(w0))/2
-            b1 =  (1 - np.cos(w0))
-            b2 =  (1 - np.cos(w0))/2
-            a0 =   1 + alpha
-            a1 =  -2 * np.cos(w0)
-            a2 =   1 - alpha
-        elif self.filter_type == 'peaking':
-            b0 =   1 + alpha * A
-            b1 =  -2 * np.cos(w0)
-            b2 =   1 - alpha * A
-            a0 =   1 + alpha / A
-            a1 =  -2 * np.cos(w0)
-            a2 =   1 - alpha / A
-        elif self.filter_type == 'notch':
-            b0 =   1 
-            b1 =  -2 * np.cos(w0)
-            b2 =   1
-            a0 =   1 + alpha
-            a1 =  -2 * np.cos(w0)
-            a2 =   1 - alpha
-        elif self.filter_type == 'high_shelf_DeMan':
-            K  = np.tan(np.pi * self.fc / self.rate) 
+            b2 = (1 + np.cos(w0)) / 2
+            a0 = 1 + alpha
+            a1 = -2 * np.cos(w0)
+            a2 = 1 - alpha
+        elif self.filter_type == "low_pass":
+            b0 = (1 - np.cos(w0)) / 2
+            b1 = 1 - np.cos(w0)
+            b2 = (1 - np.cos(w0)) / 2
+            a0 = 1 + alpha
+            a1 = -2 * np.cos(w0)
+            a2 = 1 - alpha
+        elif self.filter_type == "peaking":
+            b0 = 1 + alpha * A
+            b1 = -2 * np.cos(w0)
+            b2 = 1 - alpha * A
+            a0 = 1 + alpha / A
+            a1 = -2 * np.cos(w0)
+            a2 = 1 - alpha / A
+        elif self.filter_type == "notch":
+            b0 = 1
+            b1 = -2 * np.cos(w0)
+            b2 = 1
+            a0 = 1 + alpha
+            a1 = -2 * np.cos(w0)
+            a2 = 1 - alpha
+        elif self.filter_type == "high_shelf_DeMan":
+            K = np.tan(np.pi * self.fc / self.rate)
             Vh = np.power(10.0, self.G / 20.0)
             Vb = np.power(Vh, 0.499666774155)
             a0_ = 1.0 + K / self.Q + K * K
             b0 = (Vh + Vb * K / self.Q + K * K) / a0_
-            b1 =  2.0 * (K * K -  Vh) / a0_
+            b1 = 2.0 * (K * K - Vh) / a0_
             b2 = (Vh - Vb * K / self.Q + K * K) / a0_
-            a0 =  1.0
-            a1 =  2.0 * (K * K - 1.0) / a0_
+            a0 = 1.0
+            a1 = 2.0 * (K * K - 1.0) / a0_
             a2 = (1.0 - K / self.Q + K * K) / a0_
-        elif self.filter_type == 'high_pass_DeMan':
-            K  = np.tan(np.pi * self.fc / self.rate)
-            a0 =  1.0
-            a1 =  2.0 * (K * K - 1.0) / (1.0 + K / self.Q + K * K)
+        elif self.filter_type == "high_pass_DeMan":
+            K = np.tan(np.pi * self.fc / self.rate)
+            a0 = 1.0
+            a1 = 2.0 * (K * K - 1.0) / (1.0 + K / self.Q + K * K)
             a2 = (1.0 - K / self.Q + K * K) / (1.0 + K / self.Q + K * K)
-            b0 =  1.0
+            b0 = 1.0
             b1 = -2.0
-            b2 =  1.0
+            b2 = 1.0
         else:
-            raise ValueError("Invalid filter type", self.filter_type)            
+            raise ValueError("Invalid filter type", self.filter_type)
 
-        return np.array([b0, b1, b2])/a0, np.array([a0, a1, a2])/a0
+        return np.array([b0, b1, b2]) / a0, np.array([a0, a1, a2]) / a0
 
     def apply_filter(self, data):
-        """ Apply the IIR filter to an input signal.
+        """Apply the IIR filter to an input signal.
 
         Params
         -------
@@ -205,7 +218,7 @@ class IIRfilter(object):
         filtered_signal : ndarray
             Filtered input audio.
         """
-        return self.passband_gain * scipy.signal.lfilter(self.b, self.a, data) # type: ignore
+        return self.passband_gain * scipy.signal.lfilter(self.b, self.a, data)  # type: ignore
 
     @property
     def a(self):
@@ -213,10 +226,11 @@ class IIRfilter(object):
 
     @property
     def b(self):
-        return self.generate_coefficients()[0] 
+        return self.generate_coefficients()[0]
+
 
 class Meter(object):
-    """ Meter object which defines how the meter operates
+    """Meter object which defines how the meter operates
 
     Defaults to the algorithm defined in ITU-R BS.1770-4.
 
@@ -235,7 +249,9 @@ class Meter(object):
         Gating block size in seconds.
     """
 
-    def __init__(self, rate, filter_class="K-weighting", block_size=0.400, overlap=0.75):
+    def __init__(
+        self, rate, filter_class="K-weighting", block_size=0.400, overlap=0.75
+    ):
         self.rate = rate
         self.filter_class = filter_class
         self.block_size = block_size
@@ -243,7 +259,7 @@ class Meter(object):
         self.blockwise_loudness = []
 
     def integrated_loudness(self, data):
-        """ Measure the integrated gated loudness of a signal.
+        """Measure the integrated gated loudness of a signal.
 
         Uses the weighting filters and block size defined by the meter
         the integrated loudness is measured based upon the gating algorithm
@@ -270,62 +286,85 @@ class Meter(object):
             input_data = np.reshape(input_data, (input_data.shape[0], 1))
 
         numChannels = input_data.shape[1]
-        numSamples  = input_data.shape[0]
+        numSamples = input_data.shape[0]
 
         # Apply frequency weighting filters - account for the acoustic response of the head and auditory system
-        for (filter_class, filter_stage) in self._filters.items():
+        for filter_class, filter_stage in self._filters.items():
             for ch in range(numChannels):
-                input_data[:,ch] = filter_stage.apply_filter(input_data[:,ch])
+                input_data[:, ch] = filter_stage.apply_filter(input_data[:, ch])
 
-        G = [1.0, 1.0, 1.0, 1.41, 1.41] # channel gains
-        T_g = self.block_size # 400 ms gating block standard
-        Gamma_a = -70.0 # -70 LKFS = absolute loudness threshold
-        overlap = self.overlap # overlap of 75% of the block duration
-        step = 1.0 - overlap # step size by percentage
+        G = [1.0, 1.0, 1.0, 1.41, 1.41]  # channel gains
+        T_g = self.block_size  # 400 ms gating block standard
+        Gamma_a = -70.0  # -70 LKFS = absolute loudness threshold
+        overlap = self.overlap  # overlap of 75% of the block duration
+        step = 1.0 - overlap  # step size by percentage
 
-        T = numSamples / self.rate # length of the input in seconds
-        numBlocks = int(np.round(((T - T_g) / (T_g * step)))+1) # total number of gated blocks (see end of eq. 3)
-        j_range = np.arange(0, numBlocks) # indexed list of total blocks
-        z = np.zeros(shape=(numChannels,numBlocks)) # instantiate array - trasponse of input
+        T = numSamples / self.rate  # length of the input in seconds
+        numBlocks = int(
+            np.round(((T - T_g) / (T_g * step))) + 1
+        )  # total number of gated blocks (see end of eq. 3)
+        j_range = np.arange(0, numBlocks)  # indexed list of total blocks
+        z = np.zeros(
+            shape=(numChannels, numBlocks)
+        )  # instantiate array - trasponse of input
 
-        for i in range(numChannels): # iterate over input channels
-            for j in j_range: # iterate over total frames
-                l = int(T_g * (j * step    ) * self.rate) # lower bound of integration (in samples)
-                u = int(T_g * (j * step + 1) * self.rate) # upper bound of integration (in samples)
+        for i in range(numChannels):  # iterate over input channels
+            for j in j_range:  # iterate over total frames
+                l = int(
+                    T_g * (j * step) * self.rate
+                )  # lower bound of integration (in samples)
+                u = int(
+                    T_g * (j * step + 1) * self.rate
+                )  # upper bound of integration (in samples)
                 # caluate mean square of the filtered for each block (see eq. 1)
-                z[i,j] = (1.0 / (T_g * self.rate)) * np.sum(np.square(input_data[l:u,i]))
+                z[i, j] = (1.0 / (T_g * self.rate)) * np.sum(
+                    np.square(input_data[l:u, i])
+                )
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
             # loudness for each jth block (see eq. 4)
-            l = [-0.691 + 10.0 * np.log10(np.sum([G[i] * z[i,j] for i in range(numChannels)])) for j in j_range]
+            l = [
+                -0.691
+                + 10.0 * np.log10(np.sum([G[i] * z[i, j] for i in range(numChannels)]))
+                for j in j_range
+            ]
         self.blockwise_loudness = l
 
         # find gating block indices above absolute threshold
-        J_g = [j for j,l_j in enumerate(l) if l_j >= Gamma_a]
+        J_g = [j for j, l_j in enumerate(l) if l_j >= Gamma_a]
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
             # calculate the average of z[i,j] as show in eq. 5
-            z_avg_gated = [np.mean([z[i,j] for j in J_g]) for i in range(numChannels)]
+            z_avg_gated = [np.mean([z[i, j] for j in J_g]) for i in range(numChannels)]
         # calculate the relative threshold value (see eq. 6)
-        Gamma_r = -0.691 + 10.0 * np.log10(np.sum([G[i] * z_avg_gated[i] for i in range(numChannels)])) - 10.0
+        Gamma_r = (
+            -0.691
+            + 10.0
+            * np.log10(np.sum([G[i] * z_avg_gated[i] for i in range(numChannels)]))
+            - 10.0
+        )
 
         # find gating block indices above relative and absolute thresholds  (end of eq. 7)
-        J_g = [j for j,l_j in enumerate(l) if (l_j > Gamma_r and l_j > Gamma_a)]
+        J_g = [j for j, l_j in enumerate(l) if (l_j > Gamma_r and l_j > Gamma_a)]
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
             # calculate the average of z[i,j] as show in eq. 7 with blocks above both thresholds
-            z_avg_gated = np.nan_to_num(np.array([np.mean([z[i,j] for j in J_g]) for i in range(numChannels)]))
+            z_avg_gated = np.nan_to_num(
+                np.array([np.mean([z[i, j] for j in J_g]) for i in range(numChannels)])
+            )
 
         # calculate final loudness gated loudness (see eq. 7)
-        with np.errstate(divide='ignore'):
-            LUFS = -0.691 + 10.0 * np.log10(np.sum([G[i] * z_avg_gated[i] for i in range(numChannels)]))
+        with np.errstate(divide="ignore"):
+            LUFS = -0.691 + 10.0 * np.log10(
+                np.sum([G[i] * z_avg_gated[i] for i in range(numChannels)])
+            )
 
         return LUFS
 
     def loudness_range(self, data):
-        """ Measure the loudness range of a signal.
+        """Measure the loudness range of a signal.
 
         An implementation based on the MATLAB example of TECH 3342 -
         LOUDNESS RANGE: A MEASURE TO SUPPLEMENT EBU R 128 LOUDNESS NORMALIZATION
@@ -376,7 +415,9 @@ class Meter(object):
             n = len(stl_absgated_vec)
             stl_power = np.sum(np.power(10, np.divide(stl_absgated_vec, 10))) / n
             stl_integrated = 10 * np.log10(stl_power)
-            stl_relgated_vec = [x for x in stl_absgated_vec if x >= stl_integrated + REL_THRES]
+            stl_relgated_vec = [
+                x for x in stl_absgated_vec if x >= stl_integrated + REL_THRES
+            ]
 
             # Handle edge case: no blocks above relative threshold
             if len(stl_relgated_vec) == 0:
@@ -415,43 +456,71 @@ class Meter(object):
 
     @filter_class.setter
     def filter_class(self, value):
-        self._filters = {} # reset (clear) filters
+        self._filters = {}  # reset (clear) filters
         self._filter_class = value
-        if   self._filter_class == "K-weighting":
-            self._filters['high_shelf'] = IIRfilter(4.0, 1/np.sqrt(2), 1500.0, self.rate, 'high_shelf')
-            self._filters['high_pass'] = IIRfilter(0.0, 0.5, 38.0, self.rate, 'high_pass')
+        if self._filter_class == "K-weighting":
+            self._filters["high_shelf"] = IIRfilter(
+                4.0, 1 / np.sqrt(2), 1500.0, self.rate, "high_shelf"
+            )
+            self._filters["high_pass"] = IIRfilter(
+                0.0, 0.5, 38.0, self.rate, "high_pass"
+            )
         elif self._filter_class == "Fenton/Lee 1":
-            self._filters['high_shelf'] = IIRfilter(5.0, 1/np.sqrt(2), 1500.0, self.rate, 'high_shelf')
-            self._filters['high_pass'] = IIRfilter(0.0, 0.5, 130.0, self.rate, 'high_pass')
-            self._filters['peaking'] = IIRfilter(0.0, 1/np.sqrt(2), 500.0, self.rate, 'peaking')
-        elif self._filter_class == "Fenton/Lee 2": # not yet implemented
-            self._filters['high_self'] = IIRfilter(4.0, 1/np.sqrt(2), 1500.0, self.rate, 'high_shelf')
-            self._filters['high_pass'] = IIRfilter(0.0, 0.5, 38.0, self.rate, 'high_pass')
+            self._filters["high_shelf"] = IIRfilter(
+                5.0, 1 / np.sqrt(2), 1500.0, self.rate, "high_shelf"
+            )
+            self._filters["high_pass"] = IIRfilter(
+                0.0, 0.5, 130.0, self.rate, "high_pass"
+            )
+            self._filters["peaking"] = IIRfilter(
+                0.0, 1 / np.sqrt(2), 500.0, self.rate, "peaking"
+            )
+        elif self._filter_class == "Fenton/Lee 2":  # not yet implemented
+            self._filters["high_self"] = IIRfilter(
+                4.0, 1 / np.sqrt(2), 1500.0, self.rate, "high_shelf"
+            )
+            self._filters["high_pass"] = IIRfilter(
+                0.0, 0.5, 38.0, self.rate, "high_pass"
+            )
         elif self._filter_class == "Dash et al.":
-            self._filters['high_pass'] = IIRfilter(0.0, 0.375, 149.0, self.rate, 'high_pass')
-            self._filters['peaking'] = IIRfilter(-2.93820927, 1.68878655, 1000.0, self.rate, 'peaking')
+            self._filters["high_pass"] = IIRfilter(
+                0.0, 0.375, 149.0, self.rate, "high_pass"
+            )
+            self._filters["peaking"] = IIRfilter(
+                -2.93820927, 1.68878655, 1000.0, self.rate, "peaking"
+            )
         elif self._filter_class == "DeMan":
-            self._filters['high_shelf_DeMan'] = IIRfilter(3.99984385397, 0.7071752369554193, 1681.9744509555319, self.rate, 'high_shelf_DeMan')
-            self._filters['high_pass_DeMan'] = IIRfilter(0.0, 0.5003270373253953, 38.13547087613982, self.rate, 'high_pass_DeMan')
+            self._filters["high_shelf_DeMan"] = IIRfilter(
+                3.99984385397,
+                0.7071752369554193,
+                1681.9744509555319,
+                self.rate,
+                "high_shelf_DeMan",
+            )
+            self._filters["high_pass_DeMan"] = IIRfilter(
+                0.0, 0.5003270373253953, 38.13547087613982, self.rate, "high_pass_DeMan"
+            )
         elif self._filter_class == "custom":
             pass
         else:
             raise ValueError("Invalid filter class:", self._filter_class)
 
+
 def getAdjustedGainFactor(target_lufs: float, audio: AudioSegment) -> float:
     return getAdjustedGainFactor_impl(target_lufs, audio)
+
 
 @lru_cache(maxsize=1024)
 def getAdjustedGainFactor_impl(target_lufs: float, audio: AudioSegment) -> float:
     samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
     dtype_map = {1: np.int8, 2: np.int16, 4: np.int32}
     dtype = dtype_map[audio.sample_width]
-    max_val = np.iinfo(dtype).max
-    samples = samples / max_val
+    max_val = np.iinfo(dtype).max  # type: ignore[type-var]
+    samples = samples / max_val  # type: ignore[assignment]
 
     meter = Meter(audio.frame_rate)
     loudness = meter.integrated_loudness(samples)
 
     gain = 10 ** ((target_lufs - loudness) / 20.0)
-    logging.info(f'loudness adjusted, {gain=}, {target_lufs=}')
+    logging.info(f"loudness adjusted, {gain=}, {target_lufs=}")
     return gain

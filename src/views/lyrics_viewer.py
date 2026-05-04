@@ -102,7 +102,7 @@ class LyricsViewer(QWidget):
         now = time.perf_counter_ns()
         _elapsed: float = (now - self.last_draw) / 1_000_000_000
         self.last_draw = now
-        multiple_factor = max(0.0, min(5.0, _elapsed / self.delta))
+        multiple_factor = _elapsed / self.delta
 
         self.target_acc = (
             (self.target_draw_offset - self.draw_offset)
@@ -113,7 +113,7 @@ class LyricsViewer(QWidget):
             (self.target_acc - self.acc)
             * self.delta
             * self._cfg.acceleration_smooth_factor
-            / max(0.5, min(1, (self.target_acc - self.acc)))
+            / max(0.5, min(1, abs(self.target_acc - self.acc)))
             * multiple_factor
         )
 

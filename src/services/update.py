@@ -14,6 +14,7 @@ from imports import QMessageBox
 from utils import requests_util as requests
 from utils.config_util import cfg
 
+excludes = ['ffmpeg']
 
 class UpdateFileInfo(TypedDict):
     path: str
@@ -42,7 +43,7 @@ def _collect_update_files(api_url: str, file_list: list[UpdateFileInfo]) -> None
     for item in items:
         if not isinstance(item, dict):
             continue
-        if item.get("type") == "file":
+        if item.get("type") == "file" and item.get('name') not in excludes:
             download_url = item.get("download_url")
             path = item.get("path")
             sha = item.get("sha")
@@ -54,7 +55,7 @@ def _collect_update_files(api_url: str, file_list: list[UpdateFileInfo]) -> None
                 file_list.append(
                     UpdateFileInfo(path=path, download_url=download_url, sha=sha)
                 )
-        elif item.get("type") == "dir" and isinstance(item.get("url"), str):
+        elif item.get("type") == "dir" and isinstance(item.get("url"), str) and item.get('name') not in excludes:
             _collect_update_files(item["url"], file_list)
 
 

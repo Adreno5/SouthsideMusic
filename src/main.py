@@ -4,6 +4,12 @@ import logging
 
 import os
 import sys
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
+sys.path.append(os.path.join(os.path.dirname(__file__), "views"))
+sys.path.append(os.path.join(os.path.dirname(__file__), "services"))
+sys.path.append(os.path.dirname(__file__))
+
 import threading
 import time
 import uuid
@@ -12,9 +18,6 @@ from typing import Any, TextIO
 import glob
 
 from services.events.events_services import EventsServices
-
-sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
-sys.path.append(os.path.dirname(__file__))
 
 import pydub
 import imports as _ims

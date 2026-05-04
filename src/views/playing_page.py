@@ -591,6 +591,94 @@ class PlayingPage(QWidget):
         self.current_index -= 1
         self.playSongAtIndex(self.current_index)
 
+    def continueLastSong(self, index: int):
+        if index < 0 or index >= len(self.playlist):
+            return
+        
+        self.current_index = index
+        song_storable = self.playlist[index]
+        
+        if not self.ensureAssets(song_storable):
+            return
+
+        self._player.stop()
+        self.cur = DummyCard(song_storable)
+
+        self._mgr.cur = ""
+        self._transmgr.cur = ""
+        self._ymgr.cur = ""
+        self._mgr.parse()
+        self._transmgr.parse()
+        self._ymgr.parse()
+
+        self.title_label.setText(song_storable.name)
+        self.artists_label.setText(song_storable.artists)
+
+        self._app.processEvents()
+
+        result: dict = {}
+
+        def _prepare():
+            self._mwindow_obj._loading_song = True
+            music_bytes = song_storable.get_music_bytes()
+            if song_storable.target_lufs == cfg.target_lufs:
+                audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
+                audio = audio.apply_gain(20 * np.log10(song_storable.loudness_gain))
+            else:
+                audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
+                gain = getAdjustedGainFactor(cfg.target_lufs, audio)
+                audio = audio.apply_gain(20 * np.log10(gain))
+                song_storable.target_lufs = cfg.target_lufs
+                song_storable.loudness_gain = gain
+                self._mwindow_obj._loading_song = False
+
+            result["audio"] = audio
+            self._player.load(audio)
+            self.total_length = self._player.getLength()
+            self._player.play()
+            self._player.setPosition(cfg.last_playing_time)
+
+            image_bytes = song_storable.get_image_bytes()
+            from PySide6.QtGui import QImage
+
+            qimg = QImage()
+            qimg.loadFromData(image_bytes)
+            if not qimg.isNull():
+                result["qimg"] = qimg
+                result["avg_color"] = getAverageColorFromBytes(image_bytes)
+
+        def _finish():
+            if self.cur is None or self.cur.storable is not song_storable:
+                return
+
+            self._preload_triggered = False
+            self.next_song_audio = None
+            self.next_song_gain = None
+
+            self._sidebar.refreshPlaylistWidget()
+            self.sendSongFMAndInfo()
+            self._download_update_lyrics(song_storable)
+
+            qimg = result.get("qimg")
+            if isinstance(qimg, QImage) and not qimg.isNull():
+                pixmap = QPixmap.fromImage(qimg)
+                scaled = pixmap.scaled(
+                    self.img_label.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                self.img_label.setPixmap(scaled)
+                self.img_label.show()
+                self.ring.hide()
+
+                avg_color = result.get("avg_color", [128, 128, 128])
+                self._mwindow_obj.song_theme = QColor(
+                    int(avg_color[0]), int(avg_color[1]), int(avg_color[2])
+                )
+                self._mwindow_obj.repaint()
+
+        doWithMultiThreading(_prepare, (), self._mwindow_obj, _finish)
+
     def playSongAtIndex(self, index: int):
         if index < 0 or index >= len(self.playlist):
             return

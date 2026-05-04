@@ -265,9 +265,7 @@ class MainWindow(FluentWindowBase):
                     self._launchwindow.top("continue last song...")
 
                     def _continue():
-                        self._dp.playSongAtIndex(last_playing_index)
-                        self._dp.controller.setPlaytime(cfg.last_playing_time)
-                        self._player.stop()
+                        self._dp.continueLastSong(cfg.last_playing_index)
 
                     self.addScheduledTask(_continue)
 

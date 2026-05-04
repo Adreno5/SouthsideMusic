@@ -14,11 +14,6 @@ from imports import QMessageBox
 from utils import requests_util as requests
 from utils.config_util import cfg
 
-UPDATE_SRC_URL = "https://api.github.com/repos/Adreno5/SouthsideMusic/contents/src"
-UPDATE_PYPROJECT_URL = (
-    "https://api.github.com/repos/Adreno5/SouthsideMusic/contents/pyproject.toml"
-)
-
 
 class UpdateFileInfo(TypedDict):
     path: str
@@ -75,20 +70,7 @@ def checkForUpdates() -> UpdateInfo | None:
         return None
 
     file_list: list[UpdateFileInfo] = []
-    _collect_update_files(UPDATE_SRC_URL, file_list)
-    pyproject_info = requests.get(UPDATE_PYPROJECT_URL).json()
-    if isinstance(pyproject_info, dict):
-        path = pyproject_info.get("path")
-        download_url = pyproject_info.get("download_url")
-        sha = pyproject_info.get("sha")
-        if (
-            isinstance(path, str)
-            and isinstance(download_url, str)
-            and isinstance(sha, str)
-        ):
-            file_list.append(
-                UpdateFileInfo(path=path, download_url=download_url, sha=sha)
-            )
+    _collect_update_files('https://api.github.com/repos/Adreno5/SouthsideMusic/contents', file_list)
 
     changed_files = [
         item for item in file_list if _git_blob_sha(item["path"]) != item["sha"]

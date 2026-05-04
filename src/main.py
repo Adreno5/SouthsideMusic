@@ -10,6 +10,9 @@ from types import FrameType, TracebackType
 from typing import Any, TextIO
 import glob
 
+sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
+sys.path.append(os.path.dirname(__file__))
+
 import pydub
 import imports as _ims
 from qfluentwidgets import setTheme, Theme
@@ -131,9 +134,6 @@ else:
 
 ffmpeg_dir = os.path.join(base_dir, "ffmpeg", "bin")
 os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ["PATH"]
-
-sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
-sys.path.append(os.path.dirname(__file__))
 
 import subprocess  # noqa: E402
 

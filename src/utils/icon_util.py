@@ -1,8 +1,11 @@
 import logging
 from enum import Enum
 from typing import Any, Literal, cast
+
+import darkdetect
 from imports import QIcon
 from qfluentwidgets import FluentIconBase, Theme, isDarkTheme
+import tempfile
 
 
 class SouthsideIcon(FluentIconBase, Enum):
@@ -28,14 +31,19 @@ class SouthsideIcon(FluentIconBase, Enum):
     DROP_DOWN = "drop_down"
 
     def path(self, theme=Theme.AUTO) -> str:
-        if theme == Theme.AUTO:
-            icon_theme = "dark" if isDarkTheme() else "light"
-        elif theme == Theme.DARK:
-            icon_theme = "dark"
-        else:
-            icon_theme = "light"
-        return f"icons/{self.value}_{icon_theme}.svg"
-
+        with open(f'icons/{self.value}.svg', 'r', encoding='utf-8') as f:
+            svg = f.read()
+        target = '#ffffff' if darkdetect.isDark() else '#000000'
+        if theme == Theme.DARK:
+            target = '#ffffff'
+        elif theme == Theme.LIGHT:
+            target = '#000000'
+        if target != '#000000':
+            svg = svg.replace('#000000', target)
+        tmp = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.svg', delete=False)
+        tmp.write(svg)
+        tmp.close()
+        return tmp.name
 
 _icon_map = {icon.value: icon for icon in SouthsideIcon}
 

@@ -1,8 +1,8 @@
 import io
 
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QVBoxLayout, QWidget
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QImage, QPixmap
+from imports import QHBoxLayout, QLabel, QListWidget, QVBoxLayout, QWidget
+from imports import Qt, QTimer
+from imports import QImage, QPixmap
 from pyncm import apis
 import qrcode
 from qfluentwidgets import (

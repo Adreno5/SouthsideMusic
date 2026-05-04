@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import (
+from imports import QSize, Qt, QTimer
+from imports import QPixmap
+from imports import (
     QHBoxLayout,
     QInputDialog,
     QLabel,

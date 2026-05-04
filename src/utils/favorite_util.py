@@ -12,10 +12,10 @@ from utils.base.base_util import (
     LEGACY_MUSIC_CACHE_DIR,
     LYRIC_DATA_DIR,
     MUSIC_DATA_DIR,
-    SongStorable,
+    SongStorable
 )
 from qfluentwidgets import ListWidget, MessageBoxBase, SubtitleLabel
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QVBoxLayout
+from imports import QHBoxLayout, QLabel, QListWidget, QVBoxLayout
 
 
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -30,8 +30,7 @@ def _ensure_favorite_dirs() -> None:
     os.makedirs(IMAGE_DATA_DIR, exist_ok=True)
     os.makedirs(LYRIC_DATA_DIR, exist_ok=True)
 
-
-def _to_favorite_song_object(song: SongStorable) -> dict:
+def _to_favorite_song_object(song: SongStorable):
     return song.toObject()
 
 

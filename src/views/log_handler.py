@@ -29,11 +29,11 @@ class LogHandler(logging.Handler):
             "INFO": Fore.LIGHTGREEN_EX,
             "WARNING": Fore.YELLOW,
             "ERROR": Fore.RED,
-            "CRITICAL": Fore.RED,
+            "CRITICAL": Fore.RED
         }.get(record.levelname, Fore.WHITE)
 
         time_str = datetime.datetime.now().strftime("%H:%M:%S")
-        plain_prefix = f"[{time_str}/{record.levelname}] - "
+        plain_prefix = f"[{time_str}/{record.levelname}] [{record.name}] - "
         plain_msg = plain_prefix + message
         plain_suffix = f"[{record.thread}/{record.threadName}]"
 
@@ -48,7 +48,7 @@ class LogHandler(logging.Handler):
         colored_prefix = (
             f"[{Fore.LIGHTBLACK_EX}{time_str}{Style.RESET_ALL}/"
             f"{color}{Style.BRIGHT}{record.levelname}{Style.RESET_ALL}] "
-            f"{Fore.LIGHTBLACK_EX}-{Style.RESET_ALL} "
+            f"{Fore.LIGHTBLACK_EX}[{record.name}] -{Style.RESET_ALL} "
         )
         colored_suffix = (
             f"{Fore.LIGHTGREEN_EX}[{Style.RESET_ALL}"

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from imports import Qt
+from imports import QPixmap
+from imports import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import CaptionLabel, FluentStyleSheet
 from qframelesswindow import TitleBar
 

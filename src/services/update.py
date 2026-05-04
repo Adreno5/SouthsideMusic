@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TypedDict
 
 import toml  # type: ignore[import-untyped]
-from PySide6.QtWidgets import QMessageBox
+from imports import QMessageBox
 
 from utils import requests_util as requests
 from utils.config_util import cfg
@@ -132,9 +132,9 @@ def applyUpdate(update_info: UpdateInfo) -> bool:
         cfg.progress = 1
         cfg.show_progress = False
         return True
-    except Exception:
+    except Exception as e:
         cfg.show_progress = False
-        logging.exception("failed to apply update")
+        logging.exception(e)
         return False
 
 
@@ -142,8 +142,8 @@ def startUpdateCheck(mwindow=None) -> None:
     def _check():
         try:
             update_result = checkForUpdates()
-        except Exception:
-            logging.exception("failed to check for updates")
+        except Exception as e:
+            logging.exception(e)
             return
         if update_result is None:
             return
@@ -163,7 +163,8 @@ def applyUpdateImmediately(update_info: UpdateInfo, mwindow=None) -> None:
                 "Update completed. Please restart the app.",
                 QMessageBox.StandardButton.Ok,
             )
-            mwindow.close()
+            if mwindow:
+                mwindow.close()
         else:
             QMessageBox.warning(
                 mwindow,
@@ -172,4 +173,5 @@ def applyUpdateImmediately(update_info: UpdateInfo, mwindow=None) -> None:
                 QMessageBox.StandardButton.Ok,
             )
 
-    mwindow.addScheduledTask(_show_result)
+    if mwindow:
+        mwindow.addScheduledTask(_show_result)

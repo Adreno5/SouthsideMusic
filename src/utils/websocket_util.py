@@ -4,7 +4,7 @@ import tornado.websocket
 import tornado.httpserver
 import tornado.ioloop
 import tornado.web
-from PySide6.QtCore import QObject, Signal, QTimer
+from imports import QObject, Signal, QTimer
 
 class WebSocketHandler(tornado.websocket.WebSocketHandler):
     def __init__(self, application, request, **kwargs) -> None:

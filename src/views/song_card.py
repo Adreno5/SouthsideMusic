@@ -12,9 +12,9 @@ if TYPE_CHECKING:
     from views.sidebar import Sidebar
     from views.playing_page import PlayingPage
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QImage, QMouseEvent, QPixmap
-from PySide6.QtWidgets import (
+from imports import QSize, Qt, Signal
+from imports import QImage, QMouseEvent, QPixmap
+from imports import (
     QFileDialog,
     QHBoxLayout,
     QLabel,

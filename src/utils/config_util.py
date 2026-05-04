@@ -84,7 +84,7 @@ def _song_from_object(data: Any) -> SongStorable | None:
     try:
         return SongStorable.fromObject(data)  # type: ignore[arg-type]
     except Exception as e:
-        logging.warning(f"failed to restore song from config: {e}")
+        logging.exception(e)
         return None
 
 
@@ -122,8 +122,8 @@ def _delete_legacy_pickle_config() -> None:
     try:
         os.remove(LEGACY_PICKLE_CONFIG_PATH)
         logging.info("deleted legacy config.pkl")
-    except OSError as e:
-        logging.warning(f"failed to delete legacy config.pkl: {e}")
+    except Exception as e:
+        logging.exception(e)
 
 
 def loadConfig() -> None:

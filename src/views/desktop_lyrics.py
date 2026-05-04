@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, QPoint, QRect
-from PySide6.QtGui import (
+from imports import QEnterEvent, Qt, QTimer, QPoint, QRect
+from imports import (
     QColor,
     QFontMetricsF,
     QMouseEvent,
@@ -12,7 +12,7 @@ from PySide6.QtGui import (
     QPen,
     QWheelEvent,
 )
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from imports import QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import CheckBox, FlowLayout, PushButton, FluentIcon, TitleLabel
 
 from utils import darkdetect_util as darkdetect
@@ -42,11 +42,23 @@ class DesktopLyricsPage(QWidget):
             self.cwidth: float = 10
             self.cheight: float = 65
 
+            self.indentation_timer = QTimer(self)
+            self.indentation_timer.timeout.connect(self.unindentation)
+            self.indentation_y: float = 0
+            self.indentation: bool = False
+
             self.timer = QTimer(self)
             self.timer.timeout.connect(self.updateDatas)
             self.timer.start(16)
 
+        def unindentation(self):
+            if not cfg.desktop_lyrics_anchor == 'top-center':
+                return
+            self.indentation = False
+
         def updateDatas(self):
+            self.indentation_y += ((-self.height() + 8 if self.indentation else 0) - self.indentation_y) * 0.2
+
             cur_line: YRCLyricInfo | LyricInfo | None = (
                 self._ymgr.getCurrentLyric(self._player.getPosition())
                 if self._ymgr.parsed
@@ -92,8 +104,9 @@ class DesktopLyricsPage(QWidget):
             self.cwidth += (tar_width - self.cwidth) * 0.07
             self.setFixedWidth(int(self.cwidth))
 
+            target_point = QPoint(0, 0)
             if cfg.desktop_lyrics_anchor == "top-center":
-                self.move(
+                target_point = QPoint(
                     int(
                         self._app.primaryScreen().size().width() * 0.5
                         - self.width() * 0.5
@@ -101,7 +114,7 @@ class DesktopLyricsPage(QWidget):
                     0,
                 )
             if cfg.desktop_lyrics_anchor == "bottom-center":
-                self.move(
+                target_point = QPoint(
                     int(
                         self._app.primaryScreen().size().width() * 0.5
                         - self.width() * 0.5
@@ -109,7 +122,11 @@ class DesktopLyricsPage(QWidget):
                     self._app.primaryScreen().size().height() - self.height() - 100,
                 )
             if cfg.desktop_lyrics_anchor == "normal" and not self.dragging:
-                self.move(int(cfg.desktop_lyrics_x - self.width() * 0.5), self.y())
+                target_point = QPoint(int(cfg.desktop_lyrics_x - self.width() * 0.5), self.y())
+            if not self.dragging and cfg.desktop_lyrics_anchor == 'top-center':
+                target_point += QPoint(0, int(self.indentation_y))
+            if not self.dragging:
+                self.move(target_point)
 
             self.draw_x_offset = self.height() / 2
 
@@ -201,6 +218,13 @@ class DesktopLyricsPage(QWidget):
 
         def wheelEvent(self, event: QWheelEvent) -> None:
             event.ignore()
+
+        def enterEvent(self, event: QEnterEvent) -> None:
+            self.indentation = True
+            if self.indentation_timer.isActive():
+                self.indentation_timer.stop()
+            self.indentation_timer.start(1000)
+            return super().enterEvent(event)
 
     def __init__(
         self,

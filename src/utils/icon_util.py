@@ -1,7 +1,7 @@
 import logging
 from enum import Enum
 from typing import Any, Literal, cast
-from PySide6.QtGui import QIcon
+from imports import QIcon
 from qfluentwidgets import FluentIconBase, Theme, isDarkTheme
 
 

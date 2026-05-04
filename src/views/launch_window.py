@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from imports import Qt
+from imports import QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import TitleLabel
 import hPyT
 
 from utils import darkdetect_util as darkdetect
 import time
+
+from utils.dialog_util import SubtitleLabel
 
 class LaunchWindow(QWidget):
     def __init__(self, app):
@@ -26,6 +28,11 @@ class LaunchWindow(QWidget):
         launchlayout.addWidget(
             TitleLabel("Southside Music"),
             alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
+        )
+        self.subtitlel = SubtitleLabel('')
+        launchlayout.addWidget(
+            self.subtitlel,
+            alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
         )
         self.sublabel = QLabel("Launching...")
         launchlayout.addWidget(
@@ -51,6 +58,11 @@ class LaunchWindow(QWidget):
         if len(self._stack) > 0:
             self._stack.pop()
             self.updateLabel()
+
+    def subtitle(self, text: str):
+        self.subtitlel.setText(text)
+        self.push(text)
+        time.sleep(0.05)
 
     def clear(self):
         pass

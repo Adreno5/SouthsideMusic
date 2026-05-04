@@ -3,13 +3,15 @@ import logging
 import struct
 import subprocess
 from queue import Queue, Full
+import sys
 import numpy as np
 import sounddevice as sd
 from pathlib import Path
-from PySide6.QtCore import QObject, Signal
-from typing import Optional, override
+from imports import QObject, Signal
+from typing import Optional, TypedDict, override
 import threading
 from scipy.fft import rfft, rfftfreq
+from imports import QMessageBox
 from utils.config_util import cfg
 
 from pydub.utils import mediainfo_json, fsdecode, _fd_or_path_or_tempfile, audioop
@@ -52,6 +54,20 @@ def fix_wav_headers(data):
     # Set the data size in the data subchunk
     pos = headers[-1].position
     data[pos + 4 : pos + 8] = struct.pack("<I", len(data) - pos - 8)
+
+
+class DevicesInfo(TypedDict):
+    display_name: str
+    index: int
+
+
+def getAudioDevices() -> list[DevicesInfo]:
+    devices = sd.query_devices()
+    result: list[DevicesInfo] = []
+    for i, dev in enumerate(devices):
+        if dev["max_output_channels"] > 0:
+            result.append(DevicesInfo(display_name=dev["name"], index=i))
+    return result
 
 
 class PatchedAudioSegment(AudioSegment):
@@ -109,7 +125,7 @@ class PatchedAudioSegment(AudioSegment):
                     return cls._from_safe_wav(
                         file
                     )[
-                        start_second * 1000 : (start_second + duration) # type: ignore
+                        start_second * 1000 : (start_second + duration)  # type: ignore
                         * 1000  # type: ignore
                     ]  # type: ignore
             except:
@@ -132,7 +148,8 @@ class PatchedAudioSegment(AudioSegment):
                 return cls(data=file.read(), metadata=metadata)[: duration * 1000]  # type: ignore
             else:
                 return cls(
-                    data=file.read(), metadata=metadata # type: ignore
+                    data=file.read(),  # type: ignore
+                    metadata=metadata,  # type: ignore
                 )[  # type: ignore
                     start_second * 1000 : (start_second + duration)  # type: ignore
                     * 1000  # type: ignore
@@ -317,7 +334,17 @@ class AudioPlayer(QObject):
         self.play_speed = cfg.play_speed
 
         self._lock = threading.RLock()
-
+        devices = getAudioDevices()
+        if len(devices) == 0:
+            logging.error("no devices found")
+            QMessageBox.critical(
+                None,
+                "Error ",
+                "No any device can be used to play audio on your computer!",
+                QMessageBox.StandardButton.Ok,
+            )
+            sys.exit(1)
+        self._device_id: int = devices[0]["index"]
         self.fft_queue = Queue(maxsize=8)
         self.fft_thread_running = True
         self.fft_thread = threading.Thread(target=self._fft_worker, daemon=True)
@@ -348,7 +375,7 @@ class AudioPlayer(QObject):
             return stereo_chunk
 
         delay = min(max(1, self.sample_rate // 200), max(1, len(self.samples) // 8))
-        delayed_indices = np.arange(len(mono_chunk)) + absolute_start - delay # type: ignore
+        delayed_indices = np.arange(len(mono_chunk)) + absolute_start - delay  # type: ignore
         valid = delayed_indices >= 0
 
         right = stereo_chunk[:, 1]
@@ -460,7 +487,14 @@ class AudioPlayer(QObject):
             self.play_speed = max(0.1, speed)
 
     def isPlaying(self) -> bool:
-        return self.is_playing or (self.stream is not None and self.stream.active)
+        if self.is_playing:
+            return True
+        if self.stream is not None:
+            try:
+                return self.stream.active
+            except Exception:
+                pass
+        return False
 
     def _stream_sample_rate(self) -> int:
         return int(self.sample_rate * self.play_speed)
@@ -475,6 +509,7 @@ class AudioPlayer(QObject):
                     callback=self._audio_callback,
                     blocksize=768,
                     dtype="float32",
+                    device=self._device_id,
                 )
             except sd.PortAudioError:
                 channels = 1
@@ -484,6 +519,7 @@ class AudioPlayer(QObject):
                     callback=self._audio_callback,
                     blocksize=768,
                     dtype="float32",
+                    device=self._device_id,
                 )
             self.output_channels = channels
         self.stream.start()
@@ -603,3 +639,21 @@ class AudioPlayer(QObject):
                     self.fft_queue.put_nowait(mono)
                 except Full:
                     pass
+
+    def setOutputDevice(self, device: DevicesInfo):
+        with self._lock:
+            was_playing = self.is_playing or (
+                self.stream is not None and self.stream.active
+            )
+            if self.stream:
+                try:
+                    self.stream.stop()
+                    self.stream.close()
+                except Exception:
+                    pass
+                self.stream = None
+
+            self._device_id = device["index"]
+
+            if was_playing:
+                self._start_stream()

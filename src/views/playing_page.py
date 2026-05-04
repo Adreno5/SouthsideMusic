@@ -18,9 +18,9 @@ if TYPE_CHECKING:
     from utils.lyric_util import LRCLyricParser, YRCLyricParser
 
 import numpy as np
-from PySide6.QtCore import QBuffer, QIODevice, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QImage, QPixmap
-from PySide6.QtWidgets import (
+from imports import QBuffer, QIODevice, QSize, Qt, QTimer, Signal
+from imports import QColor, QImage, QPixmap
+from imports import (
     QHBoxLayout,
     QLabel,
     QListWidgetItem,

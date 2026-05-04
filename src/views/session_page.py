@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 import os
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from imports import Qt
+from imports import QPixmap
+from imports import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import MessageBox, PrimaryPushButton, SubtitleLabel, TitleLabel
 
 from utils import darkdetect_util as darkdetect

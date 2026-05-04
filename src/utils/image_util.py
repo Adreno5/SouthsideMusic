@@ -1,7 +1,7 @@
 from functools import lru_cache
 
-from PySide6.QtGui import QPixmap, QImage
-from PySide6.QtCore import Qt
+from imports import QPixmap, QImage
+from imports import Qt
 import numpy as np
 import logging
 

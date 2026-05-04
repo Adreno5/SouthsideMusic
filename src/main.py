@@ -11,9 +11,7 @@ from typing import Any, TextIO
 import glob
 
 import pydub
-from PySide6.QtCore import QTimer
-from PySide6.QtGui import QFontDatabase
-from PySide6.QtWidgets import QApplication, QMessageBox
+import imports as _ims
 from qfluentwidgets import setTheme, Theme
 import shiboken6
 
@@ -35,61 +33,12 @@ from views.desktop_lyrics import DesktopLyricsPage
 from views.favorites_page import FavoritesPage
 from views.session_page import SessionPage
 from views.main_window import MainWindow
+from views.error_popup import ErrorPopupWindow
 from services.update import startUpdateCheck
-
-pydub.AudioSegment.converter = r"ffmpeg\bin\ffmpeg.exe"
-pydub.AudioSegment.ffmpeg = r"ffmpeg\bin\ffmpeg.exe"
-
-if getattr(sys, "frozen", False):
-    base_dir = os.path.dirname(sys.executable)
-else:
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-
-ffmpeg_dir = os.path.join(base_dir, "ffmpeg", "bin")
-os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ["PATH"]
-
-sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
-sys.path.append(os.path.dirname(__file__))
 
 logging_handler = LogHandler()
 logging.basicConfig(level=logging.DEBUG, handlers=[logging_handler])
 hijackStreams()
-
-import subprocess  # noqa: E402
-
-original_popen = subprocess.Popen
-
-
-def patched_popen(*args, **kwargs):
-    startupinfo = subprocess.STARTUPINFO()
-    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-    startupinfo.wShowWindow = subprocess.SW_HIDE
-    kwargs["startupinfo"] = startupinfo
-    kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-    return original_popen(*args, **kwargs)
-
-
-subprocess.Popen = patched_popen  # type: ignore
-subprocess.call = patched_popen  # type: ignore
-
-import traceback  # noqa: E402
-from pathlib import Path  # noqa: E402
-
-app = QApplication(sys.argv)
-
-import hPyT  # noqa: E402
-
-mwindow: MainWindow | None = None
-launchwindow: LaunchWindow | None = LaunchWindow(app)
-player: AudioPlayer | None = None
-sidebar: Sidebar | None = None
-dp: PlayingPage | None = None
-sp: SearchPage | None = None
-dsp: DesktopLyricsPage | None = None
-fp: FavoritesPage | None = None
-sep: SessionPage | None = None
-debug_window: DebugWindow | None = None
-lock: threading.Lock = threading.Lock()
 
 
 def patchedExceptHook(
@@ -164,18 +113,62 @@ def patchedExceptHook(
     txt = "\n".join(inf)
     if launchwindow is not None and shiboken6.isValid(launchwindow):
         launchwindow.deleteLater()
-    QMessageBox.critical(
-        None,
-        "Error Occured",
-        txt,
-        buttons=QMessageBox.StandardButton.Close,
-        defaultButton=QMessageBox.StandardButton.Close,
-    )
+
+    popup = ErrorPopupWindow(txt)
+    popup.exec()
 
     saveConfig()
 
 
-sys.excepthook = patchedExceptHook  # type: ignore[assignment]
+sys.excepthook = patchedExceptHook
+
+pydub.AudioSegment.converter = r"ffmpeg\bin\ffmpeg.exe"
+pydub.AudioSegment.ffmpeg = r"ffmpeg\bin\ffmpeg.exe"
+
+if getattr(sys, "frozen", False):
+    base_dir = os.path.dirname(sys.executable)
+else:
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+ffmpeg_dir = os.path.join(base_dir, "ffmpeg", "bin")
+os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ["PATH"]
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
+sys.path.append(os.path.dirname(__file__))
+
+import subprocess  # noqa: E402
+
+original_popen = subprocess.Popen
+
+
+def patched_popen(*args, **kwargs):
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = subprocess.SW_HIDE
+    kwargs["startupinfo"] = startupinfo
+    kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    return original_popen(*args, **kwargs)
+
+
+subprocess.Popen = patched_popen  # type: ignore
+subprocess.call = patched_popen  # type: ignore
+
+import traceback
+from pathlib import Path
+
+app = _ims.QApplication(sys.argv)
+
+mwindow: MainWindow | None = None
+launchwindow: LaunchWindow | None = LaunchWindow(app)
+player: AudioPlayer | None = None
+sidebar: Sidebar | None = None
+dp: PlayingPage | None = None
+sp: SearchPage | None = None
+dsp: DesktopLyricsPage | None = None
+fp: FavoritesPage | None = None
+sep: SessionPage | None = None
+debug_window: DebugWindow | None = None
+lock: threading.Lock = threading.Lock()
 
 
 def _on_ws_connected():
@@ -194,7 +187,7 @@ ws_handler.onDisconnected.connect(_on_ws_disconnected)
 
 if __name__ == "__main__":
     assert launchwindow is not None
-    launchwindow.push("Phase 1 (start core...)")
+    launchwindow.subtitle("Phase 1 (start core...)")
 
     launchwindow.push("Writting login information...")
     if cfg.login_status and not ncm.GetCurrentSession().is_anonymous:
@@ -225,14 +218,14 @@ if __name__ == "__main__":
             if mwindow:
                 while mwindow._loading_song:
                     time.sleep(1)
-                files = glob.glob('*')
+                files = glob.glob("*")
                 caches = []
                 for file in files:
-                    if file.startswith('ffcache'):
+                    if file.startswith("ffcache"):
                         caches.append(file)
                 for cache in caches:
                     os.remove(cache)
-                logging.info(f'cleared {len(caches)} caches')
+                logging.info(f"cleared {len(caches)} caches")
 
             time.sleep(10)
 
@@ -250,8 +243,8 @@ if __name__ == "__main__":
     launchwindow.push("Loading config...")
 
     launchwindow.push("Loading fonts...")
-    harmony_font_family = QFontDatabase.applicationFontFamilies(
-        QFontDatabase.addApplicationFont("fonts/HARMONYOS_SANS_SC_REGULAR.ttf")
+    harmony_font_family = _ims.QFontDatabase.applicationFontFamilies(
+        _ims.QFontDatabase.addApplicationFont("fonts/HARMONYOS_SANS_SC_REGULAR.ttf")
     )[0]
 
     from utils.base.w163_util import CloudMusicUtil
@@ -295,7 +288,7 @@ if __name__ == "__main__":
     debug_window = DebugWindow(app, launchwindow)
 
     launchwindow.clear()
-    launchwindow.push("Phase 2 (initialize components...)")
+    launchwindow.subtitle("Phase 2 (initialize components...)")
     launchwindow.push("Initializing sidebar...")
     sidebar = Sidebar(
         None,
@@ -358,7 +351,7 @@ if __name__ == "__main__":
     )
 
     launchwindow.clear()
-    launchwindow.push("Phase 3 (inject dependencies...)")
+    launchwindow.subtitle("Phase 3 (inject dependencies...)")
     launchwindow.push("injecting Playing Page to sidebar")
     sidebar._dp = dp
     launchwindow.top("injecting Main Window to sidebar")
@@ -384,7 +377,7 @@ if __name__ == "__main__":
 
     fp.refresh()
 
-    QTimer.singleShot(2000, lambda: startUpdateCheck(mwindow))
+    _ims.QTimer.singleShot(2000, lambda: startUpdateCheck(mwindow))
 
     logging.debug(f"{sys.path=}")
 

@@ -6,9 +6,9 @@ import sys
 import threading
 from typing import Any, Callable
 
-from PySide6.QtCore import Qt, QTimer, Signal, QMutex
-from PySide6.QtGui import QCloseEvent, QColor, QIcon, QKeyEvent, QPainter
-from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+from imports import Qt, QTimer, Signal, QMutex
+from imports import QCloseEvent, QColor, QIcon, QKeyEvent, QPainter
+from imports import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
     FluentIconBase,
     InfoBar,

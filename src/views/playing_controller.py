@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from views.sidebar import Sidebar
     from views.playing_page import PlayingPage
 
-from PySide6.QtCore import (
+from imports import (
     QEasingCurve,
     QPointF,
     QPropertyAnimation,
@@ -21,7 +21,7 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import (
+from imports import (
     QColor,
     QLinearGradient,
     QMouseEvent,
@@ -31,7 +31,7 @@ from PySide6.QtGui import (
     QPen,
     QPixmap,
 )
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
+from imports import QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
 from qfluentwidgets import (
     PushButton,
     Slider,

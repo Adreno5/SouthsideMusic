@@ -11,9 +11,9 @@ if TYPE_CHECKING:
     from utils.websocket_util import WebSocketHandler
 
 import numpy as np
-from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (
+from imports import QSize, Qt, QTimer
+from imports import QColor
+from imports import (
     QGridLayout,
     QHBoxLayout,
     QLabel,

@@ -4,8 +4,8 @@ import math
 import time
 from typing import cast
 
-from PySide6.QtCore import QEvent, QPointF, Qt, QTimer
-from PySide6.QtGui import (
+from imports import QEvent, QPointF, Qt, QTimer
+from imports import (
     QColor,
     QFont,
     QFontMetricsF,
@@ -16,7 +16,7 @@ from PySide6.QtGui import (
     QPen,
     QWheelEvent,
 )
-from PySide6.QtWidgets import QWidget
+from imports import QWidget
 
 from utils.time_util import float2time
 from utils.color_util import mixColor

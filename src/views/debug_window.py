@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QCloseEvent, QKeyEvent
-from PySide6.QtWidgets import QCompleter, QLabel, QVBoxLayout, QWidget
+from imports import Qt, QTimer
+from imports import QCloseEvent, QKeyEvent
+from imports import QCompleter, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import LineEdit, SmoothScrollArea, TreeWidget
 
 from utils import darkdetect_util as darkdetect

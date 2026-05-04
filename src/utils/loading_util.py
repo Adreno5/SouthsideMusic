@@ -4,7 +4,7 @@ import math
 import threading
 from typing import Callable, Dict, Optional
 
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from imports import QObject, QThread, Signal, Slot
 import requests
 
 from utils.config_util import cfg

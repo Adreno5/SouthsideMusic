@@ -16,6 +16,7 @@ from imports import (
 )
 from imports import QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import CheckBox, FlowLayout, PushButton, FluentIcon, TitleLabel
+from utils.color_util import mixColor
 from utils.config_util import Config, cfg
 from utils import darkdetect_util as darkdetect
 from utils.lyric_util import LyricInfo, YRCLyricInfo
@@ -166,13 +167,16 @@ class DesktopLyricsViewer(LyricsViewer):
         return super().moveEvent(event)
 
     def paintEvent(self, event: QPaintEvent) -> None:
+        if not self._mwindow:
+            return
+
         painter = QPainter(self)
         painter.setPen(Qt.PenStyle.NoPen)
 
         draw_rect = QRect(12, 0, self.width() - 24, self.height())
 
         painter.setBrush(
-            QColor(255, 255, 255) if darkdetect.isLight() else QColor(0, 0, 0)
+            mixColor(self._mwindow.song_theme, QColor(255, 255, 255) if darkdetect.isLight() else QColor(0, 0, 0), cfg.background_ratio * 0.2)
         )
 
         if cfg.desktop_lyrics_anchor == "normal":
@@ -181,9 +185,9 @@ class DesktopLyricsViewer(LyricsViewer):
             if self._dp.total_length > 0:
                 painter.save()
                 painter.setBrush(
-                    QColor(125, 125, 125) if darkdetect.isDark() else QColor(80, 80, 80)
+                    mixColor(self._mwindow.song_theme, QColor(125, 125, 125) if darkdetect.isDark() else QColor(80, 80, 80), cfg.background_ratio * 0.5)
                 )
-                painter.drawRect(self.height() // 2, 0, int((self.width() - self.height()) * (self._player.getPosition() / self._dp.total_length)), 2)
+                painter.drawRect(self.height() // 2, 0, int((self.width() - self.height()) * (self._player.getPosition() / self._dp.total_length)), 1)
                 painter.restore()
         elif cfg.desktop_lyrics_anchor == "top-center":
             painter.drawRoundedRect(draw_rect, 20, 20)
@@ -221,9 +225,9 @@ class DesktopLyricsViewer(LyricsViewer):
             if self._dp.total_length > 0:
                 painter.save()
                 painter.setBrush(
-                    QColor(200, 200, 200) if darkdetect.isDark() else QColor(80, 80, 80)
+                    mixColor(self._mwindow.song_theme, QColor(125, 125, 125) if darkdetect.isDark() else QColor(80, 80, 80), cfg.background_ratio * 0.5)
                 )
-                painter.drawRect(12, 0, int((self.width() - 24) * (self._player.getPosition() / self._dp.total_length)), 2)
+                painter.drawRect(12, 0, int((self.width() - 24) * (self._player.getPosition() / self._dp.total_length)), 1)
                 painter.restore()
 
         painter.end()

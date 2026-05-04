@@ -57,7 +57,7 @@ class Config:
     volume: float = 1
 
     lyrics_smooth_factor: float = 13.5
-    acceleration_smooth_factor: float = 8.5
+    acceleration_smooth_factor: float = 9.5
 
     play_speed: float = 1
 

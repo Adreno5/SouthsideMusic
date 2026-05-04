@@ -9,6 +9,7 @@ import logging
 import math
 import os
 import threading
+import time
 from typing import Callable, TYPE_CHECKING, cast as _cast
 
 if TYPE_CHECKING:
@@ -62,7 +63,11 @@ from utils.icon_util import bindIcon
 from utils.image_util import getAverageColor
 from utils.loading_util import doWithMultiThreading, downloadWithMultiThreading
 from utils.loudness_balance_util import getAdjustedGainFactor
-from utils.play_util import PatchedAudioSegment as AudioSegment_
+from utils.play_util import (
+    PatchedAudioSegment as AudioSegment_,
+    get_cached_audio,
+    cache_decoded_audio,
+)
 from utils.random_util import AdvancedRandom
 from utils import requests_util as requests
 from views.song_card import DummyCard
@@ -302,31 +307,141 @@ class PlayingPage(QWidget):
         self.title_label.setText(self.cur.info['name'])
         self.artists_label.setText(self.cur.info['artists'])
 
-        if hasattr(self.cur, 'storable'):
-            image_bytes = self.cur.storable.get_image_bytes()
-            self.onImageLoaded(image_bytes)
-            if self.cur.storable.target_lufs == cfg.target_lufs:
-                self.loadMusicFromBytes(
-                    self.cur.storable.get_music_bytes(), self.cur.storable.loudness_gain
+        if self._player.isPlaying():
+            self._player.stop()
+
+        self.img_label.hide()
+        self.ring.show()
+
+        self._downloadAssetsAndPlay()
+
+    def _downloadAssetsAndPlay(self):
+        assert self.cur is not None
+        info = self.cur.info
+        image_url = self.cur.detail['image_url']
+        song_id = str(info['id'])
+
+        prepared: dict[str, object] = {}
+
+        def _try_play():
+            if prepared.get('music_error'):
+                self.ring.hide()
+                prepared['_playing'] = True
+                raise Exception('music_error')
+
+            image = prepared.get('image')
+            lyrics_data = prepared.get('lyrics')
+            music = prepared.get('music')
+            if (
+                not isinstance(image, bytes)
+                or not isinstance(lyrics_data, dict)
+                or not isinstance(music, bytes)
+            ):
+                return
+            if len(music) == 0:
+                return
+            if prepared.get('_playing'):
+                return
+            prepared['_playing'] = True
+
+            lyric = lyrics_data.get('lrc', {}).get('lyric', '')
+            tlyric_dict = lyrics_data.get('tlyric', {})
+            if isinstance(tlyric_dict, dict):
+                translated_lyric = '\n'.join(
+                    tlyric_dict.get('lyric', '').splitlines()[1:]
                 )
             else:
-                self._sidebar.applyNewLUFS()
+                translated_lyric = ''
+            yrc_lyric = lyrics_data.get('yrc', {}).get('lyric', '')
 
-            self.downloadLyric()
-        else:
-            if self._player.isPlaying():
-                self._player.stop()
+            storable = SongStorable(
+                info=info,
+                image=image,
+                music_bin=music,
+                lyric=lyric,
+                translated_lyric=translated_lyric,
+                yrc_lyric=yrc_lyric,
+            )
 
-            def _do():
-                if self.cur:
-                    img_bytes = requests.get(
-                        self.cur.detail['image_url'],
-                    ).content
-                    self.imageLoaded.emit(img_bytes)
+            self.cur = DummyCard(storable)
+            self.playStorable(storable)
 
-            self.img_label.hide()
-            self.ring.show()
-            doWithMultiThreading(_do, (), self._mwindow_obj)
+        def _prepare():
+            try:
+                prepared['image'] = requests.get(image_url).content
+                with ncm.GetCurrentSession():
+                    prepared['lyrics'] = apis.track.GetTrackLyricsNew(song_id)
+            except Exception as e:
+                prepared['error'] = str(e)
+
+        def _on_prepared():
+            if self.cur is None or str(self.cur.info['id']) != song_id:
+                return
+
+            if prepared.get('error'):
+                self._logger.error('Asset download failed: %s', prepared['error'])
+                InfoBar.error(
+                    'Playback failed',
+                    'Failed to download song assets.',
+                    parent=self._mwindow_obj,
+                )
+                self.ring.hide()
+                return
+
+            image = prepared.get('image')
+            if isinstance(image, bytes):
+                self.imageLoaded.emit(image)
+
+            _try_play()
+
+        def _process_audio():
+            try:
+                with ncm.GetCurrentSession():
+                    music_url_resp = apis.track.GetTrackAudio(
+                        song_id,  # type: ignore
+                        bitrate=3200 * 1000,
+                    )
+                    prepared['music_url'] = music_url_resp['data'][0]['url']  # type: ignore
+            except Exception as e:
+                prepared['music_error'] = str(e)
+
+        def _on_audio_prepare_done():
+            if self.cur is None or str(self.cur.info['id']) != song_id:
+                return
+            if prepared.get('music_error'):
+                InfoBar.error(
+                    'Playback failed',
+                    'Failed to get song audio URL.',
+                    parent=self._mwindow_obj,
+                )
+                self.ring.hide()
+                return
+
+            music_url = prepared.get('music_url')
+            if not isinstance(music_url, str) or not music_url:
+                return
+
+            def _on_downloaded(data: bytes):
+                if self.cur is None or str(self.cur.info['id']) != song_id:
+                    return
+                prepared['music'] = data
+                _try_play()
+
+            downloadWithMultiThreading(
+                music_url,  # type: ignore
+                {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                },
+                None,
+                self._mwindow_obj,
+                _on_downloaded,
+            )
+
+        doWithMultiThreading(_prepare, (), self._mwindow_obj, _on_prepared)
+        doWithMultiThreading(
+            _process_audio, (), self._mwindow_obj, _on_audio_prepare_done
+        )
 
     def preloadNextSong(self):
         if len(self.playlist) <= 1:
@@ -401,7 +516,14 @@ class PlayingPage(QWidget):
                 try:
                     with self._lock:
                         song_bytes = next_song.get_music_bytes()
-                        audio = AudioSegment_.from_file(io.BytesIO(song_bytes))
+                        cache_key = next_song.content_cache_hash
+                        cached = get_cached_audio(cache_key) if cache_key else None
+                        if cached is not None:
+                            audio = cached
+                        else:
+                            audio = AudioSegment_.from_file(io.BytesIO(song_bytes))
+                            if cache_key:
+                                cache_decoded_audio(cache_key, audio)
                 except Exception as e:
                     next_song.content_cache_hash = ''
                     saveFavorites()
@@ -418,7 +540,7 @@ class PlayingPage(QWidget):
                     self._logger.info('discarding stale preload')
                     return
 
-                self.next_song_audio = audio
+                self.next_song_audio = audio  # type: ignore
                 if (
                     next_song.loudness_gain == 1.0
                     or next_song.target_lufs != cfg.target_lufs
@@ -538,9 +660,6 @@ class PlayingPage(QWidget):
             self.img_label.show()
             self.ring.hide()
 
-        if not hasattr(self.cur, 'storable'):
-            self.downloadMusic()
-
         self.sendSongFMAndInfo()
 
     def onPlayButtonClicked(self):
@@ -656,11 +775,23 @@ class PlayingPage(QWidget):
         def _prepare():
             self._mwindow_obj._loading_song = True
             music_bytes = song_storable.get_music_bytes()
+            cache_key = song_storable.content_cache_hash
+            cached = get_cached_audio(cache_key) if cache_key else None
+            if cached is not None:
+                audio = cached
+            else:
+                if song_storable.target_lufs == cfg.target_lufs:
+                    audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
+                else:
+                    audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
+                    gain = getAdjustedGainFactor(cfg.target_lufs, audio)
+                    song_storable.target_lufs = cfg.target_lufs
+                    song_storable.loudness_gain = gain
+                if cache_key:
+                    cache_decoded_audio(cache_key, audio)
             if song_storable.target_lufs == cfg.target_lufs:
-                audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
                 audio = audio.apply_gain(20 * np.log10(song_storable.loudness_gain))
             else:
-                audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
                 gain = getAdjustedGainFactor(cfg.target_lufs, audio)
                 audio = audio.apply_gain(20 * np.log10(gain))
                 song_storable.target_lufs = cfg.target_lufs
@@ -669,7 +800,7 @@ class PlayingPage(QWidget):
             self._mwindow_obj._loading_song = False
 
             result['audio'] = audio
-            self._player.load(audio)
+            self._player.load(audio)  # type: ignore
             self.total_length = self._player.getLength()
             self._player.play()
             self._player.setPosition(cfg.last_playing_time)
@@ -913,20 +1044,29 @@ class PlayingPage(QWidget):
             else:
                 self._mwindow_obj._loading_song = True
                 music_bytes = song_storable.get_music_bytes()
-                if song_storable.target_lufs == cfg.target_lufs:
-                    audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
-                    audio = audio.apply_gain(20 * np.log10(song_storable.loudness_gain))
+                cache_key = song_storable.content_cache_hash
+                cached = get_cached_audio(cache_key) if cache_key else None
+                if cached is not None:
+                    audio = cached
                 else:
                     audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
-                    gain = getAdjustedGainFactor(cfg.target_lufs, audio)
-                    audio = audio.apply_gain(20 * np.log10(gain))
+                    if cache_key:
+                        cache_decoded_audio(cache_key, audio)
+                gain_db = 20 * np.log10(
+                    getAdjustedGainFactor(cfg.target_lufs, audio)
+                    if song_storable.target_lufs != cfg.target_lufs
+                    else song_storable.loudness_gain
+                )
+                audio = audio.apply_gain(gain_db)
+                if song_storable.target_lufs != cfg.target_lufs:
                     song_storable.target_lufs = cfg.target_lufs
+                    gain = getAdjustedGainFactor(cfg.target_lufs, audio)
                     song_storable.loudness_gain = gain
 
             self._mwindow_obj._loading_song = False
 
             result['audio'] = audio
-            self._player.load(audio)
+            self._player.load(audio)  # type: ignore
             self.total_length = self._player.getLength()
             if not self._player.isPlaying():
                 self._player.play()

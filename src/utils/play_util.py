@@ -19,9 +19,31 @@ from pydub.utils import mediainfo_json, fsdecode, _fd_or_path_or_tempfile, audio
 from pydub.logging_utils import log_conversion
 from pydub.exceptions import CouldntDecodeError
 from pydub import AudioSegment
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
+from typing import Optional
 
-WavSubChunk = namedtuple("WavSubChunk", ["id", "position", "size"])
+_AUDIO_DECODE_CACHE: OrderedDict[str, AudioSegment] = OrderedDict()
+_AUDIO_CACHE_LOCK = threading.Lock()
+_AUDIO_CACHE_MAX = 10
+
+
+def cache_decoded_audio(key: str, segment: AudioSegment) -> None:
+    with _AUDIO_CACHE_LOCK:
+        _AUDIO_DECODE_CACHE[key] = segment
+        _AUDIO_DECODE_CACHE.move_to_end(key)
+        while len(_AUDIO_DECODE_CACHE) > _AUDIO_CACHE_MAX:
+            _AUDIO_DECODE_CACHE.popitem(last=False)
+
+
+def get_cached_audio(key: str) -> Optional[AudioSegment]:
+    with _AUDIO_CACHE_LOCK:
+        seg = _AUDIO_DECODE_CACHE.get(key)
+        if seg is not None:
+            _AUDIO_DECODE_CACHE.move_to_end(key)
+        return seg
+
+
+WavSubChunk = namedtuple('WavSubChunk', ['id', 'position', 'size'])
 
 
 def extract_wav_headers(data):
@@ -30,9 +52,9 @@ def extract_wav_headers(data):
     subchunks = []
     while pos + 8 <= len(data) and len(subchunks) < 10:
         subchunk_id = data[pos : pos + 4]
-        subchunk_size = struct.unpack_from("<I", data[pos + 4 : pos + 8])[0]
+        subchunk_size = struct.unpack_from('<I', data[pos + 4 : pos + 8])[0]
         subchunks.append(WavSubChunk(subchunk_id, pos, subchunk_size))
-        if subchunk_id == b"data":
+        if subchunk_id == b'data':
             # 'data' is the last subchunk
             break
         pos += subchunk_size + 8
@@ -42,19 +64,19 @@ def extract_wav_headers(data):
 
 def fix_wav_headers(data):
     headers = extract_wav_headers(data)
-    if not headers or headers[-1].id != b"data":
+    if not headers or headers[-1].id != b'data':
         return
 
     # TODO: Handle huge files in some other way
     if len(data) > 2**32:
-        raise CouldntDecodeError("Unable to process >4GB files")
+        raise CouldntDecodeError('Unable to process >4GB files')
 
     # Set the file size in the RIFF chunk descriptor
-    data[4:8] = struct.pack("<I", len(data) - 8)
+    data[4:8] = struct.pack('<I', len(data) - 8)
 
     # Set the data size in the data subchunk
     pos = headers[-1].position
-    data[pos + 4 : pos + 8] = struct.pack("<I", len(data) - pos - 8)
+    data[pos + 4 : pos + 8] = struct.pack('<I', len(data) - pos - 8)
 
 
 class DevicesInfo(TypedDict):
@@ -66,8 +88,8 @@ def getAudioDevices() -> list[DevicesInfo]:
     devices = sd.query_devices()
     result: list[DevicesInfo] = []
     for i, dev in enumerate(devices):
-        if dev["max_output_channels"] > 0:
-            result.append(DevicesInfo(display_name=dev["name"], index=i))
+        if dev['max_output_channels'] > 0:
+            result.append(DevicesInfo(display_name=dev['name'], index=i))
     return result
 
 
@@ -76,8 +98,8 @@ class PatchedAudioSegment(AudioSegment):
 
     def __init__(self, data=None, *args, **kwargs):
         super().__init__(data, *args, **kwargs)
-        self.converter = r"ffmpeg\bin\ffmpeg.exe"
-        self.ffmpeg = r"ffmpeg\bin\ffmpeg.exe"
+        self.converter = r'ffmpeg\bin\ffmpeg.exe'
+        self.ffmpeg = r'ffmpeg\bin\ffmpeg.exe'
 
     @override
     @classmethod
@@ -91,19 +113,19 @@ class PatchedAudioSegment(AudioSegment):
         duration=None,
         **kwargs,
     ):
-        cls._logger.debug(f"[{file}]/[PatchedAudioSegment] patching")
+        cls._logger.debug(f'[{file}]/[PatchedAudioSegment] patching')
         orig_file = file
         try:
             filename = fsdecode(file)
         except TypeError:
             filename = None
-        file, close_file = _fd_or_path_or_tempfile(file, "rb", tempfile=False)
+        file, close_file = _fd_or_path_or_tempfile(file, 'rb', tempfile=False)
 
         if format:
             format = format.lower()
             format = {
-                "m4a": "mp4",
-                "wave": "wav",
+                'm4a': 'mp4',
+                'wave': 'wav',
             }.get(format, format)
 
         def is_format(f):
@@ -112,11 +134,11 @@ class PatchedAudioSegment(AudioSegment):
                 return True
 
             if filename:
-                return filename.lower().endswith(".{0}".format(f))
+                return filename.lower().endswith('.{0}'.format(f))
 
             return False
 
-        if is_format("wav"):
+        if is_format('wav'):
             try:
                 if start_second is None and duration is None:
                     return cls._from_safe_wav(file)
@@ -133,15 +155,15 @@ class PatchedAudioSegment(AudioSegment):
                     ]  # type: ignore
             except:
                 file.seek(0)  # type: ignore
-        elif is_format("raw") or is_format("pcm"):
-            sample_width = kwargs["sample_width"]
-            frame_rate = kwargs["frame_rate"]
-            channels = kwargs["channels"]
+        elif is_format('raw') or is_format('pcm'):
+            sample_width = kwargs['sample_width']
+            frame_rate = kwargs['frame_rate']
+            channels = kwargs['channels']
             metadata = {
-                "sample_width": sample_width,
-                "frame_rate": frame_rate,
-                "channels": channels,
-                "frame_width": channels * sample_width,
+                'sample_width': sample_width,
+                'frame_rate': frame_rate,
+                'channels': channels,
+                'frame_width': channels * sample_width,
             }
             if start_second is None and duration is None:
                 return cls(data=file.read(), metadata=metadata)  # type: ignore
@@ -159,30 +181,30 @@ class PatchedAudioSegment(AudioSegment):
                 ]  # type: ignore
 
         conversion_command = [
-            r"ffmpeg\bin\ffmpeg.exe",
-            "-y",  # always overwrite existing files
+            r'ffmpeg\bin\ffmpeg.exe',
+            '-y',  # always overwrite existing files
         ]
 
         # If format is not defined
         # ffmpeg/avconv will detect it automatically
         if format:
-            conversion_command += ["-f", format]
+            conversion_command += ['-f', format]
 
         if codec:
             # force audio decoder
-            conversion_command += ["-acodec", codec]
+            conversion_command += ['-acodec', codec]
 
-        read_ahead_limit = kwargs.get("read_ahead_limit", -1)
+        read_ahead_limit = kwargs.get('read_ahead_limit', -1)
         if filename:
-            conversion_command += ["-i", filename]
+            conversion_command += ['-i', filename]
             stdin_parameter = None
             stdin_data = None
         else:
             conversion_command += [
-                "-read_ahead_limit",
+                '-read_ahead_limit',
                 str(read_ahead_limit),
-                "-i",
-                "cache:pipe:0",
+                '-i',
+                'cache:pipe:0',
             ]
             stdin_parameter = subprocess.PIPE
             stdin_data = file.read()  # type: ignore
@@ -192,40 +214,40 @@ class PatchedAudioSegment(AudioSegment):
         else:
             info = mediainfo_json(orig_file, read_ahead_limit=read_ahead_limit)
         if info:
-            audio_streams = [x for x in info["streams"] if x["codec_type"] == "audio"]
+            audio_streams = [x for x in info['streams'] if x['codec_type'] == 'audio']
             # This is a workaround for some ffprobe versions that always say
             # that mp3/mp4/aac/webm/ogg files contain fltp samples
-            audio_codec = audio_streams[0].get("codec_name")
-            if audio_streams[0].get("sample_fmt") == "fltp" and audio_codec in [
-                "mp3",
-                "mp4",
-                "aac",
-                "webm",
-                "ogg",
+            audio_codec = audio_streams[0].get('codec_name')
+            if audio_streams[0].get('sample_fmt') == 'fltp' and audio_codec in [
+                'mp3',
+                'mp4',
+                'aac',
+                'webm',
+                'ogg',
             ]:
                 bits_per_sample = 16
             else:
-                bits_per_sample = audio_streams[0]["bits_per_sample"]
+                bits_per_sample = audio_streams[0]['bits_per_sample']
             if bits_per_sample == 8:
-                acodec = "pcm_u8"
+                acodec = 'pcm_u8'
             else:
-                acodec = "pcm_s%dle" % bits_per_sample
+                acodec = 'pcm_s%dle' % bits_per_sample
 
-            conversion_command += ["-acodec", acodec]
+            conversion_command += ['-acodec', acodec]
 
         conversion_command += [
-            "-vn",  # Drop any video streams if there are any
-            "-f",
-            "wav",  # output options (filename last)
+            '-vn',  # Drop any video streams if there are any
+            '-f',
+            'wav',  # output options (filename last)
         ]
 
         if start_second is not None:
-            conversion_command += ["-ss", str(start_second)]
+            conversion_command += ['-ss', str(start_second)]
 
         if duration is not None:
-            conversion_command += ["-t", str(duration)]
+            conversion_command += ['-t', str(duration)]
 
-        conversion_command += ["-"]
+        conversion_command += ['-']
 
         if parameters is not None:
             # extend arguments with arbitrary set
@@ -247,8 +269,8 @@ class PatchedAudioSegment(AudioSegment):
             if close_file:
                 file.close()  # type: ignore
             raise CouldntDecodeError(
-                "Decoding failed. ffmpeg returned error code: {0}\n\nOutput from ffmpeg/avlib:\n\n{1}".format(
-                    p.returncode, p_err.decode(errors="ignore")
+                'Decoding failed. ffmpeg returned error code: {0}\n\nOutput from ffmpeg/avlib:\n\n{1}'.format(
+                    p.returncode, p_err.decode(errors='ignore')
                 )
             )
 
@@ -288,7 +310,7 @@ class PatchedAudioSegment(AudioSegment):
             channels_data = [seg.get_array_of_samples() for seg in self.split_to_mono()]
             frame_count = int(self.frame_count())
             converted = array.array(
-                channels_data[0].typecode, b"\0" * (frame_count * self.sample_width)
+                channels_data[0].typecode, b'\0' * (frame_count * self.sample_width)
             )
             for raw_channel_data in channels_data:
                 for i in range(frame_count):
@@ -299,11 +321,11 @@ class PatchedAudioSegment(AudioSegment):
             return PatchedAudioSegment.from_mono_audiosegments(*dup_channels)
         else:
             raise ValueError(
-                "AudioSegment.set_channels only supports mono-to-multi channel and multi-to-mono channel conversion"
+                'AudioSegment.set_channels only supports mono-to-multi channel and multi-to-mono channel conversion'
             )
 
         return self._spawn(
-            data=converted, overrides={"channels": channels, "frame_width": frame_width}
+            data=converted, overrides={'channels': channels, 'frame_width': frame_width}
         )
 
 
@@ -340,15 +362,15 @@ class AudioPlayer(QObject):
         self._lock = threading.RLock()
         devices = getAudioDevices()
         if len(devices) == 0:
-            self._logger.error("no devices found")
+            self._logger.error('no devices found')
             QMessageBox.critical(
                 None,
-                "Error ",
-                "No any device can be used to play audio on your computer!",
+                'Error ',
+                'No any device can be used to play audio on your computer!',
                 QMessageBox.StandardButton.Ok,
             )
             sys.exit(1)
-        self._device_id: int = devices[0]["index"]
+        self._device_id: int = devices[0]['index']
         self.fft_queue = Queue(maxsize=8)
         self.fft_thread_running = True
         self.fft_thread = threading.Thread(target=self._fft_worker, daemon=True)
@@ -512,7 +534,7 @@ class AudioPlayer(QObject):
                     channels=channels,
                     callback=self._audio_callback,
                     blocksize=768,
-                    dtype="float32",
+                    dtype='float32',
                     device=self._device_id,
                 )
             except sd.PortAudioError:
@@ -522,7 +544,7 @@ class AudioPlayer(QObject):
                     channels=channels,
                     callback=self._audio_callback,
                     blocksize=768,
-                    dtype="float32",
+                    dtype='float32',
                     device=self._device_id,
                 )
             self.output_channels = channels
@@ -622,7 +644,7 @@ class AudioPlayer(QObject):
             if rms > 0:
                 self.db = 20 * np.log10(rms)
             else:
-                self.db = -float("inf")
+                self.db = -float('inf')
 
             remain = self.getLength() - self._playback_time
             if (
@@ -634,7 +656,7 @@ class AudioPlayer(QObject):
                     self.onEndingNoSound.emit()
                     self.is_playing = False
                     self.is_paused = False
-                    self._logger.info(f"skip {self.db=}")
+                    self._logger.info(f'skip {self.db=}')
                     raise sd.CallbackStop
 
             if self.fft_enabled:
@@ -657,7 +679,7 @@ class AudioPlayer(QObject):
                     pass
                 self.stream = None
 
-            self._device_id = device["index"]
+            self._device_id = device['index']
 
             if was_playing:
                 self._start_stream()

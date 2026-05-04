@@ -161,9 +161,9 @@ class LyricsViewer(QWidget):
             return
 
         now = time.perf_counter_ns()
-        _elapsed: float = (now - self.last_draw) / 1_000_000_000
+        _elapsed: float = min((now - self.last_draw) / 1_000_000_000, 0.1)
         self.last_draw = now
-        multiple_factor = self.delta / _elapsed
+        multiple_factor = _elapsed * self.refresh_rate
 
         self.target_acc = (
             (self.target_draw_offset - self.draw_offset)

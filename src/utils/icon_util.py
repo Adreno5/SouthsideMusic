@@ -1,3 +1,4 @@
+from functools import lru_cache
 import logging
 from enum import Enum
 from typing import Any, Literal, cast
@@ -6,7 +7,10 @@ import darkdetect
 from imports import QIcon
 from qfluentwidgets import FluentIconBase, Theme, isDarkTheme
 import tempfile
+from os import makedirs
 
+makedirs('data', exist_ok=True)
+makedirs('data/icons', exist_ok=True)
 
 class SouthsideIcon(FluentIconBase, Enum):
     FAV = "fav"
@@ -30,6 +34,7 @@ class SouthsideIcon(FluentIconBase, Enum):
     DROP_UP = "drop_up"
     DROP_DOWN = "drop_down"
 
+    @lru_cache
     def path(self, theme=Theme.AUTO) -> str:
         with open(f'icons/{self.value}.svg', 'r', encoding='utf-8') as f:
             svg = f.read()
@@ -40,10 +45,11 @@ class SouthsideIcon(FluentIconBase, Enum):
             target = '#000000'
         if target != '#000000':
             svg = svg.replace('#000000', target)
-        tmp = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.svg', delete=False)
-        tmp.write(svg)
-        tmp.close()
-        return tmp.name
+
+        save_path = f'data/icons/{self.value}_{theme.name}.svg'
+        with open(save_path, 'w', encoding='utf-8') as f:
+            f.write(svg)
+        return save_path
 
 _icon_map = {icon.value: icon for icon in SouthsideIcon}
 

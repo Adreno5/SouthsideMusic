@@ -117,9 +117,10 @@ class MainWindow(FluentWindowBase):
 
         self.draw_progress: float = 0
         self.bar_height: float = 0
-        self.left: int = 0
+        self.left: int = 5
         self.right: int = 150
-        self.motion: int = 20
+        self.lmotion: int = 20
+        self.rmotion: int = 20
         self.last_draw: int = time.perf_counter_ns()
 
         self.setWindowTitle('Southside Music')
@@ -194,25 +195,35 @@ class MainWindow(FluentWindowBase):
         now = time.perf_counter_ns()
         _elapsed: float = (now - self.last_draw) / 1_000_000_000
         self.last_draw = now
-        multiple_factor = min(self.delta / _elapsed, 4)
+        multiple_factor = _elapsed * self.refresh_rate / 2
 
-        self.bar_height += ((5 if cfg.show_progress else 0) - self.bar_height) * multiple_factor
+        self.bar_height += ((5 if cfg.show_progress else 0) - self.bar_height) * multiple_factor * 0.3
+        self.bar_height = min(4, self.bar_height)
 
         if cfg.show_progress:
-            self.draw_progress += (cfg.progress - self.draw_progress) * multiple_factor
+            self.draw_progress += (cfg.progress - self.draw_progress) * multiple_factor * 0.9
         else:
             self.draw_progress = 0
 
         if self.bar_height > 0:
             if cfg.progress_inter:
-                if self.right > self.width():
-                    self.motion = -self.motion
-                    self.right = self.width()
-                elif self.left < 0:
-                    self.motion = -self.motion
-                    self.left = 0
-                self.right += int(self.motion * multiple_factor * 3)
-                self.left += int(self.motion * multiple_factor * 3)
+                if self.right < 0 or self.right > self.width():
+                    self.rmotion *= -1
+                    if self.right < 0:
+                        self.right = 0
+                    elif self.right > self.width():
+                        self.right = self.width()
+                if self.left < 0 or self.left > self.width():
+                    self.lmotion *= -1
+                    if self.left < 0:
+                        self.left = 0
+                    elif self.left > self.width():
+                        self.left = self.width()
+                if abs(self.left - self.right) < 300:
+                    self.lmotion *= -1
+                    self.rmotion *= -1
+                self.right += int(self.rmotion * multiple_factor)
+                self.left += int(self.lmotion * multiple_factor * 1.25)
 
             self.repaint()
 

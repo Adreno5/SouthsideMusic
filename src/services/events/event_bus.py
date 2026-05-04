@@ -17,6 +17,7 @@ class EventBus:
         self._listeners: dict[str, list[Listener]] = defaultdict(list)
         self._lock = threading.Lock() if thread_safe else None
         self._lw = launchwindow
+        self.enabled = True
 
         self._logger = logging.getLogger('event_bus')
 
@@ -45,6 +46,8 @@ class EventBus:
                 pass
 
     def emit(self, event: str, *args: Any, **kwargs: Any) -> None:
+        if not self.enabled:
+            return
         if self._lock is not None:
             with self._lock:
                 listeners = list(self._listeners.get(event, []))

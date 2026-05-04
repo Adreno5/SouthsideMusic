@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from imports import Qt
+from imports import Qt, event_bus
 from imports import QPixmap
 from imports import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import CaptionLabel, FluentStyleSheet
@@ -76,3 +76,11 @@ class SouthsideMusicTitleBar(TitleBar):
     def setTitle(self, title):
         self.titleLabel.setText(title)
         self.titleLabel.adjustSize()
+
+    def mousePressEvent(self, e):
+        event_bus.enabled = False
+        return super().mousePressEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        event_bus.enabled = True
+        return super().mouseReleaseEvent(e)

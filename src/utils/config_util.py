@@ -31,7 +31,7 @@ class Config:
     window_maximized: bool = False
 
     enable_desktop_lyrics: bool = False
-    desktop_lyrics_anchor: Literal["top-center", "bottom-center", "normal"] = "normal"
+    desktop_lyrics_anchor: Literal["top-center", "normal"] = "normal"
     desktop_lyrics_x: int = 0
     desktop_lyrics_y: int = 0
 
@@ -56,8 +56,8 @@ class Config:
     background_ratio: float = 0.4
     volume: float = 1
 
-    lyrics_smooth_factor: float = 8.5
-    acceleration_smooth_factor: float = 9.5
+    lyrics_smooth_factor: float = 13.5
+    acceleration_smooth_factor: float = 8.5
 
     play_speed: float = 1
 

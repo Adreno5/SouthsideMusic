@@ -216,6 +216,15 @@ class Sidebar(QWidget):
             0.5,
             "acceleration_smooth_factor",
         )
+        self.addSeparateWidget(SubtitleLabel("Desktop Lyrics"))
+        self.addNumberSetting(
+            'Song Progress Smooth Factor',
+            'larger value means a more sudden change',
+            0,
+            1,
+            0.05,
+            'song_progress_smooth_factor'
+        )
 
         if lw:
             lw.top("Setting up FFT options...")

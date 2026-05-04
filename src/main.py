@@ -25,7 +25,6 @@ from utils import darkdetect_util as darkdetect
 from utils.websocket_util import ws_server, ws_handler
 from views.log_handler import LogHandler, hijackStreams
 from views.launch_window import LaunchWindow
-from views.debug_window import DebugWindow
 from views.search_page import SearchPage
 from views.sidebar import Sidebar
 from views.playing_page import PlayingPage
@@ -167,7 +166,6 @@ sp: SearchPage | None = None
 dsp: DesktopLyricsPage | None = None
 fp: FavoritesPage | None = None
 sep: SessionPage | None = None
-debug_window: DebugWindow | None = None
 lock: threading.Lock = threading.Lock()
 
 
@@ -285,8 +283,6 @@ if __name__ == "__main__":
     csession.deviceId = uuid.uuid4().hex
     ncm.SetCurrentSession(csession)
 
-    debug_window = DebugWindow(app, launchwindow)
-
     launchwindow.clear()
     launchwindow.subtitle("Phase 2 (initialize components...)")
     launchwindow.push("Initializing sidebar...")
@@ -326,7 +322,8 @@ if __name__ == "__main__":
         None,
         harmony_font_family,
         cfg,
-        launchwindow=launchwindow,
+        dp,
+        launchwindow
     )
     launchwindow.push("Initializing favorites page...")
     fp = FavoritesPage(dp, sidebar, None, launchwindow)
@@ -346,8 +343,7 @@ if __name__ == "__main__":
         wy,
         ws_server,
         ws_handler,
-        launchwindow,
-        debug_window,
+        launchwindow
     )
 
     launchwindow.clear()

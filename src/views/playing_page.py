@@ -169,7 +169,7 @@ class PlayingPage(QWidget):
         if lw:
             lw.top("  Creating lyrics viewer...")
         self.viewer = LyricsViewer(
-            app, mgr, transmgr, ymgr, player, mwindow, harmony_font_family, cfg
+            app, mgr, transmgr, ymgr, player, mwindow, harmony_font_family, cfg, self
         )
         global_layout.addWidget(self.viewer, stretch=2)
 

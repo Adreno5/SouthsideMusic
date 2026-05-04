@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import math
 import time
-from typing import cast
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from views.playing_page import PlayingPage
 
 from imports import QEvent, QPointF, Qt, QTimer
 from imports import (
@@ -23,6 +26,8 @@ from utils.color_util import mixColor
 from utils import darkdetect_util as darkdetect
 from utils.lyric_util import LyricInfo, YRCLyricInfo
 
+if TYPE_CHECKING:
+    from utils.play_util import AudioPlayer
 
 class LyricsViewer(QWidget):
     def __init__(
@@ -31,10 +36,11 @@ class LyricsViewer(QWidget):
         mgr,
         transmgr,
         ymgr,
-        player,
+        player: AudioPlayer,
         mwindow,
         harmony_font_family: str,
         cfg,
+        dp: PlayingPage
     ):
         super().__init__()
         self._app = app
@@ -44,6 +50,7 @@ class LyricsViewer(QWidget):
         self._player = player
         self._mwindow = mwindow
         self._cfg = cfg
+        self._dp = dp
 
         self.draw_offset: float = 0
         self.target_draw_offset: float = 0

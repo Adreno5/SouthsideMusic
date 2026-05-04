@@ -48,7 +48,6 @@ class MainWindow(FluentWindowBase):
         ws_server,
         ws_handler,
         launchwindow,
-        debug_window,
         parent=None,
     ):
         super().__init__(parent)
@@ -64,7 +63,6 @@ class MainWindow(FluentWindowBase):
         self._ws_server = ws_server
         self._ws_handler = ws_handler
         self._launchwindow = launchwindow
-        self._debug_window = debug_window
         self._loading_song: bool = False
 
         self._scheduled_tasks: list[
@@ -345,10 +343,7 @@ class MainWindow(FluentWindowBase):
         self._sidebar.disconnect_btn.setEnabled(False)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.key() == Qt.Key.Key_F3:
-            self._debug_window.setVisible(not self._debug_window.isVisible())
-            event.accept()
-        elif event.key() == Qt.Key.Key_Space:
+        if event.key() == Qt.Key.Key_Space:
             self._dp.controller.toggle()
             event.accept()
         else:

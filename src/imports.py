@@ -746,3 +746,5 @@ from typing import (
 )
 
 from qfluentwidgets import * # type: ignore
+
+from services.events import *

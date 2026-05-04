@@ -1,5 +1,6 @@
 import array
 import logging
+
 import struct
 import subprocess
 from queue import Queue, Full
@@ -71,6 +72,8 @@ def getAudioDevices() -> list[DevicesInfo]:
 
 
 class PatchedAudioSegment(AudioSegment):
+    _logger = logging.getLogger(__name__)
+
     def __init__(self, data=None, *args, **kwargs):
         super().__init__(data, *args, **kwargs)
         self.converter = r"ffmpeg\bin\ffmpeg.exe"
@@ -88,7 +91,7 @@ class PatchedAudioSegment(AudioSegment):
         duration=None,
         **kwargs,
     ):
-        logging.debug(f"[{file}]/[PatchedAudioSegment] patching")
+        cls._logger.debug(f"[{file}]/[PatchedAudioSegment] patching")
         orig_file = file
         try:
             filename = fsdecode(file)
@@ -238,7 +241,7 @@ class PatchedAudioSegment(AudioSegment):
         )
         p_out, p_err = p.communicate(input=stdin_data)
 
-        logging.debug(conversion_command)
+        cls._logger.debug(conversion_command)
 
         if p.returncode != 0 or len(p_out) == 0:
             if close_file:
@@ -312,6 +315,7 @@ class AudioPlayer(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._logger = logging.getLogger(__name__)
 
         self.samples: np.ndarray = np.zeros((0, 1), dtype=np.float32)
         self.sample_rate: int = 88200
@@ -336,7 +340,7 @@ class AudioPlayer(QObject):
         self._lock = threading.RLock()
         devices = getAudioDevices()
         if len(devices) == 0:
-            logging.error("no devices found")
+            self._logger.error("no devices found")
             QMessageBox.critical(
                 None,
                 "Error ",
@@ -630,7 +634,7 @@ class AudioPlayer(QObject):
                     self.onEndingNoSound.emit()
                     self.is_playing = False
                     self.is_paused = False
-                    logging.info(f"skip {self.db=}")
+                    self._logger.info(f"skip {self.db=}")
                     raise sd.CallbackStop
 
             if self.fft_enabled:

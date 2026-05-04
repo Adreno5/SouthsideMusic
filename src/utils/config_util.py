@@ -2,14 +2,17 @@ from dataclasses import dataclass
 import json
 import logging
 import os
+
 import threading
 import time
 from typing import Any, Literal
 
 from utils.base.base_util import SongStorable
+_logger = logging.getLogger(__name__)
 
 cfg_changed: bool = False
 cfg_cache: dict[str, Any] = {}
+
 
 @dataclass
 class Config:
@@ -66,6 +69,7 @@ class Config:
         cfg_changed = True
         super().__setattr__(name, value)
 
+
 cfg = Config()
 
 
@@ -83,7 +87,7 @@ def _song_from_object(data: Any) -> SongStorable | None:
     try:
         return SongStorable.fromObject(data)  # type: ignore[arg-type]
     except Exception as e:
-        logging.exception(e)
+        _logger.exception(e)
         return None
 
 
@@ -120,9 +124,9 @@ def _delete_legacy_pickle_config() -> None:
         return
     try:
         os.remove(LEGACY_PICKLE_CONFIG_PATH)
-        logging.info("deleted legacy config.pkl")
+        _logger.info("deleted legacy config.pkl")
     except Exception as e:
-        logging.exception(e)
+        _logger.exception(e)
 
 
 def loadConfig() -> None:
@@ -136,9 +140,9 @@ def loadConfig() -> None:
 
         if isinstance(data, dict):
             _apply_config_json_object(data)
-            logging.info(f"loaded config {len(cfg.__dict__)=}")
+            _logger.info(f"loaded config {len(cfg.__dict__)=}")
         else:
-            logging.warning("invalid config.json, using defaults")
+            _logger.warning("invalid config.json, using defaults")
             saveConfig()
 
     _delete_legacy_pickle_config()
@@ -149,7 +153,7 @@ def saveConfig() -> None:
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(_config_to_json_object(), f, ensure_ascii=False, indent=2)
 
-        logging.info("saved config")
+        _logger.info("saved config")
 
 
 def autoSave():

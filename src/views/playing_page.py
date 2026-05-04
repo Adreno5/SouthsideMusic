@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import logging
+
 import math
 import os
 import threading
@@ -18,7 +19,17 @@ if TYPE_CHECKING:
     from utils.lyric_util import LRCLyricParser, YRCLyricParser
 
 import numpy as np
-from imports import QBuffer, QIODevice, QSize, Qt, QTimer, Signal
+from imports import (
+    IMAGE_ASSET_PERSISTED,
+    SONG_CHANGED,
+    QBuffer,
+    QIODevice,
+    QSize,
+    Qt,
+    QTimer,
+    Signal,
+    event_bus,
+)
 from imports import QColor, QImage, QPixmap
 from imports import (
     QHBoxLayout,
@@ -63,7 +74,6 @@ import pyncm as ncm
 class PlayingPage(QWidget):
     imageLoaded = Signal(bytes)
     preloadRetryRequested = Signal()
-    imageAssetPersisted = Signal(object)
 
     def __init__(
         self,
@@ -81,6 +91,7 @@ class PlayingPage(QWidget):
         launchwindow=None,
     ) -> None:
         super().__init__()
+        self._logger = logging.getLogger(__name__)
         if launchwindow:
             launchwindow.top("Initializing playing page...")
             self._lw = launchwindow
@@ -124,6 +135,8 @@ class PlayingPage(QWidget):
         self.controller.onSongFinish.connect(lambda: self.playNext(False))
         self.controller.play_pausebtn.clicked.connect(self.onPlayButtonClicked)
         self.preloadRetryRequested.connect(self.preloadNextSong)
+
+        event_bus.subscribe(SONG_CHANGED, self._onSongChangedEvent)
 
         self.lst_shoud_set: bool = True
 
@@ -189,6 +202,15 @@ class PlayingPage(QWidget):
 
         self.lufs_changed_timer = QTimer(self)
         self.lufs_changed_timer.timeout.connect(self._sidebar.applyNewLUFS)  # type: ignore[union-attr]
+
+    def _onSongChangedEvent(self, _song_storable):
+        if not self._player.isPlaying():
+            return
+        if not self._preload_triggered and self.current_index < len(self.playlist) - 1:
+            self._preload_triggered = True
+            self.preloadNextSong()
+        if self.current_index >= len(self.playlist) - 1:
+            self.preloaded = True
 
     def onNosoundSkipChanged(self, state: Qt.CheckState):
         checked = state == Qt.CheckState.Checked
@@ -302,11 +324,11 @@ class PlayingPage(QWidget):
 
         try:
             self.preloaded = False
-            logging.info("preloading")
+            self._logger.info("preloading")
 
             next_song = self.playlist[self.current_index + 1]
 
-            logging.debug(next_song)
+            self._logger.debug(next_song)
 
             if self._sidebar.play_method_box.currentText() == "Play in order":
                 if self.current_index + 1 >= len(self.playlist):
@@ -340,16 +362,16 @@ class PlayingPage(QWidget):
                 ).start()
 
             def _download_then_preload(image_missing: bool, music_missing: bool):
-                logging.info("downloading next song before preload")
+                self._logger.info("downloading next song before preload")
                 self.next_song_audio = None
                 self.next_song_gain = None
 
                 def _after_download(success: bool):
                     if not success:
-                        logging.warning("failed to download next song for preload")
+                        self._logger.warning("failed to download next song for preload")
                         return
                     if not _is_preload_current():
-                        logging.info("discarding stale preload download")
+                        self._logger.info("discarding stale preload download")
                         return
                     _start_preload(False)
 
@@ -362,7 +384,7 @@ class PlayingPage(QWidget):
 
             def _preload(redownload_on_failure: bool):
                 if not _is_preload_current():
-                    logging.info("discarding stale preload")
+                    self._logger.info("discarding stale preload")
                     return
                 try:
                     with self._lock:
@@ -373,7 +395,7 @@ class PlayingPage(QWidget):
                     saveFavorites()
                     self.next_song_audio = None
                     self.next_song_gain = None
-                    logging.warning(
+                    self._logger.warning(
                         f"skipping preload because cached audio is invalid: {e}"
                     )
                     if redownload_on_failure:
@@ -381,7 +403,7 @@ class PlayingPage(QWidget):
                     return
 
                 if not _is_preload_current():
-                    logging.info("discarding stale preload")
+                    self._logger.info("discarding stale preload")
                     return
 
                 self.next_song_audio = audio
@@ -396,15 +418,15 @@ class PlayingPage(QWidget):
                 self.next_song_gain = next_song.loudness_gain
 
                 if isinstance(self.next_song_audio, AudioSegment_):
-                    logging.debug(
+                    self._logger.debug(
                         f"preload -> applying gain {self.next_song_gain} {cfg.target_lufs=}"
                     )
                     self.next_song_audio = self.next_song_audio.apply_gain(
                         20 * np.log10(self.next_song_gain)
                     )
 
-                logging.info("preloaded")
-                logging.debug(
+                self._logger.info("preloaded")
+                self._logger.debug(
                     f"(Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}"
                 )
 
@@ -416,7 +438,7 @@ class PlayingPage(QWidget):
             else:
                 _start_preload()
         finally:
-            logging.debug("started preload thread")
+            self._logger.debug("started preload thread")
 
     def downloadLyric(self):
         assert self.cur is not None
@@ -478,7 +500,7 @@ class PlayingPage(QWidget):
             str(self.cur.info["id"]),  # type: ignore
             bitrate=3200 * 1000,
         )
-        logging.debug(f"{music_url['data'][0]['url']=}")  # type: ignore
+        self._logger.debug(f"{music_url['data'][0]['url']=}")  # type: ignore
         downloadWithMultiThreading(
             music_url["data"][0]["url"],  # type: ignore
             {
@@ -515,7 +537,7 @@ class PlayingPage(QWidget):
 
     def playNext(self, byuser: bool):
         self.sendSongFMAndInfo()
-        logging.debug(
+        self._logger.debug(
             f"(Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}"
         )
         if (
@@ -563,12 +585,12 @@ class PlayingPage(QWidget):
         if (not isinstance(self.next_song_audio, AudioSegment_)) or (
             not isinstance(self.next_song_gain, float)
         ):
-            logging.error(
+            self._logger.error(
                 f"cant play preloaded song: (Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}"
             )
             return
 
-        logging.info("using preloaded song")
+        self._logger.info("using preloaded song")
 
         song_storable = self.playlist[self.current_index + 1]
 
@@ -594,10 +616,10 @@ class PlayingPage(QWidget):
     def continueLastSong(self, index: int):
         if index < 0 or index >= len(self.playlist):
             return
-        
+
         self.current_index = index
         song_storable = self.playlist[index]
-        
+
         if not self.ensureAssets(song_storable):
             return
 
@@ -630,14 +652,15 @@ class PlayingPage(QWidget):
                 audio = audio.apply_gain(20 * np.log10(gain))
                 song_storable.target_lufs = cfg.target_lufs
                 song_storable.loudness_gain = gain
-                self._mwindow_obj._loading_song = False
+
+            self._mwindow_obj._loading_song = False
 
             result["audio"] = audio
             self._player.load(audio)
             self.total_length = self._player.getLength()
             self._player.play()
             self._player.setPosition(cfg.last_playing_time)
-
+            self._player.pause()
             image_bytes = song_storable.get_image_bytes()
             from PySide6.QtGui import QImage
 
@@ -731,7 +754,7 @@ class PlayingPage(QWidget):
                             str(song_storable.id),  # type: ignore
                             bitrate=3200 * 1000,
                         )
-                        logging.debug(f"{music_url['data'][0]['url']=}")  # type: ignore
+                        self._logger.debug(f"{music_url['data'][0]['url']=}")  # type: ignore
                         prepared["music_url"] = music_url["data"][0]["url"]  # type: ignore
 
             except Exception as e:
@@ -760,10 +783,10 @@ class PlayingPage(QWidget):
 
                 saveFavorites()
                 if image_just_persisted:
-                    self.imageAssetPersisted.emit(song_storable)
+                    event_bus.emit(IMAGE_ASSET_PERSISTED, song_storable)
                 return True
             except Exception:
-                logging.exception("failed to persist downloaded storable assets")
+                self._logger.exception("failed to persist downloaded storable assets")
                 return False
 
         def _play_after_persist(music_bytes: bytes | None = None):
@@ -771,7 +794,7 @@ class PlayingPage(QWidget):
 
         def _on_prepared():
             if prepared.get("error"):
-                logging.warning(
+                self._logger.warning(
                     f"failed to prepare storable asset download: {prepared['error']}"
                 )
                 finished(False)
@@ -884,7 +907,8 @@ class PlayingPage(QWidget):
                     audio = audio.apply_gain(20 * np.log10(gain))
                     song_storable.target_lufs = cfg.target_lufs
                     song_storable.loudness_gain = gain
-                    self._mwindow_obj._loading_song = False
+
+            self._mwindow_obj._loading_song = False
 
             result["audio"] = audio
             self._player.load(audio)
@@ -931,6 +955,8 @@ class PlayingPage(QWidget):
                 )
                 self._mwindow_obj.repaint()
 
+            event_bus.emit(SONG_CHANGED, song_storable)
+
         doWithMultiThreading(_prepare, (), self._mwindow_obj, _finish)
 
     def _download_update_lyrics(self, song_storable: SongStorable) -> None:
@@ -946,7 +972,9 @@ class PlayingPage(QWidget):
                 assert isinstance(data, dict), "Invalid response"
                 lyric_result = data
             except Exception:
-                logging.exception("failed to download lyrics for storable playback")
+                self._logger.exception(
+                    "failed to download lyrics for storable playback"
+                )
                 lyric_result = None
 
         def _apply():
@@ -989,11 +1017,11 @@ class PlayingPage(QWidget):
         self.loadMusicFromBytes(music_bytes, gain)
 
     def loadMusicFromBytes(self, music_bytes: bytes, gain: float):
-        logging.debug(f"loading data {len(music_bytes)}")
+        self._logger.debug(f"loading data {len(music_bytes)}")
         with self._lock:
             audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
 
-        logging.debug(f"applying gain {gain} {cfg.target_lufs=}")
+        self._logger.debug(f"applying gain {gain} {cfg.target_lufs=}")
         audio = audio.apply_gain(20 * np.log10(gain))
 
         self._player.load(audio)

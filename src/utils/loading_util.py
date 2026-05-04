@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 import math
+
 import threading
 from typing import Callable, Dict, Optional
 
@@ -240,6 +241,7 @@ class _TaskWorker(QObject):
 
     def __init__(self, task: Callable, args: tuple):
         super().__init__()
+        self._logger = logging.getLogger(__name__)
         self.task = task
         self.args = args
 
@@ -248,7 +250,7 @@ class _TaskWorker(QObject):
         try:
             self.task(*self.args)
         except Exception as e:
-            logging.exception("Background task failed")
+            self._logger.exception("Background task failed")
             raise e
         finally:
             self.finished.emit()

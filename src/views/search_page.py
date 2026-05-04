@@ -31,6 +31,7 @@ class SearchPage(QWidget):
 
     def __init__(self, wy, mwindow, launchwindow=None) -> None:
         super().__init__()
+        self._logger = logging.getLogger(__name__)
         lw = launchwindow
         if lw:
             lw.top("Initializing search page...")
@@ -80,7 +81,7 @@ class SearchPage(QWidget):
             viewport_rect = self.lst.viewport().rect()
 
             if viewport_rect.intersects(item_rect) and not card.load:
-                logging.debug(f"loading {card.info['name']}")
+                self._logger.debug(f"loading {card.info['name']}")
                 card.loadDetailAndImage()
 
     def setImage_(self, byte: bytes, ca: SongCard):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+
 import math
 import time
 from typing import TYPE_CHECKING, cast
@@ -8,7 +9,16 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from views.playing_page import PlayingPage
 
-from imports import QApplication, QEvent, QPointF, Qt, QTimer
+from imports import (
+    REFRESH_RATE_CHANGED,
+    REPAINT,
+    QApplication,
+    QEvent,
+    QPointF,
+    Qt,
+    QTimer,
+    event_bus,
+)
 from imports import (
     QColor,
     QFont,
@@ -31,6 +41,7 @@ from utils.lyric_util import LyricInfo, YRCLyricInfo
 if TYPE_CHECKING:
     from utils.play_util import AudioPlayer
 
+
 class LyricsViewer(QWidget):
     def __init__(
         self,
@@ -42,9 +53,10 @@ class LyricsViewer(QWidget):
         mwindow,
         harmony_font_family: str,
         cfg,
-        dp: PlayingPage
+        dp: PlayingPage,
     ):
         super().__init__()
+        self._logger = logging.getLogger(__name__)
         self._app = app
         self._mgr = mgr
         self._transmgr = transmgr
@@ -80,11 +92,16 @@ class LyricsViewer(QWidget):
         self.setMouseTracking(True)
 
         self.refresh_rate = max(60, app.primaryScreen().refreshRate() / 2)
-        logging.info(f'{self.refresh_rate=}')
+        self._logger.info(f"{self.refresh_rate=}")
 
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.repaint)
-        self.timer.start(int(1000 / self.refresh_rate))
+        self.delta = 1 / self.refresh_rate
+
+        event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
+        event_bus.subscribe(REPAINT, self.repaint)
+
+    def _onRefreshRateChanged(self):
+        self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
+        self._logger.info(f"{self.refresh_rate=}")
 
         self.delta = 1 / self.refresh_rate
 

@@ -2,12 +2,26 @@ from __future__ import annotations
 
 import json
 import logging
+
 import sys
 import threading
 import time
 from typing import Any, Callable
 
-from imports import QApplication, Qt, QTimer, Signal, QMutex
+from imports import (
+    LYRIC_LINE_CHANGED,
+    REFRESH_RATE_CHANGED,
+    REPAINT,
+    SONG_CHANGED,
+    WEBSOCKET_CONNECTED,
+    WEBSOCKET_DISCONNECTED,
+    QApplication,
+    Qt,
+    QTimer,
+    Signal,
+    QMutex,
+    event_bus,
+)
 from imports import QCloseEvent, QColor, QIcon, QKeyEvent, QPainter
 from imports import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
@@ -53,6 +67,7 @@ class MainWindow(FluentWindowBase):
         parent=None,
     ):
         super().__init__(parent)
+        self._logger = logging.getLogger(__name__)
         self._app = app
         self._dp = dp
         self._sp = sp
@@ -106,7 +121,6 @@ class MainWindow(FluentWindowBase):
         self.left: int = 0
         self.right: int = 150
         self.motion: int = 20
-        self.delta: float = 1 / app.primaryScreen().refreshRate()
         self.last_draw: int = time.perf_counter_ns()
 
         self.setWindowTitle("Southside Music")
@@ -155,20 +169,91 @@ class MainWindow(FluentWindowBase):
 
         QTimer.singleShot(1750, ws_server.start)
 
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.updateDatas)
-        self.timer.start(16)
+        self.refresh_rate = max(60, app.primaryScreen().refreshRate() / 2)
+        self._logger.info(f"{self.refresh_rate=}")
+
+        self.delta = 1 / self.refresh_rate
+
+        event_bus.subscribe(SONG_CHANGED, self._onSongChanged)
+        event_bus.subscribe(LYRIC_LINE_CHANGED, self._onLyricChanged)
+        event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
+        event_bus.subscribe(REPAINT, self.updateDatas)
+
+        self.stackedWidget.currentChanged.connect(self._syncTitleBarOnNavigation)
+
+    def _onRefreshRateChanged(self):
+        self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
+        self._logger.info(f"{self.refresh_rate=}")
+
+        self.delta = 1 / self.refresh_rate
 
     def updateDatas(self):
-        self.bar_height += ((5 if cfg.show_progress else 0) - self.bar_height) * 0.2
+        now = time.perf_counter_ns()
+        _elapsed: float = (now - self.last_draw) / 1_000_000_000
+        self.last_draw = now
+        multiple_factor = self.delta / _elapsed
+
+        self.bar_height += ((5 if cfg.show_progress else 0) - self.bar_height) * multiple_factor
 
         if cfg.show_progress:
-            self.draw_progress += (cfg.progress - self.draw_progress) * 0.6
+            self.draw_progress += (cfg.progress - self.draw_progress) * multiple_factor
         else:
             self.draw_progress = 0
 
         if self.bar_height > 0:
             self.repaint()
+
+    def _syncTitleBarOnNavigation(self, _index: int):
+        if not isinstance(self.titleBar, SouthsideMusicTitleBar):
+            return
+        if self.stackedWidget.currentWidget() is self._dp:
+            self.titleBar.song_title.clear()
+            self.titleBar.lyric_label.clear()
+            self.titleBar.fm_label.clear()
+        elif isinstance(self._dp.cur, DummyCard):
+            self.titleBar.song_title.setText(self._dp.cur.storable.name)
+            self.titleBar.lyric_label.setText(self._dp.cur.storable.artists)
+            pixmap = self._dp.img_label.pixmap()
+            if pixmap and not pixmap.isNull():
+                self.titleBar.fm_label.setPixmap(
+                    pixmap.scaled(
+                        40,
+                        40,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
+
+    def _onSongChanged(self, song_storable):
+        if not isinstance(self.titleBar, SouthsideMusicTitleBar):
+            return
+        if self.stackedWidget.currentWidget() is self._dp:
+            self.titleBar.song_title.clear()
+            self.titleBar.lyric_label.clear()
+            self.titleBar.fm_label.clear()
+            return
+        self.titleBar.song_title.setText(song_storable.name)
+        self.titleBar.lyric_label.setText(song_storable.artists)
+        pixmap = self._dp.img_label.pixmap()
+        if pixmap and not pixmap.isNull():
+            self.titleBar.fm_label.setPixmap(
+                pixmap.scaled(
+                    40,
+                    40,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+
+    def _onLyricChanged(self, lyric_data: dict):
+        if not isinstance(self.titleBar, SouthsideMusicTitleBar):
+            return
+        if self.stackedWidget.currentWidget() is self._dp:
+            return
+        content = lyric_data.get("content", "")
+        self.titleBar.lyric_label.setText(
+            content if content else self._dp.artists_label.text()
+        )
 
     def addScheduledTask(self, task: Callable, *args, **kwargs) -> None:
         with self._scheduled_tasks_lock:
@@ -184,7 +269,7 @@ class MainWindow(FluentWindowBase):
             try:
                 task(*args, **kwargs)
             except Exception as e:
-                logging.exception("scheduled task failed")
+                self._logger.exception("scheduled task failed")
                 raise e
 
     def addSubInterface(
@@ -229,7 +314,7 @@ class MainWindow(FluentWindowBase):
         return item
 
     def play(self, card: SongCard):
-        logging.debug(card.info["id"])
+        self._logger.debug(card.info["id"])
 
         self._dp.cur = None
 
@@ -276,6 +361,7 @@ class MainWindow(FluentWindowBase):
                 self.show()
                 self.raise_()
 
+                event_bus._lw = None
                 self._launchwindow.deleteLater()
 
             self.addScheduledTask(_show)
@@ -352,6 +438,8 @@ class MainWindow(FluentWindowBase):
         self._sidebar.disconnect_btn.setEnabled(True)
         self._sidebar.connect_btn.setEnabled(False)
 
+        event_bus.emit(WEBSOCKET_CONNECTED)
+
     def onWebsocketDisconnected(self):
         InfoBar.warning(
             "SouthsideClient connection",
@@ -364,6 +452,8 @@ class MainWindow(FluentWindowBase):
 
         self._sidebar.connect_btn.setEnabled(True)
         self._sidebar.disconnect_btn.setEnabled(False)
+
+        event_bus.emit(WEBSOCKET_DISCONNECTED)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Space:
@@ -384,11 +474,15 @@ class MainWindow(FluentWindowBase):
             )
         )
         painter.drawRect(self.rect())
-        
+
         if cfg.show_progress or self.bar_height > 0.1:
             painter.setBrush(
                 mixColor(
-                    self.song_theme, QColor(255, 255, 255) if darkdetect_util.isDark() else QColor(0, 0, 0), cfg.background_ratio
+                    self.song_theme,
+                    QColor(255, 255, 255)
+                    if darkdetect_util.isDark()
+                    else QColor(0, 0, 0),
+                    cfg.background_ratio,
                 )
             )
             if cfg.progress_inter:
@@ -398,6 +492,10 @@ class MainWindow(FluentWindowBase):
                     self.motion = -self.motion
                 self.right += self.motion
                 self.left += self.motion
-                painter.drawRect(self.left, 0, self.right - self.left, int(self.bar_height))
+                painter.drawRect(
+                    self.left, 0, self.right - self.left, int(self.bar_height)
+                )
             else:
-                painter.drawRect(0, 0, int(self.width() * self.draw_progress), int(self.bar_height))
+                painter.drawRect(
+                    0, 0, int(self.width() * self.draw_progress), int(self.bar_height)
+                )

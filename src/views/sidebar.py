@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import logging
+
 from typing import Callable, TYPE_CHECKING, cast, cast as _cast
 
 if TYPE_CHECKING:
@@ -11,7 +12,17 @@ if TYPE_CHECKING:
     from utils.websocket_util import WebSocketHandler
 
 import numpy as np
-from imports import QSize, Qt, QTimer
+from imports import (
+    LUFS_TARGET_CHANGED,
+    SONG_CHANGED,
+    VOLUME_CHANGED,
+    WEBSOCKET_CONNECTED,
+    WEBSOCKET_DISCONNECTED,
+    QSize,
+    Qt,
+    QTimer,
+    event_bus,
+)
 from imports import QColor
 from imports import (
     QGridLayout,
@@ -70,6 +81,7 @@ class Sidebar(QWidget):
         launchwindow=None,
     ):
         super().__init__()
+        self._logger = logging.getLogger(__name__)
         if launchwindow:
             launchwindow.top("Initializing sidebar...")
             self._launchwindow = launchwindow
@@ -354,6 +366,40 @@ class Sidebar(QWidget):
         card.setLayout(global_layout)
         self.playing_layout.addWidget(card, self.playing_layout.rowCount(), 0, 2, 2)
 
+        event_bus.subscribe(SONG_CHANGED, self._onSongChanged)
+        event_bus.subscribe(WEBSOCKET_CONNECTED, self._onWsConnected)
+        event_bus.subscribe(WEBSOCKET_DISCONNECTED, self._onWsDisconnected)
+        event_bus.subscribe(VOLUME_CHANGED, self._onVolumeChanged)
+
+    def _onSongChanged(self, _song_storable):
+        self._syncPlaylistSelection()
+
+    def _onWsConnected(self):
+        self.southsideclient_status_label.setText(
+            "Connection Status: <span style='color: green;'>Connected</span>"
+        )
+
+    def _onWsDisconnected(self):
+        self.southsideclient_status_label.setText(
+            "Connection Status: <span style='color: red;'>Disconnected</span>"
+        )
+
+    def _onVolumeChanged(self, volume: float):
+        self.now_volume.setText(
+            f"Current volume(db): {(round(volume * 10) / 10) if volume != float('-inf') else '-inf'}"
+        )
+
+    def _syncPlaylistSelection(self):
+        if not self._dp.cur:
+            return
+        if not hasattr(self._dp.cur, "storable"):
+            return
+        storable = self._dp.cur.storable
+        for i, song in enumerate(self._dp.playlist):
+            if song.name == storable.name:
+                self.lst.setCurrentRow(i)
+                return
+
     def _patched_paint_event(self, card: CardWidget, e):
         from PySide6.QtGui import QPainter, QPainterPath, QPen
         from qfluentwidgets import isDarkTheme
@@ -518,7 +564,7 @@ class Sidebar(QWidget):
             audio: AudioSegment = AudioSegment.from_file(
                 io.BytesIO(storable.get_music_bytes())
             )
-            logging.debug("new lufs -> applying gain")
+            self._logger.debug("new lufs -> applying gain")
             gain = getAdjustedGainFactor(cfg.target_lufs, audio)
             result["storable"] = storable
             result["gain"] = gain
@@ -565,3 +611,4 @@ class Sidebar(QWidget):
         if hasattr(self, "target_lufs_label"):
             self.target_lufs_label.setText(f"Target LUFS: {value}")
             self._dp.lufs_changed_timer.start(1000)
+        event_bus.emit(LUFS_TARGET_CHANGED, value)

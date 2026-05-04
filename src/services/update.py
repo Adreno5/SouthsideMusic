@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -13,8 +14,10 @@ from imports import QMessageBox
 
 from utils import requests_util as requests
 from utils.config_util import cfg
+_logger = logging.getLogger(__name__)
 
-excludes = ['ffmpeg']
+excludes = ["ffmpeg"]
+
 
 class UpdateFileInfo(TypedDict):
     path: str
@@ -43,7 +46,7 @@ def _collect_update_files(api_url: str, file_list: list[UpdateFileInfo]) -> None
     for item in items:
         if not isinstance(item, dict):
             continue
-        if item.get("type") == "file" and item.get('name') not in excludes:
+        if item.get("type") == "file" and item.get("name") not in excludes:
             download_url = item.get("download_url")
             path = item.get("path")
             sha = item.get("sha")
@@ -55,7 +58,11 @@ def _collect_update_files(api_url: str, file_list: list[UpdateFileInfo]) -> None
                 file_list.append(
                     UpdateFileInfo(path=path, download_url=download_url, sha=sha)
                 )
-        elif item.get("type") == "dir" and isinstance(item.get("url"), str) and item.get('name') not in excludes:
+        elif (
+            item.get("type") == "dir"
+            and isinstance(item.get("url"), str)
+            and item.get("name") not in excludes
+        ):
             _collect_update_files(item["url"], file_list)
 
 
@@ -71,7 +78,9 @@ def checkForUpdates() -> UpdateInfo | None:
         return None
 
     file_list: list[UpdateFileInfo] = []
-    _collect_update_files('https://api.github.com/repos/Adreno5/SouthsideMusic/contents', file_list)
+    _collect_update_files(
+        "https://api.github.com/repos/Adreno5/SouthsideMusic/contents", file_list
+    )
 
     changed_files = [
         item for item in file_list if _git_blob_sha(item["path"]) != item["sha"]
@@ -117,7 +126,7 @@ def applyUpdate(update_info: UpdateInfo) -> bool:
         return True
     except Exception as e:
         cfg.show_progress = False
-        logging.exception(e)
+        _logger.exception(e)
         return False
 
 
@@ -126,7 +135,7 @@ def startUpdateCheck(mwindow=None) -> None:
         try:
             update_result = checkForUpdates()
         except Exception as e:
-            logging.exception(e)
+            _logger.exception(e)
             return
         if update_result is None:
             return

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+
 import os
 
 from imports import Qt
@@ -20,6 +21,7 @@ from pyncm import apis
 class SessionPage(QWidget):
     def __init__(self, mwindow, launchwindow=None) -> None:
         super().__init__()
+        self._logger = logging.getLogger(__name__)
         lw = launchwindow
         if lw:
             lw.top("Initializing session page...")
@@ -74,7 +76,7 @@ class SessionPage(QWidget):
         try:
             session = ncm.GetCurrentSession()
         except Exception as e:
-            logging.warning(f"Failed to get session: {e}")
+            self._logger.warning(f"Failed to get session: {e}")
             session = None
 
         try:
@@ -85,13 +87,13 @@ class SessionPage(QWidget):
                 and "id" in login_status["account"]  # type: ignore
             ):
                 detail = apis.user.GetUserDetail(login_status["account"]["id"])  # type: ignore
-                logging.debug(f"{detail['profile']['avatarUrl']=}")  # type: ignore
+                self._logger.debug(f"{detail['profile']['avatarUrl']=}")  # type: ignore
                 avatar_url = detail["profile"]["avatarUrl"]  # type: ignore
                 avatar_data = requests.get(avatar_url).content
                 with open("images/avatar.png", "wb") as f:
                     f.write(avatar_data)
         except Exception as e:
-            logging.warning(f"Failed to fetch user detail or avatar: {e}")
+            self._logger.warning(f"Failed to fetch user detail or avatar: {e}")
 
         nickname = "Anonymous User"
         if session is not None:
@@ -104,7 +106,7 @@ class SessionPage(QWidget):
                     if nick and isinstance(nick, str) and nick.strip():
                         nickname = nick.strip()
             except Exception as e:
-                logging.warning(f"Failed to get nickname: {e}")
+                self._logger.warning(f"Failed to get nickname: {e}")
         self.nickname.setText(nickname)
 
         vip_level = 0
@@ -114,7 +116,7 @@ class SessionPage(QWidget):
                 if isinstance(vip, (int, float)):
                     vip_level = int(vip)
             except Exception as e:
-                logging.warning(f"Failed to get vipType: {e}")
+                self._logger.warning(f"Failed to get vipType: {e}")
         self.vip.setText(f"VIP Level: {vip_level}")
 
         if not os.path.exists("images/avatar.png"):
@@ -144,13 +146,13 @@ class SessionPage(QWidget):
             apis.login.LoginViaAnonymousAccount()
             cfg.session = ncm.DumpSessionAsString(ncm.GetCurrentSession())
         elif method == "QR Code":
-            logging.info("start logging in(via QRCode)")
+            self._logger.info("start logging in(via QRCode)")
 
             key: str = apis.login.LoginQrcodeUnikey()["unikey"]  # type: ignore
-            logging.debug(f"{key=}")
+            self._logger.debug(f"{key=}")
 
             url = apis.login.GetLoginQRCodeUrl(key)
-            logging.debug(f"{url=}")
+            self._logger.debug(f"{url=}")
 
             msgbox = QRCodeLoginDialog(self._mwindow, url, key, logging)
             if msgbox.exec():
@@ -158,7 +160,7 @@ class SessionPage(QWidget):
                 cfg.login_status = apis.login.GetCurrentLoginStatus()  # type: ignore
                 cfg.login_method = "QR code"
         elif method == "Cell Phone":
-            logging.info("start logging in(via cell phone)")
+            self._logger.info("start logging in(via cell phone)")
             phone = get_text_lineedit(
                 "Login", "enter your cell phone number", "1xxxxxxxxxx", self._mwindow
             )

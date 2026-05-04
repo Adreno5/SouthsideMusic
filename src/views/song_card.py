@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import logging
+
 import os
 import threading
 import time
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
     from views.sidebar import Sidebar
     from views.playing_page import PlayingPage
 
-from imports import QSize, Qt, Signal
+from imports import IMAGE_ASSET_PERSISTED, QSize, Qt, Signal, event_bus
 from imports import QImage, QMouseEvent, QPixmap
 from imports import (
     QFileDialog,
@@ -156,7 +157,7 @@ class SongCard(QWidget):
             return
 
         folder_names = [f["folder_name"] for f in favs]
-        folder_names.append('Create New Folder...')
+        folder_names.append("Create New Folder...")
         chosen = get_value_bylist(
             self._mwindow,
             "Choose Folder",
@@ -165,13 +166,10 @@ class SongCard(QWidget):
         )
         if chosen is None:
             return
-        
-        if chosen == 'Create New Folder...':
+
+        if chosen == "Create New Folder...":
             chosen = get_text_lineedit(
-                self._mwindow,
-                "Create New Folder",
-                "My first folder",
-                self._mwindow
+                self._mwindow, "Create New Folder", "My first folder", self._mwindow
             )
             if chosen:
                 favs.append({"folder_name": chosen, "songs": []})
@@ -195,7 +193,7 @@ class SongCard(QWidget):
                     str(self.info["id"]),  # type: ignore
                     bitrate=3200 * 1000,
                 )
-                
+
                 def _downloaded(music_bytes: bytes):
                     nonlocal _finished
                     result_container.append((image_bytes, music_bytes))
@@ -286,6 +284,7 @@ class _SongCardItem(QWidget):
         lazy: bool = False,
     ):
         super().__init__(parent)
+        self._logger = logging.getLogger(__name__)
         self.storable = storable
         self._dp: PlayingPage = dp  # type: ignore
         self._mwindow: MainWindow = mwindow  # type: ignore
@@ -327,7 +326,9 @@ class _SongCardItem(QWidget):
             self.load = True
             self.loadImage()
             if self._dp:
-                self._dp.imageAssetPersisted.connect(self._on_image_asset_persisted)
+                event_bus.subscribe(
+                    IMAGE_ASSET_PERSISTED, self._on_image_asset_persisted
+                )
             if self.img_label.pixmap() is None or self.img_label.pixmap().isNull():
                 threading.Thread(
                     target=self._auto_download_missing_image, daemon=True
@@ -339,7 +340,7 @@ class _SongCardItem(QWidget):
         self.load = True
         self.loadImage()
         if self._dp:
-            self._dp.imageAssetPersisted.connect(self._on_image_asset_persisted)
+            event_bus.subscribe(IMAGE_ASSET_PERSISTED, self._on_image_asset_persisted)
         if self.img_label.pixmap() is None or self.img_label.pixmap().isNull():
             threading.Thread(
                 target=self._auto_download_missing_image, daemon=True
@@ -376,7 +377,9 @@ class _SongCardItem(QWidget):
                     image_url = response["songs"][0]["al"]["picUrl"]  # type: ignore
                     image_bytes = requests.get(image_url).content
             except Exception as e:
-                logging.warning(f"failed to auto-download image for {storable.id}: {e}")
+                self._logger.warning(
+                    f"failed to auto-download image for {storable.id}: {e}"
+                )
                 return
 
             if not image_bytes:
@@ -389,7 +392,7 @@ class _SongCardItem(QWidget):
                     f.write(image_bytes)
             storable.image_cache_hash = cache_hash
             saveFavorites()
-            self._dp.imageAssetPersisted.emit(storable)
+            event_bus.emit(IMAGE_ASSET_PERSISTED, storable)
         finally:
             lock.release()
 

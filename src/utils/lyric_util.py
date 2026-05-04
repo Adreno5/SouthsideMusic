@@ -2,6 +2,7 @@ from functools import lru_cache
 import json
 import logging
 import re
+
 from typing import NotRequired, TypedDict
 
 
@@ -112,6 +113,7 @@ def _try_parse_yrc_line(line: str) -> YRCLyricInfo | None:
 
 class YRCLyricParser:
     def __init__(self) -> None:
+        self._logger = logging.getLogger(__name__)
         self.cur: str = ""
         self.parsed: list[YRCLyricInfo] = []
 
@@ -205,11 +207,12 @@ class YRCLyricParser:
                 self.parsed.append(info)
 
         self.parsed.sort(key=lambda x: x["time"])
-        logging.info(f"parsed {len(self.parsed)} YRC lines")
+        self._logger.info(f"parsed {len(self.parsed)} YRC lines")
 
 
 class LRCLyricParser:
     def __init__(self) -> None:
+        self._logger = logging.getLogger(__name__)
         self.cur: str = ""
         self.parsed: list[LyricInfo] = []
 
@@ -293,4 +296,4 @@ class LRCLyricParser:
                 self.parsed.append(info)
 
         self.parsed.sort(key=lambda x: x["time"])
-        logging.info(f"parsed {len(self.parsed)} lines")
+        self._logger.info(f"parsed {len(self.parsed)} lines")

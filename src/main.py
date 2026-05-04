@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+
 import os
 import sys
 import threading
@@ -9,6 +10,8 @@ import uuid
 from types import FrameType, TracebackType
 from typing import Any, TextIO
 import glob
+
+from services.events.events_services import EventsServices
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
 sys.path.append(os.path.dirname(__file__))
@@ -42,6 +45,8 @@ logging_handler = LogHandler()
 logging.basicConfig(level=logging.DEBUG, handlers=[logging_handler])
 hijackStreams()
 
+_logger = logging.getLogger(__name__)
+
 
 def patchedExceptHook(
     exc_type: type[BaseException],
@@ -52,29 +57,29 @@ def patchedExceptHook(
 
     inf: list[str] = []
 
-    logging.error("| Unhandled Exception occurred |")
-    logging.error(f"Caused by {exc_type.__name__}")
-    logging.error("Traceback:")
+    _logger.error("| Unhandled Exception occurred |")
+    _logger.error(f"Caused by {exc_type.__name__}")
+    _logger.error("Traceback:")
     inf.append("| Unhandled Exception occurred |")
     inf.append(f"Caused by {exc_type.__name__}")
     inf.append("Traceback:")
     stack_frames = traceback.extract_tb(exc_traceback)
     for frame in stack_frames:
-        logging.error(
+        _logger.error(
             f"    at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}"
         )
         inf.append(
             f"    at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}"
         )
-    logging.error("Exception chain:")
+    _logger.error("Exception chain:")
     inf.append("Exception chain:")
     current_exc = exc_value
-    logging.error(f"    caused by {type(current_exc).__name__}({current_exc}) #0")
+    _logger.error(f"    caused by {type(current_exc).__name__}({current_exc}) #0")
     inf.append(f"    caused by {type(current_exc).__name__}({current_exc}) #0")
     if current_exc.__traceback__:
         root_frames = traceback.extract_tb(current_exc.__traceback__)
         for frame in root_frames:
-            logging.error(
+            _logger.error(
                 f"      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}"
             )
             inf.append(
@@ -85,7 +90,7 @@ def patchedExceptHook(
         next_exc = current_exc.__cause__ or current_exc.__context__
         if not next_exc or next_exc is current_exc:
             break
-        logging.error(
+        _logger.error(
             f"    caused by {type(next_exc).__name__}({next_exc}) #{chain_level}"
         )
         inf.append(
@@ -94,7 +99,7 @@ def patchedExceptHook(
         if next_exc.__traceback__:
             root_frames = traceback.extract_tb(next_exc.__traceback__)
             for frame in root_frames:
-                logging.error(
+                _logger.error(
                     f"      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}"
                 )
                 inf.append(
@@ -102,11 +107,11 @@ def patchedExceptHook(
                 )
         current_exc = next_exc
         chain_level += 1
-    logging.error(f"Raised {exc_type.__name__}({exc_value})")
+    _logger.error(f"Raised {exc_type.__name__}({exc_value})")
     inf.append(f"Raised {exc_type.__name__}({exc_value})")
 
     if exc_type is KeyboardInterrupt:
-        logging.info("quit by user")
+        _logger.info("quit by user")
         if mwindow:
             mwindow.close()
         app.quit()
@@ -168,6 +173,8 @@ fp: FavoritesPage | None = None
 sep: SessionPage | None = None
 lock: threading.Lock = threading.Lock()
 
+_ims.event_bus._lw = launchwindow
+
 
 def _on_ws_connected():
     if mwindow:
@@ -194,6 +201,7 @@ if __name__ == "__main__":
         cfg.login_status = apis.login.GetCurrentLoginStatus()  # type: ignore
 
     def _themeChanged(theme: str):
+
         def _updateTheme():
             global mwindow, sidebar
             darkdetect._is_dark = darkdetect.getDarkdetect().isDark()
@@ -204,12 +212,12 @@ if __name__ == "__main__":
             if sidebar:
                 sidebar.updateTheme()
             refreshBoundIcons()
+            _ims.event_bus.emit(_ims.POST_THEME_CHANGED)
 
         if mwindow:
             mwindow.addScheduledTask(_updateTheme)
 
-    def _startListen():
-        darkdetect.getDarkdetect().listener(_themeChanged)
+    _ims.event_bus.subscribe(_ims.PRE_THEME_CHANGED, _themeChanged)
 
     def _cleanCaches():
         while True:
@@ -223,11 +231,11 @@ if __name__ == "__main__":
                         caches.append(file)
                 for cache in caches:
                     os.remove(cache)
-                logging.info(f"cleared {len(caches)} caches")
+                if len(caches) > 0:
+                    _logger.info(f"cleared {len(caches)} caches")
 
             time.sleep(10)
 
-    threading.Thread(target=_startListen, daemon=True).start()
     threading.Thread(target=_cleanCaches, daemon=True).start()
 
     app.setStyleSheet(
@@ -268,20 +276,23 @@ if __name__ == "__main__":
         sstr = ncm.DumpSessionAsString(apis.GetCurrentSession())
         cfg.session = sstr
         cfg.login_status = apis.login.GetCurrentLoginStatus()  # type: ignore
-        logging.info("logged into generated anonymous account")
+        _logger.info("logged into generated anonymous account")
     else:
         ncm.SetCurrentSession(ncm.LoadSessionFromString(cfg.session))
-        logging.info("loaded session from config")
+        _logger.info("loaded session from config")
 
         if (
             cfg.login_method == "cell phone" or cfg.login_method == "QR code"
         ) and cfg.login_status:
             apis.login.WriteLoginInfo(cfg.login_status)
-            logging.info("wrote login info")
+            _logger.info("wrote login info")
 
     csession = ncm.GetCurrentSession()
     csession.deviceId = uuid.uuid4().hex
     ncm.SetCurrentSession(csession)
+
+    launchwindow.push('Initializing events services...')
+    events_service = EventsServices(app)
 
     launchwindow.clear()
     launchwindow.subtitle("Phase 2 (initialize components...)")
@@ -323,7 +334,7 @@ if __name__ == "__main__":
         harmony_font_family,
         cfg,
         dp,
-        launchwindow
+        launchwindow,
     )
     launchwindow.push("Initializing favorites page...")
     fp = FavoritesPage(dp, sidebar, None, launchwindow)
@@ -343,7 +354,7 @@ if __name__ == "__main__":
         wy,
         ws_server,
         ws_handler,
-        launchwindow
+        launchwindow,
     )
 
     launchwindow.clear()
@@ -371,17 +382,10 @@ if __name__ == "__main__":
 
     mwindow.init()
 
-    def refreshRateChanged_():
-        _ims.QMessageBox.warning(mwindow, 'Warning', 'Screen refresh rate change detected. To avoid affecting the animation experience, please restart the application.')
-        if mwindow:
-            mwindow.close()
-
-    app.primaryScreen().refreshRateChanged.connect(refreshRateChanged_)
-
     fp.refresh()
 
     _ims.QTimer.singleShot(2000, lambda: startUpdateCheck(mwindow))
 
-    logging.debug(f"{sys.path=}")
+    _logger.debug(f"{sys.path=}")
 
     app.exec()

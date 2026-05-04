@@ -1,6 +1,8 @@
 import logging
 import random
+
 from typing import Any, Generic, TypeVar
+_logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -19,7 +21,7 @@ class AdvancedRandom(Generic[T]):
         self.list_weight = [(1 / self.list_len) for _ in lst]
         self.randomed_times = [0 for _ in lst]
         self.target_lst = lst
-        logging.info(f"inited {self.list_len} weights avg {self.list_weight[0]}")
+        _logger.info(f"inited {self.list_len} weights avg {self.list_weight[0]}")
 
     def random(self) -> T:
         total_weight: float = 0
@@ -42,14 +44,14 @@ class AdvancedRandom(Generic[T]):
             if randomed <= current:
                 selected_item = self.target_lst[i]
                 self.randomed_times[i] += 1
-                logging.info(f"randomed {selected_item} times {self.randomed_times[i]}")
-                logging.debug(self.randomed_times)
-                logging.debug(adjusted_weights)
+                _logger.info(f"randomed {selected_item} times {self.randomed_times[i]}")
+                _logger.debug(self.randomed_times)
+                _logger.debug(adjusted_weights)
                 return selected_item
 
         selected_item = self.target_lst[-1]
         self.randomed_times[-1] += 1
-        logging.info(f"randomed {selected_item} times {self.randomed_times[-1]}")
-        logging.debug(self.randomed_times)
-        logging.debug(adjusted_weights)
+        _logger.info(f"randomed {selected_item} times {self.randomed_times[-1]}")
+        _logger.debug(self.randomed_times)
+        _logger.debug(adjusted_weights)
         return selected_item

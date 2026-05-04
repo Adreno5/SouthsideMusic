@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+
 import os
 import re
 import shutil
@@ -29,7 +30,7 @@ class LogHandler(logging.Handler):
             "INFO": Fore.LIGHTGREEN_EX,
             "WARNING": Fore.YELLOW,
             "ERROR": Fore.RED,
-            "CRITICAL": Fore.RED
+            "CRITICAL": Fore.RED,
         }.get(record.levelname, Fore.WHITE)
 
         time_str = datetime.datetime.now().strftime("%H:%M:%S")
@@ -64,6 +65,7 @@ class LogHandler(logging.Handler):
 
 class LoggingStream:
     def __init__(self, level: int = logging.DEBUG, source: str = "stderr"):
+        self._logger = logging.getLogger(__name__)
         self.level = level
         self.source = source
         self.buffer = ""
@@ -96,9 +98,9 @@ class LoggingStream:
 
             try:
                 if self.source == "stderr":
-                    logging.error(line.strip())
+                    self._logger.error(line.strip())
                 else:
-                    logging.info(line.strip())
+                    self._logger.info(line.strip())
             finally:
                 self._in_logging = False
 

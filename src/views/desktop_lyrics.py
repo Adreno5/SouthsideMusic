@@ -3,7 +3,17 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-from imports import QApplication, QEnterEvent, QSize, Qt, QTimer, QPoint, QRect
+from imports import (
+    QApplication,
+    QEnterEvent,
+    QSize,
+    Qt,
+    QTimer,
+    QPoint,
+    QRect,
+    REPAINT,
+    event_bus,
+)
 from imports import (
     QColor,
     QFontMetricsF,
@@ -30,7 +40,16 @@ if TYPE_CHECKING:
 
 class DesktopLyricsViewer(LyricsViewer):
     def __init__(
-        self, app, mgr, transmgr, ymgr, player: AudioPlayer, mwindow, harmony_font_family, cfg, dp: PlayingPage
+        self,
+        app,
+        mgr,
+        transmgr,
+        ymgr,
+        player: AudioPlayer,
+        mwindow,
+        harmony_font_family,
+        cfg,
+        dp: PlayingPage,
     ):
         super().__init__(
             app, mgr, transmgr, ymgr, player, mwindow, harmony_font_family, cfg, dp
@@ -54,17 +73,22 @@ class DesktopLyricsViewer(LyricsViewer):
         self.indentation_y: float = 0
         self.indentation: bool = False
 
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.updateDatas)
-        self.timer.start(int(1000 / max(60, app.primaryScreen().refreshRate() / 2)))
+        event_bus.unsubscribe(REPAINT, self.repaint)
+        event_bus.subscribe(REPAINT, self._onRepaintTick)
+
+    def _onRepaintTick(self):
+        self.updateDatas()
+        self.repaint()
 
     def unindentation(self):
-        if not cfg.desktop_lyrics_anchor == 'top-center':
+        if not cfg.desktop_lyrics_anchor == "top-center":
             return
         self.indentation = False
 
     def updateDatas(self):
-        self.indentation_y += ((-self.height() + 8 if self.indentation else 0) - self.indentation_y) * 0.2
+        self.indentation_y += (
+            (-self.height() + 8 if self.indentation else 0) - self.indentation_y
+        ) * 0.2
 
         cur_line: YRCLyricInfo | LyricInfo | None = (
             self._ymgr.getCurrentLyric(self._player.getPosition())
@@ -98,9 +122,7 @@ class DesktopLyricsViewer(LyricsViewer):
         elif self._mgr.parsed:
             lidx = self._mgr.getCurrentIndex(position)
             l_line = (
-                self._mgr.parsed[0]
-                if lidx < 0
-                else self._mgr.getCurrentLyric(position)
+                self._mgr.parsed[0] if lidx < 0 else self._mgr.getCurrentLyric(position)
             )
             tar_width = max(
                 10,
@@ -114,19 +136,18 @@ class DesktopLyricsViewer(LyricsViewer):
         target_point = QPoint(0, 0)
         if cfg.desktop_lyrics_anchor == "top-center":
             target_point = QPoint(
-                int(
-                    self.scr_size.width() * 0.5
-                    - self.width() * 0.5
-                ),
+                int(self.scr_size.width() * 0.5 - self.width() * 0.5),
                 0,
             )
         if cfg.desktop_lyrics_anchor == "normal" and not self.dragging:
-            target_point = QPoint(int(cfg.desktop_lyrics_x - self.width() * 0.5), self.y())
+            target_point = QPoint(
+                int(cfg.desktop_lyrics_x - self.width() * 0.5), self.y()
+            )
             if self.x() < 0:
                 cfg.desktop_lyrics_x = 0
             if self.x() > self.scr_size.width() - self.width():
                 cfg.desktop_lyrics_x = self.scr_size.width() - self.width() // 2
-        if not self.dragging and cfg.desktop_lyrics_anchor == 'top-center':
+        if not self.dragging and cfg.desktop_lyrics_anchor == "top-center":
             target_point += QPoint(0, int(self.indentation_y))
         if not self.dragging:
             self.move(target_point)
@@ -177,7 +198,11 @@ class DesktopLyricsViewer(LyricsViewer):
         draw_rect = QRect(12, 0, self.width() - 24, self.height())
 
         painter.setBrush(
-            mixColor(self._mwindow.song_theme, QColor(255, 255, 255) if darkdetect.isLight() else QColor(0, 0, 0), cfg.background_ratio * 0.2)
+            mixColor(
+                self._mwindow.song_theme,
+                QColor(255, 255, 255) if darkdetect.isLight() else QColor(0, 0, 0),
+                cfg.background_ratio * 0.2,
+            )
         )
 
         if cfg.desktop_lyrics_anchor == "normal":
@@ -186,9 +211,23 @@ class DesktopLyricsViewer(LyricsViewer):
             if self._dp.total_length > 0:
                 painter.save()
                 painter.setBrush(
-                    mixColor(self._mwindow.song_theme, QColor(125, 125, 125) if darkdetect.isDark() else QColor(80, 80, 80), cfg.background_ratio * 0.5)
+                    mixColor(
+                        self._mwindow.song_theme,
+                        QColor(125, 125, 125)
+                        if darkdetect.isDark()
+                        else QColor(80, 80, 80),
+                        cfg.background_ratio * 0.5,
+                    )
                 )
-                painter.drawRect(self.height() // 2, 0, int((self.width() - self.height()) * (self._player.getPosition() / self._dp.total_length)), 1)
+                painter.drawRect(
+                    self.height() // 2,
+                    0,
+                    int(
+                        (self.width() - self.height())
+                        * (self._player.getPosition() / self._dp.total_length)
+                    ),
+                    1,
+                )
                 painter.restore()
         elif cfg.desktop_lyrics_anchor == "top-center":
             painter.drawRoundedRect(draw_rect, 20, 20)
@@ -226,9 +265,23 @@ class DesktopLyricsViewer(LyricsViewer):
             if self._dp.total_length > 0:
                 painter.save()
                 painter.setBrush(
-                    mixColor(self._mwindow.song_theme, QColor(125, 125, 125) if darkdetect.isDark() else QColor(80, 80, 80), cfg.background_ratio * 0.5)
+                    mixColor(
+                        self._mwindow.song_theme,
+                        QColor(125, 125, 125)
+                        if darkdetect.isDark()
+                        else QColor(80, 80, 80),
+                        cfg.background_ratio * 0.5,
+                    )
                 )
-                painter.drawRect(12, 0, int((self.width() - 24) * (self._player.getPosition() / self._dp.total_length)), 1)
+                painter.drawRect(
+                    12,
+                    0,
+                    int(
+                        (self.width() - 24)
+                        * (self._player.getPosition() / self._dp.total_length)
+                    ),
+                    1,
+                )
                 painter.restore()
 
         painter.end()
@@ -236,6 +289,7 @@ class DesktopLyricsViewer(LyricsViewer):
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         event.ignore()
+
 
 class DesktopLyricsPage(QWidget):
     def __init__(

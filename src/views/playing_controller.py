@@ -12,6 +12,9 @@ if TYPE_CHECKING:
     from views.playing_page import PlayingPage
 
 from imports import (
+    LYRIC_LINE_CHANGED,
+    PLAY_STATE_CHANGED,
+    VOLUME_CHANGED,
     QEasingCurve,
     QPointF,
     QPropertyAnimation,
@@ -20,6 +23,7 @@ from imports import (
     QSize,
     QTimer,
     Signal,
+    event_bus,
 )
 from imports import (
     QColor,
@@ -29,9 +33,8 @@ from imports import (
     QPainterPath,
     QPaintEvent,
     QPen,
-    QPixmap,
 )
-from imports import QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
+from imports import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import (
     PushButton,
     Slider,
@@ -44,9 +47,7 @@ from utils.time_util import float2time
 from utils.lyric_util import LyricInfo, LRCLyricParser, YRCLyricParser
 from utils.play_util import AudioPlayer
 from utils.websocket_util import QObjectHandler
-from views.song_card import DummyCard, SongCard
 from utils.config_util import cfg
-
 
 class PlayingController(QWidget):
     onSongFinish = Signal()
@@ -144,12 +145,23 @@ class PlayingController(QWidget):
 
         self.setLayout(global_layout)
 
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.updateWidgets)
-        self.timer.start(20)
+        self._fft_timer = QTimer(self)
+        self._fft_timer.timeout.connect(self._updateFFT)
+        self._fft_timer.start(20)
+
+        self._lyric_timer = QTimer(self)
+        self._lyric_timer.timeout.connect(self._updateLyric)
+        self._lyric_timer.start(100)
+
+        self._fm_timer = QTimer(self)
+        self._fm_timer.timeout.connect(self._updateFM)
+        self._fm_timer.start(2500)
+
         self.playingtime_lastupdate = time.perf_counter()
 
         self._player.fftDataReady.connect(self.updateFFTData)
+
+        event_bus.subscribe(PLAY_STATE_CHANGED, self._onPlayStateChanged)
 
     def updateFFTData(self, freqs: np.ndarray, magnitudes: np.ndarray) -> None:
         self.cur_freqs = freqs
@@ -205,96 +217,8 @@ class PlayingController(QWidget):
             self.expand_btn.setText("Menu")
             bindIcon(self.expand_btn, "pl_expand")
 
-    def updateWidgets(self):
-        from views.title_bar import SouthsideMusicTitleBar
-
-        title_bar = None
-        try:
-            title_bar = self._mwindow.titleBar
-        except:
-            pass
-        if isinstance(title_bar, SouthsideMusicTitleBar):
-            if self._mwindow.stackedWidget.currentWidget() == self._dp:
-                title_bar.song_title.clear()
-                title_bar.lyric_label.clear()
-                title_bar.fm_label.setPixmap(QPixmap())
-            else:
-                title_bar.song_title.setText(self._dp.title_label.text())
-                l = self._mgr.getCurrentLyric(self._player.getPosition())
-                title_bar.lyric_label.setText(
-                    l["content"] if l["content"] else self._dp.artists_label.text()
-                )
-                title_bar.fm_label.setPixmap(
-                    self._dp.img_label.pixmap().scaled(
-                        40,
-                        40,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                )
-
-        try:
-            self._sidebar.southsideclient_status_label.setText(
-                "Connection Status: <span style='color: green;'>Connected</span>"
-                if self._mwindow.connected
-                else "Connection Status: <span style='color: red;'>Disconnected</span>"
-            )
-            self._sidebar.now_volume.setText(
-                f"Current volume(db): {(round(self._player.db * 10) / 10) if self._player.db != float('-inf') else '-inf'}"
-            )
-        except:
-            pass
-        
-        selected_items = self._sidebar.lst.selectedItems()
-        if len(selected_items) > 0:
-            selected_item = selected_items[0]
-            selected_card = self._sidebar.lst.itemWidget(selected_item)
-            if self._dp.cur and self._dp.cur.info["id"] != getattr(selected_card, 'info', {'id': -1})['id']:
-                for i, song in enumerate(self._dp.playlist):
-                    if (
-                        self._dp.cur
-                        and hasattr(self._dp.cur, "storable")
-                        and song.name == self._dp.cur.storable.name
-                    ):
-                        self._sidebar.lst.setCurrentRow(i)
-        else:
-            if self._dp.cur:
-                for i, song in enumerate(self._dp.playlist):
-                    if (
-                        self._dp.cur
-                        and hasattr(self._dp.cur, "storable")
-                        and song.name == self._dp.cur.storable.name
-                    ):
-                        self._sidebar.lst.setCurrentRow(i)
-
-        if self._player.isPlaying():
-            if (
-                not self._dp._preload_triggered
-                and self._dp.current_index < len(self._dp.playlist) - 1
-            ):
-                self._dp._preload_triggered = True
-                self._dp.preloadNextSong()
-
-            if self._dp.current_index >= len(self._dp.playlist) - 1:
-                self._dp.preloaded = True
-
-        cl = self._mgr.getCurrentLyric(self._player.getPosition())
-        nxt = self._mgr.getOffsetedLyric(self._player.getPosition(), 1)
-        trd = self._mgr.getOffsetedLyric(self._player.getPosition(), 2)
-        lat = self._mgr.getOffsetedLyric(self._player.getPosition(), -1)
-        if cl != self.last_lyric:
-            self._ws_handler.send(
-                json.dumps(
-                    {
-                        "option": "update_lyric",
-                        "current": cl["content"],
-                        "next": nxt["content"],
-                        "third": trd["content"],
-                        "last": lat["content"],
-                    }
-                )
-            )
-            self.last_lyric = cl
+    def _updateFFT(self):
+        from views.song_card import DummyCard
 
         if self._sidebar.enableFFT_box.isChecked():
             if not self._player.isPlaying():
@@ -331,17 +255,45 @@ class PlayingController(QWidget):
                 )
             )
 
-        if time.time() - self.lastfm > 2.5:
-            self.lastfm = time.time()
-            self._dp.sendSongFMAndInfo()
-
-        if not self._player.isPlaying():
-            bindIcon(self.play_pausebtn, "playa")
-        else:
-            bindIcon(self.play_pausebtn, "pause")
-
         if self._mwindow and self._mwindow.isVisible():
             self.repaint()
+
+    def _updateLyric(self):
+        cl = self._mgr.getCurrentLyric(self._player.getPosition())
+        nxt = self._mgr.getOffsetedLyric(self._player.getPosition(), 1)
+        trd = self._mgr.getOffsetedLyric(self._player.getPosition(), 2)
+        lat = self._mgr.getOffsetedLyric(self._player.getPosition(), -1)
+        if cl != self.last_lyric:
+            self._ws_handler.send(
+                json.dumps(
+                    {
+                        "option": "update_lyric",
+                        "current": cl["content"],
+                        "next": nxt["content"],
+                        "third": trd["content"],
+                        "last": lat["content"],
+                    }
+                )
+            )
+            self.last_lyric = cl
+            event_bus.emit(
+                LYRIC_LINE_CHANGED,
+                {
+                    "content": cl["content"],
+                    "next": nxt["content"],
+                    "third": trd["content"],
+                    "last": lat["content"],
+                },
+            )
+
+    def _updateFM(self):
+        self._dp.sendSongFMAndInfo()
+
+    def _onPlayStateChanged(self, is_playing: bool):
+        if is_playing:
+            bindIcon(self.play_pausebtn, "pause")
+        else:
+            bindIcon(self.play_pausebtn, "playa")
 
     def updateVol(self):
         value = self.vol_slider.value()
@@ -351,6 +303,7 @@ class PlayingController(QWidget):
             volume = math.log(value / 100 * (math.e - 1) + 1)
         cfg.volume = volume
         self._player.setVolume(volume)
+        event_bus.emit(VOLUME_CHANGED, volume)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.position().y() < 8 and self._dp.preloaded:
@@ -384,15 +337,15 @@ class PlayingController(QWidget):
     def toggle(self):
         if self._player.isPlaying():
             self._player.pause()
+            event_bus.emit(PLAY_STATE_CHANGED, False)
         else:
             self._player.resume()
+            event_bus.emit(PLAY_STATE_CHANGED, True)
 
     def setPlaytime(self, time_value: float) -> None:
         self._player.setPosition(time_value)
 
     def paintEvent(self, event: QPaintEvent) -> None:
-        from PySide6.QtGui import QPixmap
-
         painter = QPainter(self)
         painter.setRenderHints(QPainter.RenderHint.Antialiasing)
 
@@ -446,8 +399,7 @@ class PlayingController(QWidget):
                 0,
                 0,
                 int(
-                    self.width()
-                    * (self._player.getPosition() / self._dp.total_length)
+                    self.width() * (self._player.getPosition() / self._dp.total_length)
                 ),
                 0,
             )

@@ -1,10 +1,12 @@
 from functools import lru_cache
 import logging
 from pydub import AudioSegment
+
 from textwrap import dedent
 import scipy.signal
 import warnings
 import numpy as np
+_logger = logging.getLogger(__name__)
 
 
 def valid_audio(data, rate, block_size):
@@ -522,5 +524,5 @@ def getAdjustedGainFactor_impl(target_lufs: float, audio: AudioSegment) -> float
     loudness = meter.integrated_loudness(samples)
 
     gain = 10 ** ((target_lufs - loudness) / 20.0)
-    logging.info(f"loudness adjusted, {gain=}, {target_lufs=}")
+    _logger.info(f"loudness adjusted, {gain=}, {target_lufs=}")
     return gain

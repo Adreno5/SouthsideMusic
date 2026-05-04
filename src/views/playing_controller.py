@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 from imports import (
     LYRIC_LINE_CHANGED,
     PLAY_STATE_CHANGED,
+    REPAINT,
+    UPDATE_FM,
     VOLUME_CHANGED,
     QEasingCurve,
     QPointF,
@@ -89,7 +91,7 @@ class PlayingController(QWidget):
         self.final_magnitudes: np.ndarray = np.zeros(513, dtype=np.float32)
         self.smoothed_magnitudes: np.ndarray = np.zeros(513, dtype=np.float32)
         self.draw_magnitudes: np.ndarray = np.zeros(513, dtype=np.float32)
-        self.last_lyric: LyricInfo = LyricInfo(time=0, content="")
+        self.last_lyric: LyricInfo = LyricInfo(time=0, content='')
 
         self.time_label = QLabel()
         global_layout.addWidget(
@@ -98,14 +100,14 @@ class PlayingController(QWidget):
         )
 
         self.last_btn = TransparentToolButton()
-        bindIcon(self.last_btn, "last")
+        bindIcon(self.last_btn, 'last')
         self.next_btn = TransparentToolButton()
-        bindIcon(self.next_btn, "next")
+        bindIcon(self.next_btn, 'next')
         self.last_btn.clicked.connect(self.playLastSignal.emit)
         self.next_btn.clicked.connect(self.playNextSignal.emit)
 
         self.play_pausebtn = TransparentToolButton()
-        bindIcon(self.play_pausebtn, "playa")
+        bindIcon(self.play_pausebtn, 'playa')
         self.play_pausebtn.setIconSize(QSize(30, 30))
         self.last_btn.setIconSize(QSize(30, 30))
         self.next_btn.setIconSize(QSize(30, 30))
@@ -133,8 +135,8 @@ class PlayingController(QWidget):
             self.vol_slider,
             alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
         )
-        self.expand_btn = PushButton("Menu")
-        bindIcon(self.expand_btn, "pl_expand")
+        self.expand_btn = PushButton('Menu')
+        bindIcon(self.expand_btn, 'pl_expand')
         right_layout.addWidget(
             self.expand_btn,
             alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom,
@@ -145,9 +147,7 @@ class PlayingController(QWidget):
 
         self.setLayout(global_layout)
 
-        self._fft_timer = QTimer(self)
-        self._fft_timer.timeout.connect(self._updateFFT)
-        self._fft_timer.start(20)
+        event_bus.subscribe(REPAINT, self._updateFFT)
 
         self._lyric_timer = QTimer(self)
         self._lyric_timer.timeout.connect(self._updateLyric)
@@ -173,7 +173,7 @@ class PlayingController(QWidget):
 
         if self.expanded:
             if not self._mwindow.isMaximized():
-                mwindow_anim = QPropertyAnimation(self._mwindow, b"geometry", self)
+                mwindow_anim = QPropertyAnimation(self._mwindow, b'geometry', self)
                 mwindow_anim.setDuration(200)
                 mwindow_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
                 mwindow_anim.setStartValue(self._mwindow.geometry())
@@ -192,12 +192,12 @@ class PlayingController(QWidget):
 
             self._sidebar.show()
 
-            self.expand_btn.setText("Collapse")
-            bindIcon(self.expand_btn, "pl_collapse")
+            self.expand_btn.setText('Collapse')
+            bindIcon(self.expand_btn, 'pl_collapse')
         else:
             self._sidebar.hide()
             if not self._mwindow.isMaximized():
-                mwindow_anim = QPropertyAnimation(self._mwindow, b"geometry", self)
+                mwindow_anim = QPropertyAnimation(self._mwindow, b'geometry', self)
                 mwindow_anim.setDuration(200)
                 mwindow_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
                 mwindow_anim.setStartValue(self._mwindow.geometry())
@@ -214,8 +214,8 @@ class PlayingController(QWidget):
             else:
                 self.expand_btn.setEnabled(True)
 
-            self.expand_btn.setText("Menu")
-            bindIcon(self.expand_btn, "pl_expand")
+            self.expand_btn.setText('Menu')
+            bindIcon(self.expand_btn, 'pl_expand')
 
     def _updateFFT(self):
         from views.song_card import DummyCard
@@ -231,7 +231,7 @@ class PlayingController(QWidget):
             self.final_magnitudes = np.convolve(
                 self.smoothed_magnitudes,
                 np.ones(window_size) / window_size,
-                mode="same",
+                mode='same',
             )
             if isinstance(self._dp.cur, DummyCard):
                 self.final_magnitudes *= (
@@ -246,8 +246,8 @@ class PlayingController(QWidget):
             self._ws_handler.send(
                 json.dumps(
                     {
-                        "option": "update_fft",
-                        "magnitudes": [
+                        'option': 'update_fft',
+                        'magnitudes': [
                             float(item) * cfg.sfft_multiple
                             for item in self.draw_magnitudes.tolist()
                         ],
@@ -267,11 +267,11 @@ class PlayingController(QWidget):
             self._ws_handler.send(
                 json.dumps(
                     {
-                        "option": "update_lyric",
-                        "current": cl["content"],
-                        "next": nxt["content"],
-                        "third": trd["content"],
-                        "last": lat["content"],
+                        'option': 'update_lyric',
+                        'current': cl['content'],
+                        'next': nxt['content'],
+                        'third': trd['content'],
+                        'last': lat['content'],
                     }
                 )
             )
@@ -279,10 +279,10 @@ class PlayingController(QWidget):
             event_bus.emit(
                 LYRIC_LINE_CHANGED,
                 {
-                    "content": cl["content"],
-                    "next": nxt["content"],
-                    "third": trd["content"],
-                    "last": lat["content"],
+                    'content': cl['content'],
+                    'next': nxt['content'],
+                    'third': trd['content'],
+                    'last': lat['content'],
                 },
             )
 
@@ -291,9 +291,9 @@ class PlayingController(QWidget):
 
     def _onPlayStateChanged(self, is_playing: bool):
         if is_playing:
-            bindIcon(self.play_pausebtn, "pause")
+            bindIcon(self.play_pausebtn, 'pause')
         else:
-            bindIcon(self.play_pausebtn, "playa")
+            bindIcon(self.play_pausebtn, 'playa')
 
     def updateVol(self):
         value = self.vol_slider.value()
@@ -406,7 +406,7 @@ class PlayingController(QWidget):
 
             cur_time = float2time(self._player.getPosition())
             self.time_label.setText(
-                f"{str(cur_time['minutes']).zfill(2)}:{str(cur_time['seconds']).zfill(2)}"
+                f'{str(cur_time['minutes']).zfill(2)}:{str(cur_time['seconds']).zfill(2)}'
             )
 
         painter.end()

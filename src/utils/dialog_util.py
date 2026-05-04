@@ -17,6 +17,8 @@ from qfluentwidgets import (
 import requests
 
 
+
+
 class LineinputDialog(MessageBoxBase):
     def __init__(self, parent, title: str, desc: str, place: str):
         super().__init__(parent)
@@ -38,7 +40,7 @@ def get_text_lineedit(title: str, desc: str, place: str, parent: QWidget):
     dialog = LineinputDialog(parent, title, desc, place)
     response = dialog.exec()
 
-    return dialog.inputer.text() if response else ""
+    return dialog.inputer.text() if response else ''
 
 
 class TexteditDialog(MessageBoxBase):
@@ -88,7 +90,10 @@ def get_value_bylist(
 ) -> str | None:
     dialog = ListDialog(parent, title, desc, texts)
     reply = dialog.exec()
-    selected = dialog.inputer.selectedItems()[0].text()
+    try:
+        selected = dialog.inputer.selectedItems()[0].text()
+    except:
+        return None
 
     if reply and selected:
         return selected
@@ -103,10 +108,10 @@ class QRCodeLoginDialog(MessageBoxBase):
         self.key = key
         self.logger = logger
 
-        self.viewLayout.addWidget(TitleLabel("Login via QRCode"))
+        self.viewLayout.addWidget(TitleLabel('Login via QRCode'))
         self.viewLayout.addWidget(
             QLabel(
-                "use your CloudMusic app to scan the QRCode and click 'I scanned' button"
+                'use your CloudMusic app to scan the QRCode and click \'I scanned\' button'
             )
         )
 
@@ -115,14 +120,14 @@ class QRCodeLoginDialog(MessageBoxBase):
 
         self.viewLayout.addWidget(self.qrlabel)
 
-        self.is_btn = PrimaryPushButton("I scanned")
+        self.is_btn = PrimaryPushButton('I scanned')
         self.is_btn.clicked.connect(self.login)
         self.viewLayout.addWidget(self.is_btn)
         self.is_btn.setEnabled(False)
 
         self.errlabel = QLabel()
         self.errlabel.hide()
-        self.errlabel.setStyleSheet("color: red;")
+        self.errlabel.setStyleSheet('color: red;')
         self.viewLayout.addWidget(self.errlabel)
 
         self.makeImage(qrcode_url)
@@ -145,16 +150,16 @@ class QRCodeLoginDialog(MessageBoxBase):
         self.errlabel.hide()
 
         rsp: dict = apis.login.LoginQrcodeCheck(self.key)  # type: ignore
-        if rsp["code"] == 803:
-            self.logger.info("Logined in successfully")
+        if rsp['code'] == 803:
+            self.logger.info('Logined in successfully')
             apis.login.WriteLoginInfo(
                 apis.login.GetCurrentLoginStatus(),  # type: ignore
             )
 
             self.accept()
-        elif rsp["code"] == 8821:
-            self.errlabel.setText("Login anomaly risk control")
+        elif rsp['code'] == 8821:
+            self.errlabel.setText('Login anomaly risk control')
             self.errlabel.show()
-        elif rsp["code"] == 800:
-            self.errlabel.setText("QRCode expired or not exist")
+        elif rsp['code'] == 800:
+            self.errlabel.setText('QRCode expired or not exist')
             self.errlabel.show()

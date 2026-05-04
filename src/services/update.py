@@ -16,7 +16,7 @@ from utils import requests_util as requests
 from utils.config_util import cfg
 _logger = logging.getLogger(__name__)
 
-excludes = ["ffmpeg"]
+excludes = ['ffmpeg']
 
 
 class UpdateFileInfo(TypedDict):
@@ -36,7 +36,7 @@ def _git_blob_sha(path: str) -> str | None:
     if not file.exists() or not file.is_file():
         return None
     data = file.read_bytes()
-    return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+    return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
 
 
 def _collect_update_files(api_url: str, file_list: list[UpdateFileInfo]) -> None:
@@ -46,10 +46,10 @@ def _collect_update_files(api_url: str, file_list: list[UpdateFileInfo]) -> None
     for item in items:
         if not isinstance(item, dict):
             continue
-        if item.get("type") == "file" and item.get("name") not in excludes:
-            download_url = item.get("download_url")
-            path = item.get("path")
-            sha = item.get("sha")
+        if item.get('type') == 'file' and item.get('name') not in excludes:
+            download_url = item.get('download_url')
+            path = item.get('path')
+            sha = item.get('sha')
             if (
                 isinstance(download_url, str)
                 and isinstance(path, str)
@@ -59,31 +59,31 @@ def _collect_update_files(api_url: str, file_list: list[UpdateFileInfo]) -> None
                     UpdateFileInfo(path=path, download_url=download_url, sha=sha)
                 )
         elif (
-            item.get("type") == "dir"
-            and isinstance(item.get("url"), str)
-            and item.get("name") not in excludes
+            item.get('type') == 'dir'
+            and isinstance(item.get('url'), str)
+            and item.get('name') not in excludes
         ):
-            _collect_update_files(item["url"], file_list)
+            _collect_update_files(item['url'], file_list)
 
 
 def checkForUpdates() -> UpdateInfo | None:
-    with open("pyproject.toml", "r", encoding="utf-8") as f:
+    with open('pyproject.toml', 'r', encoding='utf-8') as f:
         parsed = toml.load(f)
-    current = int(parsed["project"]["version"].removeprefix("v"))
+    current = int(parsed['project']['version'].removeprefix('v'))
     latest = requests.get(
-        "https://api.github.com/repos/Adreno5/SouthsideMusic/releases/latest"
+        'https://api.github.com/repos/Adreno5/SouthsideMusic/releases/latest'
     ).json()
-    newest = int(latest["tag_name"].removeprefix("v"))
+    newest = int(latest['tag_name'].removeprefix('v'))
     if newest <= current:
         return None
 
     file_list: list[UpdateFileInfo] = []
     _collect_update_files(
-        "https://api.github.com/repos/Adreno5/SouthsideMusic/contents", file_list
+        'https://api.github.com/repos/Adreno5/SouthsideMusic/contents', file_list
     )
 
     changed_files = [
-        item for item in file_list if _git_blob_sha(item["path"]) != item["sha"]
+        item for item in file_list if _git_blob_sha(item['path']) != item['sha']
     ]
     if not changed_files:
         return None
@@ -92,7 +92,7 @@ def checkForUpdates() -> UpdateInfo | None:
 
 def applyUpdate(update_info: UpdateInfo) -> bool:
     try:
-        total = max(1, len(update_info["files"]))
+        total = max(1, len(update_info['files']))
         completed = 0
         progress_lock = threading.Lock()
         cfg.progress = 0
@@ -101,13 +101,13 @@ def applyUpdate(update_info: UpdateInfo) -> bool:
 
         def _download_file(item: UpdateFileInfo) -> None:
             nonlocal completed
-            if _git_blob_sha(item["path"]) == item["sha"]:
+            if _git_blob_sha(item['path']) == item['sha']:
                 with progress_lock:
                     completed += 1
                     cfg.progress = completed / total
                 return
-            data = requests.get(item["download_url"]).content
-            path = Path(item["path"])
+            data = requests.get(item['download_url']).content
+            path = Path(item['path'])
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
             with progress_lock:
@@ -116,7 +116,7 @@ def applyUpdate(update_info: UpdateInfo) -> bool:
 
         with ThreadPoolExecutor(max_workers=10) as executor:
             futures = [
-                executor.submit(_download_file, item) for item in update_info["files"]
+                executor.submit(_download_file, item) for item in update_info['files']
             ]
             for future in as_completed(futures):
                 future.result()
@@ -151,8 +151,8 @@ def applyUpdateImmediately(update_info: UpdateInfo, mwindow=None) -> None:
         if success:
             QMessageBox.information(
                 mwindow,
-                "Update Complete",
-                "Update completed. Please restart the app.",
+                'Update Complete',
+                'Update completed. Please restart the app.',
                 QMessageBox.StandardButton.Ok,
             )
             if mwindow:
@@ -160,8 +160,8 @@ def applyUpdateImmediately(update_info: UpdateInfo, mwindow=None) -> None:
         else:
             QMessageBox.warning(
                 mwindow,
-                "Update Failed",
-                "Failed to update. Please try again later.",
+                'Update Failed',
+                'Failed to update. Please try again later.',
                 QMessageBox.StandardButton.Ok,
             )
 

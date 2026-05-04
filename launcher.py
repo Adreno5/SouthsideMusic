@@ -5,8 +5,8 @@ import sys
 
 def main() -> int:
     cwd = Path(__file__).resolve().parent
-    python = cwd / "python" / "python.exe"
-    main = cwd / "src" / "main.py"
+    python = cwd / 'python' / 'python.exe'
+    main = cwd / 'src' / 'main.py'
 
     if not python.exists():
         return 1
@@ -24,5 +24,5 @@ def main() -> int:
     return process.wait()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

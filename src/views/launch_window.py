@@ -26,7 +26,7 @@ class LaunchWindow(QWidget):
 
         launchlayout = QVBoxLayout()
         launchlayout.addWidget(
-            TitleLabel("Southside Music"),
+            TitleLabel('Southside Music'),
             alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
         )
         self.subtitlel = SubtitleLabel('')
@@ -34,7 +34,7 @@ class LaunchWindow(QWidget):
             self.subtitlel,
             alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
         )
-        self.sublabel = QLabel("Launching...")
+        self.sublabel = QLabel('Launching...')
         launchlayout.addWidget(
             self.sublabel,
             alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
@@ -42,7 +42,7 @@ class LaunchWindow(QWidget):
         self.setLayout(launchlayout)
 
         self.setStyleSheet(
-            f"QWidget {{ background-color: {'#FFFFFF' if darkdetect.isLight() else '#000000'} }} QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}"
+            f'QWidget {{ background-color: {'#FFFFFF' if darkdetect.isLight() else '#000000'} }} QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}'
         )
 
         self.show()
@@ -69,12 +69,12 @@ class LaunchWindow(QWidget):
 
     def updateLabel(self):
         text = (
-            "\n".join(self._stack[-5:])
+            '\n'.join(self._stack[-5:])
             if len(self._stack) > 5
-            else "\n".join(self._stack)
+            else '\n'.join(self._stack)
         )
         if len(self._stack) > 5:
-            text = "...\n" + text
+            text = '...\n' + text
         self.sublabel.setText(text)
         self._app.processEvents()
         time.sleep(0.01)

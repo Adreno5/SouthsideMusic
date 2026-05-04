@@ -32,11 +32,11 @@ def _clean_lrc(raw_lyric: str) -> str:
     mgr.parse()
     lines = []
     for info in mgr.parsed:
-        minutes = int(info["time"] // 60)
-        seconds = info["time"] % 60
-        timestamp = f"[{minutes:02d}:{seconds:05.2f}]"
-        lines.append(f"{timestamp}{info['content']}")
-    return "\n".join(lines)
+        minutes = int(info['time'] // 60)
+        seconds = info['time'] % 60
+        timestamp = f'[{minutes:02d}:{seconds:05.2f}]'
+        lines.append(f'{timestamp}{info['content']}')
+    return '\n'.join(lines)
 
 def _detect_format(song_bytes: bytes):
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -45,7 +45,7 @@ def _detect_format(song_bytes: bytes):
     try:
         audio = mutagen.File(tmp_path)  # type: ignore
         if audio is None:
-            raise ValueError(f"Invalid audio file format (magic bytes: {song_bytes[:8].hex()})")
+            raise ValueError(f'Invalid audio file format (magic bytes: {song_bytes[:8].hex()})')
         return tmp_path, type(audio)
     except Exception:
         os.unlink(tmp_path)
@@ -107,7 +107,7 @@ def _set_id3_tags(
         tags.delall('TDRC')
         tags.add(TDRC(encoding=3, text=year))
 
-    # Track number ("1" or "1/10")
+    # Track number ('1' or '1/10')
     if track_number:
         tags.delall('TRCK')
         tags.add(TRCK(encoding=3, text=track_number))
@@ -245,7 +245,7 @@ def saveSongWithInformations(
     try:
         audio = mutagen.File(tmp_path)  # type: ignore
         if audio is None:
-            raise ValueError("Cannot detect audio format")
+            raise ValueError('Cannot detect audio format')
 
         if isinstance(audio, MP3):
             _set_id3_tags(
@@ -268,7 +268,7 @@ def saveSongWithInformations(
                 _clean_lrc(lyrics), album, album_artist, year, track_number, genre, composer
             )
         else:
-            raise ValueError(f"Unsupported audio format: {fmt.__name__}")
+            raise ValueError(f'Unsupported audio format: {fmt.__name__}')
 
         audio.save(tmp_path)
 

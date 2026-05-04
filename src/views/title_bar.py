@@ -1,10 +1,14 @@
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
-from imports import Qt, event_bus
+from imports import UPDATE_FM, Qt, event_bus
 from imports import QPixmap
 from imports import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import CaptionLabel, FluentStyleSheet
 from qframelesswindow import TitleBar
+
+if TYPE_CHECKING:
+    from views.song_card import SongCard
 
 
 class SouthsideMusicTitleBar(TitleBar):
@@ -21,7 +25,7 @@ class SouthsideMusicTitleBar(TitleBar):
             self.titleLabel,
             alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
         )
-        self.titleLabel.setObjectName("titleLabel")
+        self.titleLabel.setObjectName('titleLabel')
         self.window().windowTitleChanged.connect(self.setTitle)
 
         middle_layout = QHBoxLayout()
@@ -29,7 +33,7 @@ class SouthsideMusicTitleBar(TitleBar):
 
         self.fm_label = QLabel(self)
         self.fm_label.setFixedSize(40, 40)
-        self.fm_label.setObjectName("fm_label")
+        self.fm_label.setObjectName('fm_label')
         self.hBoxLayout.insertWidget(
             1,
             self.fm_label,
@@ -42,13 +46,13 @@ class SouthsideMusicTitleBar(TitleBar):
         f = self.song_title.font()
         f.setPointSize(f.pointSize() + 1)
         self.song_title.setFont(f)
-        self.song_title.setStyleSheet("font-weight: bold;")
-        self.song_title.setObjectName("song_title")
+        self.song_title.setStyleSheet('font-weight: bold;')
+        self.song_title.setObjectName('song_title')
 
         texts_layout.addWidget(self.song_title)
 
         self.lyric_label = QLabel(self)
-        self.lyric_label.setObjectName("lyric_label")
+        self.lyric_label.setObjectName('lyric_label')
         texts_layout.addWidget(self.lyric_label)
 
         middle_layout.addWidget(self.fm_label)
@@ -72,6 +76,14 @@ class SouthsideMusicTitleBar(TitleBar):
         self.hBoxLayout.addLayout(self.vBoxLayout, 0)
 
         FluentStyleSheet.FLUENT_WINDOW.apply(self)
+
+        event_bus.subscribe(UPDATE_FM, self.updateFM)
+
+    def updateFM(self, pixmap: QPixmap, title: str):
+        self.fm_label.show()
+        self.song_title.show()
+        self.fm_label.setPixmap(pixmap.scaled(self.fm_label.size()))
+        self.song_title.setText(title)
 
     def setTitle(self, title):
         self.titleLabel.setText(title)

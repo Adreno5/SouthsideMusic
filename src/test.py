@@ -4,11 +4,14 @@ from pprint import pprint
 import pyncm
 import pyncm.apis
 
-with open("config.json", "r", encoding="utf-8") as f:
+with open('config.json', 'r', encoding='utf-8') as f:
     data = json.load(f)
 
-    pyncm.WriteLoginInfo(data["login_status"])
-    pyncm.SetCurrentSession(pyncm.LoadSessionFromString(data["session"]))
+    pyncm.WriteLoginInfo(data['login_status'])
+    pyncm.SetCurrentSession(pyncm.LoadSessionFromString(data['session']))
+
+    with open('res.json', 'w') as f:
+        f.write(json.dumps(pyncm.apis.cloudsearch.GetSearchResult('123'), indent=4))
 
     # pprint(pyncm.apis.track.GetTrackLyricsNew('518904426'))
 

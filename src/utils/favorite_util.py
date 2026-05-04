@@ -17,6 +17,7 @@ from utils.base.base_util import (
 )
 from qfluentwidgets import ListWidget, MessageBoxBase, SubtitleLabel
 from imports import QHBoxLayout, QLabel, QListWidget, QVBoxLayout
+
 _logger = logging.getLogger(__name__)
 
 

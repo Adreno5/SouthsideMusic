@@ -5,6 +5,8 @@ import threading
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Callable
 
+from services.events.events import REPAINT
+
 if TYPE_CHECKING:
     from views.launch_window import LaunchWindow
 

@@ -16,8 +16,8 @@ cfg_cache: dict[str, Any] = {}
 
 @dataclass
 class Config:
-    play_method: Literal["Repeat one", "Repeat list", "Shuffle", "Play in order"] = (
-        "Repeat list"
+    play_method: Literal['Repeat one', 'Repeat list', 'Shuffle', 'Play in order'] = (
+        'Repeat list'
     )
     skip_nosound: bool = True
     skip_threshold: int = -45
@@ -34,7 +34,7 @@ class Config:
     window_maximized: bool = False
 
     enable_desktop_lyrics: bool = False
-    desktop_lyrics_anchor: Literal["top-center", "normal"] = "normal"
+    desktop_lyrics_anchor: Literal['top-center', 'normal'] = 'normal'
     desktop_lyrics_x: int = 0
     desktop_lyrics_y: int = 0
 
@@ -48,7 +48,7 @@ class Config:
 
     session: str | None = None
     login_status: dict | None = None
-    login_method: Literal["anonymous", "cell phone", "QR code"] = "anonymous"
+    login_method: Literal['anonymous', 'cell phone', 'QR code'] = 'anonymous'
 
     stereo: bool = True
 
@@ -73,8 +73,8 @@ class Config:
 cfg = Config()
 
 
-CONFIG_PATH = "./config.json"
-LEGACY_PICKLE_CONFIG_PATH = "./config.pkl"
+CONFIG_PATH = './config.json'
+LEGACY_PICKLE_CONFIG_PATH = './config.pkl'
 
 
 def _song_to_object(song: SongStorable | None):
@@ -93,29 +93,29 @@ def _song_from_object(data: Any) -> SongStorable | None:
 
 def _config_to_json_object() -> dict[str, Any]:
     data = cfg.__dict__.copy()
-    data["last_playlist"] = [
+    data['last_playlist'] = [
         song.toObject()
         for song in (cfg.last_playlist or [])
         if isinstance(song, SongStorable)
     ]
-    data.pop("last_playing_song", None)
+    data.pop('last_playing_song', None)
     return data
 
 
 def _apply_config_json_object(data: dict[str, Any]) -> None:
-    if "last_playlist" in data:
-        data["last_playlist"] = [
+    if 'last_playlist' in data:
+        data['last_playlist'] = [
             song
             for song in (
-                _song_from_object(item) for item in data.get("last_playlist", [])
+                _song_from_object(item) for item in data.get('last_playlist', [])
             )
             if song is not None
         ]
-    elif "last_playing_song" in data:
-        song = _song_from_object(data.get("last_playing_song"))
-        data["last_playlist"] = [song] if song else []
-        data["last_playing_index"] = 0 if song else -1
-    data.pop("last_playing_song", None)
+    elif 'last_playing_song' in data:
+        song = _song_from_object(data.get('last_playing_song'))
+        data['last_playlist'] = [song] if song else []
+        data['last_playing_index'] = 0 if song else -1
+    data.pop('last_playing_song', None)
     cfg.__dict__.update(data)
 
 
@@ -124,7 +124,7 @@ def _delete_legacy_pickle_config() -> None:
         return
     try:
         os.remove(LEGACY_PICKLE_CONFIG_PATH)
-        _logger.info("deleted legacy config.pkl")
+        _logger.info('deleted legacy config.pkl')
     except Exception as e:
         _logger.exception(e)
 
@@ -135,14 +135,14 @@ def loadConfig() -> None:
     if not os.path.exists(CONFIG_PATH):
         saveConfig()
     else:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
         if isinstance(data, dict):
             _apply_config_json_object(data)
-            _logger.info(f"loaded config {len(cfg.__dict__)=}")
+            _logger.info(f'loaded config {len(cfg.__dict__)=}')
         else:
-            _logger.warning("invalid config.json, using defaults")
+            _logger.warning('invalid config.json, using defaults')
             saveConfig()
 
     _delete_legacy_pickle_config()
@@ -150,10 +150,10 @@ def loadConfig() -> None:
 
 
 def saveConfig() -> None:
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+    with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
         json.dump(_config_to_json_object(), f, ensure_ascii=False, indent=2)
 
-        _logger.info("saved config")
+        _logger.info('saved config')
 
 
 def autoSave():

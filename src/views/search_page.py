@@ -21,31 +21,33 @@ from qfluentwidgets import (
     SubtitleLabel,
 )
 
+import pyncm
+from pyncm import apis
 from utils.loading_util import doWithMultiThreading
 from utils.base.base_util import SongInfo
-from views.song_card import SongCard
 
+from views.song_card import SongCard
+from MusicLibrary.kuGouMusicApi import KuGouMusicApi
 
 class SearchPage(QWidget):
     resultGot = Signal(list)
 
-    def __init__(self, wy, mwindow, launchwindow=None) -> None:
+    def __init__(self, mwindow, launchwindow=None) -> None:
         super().__init__()
         self._logger = logging.getLogger(__name__)
         lw = launchwindow
         if lw:
-            lw.top("Initializing search page...")
-        self._wy = wy
+            lw.top('Initializing search page...')
         self._mwindow = mwindow
-        self.setObjectName("search_page")
+        self.setObjectName('search_page')
         self.img_card_map: dict[str, SongCard] = {}
 
         if lw:
-            lw.top("  creating search input")
+            lw.top('  creating search input')
         global_layout = QVBoxLayout()
         top_layout = QHBoxLayout()
         self.inputer = LineEdit()
-        self.search_btn = PrimaryPushButton(FluentIcon.SEARCH, "Search")
+        self.search_btn = PrimaryPushButton(FluentIcon.SEARCH, 'Search')
         self.search_btn.clicked.connect(self.search)
         self.inputer.returnPressed.connect(self.search)
         top_layout.addWidget(self.inputer)
@@ -53,7 +55,7 @@ class SearchPage(QWidget):
         global_layout.addLayout(top_layout)
 
         if lw:
-            lw.top("  creating results list")
+            lw.top('  creating results list')
         self.lst = ListWidget()
         self.lst.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.lst.verticalScrollBar().setSingleStep(14)
@@ -64,7 +66,7 @@ class SearchPage(QWidget):
         self.resultGot.connect(self.addSongs)
 
         if lw:
-            lw.top("  starting scroll monitor")
+            lw.top('  starting scroll monitor')
         self.check_timer = QTimer(self)
         self.check_timer.timeout.connect(self.checkRect)
         self.check_timer.start(50)
@@ -81,7 +83,7 @@ class SearchPage(QWidget):
             viewport_rect = self.lst.viewport().rect()
 
             if viewport_rect.intersects(item_rect) and not card.load:
-                self._logger.debug(f"loading {card.info['name']}")
+                self._logger.debug(f'loading {card.info['name']}')
                 card.loadDetailAndImage()
 
     def setImage_(self, byte: bytes, ca: SongCard):
@@ -90,7 +92,7 @@ class SearchPage(QWidget):
     def search(self) -> None:
         if not self.inputer.text().strip():
             InfoBar.warning(
-                "Search failed", "the keyword is empty!", parent=self._mwindow
+                'Search failed', 'the keyword is empty!', parent=self._mwindow
             )
             return
 
@@ -106,7 +108,17 @@ class SearchPage(QWidget):
 
         def _do():
             nonlocal result
-            result = self._wy.search(self.inputer.text())
+            with pyncm.GetCurrentSession():
+                resp = apis.cloudsearch.GetSearchResult(self.inputer.text()) # type: ignore
+            assert isinstance(resp, dict), 'Invalid response'
+
+            result = [SongInfo(
+                name=songdict['name'],
+                artists='、'.join(art['name'] for art in songdict['ar']),
+                id=songdict['id'],
+                privilege=songdict['fee'],
+            ) for songdict in resp['result']['songs']] # type: ignore
+            print(result)
 
         def _finish():
             nonlocal result

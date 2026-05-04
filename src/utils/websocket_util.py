@@ -24,14 +24,14 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             pass
 
     def open(self, *args: str, **kwargs: str):
-        self._logger.info("java client connected")
+        self._logger.info('java client connected')
         ws_handler.onConnected.emit()
 
     def on_message(self, message):
         ws_handler.onMessage.emit(message)
 
     def on_close(self):
-        self._logger.info("java client disconnected")
+        self._logger.info('java client disconnected')
         ws_handler.onDisconnected.emit()
 
 
@@ -52,8 +52,8 @@ class QObjectHandler(QObject):
 
     def __init__(self) -> None:
         super().__init__()
-        self.onConnected.connect(lambda: self.__setattr__("is_open", True))
-        self.onDisconnected.connect(lambda: self.__setattr__("is_open", False))
+        self.onConnected.connect(lambda: self.__setattr__('is_open', True))
+        self.onDisconnected.connect(lambda: self.__setattr__('is_open', False))
 
     def send(self, msg: str):
         self.onSend.emit(msg)
@@ -64,7 +64,7 @@ class WebSocketServer(threading.Thread):
         super().__init__()
         self._logger = logging.getLogger(__name__)
         self.port = port
-        self.app = tornado.web.Application([(r"/", WebSocketHandler)])
+        self.app = tornado.web.Application([(r'/', WebSocketHandler)])
         self.server: tornado.httpserver.HTTPServer | None = None
         self.ioloop = None
         self.handler: WebSocketHandler | None = None
@@ -73,7 +73,7 @@ class WebSocketServer(threading.Thread):
 
     def tryGetHandler(self):
         ws_handler.onHandlerReceived.connect(
-            lambda handler: self.__setattr__("handler", handler)
+            lambda handler: self.__setattr__('handler', handler)
         )
         ws_handler.getHandler()
 
@@ -83,7 +83,7 @@ class WebSocketServer(threading.Thread):
             return
         self.server.listen(self.port)
         self.ioloop = tornado.ioloop.IOLoop.current()
-        self._logger.info(f"webSocket server started on port {self.port}")
+        self._logger.info(f'webSocket server started on port {self.port}')
         self.ioloop.start()
 
     def stop(self):
@@ -94,7 +94,7 @@ class WebSocketServer(threading.Thread):
         self._logger.debug(str(self.handler))
         if self.handler:
             self.handler.close()
-        self._logger.info("closed websocket")
+        self._logger.info('closed websocket')
 
         ws_handler.is_open = False
         self.join()

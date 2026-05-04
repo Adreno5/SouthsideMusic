@@ -5,6 +5,8 @@ import logging
 
 from typing import Callable, TYPE_CHECKING, cast, cast as _cast
 
+
+
 if TYPE_CHECKING:
     from views.main_window import MainWindow
     from views.playing_page import PlayingPage
@@ -21,6 +23,7 @@ from imports import (
     QSize,
     Qt,
     QTimer,
+    SmoothScrollBar,
     event_bus,
 )
 from imports import QColor
@@ -83,7 +86,7 @@ class Sidebar(QWidget):
         super().__init__()
         self._logger = logging.getLogger(__name__)
         if launchwindow:
-            launchwindow.top("Initializing sidebar...")
+            launchwindow.top('Initializing sidebar...')
             self._launchwindow = launchwindow
         else:
             self._launchwindow = None
@@ -116,8 +119,8 @@ class Sidebar(QWidget):
         self._lazy_timer.start(50)
 
         btn_layout = QHBoxLayout()
-        self.removeall_btn = TransparentPushButton("Remove All")
-        bindIcon(self.removeall_btn, "clearall")
+        self.removeall_btn = TransparentPushButton('Remove All')
+        bindIcon(self.removeall_btn, 'clearall')
         self.removeall_btn.clicked.connect(self.removeAllSongs)
         btn_layout.addWidget(self.removeall_btn)
         self.lst_layout.addLayout(btn_layout)
@@ -133,10 +136,10 @@ class Sidebar(QWidget):
 
         self._initOptions()
 
-        self.addSubInterface(self.lst_interface, "playlist_listwidget", "Playlist")
-        self.addSubInterface(self.playing_scrollarea, "options_interface", "Options")
+        self.addSubInterface(self.lst_interface, 'playlist_listwidget', 'Playlist')
+        self.addSubInterface(self.playing_scrollarea, 'options_interface', 'Options')
         self.stacked_widget.setCurrentWidget(self.lst_interface)
-        self.pivot.setCurrentItem("playlist_listwidget")
+        self.pivot.setCurrentItem('playlist_listwidget')
         self.pivot.currentItemChanged.connect(
             lambda k: self.stacked_widget.setCurrentWidget(self.findChild(QWidget, k))  # type: ignore[arg-type]
         )
@@ -151,157 +154,157 @@ class Sidebar(QWidget):
 
     def updateTheme(self) -> None:
         self.options_interface.setStyleSheet(
-            f"background: #{'000000' if darkdetect.isDark() else 'FFFFFF'}"
+            f'background: #{"000000" if darkdetect.isDark() else "FFFFFF"}'
         )
 
     def _initOptions(self) -> None:
         lw = self._launchwindow
         if lw:
-            lw.push("Setting up sidebar options...")
+            lw.push('Setting up sidebar options...')
 
-        self.addSeparateWidget(TitleLabel("Playing"))
+        self.addSeparateWidget(TitleLabel('Playing'))
 
         self.play_method_box = ComboBox()
         self.play_method_box.addItems(
-            ["Repeat one", "Repeat list", "Shuffle", "Play in order"]
+            ['Repeat one', 'Repeat list', 'Shuffle', 'Play in order']
         )
-        self.play_method_box.setCurrentText("Repeat list")
-        self.addSetting("Play order", "the order of play", self.play_method_box)
+        self.play_method_box.setCurrentText('Repeat list')
+        self.addSetting('Play order', 'the order of play', self.play_method_box)
 
-        self.addCheckSetting("Enable Stereo", "enable stereo effect", "stereo")
+        self.addCheckSetting('Enable Stereo', 'enable stereo effect', 'stereo')
         self.addCheckSetting(
-            "Smart Skip", "Skip the no sound section when song ends", "skip_nosound"
+            'Smart Skip', 'Skip the no sound section when song ends', 'skip_nosound'
         )
         self.addNumberSetting(
-            "Playback Speed",
-            "speed of playing",
+            'Playback Speed',
+            'speed of playing',
             0.1,
             3,
             0.1,
-            "play_speed",
+            'play_speed',
             lambda val: self._player.setPlaySpeed(val),
         )
         self.addNumberSetting(
-            "Skip Threshold", "the threshold of the skip", -100, 0, 1, "skip_threshold"
+            'Skip Threshold', 'the threshold of the skip', -100, 0, 1, 'skip_threshold'
         )
-        self.now_volume = QLabel(f"Current volume(db): {0}")
+        self.now_volume = QLabel(f'Current volume(db): {0}')
         self.addSeparateWidget(self.now_volume)
 
         self.addNumberSetting(
-            "Remain time to Skip",
-            "start detecting volume during the remaining specified seconds",
+            'Remain time to Skip',
+            'start detecting volume during the remaining specified seconds',
             1,
             60,
             1,
-            "skip_remain_time",
+            'skip_remain_time',
         )
 
         if lw:
-            lw.top("Setting up window options...")
-        self.addSeparateWidget(TitleLabel("Window"))
+            lw.top('Setting up window options...')
+        self.addSeparateWidget(TitleLabel('Window'))
         self.addNumberSetting(
-            "Window Background Mix Ratio",
-            "larger value make color of backgound nearly to image of playing song",
+            'Window Background Mix Ratio',
+            'larger value make color of backgound nearly to image of playing song',
             0,
             1,
             0.05,
-            "background_ratio",
+            'background_ratio',
             lambda v: self._mwindow.repaint(),
         )
 
         if lw:
-            lw.top("Setting up lyrics options...")
-        self.addSeparateWidget(TitleLabel("Lyrics"))
+            lw.top('Setting up lyrics options...')
+        self.addSeparateWidget(TitleLabel('Lyrics'))
         self.addNumberSetting(
-            "Lyrics Smooth Factor",
-            "larger value means a more sudden change",
+            'Lyrics Smooth Factor',
+            'larger value means a more sudden change',
             0,
             1,
             0.01,
-            "lyrics_smooth_factor",
+            'lyrics_smooth_factor',
         )
         self.addNumberSetting(
-            "Acceleration Smooth Factor",
-            "smaller value means a more bounce effect",
+            'Acceleration Smooth Factor',
+            'smaller value means a more bounce effect',
             0,
             1,
             0.01,
-            "acceleration_smooth_factor",
+            'acceleration_smooth_factor',
         )
 
         if lw:
-            lw.top("Setting up FFT options...")
-        self.addSeparateWidget(TitleLabel("FFT"))
-        self.enableFFT_box = CheckBox("Enable Frequency Graphics")
+            lw.top('Setting up FFT options...')
+        self.addSeparateWidget(TitleLabel('FFT'))
+        self.enableFFT_box = CheckBox('Enable Frequency Graphics')
         self.addSeparateWidget(self.enableFFT_box)
         self.enableFFT_box.setChecked(cfg.enable_fft)
         self.addNumberSetting(
-            "FFT Filtering Window size",
-            "larger value means more smoothing",
+            'FFT Filtering Window size',
+            'larger value means more smoothing',
             1,
             200,
             1,
-            "fft_filtering_windowsize",
+            'fft_filtering_windowsize',
         )
         self.addNumberSetting(
-            "FFT Smoothing Factor",
-            "larger value means a more sudden change",
+            'FFT Smoothing Factor',
+            'larger value means a more sudden change',
             0.01,
             1.0,
             0.05,
-            "fft_factor",
+            'fft_factor',
         )
         self.addNumberSetting(
-            "SouthsideMusic side FFT Multiple Factor",
-            "larger value means more intense changing(only on SouthsideMusic side)",
+            'SouthsideMusic side FFT Multiple Factor',
+            'larger value means more intense changing(only on SouthsideMusic side)',
             0,
             15.0,
             0.05,
-            "cfft_multiple",
+            'cfft_multiple',
         )
         self.addNumberSetting(
-            "SouthsideClient side FFT Multiple Factor",
-            "larger value means more intense changing(only on SouthsideClient side)",
+            'SouthsideClient side FFT Multiple Factor',
+            'larger value means more intense changing(only on SouthsideClient side)',
             00,
             15.0,
             0.05,
-            "sfft_multiple",
+            'sfft_multiple',
         )
 
         if lw:
-            lw.top("Setting up loudness balance...")
-        self.addSeparateWidget(TitleLabel("Loudness Balance"))
+            lw.top('Setting up loudness balance...')
+        self.addSeparateWidget(TitleLabel('Loudness Balance'))
         self.target_lufs = Slider(Qt.Orientation.Horizontal)
         self.target_lufs.setRange(-60, 0)
         self.target_lufs.setSingleStep(1)
         self.target_lufs.valueChanged.connect(self.onTargetLUFSChanged)
         self.target_lufs.setValue(cfg.target_lufs)
         self.addSeparateWidget(self.target_lufs)
-        self.target_lufs_label = SubtitleLabel(f"Target LUFS: {cfg.target_lufs}")
+        self.target_lufs_label = SubtitleLabel(f'Target LUFS: {cfg.target_lufs}')
         self.addSeparateWidget(self.target_lufs_label)
         self.addSeparateWidget(
             QLabel(
-                "Target LUFS Help:\nRange: -60(quietest)~0(loudest)\nRecommend: -16~-18"
-                "\nReference:\nYoutube > -14LUFS\nNetflix > -27LUFS\nTikTok / Instagram Reels > -13LUFS\nApple Music (Video) > -16LUFS"
-                "\nSpotify (Video): -14LUFS / -16LUFS"
+                'Target LUFS Help:\nRange: -60(quietest)~0(loudest)\nRecommend: -16~-18'
+                '\nReference:\nYoutube > -14LUFS\nNetflix > -27LUFS\nTikTok / Instagram Reels > -13LUFS\nApple Music (Video) > -16LUFS'
+                '\nSpotify (Video): -14LUFS / -16LUFS'
             )
         )
 
         if lw:
-            lw.top("Setting up connection options...")
+            lw.top('Setting up connection options...')
         self.addSeparateWidget(QLabel())
-        self.addSeparateWidget(TitleLabel("SouthsideClient Connection"))
+        self.addSeparateWidget(TitleLabel('SouthsideClient Connection'))
         self.southsideclient_status_label = SubtitleLabel(
             "Connection Status: <span style='color: red;'>Disconnected</span>"
         )
         self.addSeparateWidget(self.southsideclient_status_label)
-        self.disconnect_btn = TransparentPushButton("Disconnect")
-        bindIcon(self.disconnect_btn, "disc")
+        self.disconnect_btn = TransparentPushButton('Disconnect')
+        bindIcon(self.disconnect_btn, 'disc')
         self.disconnect_btn.clicked.connect(self.disconnectFromSouthsideClient)
         self.disconnect_btn.setEnabled(False)
         self.addSeparateWidget(self.disconnect_btn)
-        self.connect_btn = TransparentPushButton("Try connect")
-        bindIcon(self.connect_btn, "cnnt")
+        self.connect_btn = TransparentPushButton('Try connect')
+        bindIcon(self.connect_btn, 'cnnt')
         self.connect_btn.clicked.connect(self.connectToSouthsideClient)
         self.connect_btn.setEnabled(False)
         self.addSeparateWidget(self.connect_btn)
@@ -355,7 +358,7 @@ class Sidebar(QWidget):
         global_layout = QVBoxLayout()
         top_layout = QHBoxLayout()
         name_l = QLabel(name)
-        name_l.setStyleSheet("font-weight: bold;")
+        name_l.setStyleSheet('font-weight: bold;')
         name_l.setWordWrap(True)
         top_layout.addWidget(name_l)
         top_layout.addWidget(widget)
@@ -386,13 +389,13 @@ class Sidebar(QWidget):
 
     def _onVolumeChanged(self, volume: float):
         self.now_volume.setText(
-            f"Current volume(db): {(round(volume * 10) / 10) if volume != float('-inf') else '-inf'}"
+            f'Current volume(db): {(round(volume * 10) / 10) if volume != float("-inf") else "-inf"}'
         )
 
     def _syncPlaylistSelection(self):
         if not self._dp.cur:
             return
-        if not hasattr(self._dp.cur, "storable"):
+        if not hasattr(self._dp.cur, 'storable'):
             return
         storable = self._dp.cur.storable
         for i, song in enumerate(self._dp.playlist):
@@ -480,7 +483,7 @@ class Sidebar(QWidget):
         self.refreshPlaylistWidget()
 
         InfoBar.success(
-            "Removed", "Removed all songs", duration=1500, parent=self._mwindow
+            'Removed', 'Removed all songs', duration=1500, parent=self._mwindow
         )
 
     def addSongCardToList(self, song: SongStorable) -> QListWidgetItem:
@@ -497,7 +500,11 @@ class Sidebar(QWidget):
         return item
 
     def _checkVisibleCards(self):
-        for card in self._song_cards:
+        for card in list(self._song_cards):
+            try:
+                card.objectName()
+            except RuntimeError:
+                continue
             if card.load:
                 continue
             idx = self._song_cards.index(card)
@@ -550,52 +557,52 @@ class Sidebar(QWidget):
         self._dp.lufs_changed_timer.stop()
         self.target_lufs.hide()
 
-        self.target_lufs_label.setText("Reapplying")
+        self.target_lufs_label.setText('Reapplying')
 
         result: dict[str, object] = {}
 
         def _apply():
             if not isinstance(self._dp.cur, DummyCard):
                 return
-            if not hasattr(self._dp.cur, "storable"):
+            if not hasattr(self._dp.cur, 'storable'):
                 return
 
             storable = self._dp.cur.storable
             audio: AudioSegment = AudioSegment.from_file(
                 io.BytesIO(storable.get_music_bytes())
             )
-            self._logger.debug("new lufs -> applying gain")
+            self._logger.debug('new lufs -> applying gain')
             gain = getAdjustedGainFactor(cfg.target_lufs, audio)
-            result["storable"] = storable
-            result["gain"] = gain
-            result["target_lufs"] = cfg.target_lufs
-            result["position"] = self._player.getPosition()
-            result["playing"] = self._player.isPlaying()
+            result['storable'] = storable
+            result['gain'] = gain
+            result['target_lufs'] = cfg.target_lufs
+            result['position'] = self._player.getPosition()
+            result['playing'] = self._player.isPlaying()
 
         def _finish():
-            storable = result.get("storable")
+            storable = result.get('storable')
             if not isinstance(storable, SongStorable):
-                self.target_lufs_label.setText(f"Target LUFS: {cfg.target_lufs}")
+                self.target_lufs_label.setText(f'Target LUFS: {cfg.target_lufs}')
                 self.target_lufs.show()
                 return
             if (
                 not isinstance(self._dp.cur, DummyCard)
                 or self._dp.cur.storable is not storable
             ):
-                self.target_lufs_label.setText(f"Target LUFS: {cfg.target_lufs}")
+                self.target_lufs_label.setText(f'Target LUFS: {cfg.target_lufs}')
                 self.target_lufs.show()
                 return
 
-            storable.loudness_gain = cast(float, result["gain"])
-            storable.target_lufs = cast(int, result["target_lufs"])
-            position = cast(float, result["position"])
-            playingnow = cast(bool, result["playing"])
+            storable.loudness_gain = cast(float, result['gain'])
+            storable.target_lufs = cast(int, result['target_lufs'])
+            position = cast(float, result['position'])
+            playingnow = cast(bool, result['playing'])
 
             def _apply_playback_update():
                 self._dp.playStorable(storable)
                 if playingnow:
                     self._player.play()
-                self.target_lufs_label.setText(f"Target LUFS: {cfg.target_lufs}")
+                self.target_lufs_label.setText(f'Target LUFS: {cfg.target_lufs}')
                 self._player.setPosition(position)
                 from PySide6.QtCore import QTimer
 
@@ -608,7 +615,7 @@ class Sidebar(QWidget):
 
     def onTargetLUFSChanged(self, value: int):
         cfg.target_lufs = value
-        if hasattr(self, "target_lufs_label"):
-            self.target_lufs_label.setText(f"Target LUFS: {value}")
+        if hasattr(self, 'target_lufs_label'):
+            self.target_lufs_label.setText(f'Target LUFS: {value}')
             self._dp.lufs_changed_timer.start(1000)
         event_bus.emit(LUFS_TARGET_CHANGED, value)

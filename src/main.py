@@ -5,9 +5,9 @@ import logging
 import os
 import sys
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
-sys.path.append(os.path.join(os.path.dirname(__file__), "views"))
-sys.path.append(os.path.join(os.path.dirname(__file__), "services"))
+sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
+sys.path.append(os.path.join(os.path.dirname(__file__), 'views'))
+sys.path.append(os.path.join(os.path.dirname(__file__), 'services'))
 sys.path.append(os.path.dirname(__file__))
 
 import threading
@@ -60,33 +60,33 @@ def patchedExceptHook(
 
     inf: list[str] = []
 
-    _logger.error("| Unhandled Exception occurred |")
-    _logger.error(f"Caused by {exc_type.__name__}")
-    _logger.error("Traceback:")
-    inf.append("| Unhandled Exception occurred |")
-    inf.append(f"Caused by {exc_type.__name__}")
-    inf.append("Traceback:")
+    _logger.error('| Unhandled Exception occurred |')
+    _logger.error(f'Caused by {exc_type.__name__}')
+    _logger.error('Traceback:')
+    inf.append('| Unhandled Exception occurred |')
+    inf.append(f'Caused by {exc_type.__name__}')
+    inf.append('Traceback:')
     stack_frames = traceback.extract_tb(exc_traceback)
     for frame in stack_frames:
         _logger.error(
-            f"    at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}"
+            f'    at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}'
         )
         inf.append(
-            f"    at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}"
+            f'    at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}'
         )
-    _logger.error("Exception chain:")
-    inf.append("Exception chain:")
+    _logger.error('Exception chain:')
+    inf.append('Exception chain:')
     current_exc = exc_value
-    _logger.error(f"    caused by {type(current_exc).__name__}({current_exc}) #0")
-    inf.append(f"    caused by {type(current_exc).__name__}({current_exc}) #0")
+    _logger.error(f'    caused by {type(current_exc).__name__}({current_exc}) #0')
+    inf.append(f'    caused by {type(current_exc).__name__}({current_exc}) #0')
     if current_exc.__traceback__:
         root_frames = traceback.extract_tb(current_exc.__traceback__)
         for frame in root_frames:
             _logger.error(
-                f"      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}"
+                f'      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}'
             )
             inf.append(
-                f"      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}"
+                f'      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}'
             )
     chain_level = 1
     while True:
@@ -94,33 +94,33 @@ def patchedExceptHook(
         if not next_exc or next_exc is current_exc:
             break
         _logger.error(
-            f"    caused by {type(next_exc).__name__}({next_exc}) #{chain_level}"
+            f'    caused by {type(next_exc).__name__}({next_exc}) #{chain_level}'
         )
         inf.append(
-            f"    caused by {type(next_exc).__name__}({next_exc}) #{chain_level}"
+            f'    caused by {type(next_exc).__name__}({next_exc}) #{chain_level}'
         )
         if next_exc.__traceback__:
             root_frames = traceback.extract_tb(next_exc.__traceback__)
             for frame in root_frames:
                 _logger.error(
-                    f"      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}"
+                    f'      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}'
                 )
                 inf.append(
-                    f"      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}"
+                    f'      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}'
                 )
         current_exc = next_exc
         chain_level += 1
-    _logger.error(f"Raised {exc_type.__name__}({exc_value})")
-    inf.append(f"Raised {exc_type.__name__}({exc_value})")
+    _logger.error(f'Raised {exc_type.__name__}({exc_value})')
+    inf.append(f'Raised {exc_type.__name__}({exc_value})')
 
     if exc_type is KeyboardInterrupt:
-        _logger.info("quit by user")
+        _logger.info('quit by user')
         if mwindow:
             mwindow.close()
         app.quit()
         sys.exit()
 
-    txt = "\n".join(inf)
+    txt = '\n'.join(inf)
     if launchwindow is not None and shiboken6.isValid(launchwindow):
         launchwindow.deleteLater()
 
@@ -132,16 +132,16 @@ def patchedExceptHook(
 
 sys.excepthook = patchedExceptHook
 
-pydub.AudioSegment.converter = r"ffmpeg\bin\ffmpeg.exe"
-pydub.AudioSegment.ffmpeg = r"ffmpeg\bin\ffmpeg.exe"
+pydub.AudioSegment.converter = r'ffmpeg\bin\ffmpeg.exe'
+pydub.AudioSegment.ffmpeg = r'ffmpeg\bin\ffmpeg.exe'
 
-if getattr(sys, "frozen", False):
+if getattr(sys, 'frozen', False):
     base_dir = os.path.dirname(sys.executable)
 else:
     base_dir = os.path.dirname(os.path.abspath(__file__))
 
-ffmpeg_dir = os.path.join(base_dir, "ffmpeg", "bin")
-os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ["PATH"]
+ffmpeg_dir = os.path.join(base_dir, 'ffmpeg', 'bin')
+os.environ['PATH'] = ffmpeg_dir + os.pathsep + os.environ['PATH']
 
 import subprocess  # noqa: E402
 
@@ -152,8 +152,8 @@ def patched_popen(*args, **kwargs):
     startupinfo = subprocess.STARTUPINFO()
     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     startupinfo.wShowWindow = subprocess.SW_HIDE
-    kwargs["startupinfo"] = startupinfo
-    kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    kwargs['startupinfo'] = startupinfo
+    kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
     return original_popen(*args, **kwargs)
 
 
@@ -193,11 +193,11 @@ ws_handler.onConnected.connect(_on_ws_connected)
 ws_handler.onDisconnected.connect(_on_ws_disconnected)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     assert launchwindow is not None
-    launchwindow.subtitle("Phase 1 (start core...)")
+    launchwindow.subtitle('Phase 1 (start core...)')
 
-    launchwindow.push("Writting login information...")
+    launchwindow.push('Writting login information...')
     if cfg.login_status and not ncm.GetCurrentSession().is_anonymous:
         apis.login.WriteLoginInfo(cfg.login_status)
     else:
@@ -208,9 +208,9 @@ if __name__ == "__main__":
         def _updateTheme():
             global mwindow, sidebar
             darkdetect._is_dark = darkdetect.getDarkdetect().isDark()
-            setTheme(Theme.LIGHT if theme == "Light" else Theme.DARK)
+            setTheme(Theme.LIGHT if theme == 'Light' else Theme.DARK)
             app.setStyleSheet(
-                f"QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}"
+                f'QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}'
             )
             if sidebar:
                 sidebar.updateTheme()
@@ -227,40 +227,38 @@ if __name__ == "__main__":
             if mwindow:
                 while mwindow._loading_song:
                     time.sleep(1)
-                files = glob.glob("*")
+                files = glob.glob('*')
                 caches = []
                 for file in files:
-                    if file.startswith("ffcache"):
+                    if file.startswith('ffcache'):
                         caches.append(file)
                 for cache in caches:
                     os.remove(cache)
                 if len(caches) > 0:
-                    _logger.info(f"cleared {len(caches)} caches")
+                    _logger.info(f'cleared {len(caches)} caches')
 
             time.sleep(10)
 
     threading.Thread(target=_cleanCaches, daemon=True).start()
 
     app.setStyleSheet(
-        f"QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}"
+        f'QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}'
     )
     setTheme(Theme.LIGHT if darkdetect.isLight() else Theme.DARK)
 
     app.processEvents()
 
     loadConfig()
-    launchwindow.push("Loading config...")
+    launchwindow.push('Loading config...')
 
-    launchwindow.push("Loading fonts...")
+    launchwindow.push('Loading fonts...')
     harmony_font_family = _ims.QFontDatabase.applicationFontFamilies(
-        _ims.QFontDatabase.addApplicationFont("fonts/HARMONYOS_SANS_SC_REGULAR.ttf")
+        _ims.QFontDatabase.addApplicationFont('fonts/HARMONYOS_SANS_SC_REGULAR.ttf')
     )[0]
 
-    from utils.base.w163_util import CloudMusicUtil
     from utils.lyric_util import LRCLyricParser, YRCLyricParser
 
-    launchwindow.push("Initializing services...")
-    wy = CloudMusicUtil()
+    launchwindow.push('Initializing services...')
 
     mgr = LRCLyricParser()
     transmgr = LRCLyricParser()
@@ -268,27 +266,27 @@ if __name__ == "__main__":
 
     player = AudioPlayer()
 
-    launchwindow.push("Loading favorites...")
+    launchwindow.push('Loading favorites...')
     loadFavorites()
 
     autosave_thread.start()
 
-    launchwindow.push("Logging in...")
+    launchwindow.push('Logging in...')
     if cfg.session is None:
         apis.login.LoginViaAnonymousAccount()
         sstr = ncm.DumpSessionAsString(apis.GetCurrentSession())
         cfg.session = sstr
         cfg.login_status = apis.login.GetCurrentLoginStatus()  # type: ignore
-        _logger.info("logged into generated anonymous account")
+        _logger.info('logged into generated anonymous account')
     else:
         ncm.SetCurrentSession(ncm.LoadSessionFromString(cfg.session))
-        _logger.info("loaded session from config")
+        _logger.info('loaded session from config')
 
         if (
-            cfg.login_method == "cell phone" or cfg.login_method == "QR code"
+            cfg.login_method == 'cell phone' or cfg.login_method == 'QR code'
         ) and cfg.login_status:
             apis.login.WriteLoginInfo(cfg.login_status)
-            _logger.info("wrote login info")
+            _logger.info('wrote login info')
 
     csession = ncm.GetCurrentSession()
     csession.deviceId = uuid.uuid4().hex
@@ -298,8 +296,8 @@ if __name__ == "__main__":
     events_service = EventsServices(app)
 
     launchwindow.clear()
-    launchwindow.subtitle("Phase 2 (initialize components...)")
-    launchwindow.push("Initializing sidebar...")
+    launchwindow.subtitle('Phase 2 (initialize components...)')
+    launchwindow.push('Initializing sidebar...')
     sidebar = Sidebar(
         None,
         None,
@@ -309,7 +307,7 @@ if __name__ == "__main__":
         app,
         launchwindow=launchwindow,
     )
-    launchwindow.push("Initializing playing page...")
+    launchwindow.push('Initializing playing page...')
     dp = PlayingPage(
         app,
         player,
@@ -324,9 +322,9 @@ if __name__ == "__main__":
         harmony_font_family,
         launchwindow=launchwindow,
     )
-    launchwindow.push("Initializing search page...")
-    sp = SearchPage(wy, None, launchwindow)
-    launchwindow.push("Initializing desktop lyrics page...")
+    launchwindow.push('Initializing search page...')
+    sp = SearchPage(None, launchwindow)
+    launchwindow.push('Initializing desktop lyrics page...')
     dsp = DesktopLyricsPage(
         app,
         mgr,
@@ -339,12 +337,12 @@ if __name__ == "__main__":
         dp,
         launchwindow,
     )
-    launchwindow.push("Initializing favorites page...")
+    launchwindow.push('Initializing favorites page...')
     fp = FavoritesPage(dp, sidebar, None, launchwindow)
-    launchwindow.push("Initializing session page...")
+    launchwindow.push('Initializing session page...')
     sep = SessionPage(None, launchwindow)
 
-    launchwindow.push("Initializing main window...")
+    launchwindow.push('Initializing main window...')
     mwindow = MainWindow(
         app,
         dp,
@@ -354,33 +352,32 @@ if __name__ == "__main__":
         sep,
         sidebar,
         player,
-        wy,
         ws_server,
         ws_handler,
         launchwindow,
     )
 
     launchwindow.clear()
-    launchwindow.subtitle("Phase 3 (inject dependencies...)")
-    launchwindow.push("injecting Playing Page to sidebar")
+    launchwindow.subtitle('Phase 3 (inject dependencies...)')
+    launchwindow.push('injecting Playing Page to sidebar')
     sidebar._dp = dp
-    launchwindow.top("injecting Main Window to sidebar")
+    launchwindow.top('injecting Main Window to sidebar')
     sidebar._mwindow = mwindow
-    launchwindow.top("injecting Main Window to Playing Page")
+    launchwindow.top('injecting Main Window to Playing Page')
     dp._mwindow_obj = mwindow
-    launchwindow.top("injecting Main Window to Playing Controller")
+    launchwindow.top('injecting Main Window to Playing Controller')
     dp.controller._mwindow = mwindow
-    launchwindow.top("injecting Main Window to Playing Lyrics Viewer")
+    launchwindow.top('injecting Main Window to Playing Lyrics Viewer')
     dp.viewer._mwindow = mwindow
-    launchwindow.top("injecting Main Window to Desktop Lyrics Viewer")
+    launchwindow.top('injecting Main Window to Desktop Lyrics Viewer')
     dsp.viewer._mwindow = mwindow
-    launchwindow.top("injecting Favorites page to Playing Page")
+    launchwindow.top('injecting Favorites page to Playing Page')
     dp._fp = fp
-    launchwindow.top("injecting Main Window to Search Page")
+    launchwindow.top('injecting Main Window to Search Page')
     sp._mwindow = mwindow
-    launchwindow.top("injecting Main Window to Favorites Page")
+    launchwindow.top('injecting Main Window to Favorites Page')
     fp._mwindow = mwindow
-    launchwindow.top("injecting Main Window to Session Page")
+    launchwindow.top('injecting Main Window to Session Page')
     sep._mwindow = mwindow
 
     mwindow.init()
@@ -389,6 +386,6 @@ if __name__ == "__main__":
 
     _ims.QTimer.singleShot(2000, lambda: startUpdateCheck(mwindow))
 
-    _logger.debug(f"{sys.path=}")
+    _logger.debug(f'{sys.path=}')
 
     app.exec()

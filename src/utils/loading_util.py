@@ -5,7 +5,7 @@ import math
 import threading
 from typing import Callable, Dict, Optional
 
-from imports import QObject, QThread, Signal, Slot
+from imports import QObject, QThread, Signal, Slot, event_bus
 import requests
 
 from utils.config_util import cfg
@@ -22,7 +22,7 @@ class DownloadingManager(QObject):
     def __init__(
         self,
         parent=None,
-        url: str = "",
+        url: str = '',
         headers: Optional[Dict] = None,
         data: Optional[Dict] = None,
     ):
@@ -104,8 +104,8 @@ class _DownloadWorker(QObject):
             allow_redirects=True,
         )
         response.raise_for_status()
-        total_length = int(response.headers.get("content-length", 0))
-        accept_ranges = response.headers.get("accept-ranges", "").lower() == "bytes"
+        total_length = int(response.headers.get('content-length', 0))
+        accept_ranges = response.headers.get('accept-ranges', '').lower() == 'bytes'
         return total_length, accept_ranges
 
     def _download_single(self, total_length: int) -> bytes:
@@ -119,7 +119,7 @@ class _DownloadWorker(QObject):
         response.raise_for_status()
 
         if total_length <= 0:
-            total_length = int(response.headers.get("content-length", 0))
+            total_length = int(response.headers.get('content-length', 0))
 
         downloaded = 0
         final_data = bytearray()
@@ -166,12 +166,12 @@ class _DownloadWorker(QObject):
                 ): index
                 for index, (start, end) in enumerate(ranges)
             }
-            results: list[bytes] = [b""] * len(ranges)
+            results: list[bytes] = [b''] * len(ranges)
             for future in as_completed(futures):
                 index = futures[future]
                 results[index] = future.result()
 
-        return b"".join(results)
+        return b''.join(results)
 
     def _download_range(
         self,
@@ -181,7 +181,7 @@ class _DownloadWorker(QObject):
         progress: Callable[[int, int], None],
     ) -> bytes:
         headers = self.headers.copy()
-        headers["Range"] = f"bytes={start}-{end}"
+        headers['Range'] = f'bytes={start}-{end}'
         response = requests.get(
             self.url,
             headers=headers,
@@ -202,7 +202,7 @@ class _DownloadWorker(QObject):
         expected = end - start + 1
         if len(chunk_data) != expected:
             raise ValueError(
-                f"Chunk size mismatch: expected {expected}, got {len(chunk_data)}"
+                f'Chunk size mismatch: expected {expected}, got {len(chunk_data)}'
             )
         return bytes(chunk_data)
 
@@ -250,7 +250,7 @@ class _TaskWorker(QObject):
         try:
             self.task(*self.args)
         except Exception as e:
-            self._logger.exception("Background task failed")
+            self._logger.exception('Background task failed')
             raise e
         finally:
             self.finished.emit()

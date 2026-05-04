@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""PyNCM 网易云音乐 API 封装
+'''PyNCM 网易云音乐 API 封装
 
 本模块提供各种网易云音乐 API 的 Python 封装，及编写新 API 所需的加密修饰器
 
 模块使用可参考子模块说明，如::
 
     ...
-    def GetTrackAudio(song_ids: list, bitrate=320000, encodeType="aac"):
+    def GetTrackAudio(song_ids: list, bitrate=320000, encodeType='aac'):
         PC 端 - 获取歌曲音频详情（文件URL、MD5...）
 
         Args:
@@ -26,7 +26,7 @@
     由于Weapi使用不对称加密，截取Weapi可从浏览器内断点尝试
 
     一般在 `encSecKey` 处下断点即可，具体方法不再阐述
-"""
+'''
 
 from random import randrange
 from functools import wraps
@@ -43,11 +43,11 @@ from .. import GetCurrentSession, logger, Session
 import json, urllib.parse
 
 
-LOGIN_REQUIRED = LoginRequiredException("需要登录")
+LOGIN_REQUIRED = LoginRequiredException('需要登录')
 
 
 def _BaseWrapper(requestFunc):
-    """API加密函数通用修饰器
+    '''API加密函数通用修饰器
 
     实际使用请参考以下其他 Wrapper::
 
@@ -55,25 +55,25 @@ def _BaseWrapper(requestFunc):
         WeapiCryptoRequest
         LapiCryptoRequest
         EapiCryptoRequest
-    """
+    '''
 
     @wraps(requestFunc)
     def apiWrapper(apiFunc):
         @wraps(apiFunc)
         def wrapper(*a, **k):
             # HACK: 'session=' keyword support
-            session = k.get("session", GetCurrentSession())
+            session = k.get('session', GetCurrentSession())
             # HACK: For now,wrapped functions will not have access to the session object
-            if "session" in k:
-                del k["session"]
+            if 'session' in k:
+                del k['session']
 
             ret = apiFunc(*a, **k)
             url, payload = ret[:2]
-            method = ret[-1] if ret[-1] in ["POST", "GET"] else "POST"
+            method = ret[-1] if ret[-1] in ['POST', 'GET'] else 'POST'
             logger.debug(
-                "TYPE=%s API=%s.%s %s url=%s deviceId=%s payload=%s session=0x%x"
+                'TYPE=%s API=%s.%s %s url=%s deviceId=%s payload=%s session=0x%x'
                 % (
-                    requestFunc.__name__.split("Crypto")[0].upper(),
+                    requestFunc.__name__.split('Crypto')[0].upper(),
                     apiFunc.__module__,
                     apiFunc.__name__,
                     method,
@@ -87,23 +87,23 @@ def _BaseWrapper(requestFunc):
             try:
                 payload = rsp.text if isinstance(rsp, Response) else rsp
                 payload = payload.decode() if not isinstance(payload, str) else payload
-                payload = json.loads(payload.strip("\x10"))
-                if "abroad" in payload and payload["abroad"]:
+                payload = json.loads(payload.strip('\x10'))
+                if 'abroad' in payload and payload['abroad']:
                     # Addresses Issue #15
                     # This however, has some unforeseen side-effects. Mainly due to its diffrences
                     # with non-abraod responses.
                     logger.warning(
-                        'Detected "abroad" payload. API response might differ in format!'
+                        'Detected \'abroad\' payload. API response might differ in format!'
                     )
-                    real_payload = AbroadDecrypt(payload["result"])
-                    payload = {"result": json.loads(real_payload)}
+                    real_payload = AbroadDecrypt(payload['result'])
+                    payload = {'result': json.loads(real_payload)}
                     # We'll let the user know about it
-                    payload["abroad"] = True
+                    payload['abroad'] = True
                 payload = _normalize_payload_code(payload)
                 return payload
             except json.JSONDecodeError as e:
-                logger.error("Response is not valid JSON : %s" % e)
-                logger.error("Response : %s", rsp)
+                logger.error('Response is not valid JSON : %s' % e)
+                logger.error('Response : %s', rsp)
                 return rsp
 
         return wrapper
@@ -112,28 +112,28 @@ def _BaseWrapper(requestFunc):
 
 
 def _normalize_payload_code(payload):
-    if not isinstance(payload, dict) or payload.get("code") != 443:
+    if not isinstance(payload, dict) or payload.get('code') != 443:
         return payload
     usable_keys = {
-        "data",
-        "songs",
-        "playlist",
-        "result",
-        "profile",
-        "account",
-        "lrc",
-        "tlyric",
-        "yrc",
+        'data',
+        'songs',
+        'playlist',
+        'result',
+        'profile',
+        'account',
+        'lrc',
+        'tlyric',
+        'yrc',
     }
     if usable_keys.intersection(payload.keys()):
-        logger.warning("Normalizing usable 443 API payload to code 200")
-        payload["original_code"] = 443
-        payload["code"] = 200
+        logger.warning('Normalizing usable 443 API payload to code 200')
+        payload['original_code'] = 443
+        payload['code'] = 200
     return payload
 
 
 def EapiEncipered(func):
-    """函数值有 Eapi 加密 - 解密并返回原文"""
+    '''函数值有 Eapi 加密 - 解密并返回原文'''
 
     @wraps(func)
     def wrapper(*a, **k):
@@ -147,15 +147,15 @@ def EapiEncipered(func):
 
 
 @_BaseWrapper
-def WeapiCryptoRequest(session: "Session", url, plain, method="POST"):
-    """Weapi - 适用于 网页端、小程序、手机端部分 APIs"""
-    payload = json.dumps({**plain, "csrf_token": session.csrf_token})
+def WeapiCryptoRequest(session: 'Session', url, plain, method='POST'):
+    '''Weapi - 适用于 网页端、小程序、手机端部分 APIs'''
+    payload = json.dumps({**plain, 'csrf_token': session.csrf_token})
     return session.request(
         method,
-        url.replace("/api/", "/weapi/"),
-        params={"csrf_token": session.csrf_token},
+        url.replace('/api/', '/weapi/'),
+        params={'csrf_token': session.csrf_token},
         data={**WeapiEncrypt(payload)},
-        headers={"User-Agent": session.UA_DEFAULT, "Referer": "https://music.163.com"},
+        headers={'User-Agent': session.UA_DEFAULT, 'Referer': 'https://music.163.com'},
         cookies={**session.eapi_config},
     )
 
@@ -163,21 +163,21 @@ def WeapiCryptoRequest(session: "Session", url, plain, method="POST"):
 # 来自 https://github.com/Binaryify/NeteaseCloudMusicApi
 @_BaseWrapper
 @EapiEncipered
-def EapiCryptoRequest(session: "Session", url, plain, method):
-    """Eapi - 适用于新版客户端绝大部分API"""
+def EapiCryptoRequest(session: 'Session', url, plain, method):
+    '''Eapi - 适用于新版客户端绝大部分API'''
     payload = {
         **plain,
-        "header": json.dumps(
-            {**session.eapi_config, "requestId": str(randrange(20000000, 30000000))}
+        'header': json.dumps(
+            {**session.eapi_config, 'requestId': str(randrange(20000000, 30000000))}
         ),
     }
     digest = EapiEncrypt(
-        urllib.parse.urlparse(url).path.replace("/eapi/", "/api/"), json.dumps(payload)
+        urllib.parse.urlparse(url).path.replace('/eapi/', '/api/'), json.dumps(payload)
     )
     request = session.request(
         method,
         url,
-        headers={"User-Agent": session.UA_EAPI, "Referer": ""},
+        headers={'User-Agent': session.UA_EAPI, 'Referer': ''},
         cookies={**session.eapi_config},
         data={**digest},
     )

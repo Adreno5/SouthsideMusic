@@ -13,6 +13,7 @@ from imports import (
     REFRESH_RATE_CHANGED,
     REPAINT,
     SONG_CHANGED,
+    SWITCH_PAGE,
     WEBSOCKET_CONNECTED,
     WEBSOCKET_DISCONNECTED,
     QApplication,
@@ -60,7 +61,6 @@ class MainWindow(FluentWindowBase):
         sep,
         sidebar,
         player,
-        wy,
         ws_server,
         ws_handler,
         launchwindow,
@@ -76,7 +76,6 @@ class MainWindow(FluentWindowBase):
         self._sep = sep
         self._sidebar = sidebar
         self._player = player
-        self._wy = wy
         self._ws_server = ws_server
         self._ws_handler = ws_handler
         self._launchwindow = launchwindow
@@ -123,33 +122,33 @@ class MainWindow(FluentWindowBase):
         self.motion: int = 20
         self.last_draw: int = time.perf_counter_ns()
 
-        self.setWindowTitle("Southside Music")
+        self.setWindowTitle('Southside Music')
 
         self.addSubInterface(
             sp,
-            getQIcon("music"),
-            "Search",
+            getQIcon('music'),
+            'Search',
         )
         self.addSubInterface(
             dp,
-            getQIcon("studio"),
-            "Playing",
+            getQIcon('studio'),
+            'Playing',
         )
         self.addSubInterface(
             dsp,
-            getQIcon("island"),
-            "Desktop Lyrics",
+            getQIcon('island'),
+            'Desktop Lyrics',
         )
         self.addSubInterface(
             fp,
-            getQIcon("fav"),
-            "Favorites",
+            getQIcon('fav'),
+            'Favorites',
             NavigationItemPosition.BOTTOM,
         )
         self.addSubInterface(
             sep,
-            getQIcon("session"),
-            "Session",
+            getQIcon('session'),
+            'Session',
             NavigationItemPosition.BOTTOM,
         )
 
@@ -170,7 +169,7 @@ class MainWindow(FluentWindowBase):
         QTimer.singleShot(1750, ws_server.start)
 
         self.refresh_rate = max(60, app.primaryScreen().refreshRate() / 2)
-        self._logger.info(f"{self.refresh_rate=}")
+        self._logger.info(f'{self.refresh_rate=}')
 
         self.delta = 1 / self.refresh_rate
 
@@ -181,9 +180,13 @@ class MainWindow(FluentWindowBase):
 
         self.stackedWidget.currentChanged.connect(self._syncTitleBarOnNavigation)
 
+    def switchTo(self, interface: QWidget):
+        event_bus.emit(SWITCH_PAGE, interface)
+        return super().switchTo(interface)
+
     def _onRefreshRateChanged(self):
         self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
-        self._logger.info(f"{self.refresh_rate=}")
+        self._logger.info(f'{self.refresh_rate=}')
 
         self.delta = 1 / self.refresh_rate
 
@@ -191,7 +194,7 @@ class MainWindow(FluentWindowBase):
         now = time.perf_counter_ns()
         _elapsed: float = (now - self.last_draw) / 1_000_000_000
         self.last_draw = now
-        multiple_factor = self.delta / _elapsed
+        multiple_factor = min(self.delta / _elapsed, 4)
 
         self.bar_height += ((5 if cfg.show_progress else 0) - self.bar_height) * multiple_factor
 
@@ -201,6 +204,16 @@ class MainWindow(FluentWindowBase):
             self.draw_progress = 0
 
         if self.bar_height > 0:
+            if cfg.progress_inter:
+                if self.right > self.width():
+                    self.motion = -self.motion
+                    self.right = self.width()
+                elif self.left < 0:
+                    self.motion = -self.motion
+                    self.left = 0
+                self.right += int(self.motion * multiple_factor * 3)
+                self.left += int(self.motion * multiple_factor * 3)
+
             self.repaint()
 
     def _syncTitleBarOnNavigation(self, _index: int):
@@ -250,7 +263,7 @@ class MainWindow(FluentWindowBase):
             return
         if self.stackedWidget.currentWidget() is self._dp:
             return
-        content = lyric_data.get("content", "")
+        content = lyric_data.get('content', '')
         self.titleBar.lyric_label.setText(
             content if content else self._dp.artists_label.text()
         )
@@ -269,7 +282,7 @@ class MainWindow(FluentWindowBase):
             try:
                 task(*args, **kwargs)
             except Exception as e:
-                self._logger.exception("scheduled task failed")
+                self._logger.exception('scheduled task failed')
                 raise e
 
     def addSubInterface(
@@ -282,15 +295,15 @@ class MainWindow(FluentWindowBase):
         isTransparent=False,
     ) -> NavigationTreeWidget:
         if not interface.objectName():
-            raise ValueError("The object name of `interface` can't be empty string.")
+            raise ValueError('The object name of `interface` can\'t be empty string.')
 
         parentRouteKey = parent
         if parent and isinstance(parent, QWidget):
             parentRouteKey = parent.objectName()
             if not parentRouteKey:
-                raise ValueError("The object name of `parent` can't be empty string.")
+                raise ValueError('The object name of `parent` can\'t be empty string.')
 
-        interface.setProperty("isStackedTransparent", isTransparent)
+        interface.setProperty('isStackedTransparent', isTransparent)
         self.stackedWidget.addWidget(interface)
 
         routeKey = interface.objectName()
@@ -314,23 +327,21 @@ class MainWindow(FluentWindowBase):
         return item
 
     def play(self, card: SongCard):
-        self._logger.debug(card.info["id"])
+        self._logger.debug(card.info['id'])
 
         self._dp.cur = None
 
-        self._dp.cur = card  # type: ignore
-        self.switchTo(self._dp)
+        self._dp.cur = card # type: ignore
         self._dp.init()
 
     def init(self) -> None:
         self._launchwindow.clear()
-        self._launchwindow.push("Initializing main window...")
+        self._launchwindow.push('Initializing main window...')
         last_playlist: list[SongStorable] = []
         last_playing_index = -1
 
         def _init():
-            self._launchwindow.push("Initializing services...")
-            self._wy.init()
+            self._launchwindow.push('Initializing services...')
 
             self._sidebar.play_method_box.setCurrentText(cfg.play_method)
 
@@ -343,18 +354,18 @@ class MainWindow(FluentWindowBase):
 
         def _finish_init():
             if last_playlist:
-                self._launchwindow.top("restore playlist...")
+                self._launchwindow.top('restore playlist...')
                 for storable in last_playlist:
                     self._sidebar.addSongCardToList(storable)
                 if 0 <= last_playing_index < len(last_playlist):
-                    self._launchwindow.top("continue last song...")
+                    self._launchwindow.top('continue last song...')
 
                     def _continue():
                         self._dp.continueLastSong(cfg.last_playing_index)
 
                     self.addScheduledTask(_continue)
 
-            self._launchwindow.top("refreshing login information")
+            self._launchwindow.top('refreshing login information')
             self._sep.refreshInformations()
 
             def _show():
@@ -369,8 +380,8 @@ class MainWindow(FluentWindowBase):
         doWithMultiThreading(_init, (), self, finished=_finish_init)
 
         InfoBar.info(
-            "Initialization",
-            f"Loaded {len(favs)} folders",
+            'Initialization',
+            f'Loaded {len(favs)} folders',
             parent=self,
             duration=2000,
         )
@@ -391,11 +402,11 @@ class MainWindow(FluentWindowBase):
 
         cfg.play_method = self._sidebar.play_method_box.currentText()
         cfg.window_x = self.x() + (
-            253 if self._dp.controller.expand_btn.text() == "Collapse" else 0
+            253 if self._dp.controller.expand_btn.text() == 'Collapse' else 0
         )
         cfg.window_y = self.y()
         cfg.window_width = self.width() - (
-            505 if self._dp.controller.expand_btn.text() == "Collapse" else 0
+            505 if self._dp.controller.expand_btn.text() == 'Collapse' else 0
         )
         cfg.window_height = self.height()
         cfg.window_maximized = self.isMaximized()
@@ -415,8 +426,8 @@ class MainWindow(FluentWindowBase):
 
     def onWebsocketConnected(self):
         InfoBar.success(
-            "SouthsideClient connection",
-            "SouthsideMusic was connected to SouthsidClient",
+            'SouthsideClient connection',
+            'SouthsideMusic was connected to SouthsidClient',
             duration=5000,
             parent=self,
         )
@@ -425,7 +436,7 @@ class MainWindow(FluentWindowBase):
             lambda: self._ws_handler.send(
                 json.dumps(
                     {
-                        "option": f"{'disable' if not self._sidebar.enableFFT_box.isChecked() else 'enable'}_fft"
+                        'option': f'{'disable' if not self._sidebar.enableFFT_box.isChecked() else 'enable'}_fft'
                     }
                 )
             ),
@@ -442,8 +453,8 @@ class MainWindow(FluentWindowBase):
 
     def onWebsocketDisconnected(self):
         InfoBar.warning(
-            "SouthsideClient connection",
-            "SouthsideMusic was been disconnected from SouthsidClient",
+            'SouthsideClient connection',
+            'SouthsideMusic was been disconnected from SouthsidClient',
             duration=5000,
             parent=self,
         )
@@ -486,12 +497,6 @@ class MainWindow(FluentWindowBase):
                 )
             )
             if cfg.progress_inter:
-                if self.right > self.width():
-                    self.motion = -self.motion
-                if self.left < 0:
-                    self.motion = -self.motion
-                self.right += self.motion
-                self.left += self.motion
                 painter.drawRect(
                     self.left, 0, self.right - self.left, int(self.bar_height)
                 )

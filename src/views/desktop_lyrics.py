@@ -73,15 +73,14 @@ class DesktopLyricsViewer(LyricsViewer):
         self.indentation_y: float = 0
         self.indentation: bool = False
 
-        event_bus.unsubscribe(REPAINT, self.repaint)
         event_bus.subscribe(REPAINT, self._onRepaintTick)
 
     def _onRepaintTick(self):
         self.updateDatas()
-        self.repaint()
+        self.update()
 
     def unindentation(self):
-        if not cfg.desktop_lyrics_anchor == "top-center":
+        if not cfg.desktop_lyrics_anchor == 'top-center':
             return
         self.indentation = False
 
@@ -97,7 +96,7 @@ class DesktopLyricsViewer(LyricsViewer):
             if self._mgr.parsed
             else None
         )
-        meta = cur_line.get("isMetadata") if cur_line else False
+        meta = cur_line.get('isMetadata') if cur_line else False
 
         has_translation = bool(self._transmgr.parsed)
         tar_height = 65 if has_translation else 46
@@ -117,7 +116,7 @@ class DesktopLyricsViewer(LyricsViewer):
             )
             tar_width = max(
                 10,
-                int(self.metri.horizontalAdvance(y_line["content"])),
+                int(self.metri.horizontalAdvance(y_line['content'])),
             )
         elif self._mgr.parsed:
             lidx = self._mgr.getCurrentIndex(position)
@@ -126,7 +125,7 @@ class DesktopLyricsViewer(LyricsViewer):
             )
             tar_width = max(
                 10,
-                int(self.metri.horizontalAdvance(l_line["content"])),
+                int(self.metri.horizontalAdvance(l_line['content'])),
             )
         tar_width += self.draw_x_offset + self.height() * 0.5 + 10
 
@@ -134,12 +133,12 @@ class DesktopLyricsViewer(LyricsViewer):
         self.setFixedWidth(int(self.cwidth))
 
         target_point = QPoint(0, 0)
-        if cfg.desktop_lyrics_anchor == "top-center":
+        if cfg.desktop_lyrics_anchor == 'top-center':
             target_point = QPoint(
                 int(self.scr_size.width() * 0.5 - self.width() * 0.5),
                 0,
             )
-        if cfg.desktop_lyrics_anchor == "normal" and not self.dragging:
+        if cfg.desktop_lyrics_anchor == 'normal' and not self.dragging:
             target_point = QPoint(
                 int(cfg.desktop_lyrics_x - self.width() * 0.5), self.y()
             )
@@ -147,7 +146,7 @@ class DesktopLyricsViewer(LyricsViewer):
                 cfg.desktop_lyrics_x = 0
             if self.x() > self.scr_size.width() - self.width():
                 cfg.desktop_lyrics_x = self.scr_size.width() - self.width() // 2
-        if not self.dragging and cfg.desktop_lyrics_anchor == "top-center":
+        if not self.dragging and cfg.desktop_lyrics_anchor == 'top-center':
             target_point += QPoint(0, int(self.indentation_y))
         if not self.dragging:
             self.move(target_point)
@@ -170,9 +169,9 @@ class DesktopLyricsViewer(LyricsViewer):
             center_x = tp.x() + self.width() * 0.5
             screen_center_x = self.scr_size.width() * 0.5
             if abs(center_x - screen_center_x) < 30 and tp.y() < 15:
-                cfg.desktop_lyrics_anchor = "top-center"
+                cfg.desktop_lyrics_anchor = 'top-center'
             else:
-                cfg.desktop_lyrics_anchor = "normal"
+                cfg.desktop_lyrics_anchor = 'normal'
                 self.move(tp)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
@@ -181,7 +180,7 @@ class DesktopLyricsViewer(LyricsViewer):
     def moveEvent(self, event: QMoveEvent) -> None:
         if self.dragging:
             center_x = event.pos().x() + self.width() * 0.5
-            if cfg.desktop_lyrics_anchor == "normal":
+            if cfg.desktop_lyrics_anchor == 'normal':
                 cfg.desktop_lyrics_x, cfg.desktop_lyrics_y = (
                     int(center_x),
                     event.pos().y(),
@@ -205,7 +204,7 @@ class DesktopLyricsViewer(LyricsViewer):
             )
         )
 
-        if cfg.desktop_lyrics_anchor == "normal":
+        if cfg.desktop_lyrics_anchor == 'normal':
             radius = int(self.height() * 0.5)
             painter.drawRoundedRect(draw_rect, radius, radius)
             if self._dp.total_length > 0:
@@ -229,7 +228,7 @@ class DesktopLyricsViewer(LyricsViewer):
                     1,
                 )
                 painter.restore()
-        elif cfg.desktop_lyrics_anchor == "top-center":
+        elif cfg.desktop_lyrics_anchor == 'top-center':
             painter.drawRoundedRect(draw_rect, 20, 20)
 
             draw_path = QPainterPath()
@@ -307,12 +306,12 @@ class DesktopLyricsPage(QWidget):
     ) -> None:
         super().__init__()
         if launchwindow:
-            launchwindow.top("Initializing desktop lyrics page...")
+            launchwindow.top('Initializing desktop lyrics page...')
         self._app = app
-        self.setObjectName("desktop_lyrics_page")
+        self.setObjectName('desktop_lyrics_page')
 
         if launchwindow:
-            launchwindow.top("  Creating desktop lyrics viewer...")
+            launchwindow.top('  Creating desktop lyrics viewer...')
         self.viewer = DesktopLyricsViewer(
             app, mgr, transmgr, ymgr, player, mwindow, harmony_font_family, cfg, dp
         )
@@ -322,15 +321,15 @@ class DesktopLyricsPage(QWidget):
         self.viewer.resize(app.primaryScreen().size().width(), 65)
 
         if launchwindow:
-            launchwindow.top("  Building settings panel...")
+            launchwindow.top('  Building settings panel...')
         global_layout = QVBoxLayout()
-        global_layout.addWidget(TitleLabel("Desktop Lyrics"))
-        self.inputer = CheckBox("Enable Desktop Lyrics")
+        global_layout.addWidget(TitleLabel('Desktop Lyrics'))
+        self.inputer = CheckBox('Enable Desktop Lyrics')
         self.inputer.checkStateChanged.connect(self.onEnableChanged)
         self.inputer.setChecked(cfg.enable_desktop_lyrics)
         global_layout.addWidget(self.inputer)
         buttons_layout = FlowLayout()
-        self.reset_pos = PushButton(FluentIcon.SYNC, "Reset Position")
+        self.reset_pos = PushButton(FluentIcon.SYNC, 'Reset Position')
         self.reset_pos.clicked.connect(self.onResetPos)
         buttons_layout.addWidget(self.reset_pos)
         global_layout.addLayout(buttons_layout)
@@ -338,7 +337,7 @@ class DesktopLyricsPage(QWidget):
 
     def onResetPos(self):
         self.viewer.move(0, 0)
-        cfg.desktop_lyrics_anchor = "normal"
+        cfg.desktop_lyrics_anchor = 'normal'
 
     def onEnableChanged(self):
         self.viewer.setVisible(self.inputer.isChecked())

@@ -47,7 +47,11 @@ from utils.base.base_util import (
 )
 from utils.icon_util import bindIcon, getQIcon
 from utils import darkdetect_util as darkdetect
-from utils.loading_util import doWithMultiThreading, downloadWithMultiThreading
+from utils.loading_util import (
+    doWithMultiThreading,
+    downloadWithMultiThreading,
+    DownloadingManager,
+)
 from utils.soundfile_util import getSongFormat, saveSongWithInformations
 from utils import requests_util as requests
 from utils.favorite_util import FolderInfo, favs, saveFavorites
@@ -74,7 +78,7 @@ class DummyCard:
             id=storable.id,
             privilege=-1,
         )
-        self.detail: SongDetail = SongDetail(image_url="")
+        self.detail: SongDetail = SongDetail(image_url='')
         self.storable: SongStorable = storable
 
 
@@ -87,7 +91,7 @@ class SongCard(QWidget):
         self._play_callback = play_callback
         self._mwindow = mwindow
 
-        self.detail = SongDetail(image_url="")
+        self.detail = SongDetail(image_url='')
 
         global_layout = QVBoxLayout()
         top_layout = FlowLayout()
@@ -100,24 +104,24 @@ class SongCard(QWidget):
         self.ring = IndeterminateProgressRing()
         self.ring.setFixedSize(100, 100)
         top_layout.addWidget(self.ring)
-        title_label = SubtitleLabel(info["name"])
+        title_label = SubtitleLabel(info['name'])
         top_layout.addWidget(title_label)
-        artists_label = QLabel(info["artists"])
+        artists_label = QLabel(info['artists'])
         artists_label.setWordWrap(True)
         top_layout.addWidget(artists_label)
         self.vip_label = SubtitleLabel(
-            f"Need more privilege ({info['privilege']}(song)>{ncm.GetCurrentSession().vipType}(yours))"
+            f'Need more privilege ({info["privilege"]}(song)>{ncm.GetCurrentSession().vipType}(yours))'
         )
-        self.vip_label.setStyleSheet("color: red;")
-        if info["privilege"] <= ncm.GetCurrentSession().vipType:
+        self.vip_label.setStyleSheet('color: red;')
+        if info['privilege'] <= ncm.GetCurrentSession().vipType:
             self.vip_label.hide()
         top_layout.addWidget(self.vip_label)
 
         pri_label = QLabel(
-            f"privilege: (song: {info['privilege']}, yours: {ncm.GetCurrentSession().vipType})"
+            f'privilege: (song: {info["privilege"]}, yours: {ncm.GetCurrentSession().vipType})'
         )
         pri_label.setStyleSheet(
-            f"color: {'#666666' if darkdetect.isDark() else '#CCCCCC'};"
+            f'color: {"#666666" if darkdetect.isDark() else "#CCCCCC"};'
         )
         top_layout.addWidget(pri_label)
 
@@ -129,7 +133,7 @@ class SongCard(QWidget):
         self.playbtn.clicked.connect(self.play)
 
         self.favbtn = TransparentToolButton()
-        bindIcon(self.favbtn, "fav")
+        bindIcon(self.favbtn, 'fav')
         self.favbtn.setEnabled(True)
         bottom_layout.addWidget(self.favbtn)
         self.favbtn.clicked.connect(self.addToFavorites)
@@ -148,58 +152,65 @@ class SongCard(QWidget):
     def addToFavorites(self):
         from utils.dialog_util import get_value_bylist, get_text_lineedit
 
-        if self.info["privilege"] > ncm.GetCurrentSession().vipType:
+        if self.info['privilege'] > ncm.GetCurrentSession().vipType:
             InfoBar.warning(
-                "Cannot add to favorites",
-                "Need more privilege",
+                'Cannot add to favorites',
+                'Need more privilege',
                 parent=self._mwindow,
             )
             return
 
-        folder_names = [f["folder_name"] for f in favs]
-        folder_names.append("Create New Folder...")
+        folder_names = [f['folder_name'] for f in favs]
+        folder_names.append('Create New Folder...')
         chosen = get_value_bylist(
             self._mwindow,
-            "Choose Folder",
-            "Which folder to save this song?",
+            'Choose Folder',
+            'Which folder to save this song?',
             folder_names,
         )
         if chosen is None:
             return
 
-        if chosen == "Create New Folder...":
+        if chosen == 'Create New Folder...':
             chosen = get_text_lineedit(
-                self._mwindow, "Create New Folder", "My first folder", self._mwindow
+                self._mwindow, 'Create New Folder', 'My first folder', self._mwindow
             )
             if chosen:
-                favs.append({"folder_name": chosen, "songs": []})
+                favs.append({'folder_name': chosen, 'songs': []})
 
             target_folder = FolderInfo(folder_name=chosen, songs=[])
         else:
-            target_folder = next(f for f in favs if f["folder_name"] == chosen)
+            target_folder = next(f for f in favs if f['folder_name'] == chosen)
 
         result_container = []
         _finished = False
+        _manager: DownloadingManager | None = None
+
+        image_bytes = None
+
+        def _downloaded(music_bytes: bytes):
+            nonlocal _finished, image_bytes
+            result_container.append((image_bytes, music_bytes))
+            _finished = True
 
         def _download():
+            nonlocal _manager, image_bytes
             with ncm.GetCurrentSession():
-                response = apis.track.GetTrackDetail(song_ids=[self.info["id"]])
-                assert isinstance(response, dict), "Invalid response"
-                image_url = response["songs"][0]["al"]["picUrl"]  # type: ignore
+                response = apis.track.GetTrackDetail(song_ids=[self.info['id']])
+                assert isinstance(response, dict), 'Invalid response'
+                image_url = response['songs'][0]['al']['picUrl']  # type: ignore
 
                 image_bytes = requests.get(image_url).content
 
-                music_url = apis.track.GetTrackAudio(
-                    str(self.info["id"]),  # type: ignore
+                audio_resp = apis.track.GetTrackAudio(
+                    str(self.info['id']),  # type: ignore
                     bitrate=3200 * 1000,
                 )
+                music_url = audio_resp['data'][0]['url']  # type: ignore
 
-                def _downloaded(music_bytes: bytes):
-                    nonlocal _finished
-                    result_container.append((image_bytes, music_bytes))
-                    _finished = True
-
-                downloadWithMultiThreading(str(music_url), {}, {}, None, _downloaded)
+                _manager = downloadWithMultiThreading(
+                    music_url, {}, {}, None, _downloaded
+                )
 
         def _finish():
             while not _finished:
@@ -212,27 +223,27 @@ class SongCard(QWidget):
 
             os.makedirs(IMAGE_DATA_DIR, exist_ok=True)
             os.makedirs(MUSIC_DATA_DIR, exist_ok=True)
-            with open(os.path.join(IMAGE_DATA_DIR, image_cache_hash), "wb") as f:
+            with open(os.path.join(IMAGE_DATA_DIR, image_cache_hash), 'wb') as f:
                 f.write(image_bytes)
-            with open(os.path.join(MUSIC_DATA_DIR, content_cache_hash), "wb") as f:
+            with open(os.path.join(MUSIC_DATA_DIR, content_cache_hash), 'wb') as f:
                 f.write(music_bytes)
 
             storable = SongStorable(
                 info={
-                    "name": self.info["name"],
-                    "artists": self.info["artists"],
-                    "id": self.info["id"],
-                    "privilege": -1,
+                    'name': self.info['name'],
+                    'artists': self.info['artists'],
+                    'id': self.info['id'],
+                    'privilege': -1,
                 },
                 image_cache_hash=image_cache_hash,
                 content_cache_hash=content_cache_hash,
-                lyric="",
+                lyric='',
             )
-            target_folder["songs"].append(storable)
+            target_folder['songs'].append(storable)
             saveFavorites()
 
             InfoBar.success(
-                "Favorited",
+                'Favorited',
                 f"Added {self.info['name']} to '{chosen}'",
                 parent=self._mwindow,
                 duration=3000,
@@ -245,10 +256,10 @@ class SongCard(QWidget):
 
         def _do():
             with ncm.GetCurrentSession():
-                response = apis.track.GetTrackDetail(song_ids=[self.info["id"]])
-                assert isinstance(response, dict), "Invalid response"
-                img_url = response["songs"][0]["al"]["picUrl"]  # type: ignore
-                self.detail["image_url"] = img_url
+                response = apis.track.GetTrackDetail(song_ids=[self.info['id']])
+                assert isinstance(response, dict), 'Invalid response'
+                img_url = response['songs'][0]['al']['picUrl']  # type: ignore
+                self.detail['image_url'] = img_url
 
                 img_bytes = requests.get(img_url).content
 
@@ -299,8 +310,8 @@ class _SongCardItem(QWidget):
         order_layout.setSpacing(0)
         self.move_up_btn = TransparentToolButton()
         self.move_down_btn = TransparentToolButton()
-        bindIcon(self.move_up_btn, "drop_up")
-        bindIcon(self.move_down_btn, "drop_down")
+        bindIcon(self.move_up_btn, 'drop_up')
+        bindIcon(self.move_down_btn, 'drop_down')
         self.move_up_btn.setFixedSize(24, 24)
         self.move_down_btn.setFixedSize(24, 24)
         self.move_up_btn.clicked.connect(lambda: self.moveRequested(-1))
@@ -341,7 +352,13 @@ class _SongCardItem(QWidget):
         self.loadImage()
         if self._dp:
             event_bus.subscribe(IMAGE_ASSET_PERSISTED, self._on_image_asset_persisted)
-        if self.img_label.pixmap() is None or self.img_label.pixmap().isNull():
+        try:
+            needs_download = (
+                self.img_label.pixmap() is None or self.img_label.pixmap().isNull()
+            )
+        except RuntimeError:
+            return
+        if needs_download:
             threading.Thread(
                 target=self._auto_download_missing_image, daemon=True
             ).start()
@@ -374,11 +391,11 @@ class _SongCardItem(QWidget):
                 with ncm.GetCurrentSession():
                     response = apis.track.GetTrackDetail(song_ids=[storable.id])
                     assert isinstance(response, dict)
-                    image_url = response["songs"][0]["al"]["picUrl"]  # type: ignore
+                    image_url = response['songs'][0]['al']['picUrl']  # type: ignore
                     image_bytes = requests.get(image_url).content
             except Exception as e:
                 self._logger.warning(
-                    f"failed to auto-download image for {storable.id}: {e}"
+                    f'failed to auto-download image for {storable.id}: {e}'
                 )
                 return
 
@@ -388,7 +405,7 @@ class _SongCardItem(QWidget):
             cache_hash = hashlib.sha256(image_bytes).hexdigest()
             cache_path = os.path.join(IMAGE_DATA_DIR, cache_hash)
             if not os.path.exists(cache_path):
-                with open(cache_path, "wb") as f:
+                with open(cache_path, 'wb') as f:
                     f.write(image_bytes)
             storable.image_cache_hash = cache_hash
             saveFavorites()
@@ -410,15 +427,19 @@ class _SongCardItem(QWidget):
             image = QImage()
             image.loadFromData(image_bytes)
             if not image.isNull():
-                result["image"] = image
+                result['image'] = image
 
         def _finish():
-            image = result.get("image")
+            image = result.get('image')
             if image is None:
                 return
 
             def _apply_pixmap():
                 if not self.load:
+                    return
+                try:
+                    self.img_label.objectName()
+                except RuntimeError:
                     return
                 pixmap = QPixmap.fromImage(image)
                 if not pixmap.isNull():
@@ -449,12 +470,12 @@ class PlaylistSongCard(_SongCardItem):
     def contextMenuEvent(self, event):
         menu = RoundMenu(parent=self)
 
-        export = Action("Export", menu)
-        export.setIcon(getQIcon("export"))
-        repeat = Action("Repeat", menu)
+        export = Action('Export', menu)
+        export.setIcon(getQIcon('export'))
+        repeat = Action('Repeat', menu)
         repeat.setIcon(FluentIcon.SYNC.icon())
-        rm = Action("Remove", menu)
-        rm.setIcon(getQIcon("remove"))
+        rm = Action('Remove', menu)
+        rm.setIcon(getQIcon('remove'))
 
         export.triggered.connect(lambda: self._exportSong())
         repeat.triggered.connect(lambda: self._repeatSong())
@@ -468,13 +489,13 @@ class PlaylistSongCard(_SongCardItem):
         if not self._dp.ensureAssets(self.storable):
             return
         with open(
-            os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash), "rb"
+            os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash), 'rb'
         ) as f:
             export_path, fmt = QFileDialog.getSaveFileName(
                 self._mwindow,
-                "Export song",
-                f"./{self.storable.name} - {self.storable.artists}{getSongFormat(f.read())}",
-                "Song Files (*.mp3, *.m4a, *.flac, *.wav, *.ogg, *.opus)",
+                'Export song',
+                f'./{self.storable.name} - {self.storable.artists}{getSongFormat(f.read())}',
+                'Song Files (*.mp3, *.m4a, *.flac, *.wav, *.ogg, *.opus)',
             )
 
         if export_path:
@@ -483,15 +504,15 @@ class PlaylistSongCard(_SongCardItem):
                 with ncm.GetCurrentSession():
                     response = apis.track.GetTrackDetail(song_ids=[self.storable.id])
                     assert isinstance(response, dict)
-                    detail = response["songs"][0]  # type: ignore
-                    image_url = detail["al"]["picUrl"]
+                    detail = response['songs'][0]  # type: ignore
+                    image_url = detail['al']['picUrl']
 
                     image_bytes = requests.get(image_url).content
 
-                    album = detail["al"]["name"]
-                    track_number = f"{detail['cd']}/{detail['no']}"
-                    publish_time = detail.get("publishTime", 0)
-                    year = ""
+                    album = detail['al']['name']
+                    track_number = f'{detail["cd"]}/{detail["no"]}'
+                    publish_time = detail.get('publishTime', 0)
+                    year = ''
                     if publish_time:
                         import datetime
 
@@ -501,7 +522,7 @@ class PlaylistSongCard(_SongCardItem):
 
                     with open(
                         os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash),
-                        "rb",
+                        'rb',
                     ) as song:
                         saveSongWithInformations(
                             song.read(),
@@ -511,17 +532,17 @@ class PlaylistSongCard(_SongCardItem):
                             export_path,
                             self.storable.lyric,
                             album,
-                            "",
+                            '',
                             year,
                             track_number,
-                            "",
-                            "",
+                            '',
+                            '',
                         )
 
             def _final():
                 InfoBar.success(
-                    "Export",
-                    f"Exported song {self.storable.name}",
+                    'Export',
+                    f'Exported song {self.storable.name}',
                     parent=self._mwindow,
                     duration=5000,
                 )
@@ -578,12 +599,12 @@ class FavoriteSongCard(_SongCardItem):
     def contextMenuEvent(self, event):
         menu = RoundMenu(parent=self)
 
-        export = Action("Export", menu)
-        export.setIcon(getQIcon("export"))
+        export = Action('Export', menu)
+        export.setIcon(getQIcon('export'))
         export.triggered.connect(lambda: self._exportSong())
 
-        remove = Action("Remove", menu)
-        remove.setIcon(getQIcon("remove"))
+        remove = Action('Remove', menu)
+        remove.setIcon(getQIcon('remove'))
         remove.triggered.connect(self._removeSong)
 
         menu.addActions([export, remove])
@@ -598,13 +619,13 @@ class FavoriteSongCard(_SongCardItem):
         if not self._dp.ensureAssets(self.storable):
             return
         with open(
-            os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash), "rb"
+            os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash), 'rb'
         ) as f:
             export_path, fmt = QFileDialog.getSaveFileName(
                 self._mwindow,
-                "Export song",
-                f"./{self.storable.name} - {self.storable.artists}{getSongFormat(f.read())}",
-                "Song Files (*.mp3, *.m4a, *.flac, *.wav, *.ogg, *.opus)",
+                'Export song',
+                f'./{self.storable.name} - {self.storable.artists}{getSongFormat(f.read())}',
+                'Song Files (*.mp3, *.m4a, *.flac, *.wav, *.ogg, *.opus)',
             )
 
         if export_path:
@@ -613,15 +634,15 @@ class FavoriteSongCard(_SongCardItem):
                 with ncm.GetCurrentSession():
                     response = apis.track.GetTrackDetail(song_ids=[self.storable.id])
                     assert isinstance(response, dict)
-                    detail = response["songs"][0]  # type: ignore
-                    image_url = detail["al"]["picUrl"]
+                    detail = response['songs'][0]  # type: ignore
+                    image_url = detail['al']['picUrl']
 
                     image_bytes = requests.get(image_url).content
 
-                    album = detail["al"]["name"]
-                    track_number = f"{detail['cd']}/{detail['no']}"
-                    publish_time = detail.get("publishTime", 0)
-                    year = ""
+                    album = detail['al']['name']
+                    track_number = f'{detail["cd"]}/{detail["no"]}'
+                    publish_time = detail.get('publishTime', 0)
+                    year = ''
                     if publish_time:
                         import datetime
 
@@ -631,7 +652,7 @@ class FavoriteSongCard(_SongCardItem):
 
                     with open(
                         os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash),
-                        "rb",
+                        'rb',
                     ) as song:
                         saveSongWithInformations(
                             song.read(),
@@ -641,17 +662,17 @@ class FavoriteSongCard(_SongCardItem):
                             export_path,
                             self.storable.lyric,
                             album,
-                            "",
+                            '',
                             year,
                             track_number,
-                            "",
-                            "",
+                            '',
+                            '',
                         )
 
             def _final():
                 InfoBar.success(
-                    "Export",
-                    f"Exported song {self.storable.name}",
+                    'Export',
+                    f'Exported song {self.storable.name}',
                     parent=self._mwindow,
                     duration=5000,
                 )

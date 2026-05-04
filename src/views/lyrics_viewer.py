@@ -120,7 +120,6 @@ class LyricsViewer(QWidget):
             (self.target_draw_offset - self.draw_offset)
             * self.delta
             * (self._cfg.lyrics_smooth_factor * self.refresh_rate)
-            * multiple_factor
         )
         self.acc += (
             (self.target_acc - self.acc)

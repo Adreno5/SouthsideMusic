@@ -371,6 +371,13 @@ if __name__ == "__main__":
 
     mwindow.init()
 
+    def refreshRateChanged_():
+        _ims.QMessageBox.warning(mwindow, 'Warning', 'Screen refresh rate change detected. To avoid affecting the animation experience, please restart the application.')
+        if mwindow:
+            mwindow.close()
+
+    app.primaryScreen().refreshRateChanged.connect(refreshRateChanged_)
+
     fp.refresh()
 
     _ims.QTimer.singleShot(2000, lambda: startUpdateCheck(mwindow))

@@ -44,7 +44,7 @@ from utils.time_util import float2time
 from utils.lyric_util import LyricInfo, LRCLyricParser, YRCLyricParser
 from utils.play_util import AudioPlayer
 from utils.websocket_util import QObjectHandler
-from views.song_card import DummyCard
+from views.song_card import DummyCard, SongCard
 from utils.config_util import cfg
 
 
@@ -249,7 +249,7 @@ class PlayingController(QWidget):
         if len(selected_items) > 0:
             selected_item = selected_items[0]
             selected_card = self._sidebar.lst.itemWidget(selected_item)
-            if self._dp.cur and self._dp.cur.storable.id != getattr(getattr(selected_card, 'storable', None), 'id', -1):
+            if self._dp.cur and self._dp.cur.info["id"] != getattr(selected_card, 'info', {'id': -1})['id']:
                 for i, song in enumerate(self._dp.playlist):
                     if (
                         self._dp.cur

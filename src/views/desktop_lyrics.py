@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging
+import time
 from typing import TYPE_CHECKING
 
 from imports import QApplication, QEnterEvent, QSize, Qt, QTimer, QPoint, QRect
@@ -55,7 +56,7 @@ class DesktopLyricsViewer(LyricsViewer):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.updateDatas)
-        self.timer.start(16)
+        self.timer.start(int(1000 / max(60, app.primaryScreen().refreshRate() / 2)))
 
     def unindentation(self):
         if not cfg.desktop_lyrics_anchor == 'top-center':

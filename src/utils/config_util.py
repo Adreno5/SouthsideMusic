@@ -9,7 +9,7 @@ from typing import Any, Literal
 from utils.base.base_util import SongStorable
 
 cfg_changed: bool = False
-
+cfg_cache: dict[str, Any] = {}
 
 @dataclass
 class Config:
@@ -56,8 +56,8 @@ class Config:
     background_ratio: float = 0.4
     volume: float = 1
 
-    lyrics_smooth_factor: float = 13.5
-    acceleration_smooth_factor: float = 9.5
+    lyrics_smooth_factor: float = 0.07
+    acceleration_smooth_factor: float = 0.24
 
     play_speed: float = 1
 
@@ -65,7 +65,6 @@ class Config:
         global cfg_changed
         cfg_changed = True
         super().__setattr__(name, value)
-
 
 cfg = Config()
 

@@ -4,9 +4,10 @@ import json
 import logging
 import sys
 import threading
+import time
 from typing import Any, Callable
 
-from imports import Qt, QTimer, Signal, QMutex
+from imports import QApplication, Qt, QTimer, Signal, QMutex
 from imports import QCloseEvent, QColor, QIcon, QKeyEvent, QPainter
 from imports import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
@@ -20,6 +21,7 @@ from qfluentwidgets import (
 )
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 
+from utils import darkdetect_util
 from utils.base.base_util import SongStorable
 from utils.color_util import mixColor
 from utils.config_util import saveConfig, cfg
@@ -36,7 +38,7 @@ class MainWindow(FluentWindowBase):
 
     def __init__(
         self,
-        app,
+        app: QApplication,
         dp: PlayingPage,
         sp,
         dsp,
@@ -99,6 +101,14 @@ class MainWindow(FluentWindowBase):
         self.closing = False
         self.connected = False
 
+        self.draw_progress: float = 0
+        self.bar_height: float = 0
+        self.left: int = 0
+        self.right: int = 150
+        self.motion: int = 20
+        self.delta: float = 1 / app.primaryScreen().refreshRate()
+        self.last_draw: int = time.perf_counter_ns()
+
         self.setWindowTitle("Southside Music")
 
         self.addSubInterface(
@@ -144,6 +154,21 @@ class MainWindow(FluentWindowBase):
                 QTimer.singleShot(500, self.showMaximized)
 
         QTimer.singleShot(1750, ws_server.start)
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.updateDatas)
+        self.timer.start(16)
+
+    def updateDatas(self):
+        self.bar_height += ((5 if cfg.show_progress else 0) - self.bar_height) * 0.2
+
+        if cfg.show_progress:
+            self.draw_progress += (cfg.progress - self.draw_progress) * 0.6
+        else:
+            self.draw_progress = 0
+
+        if self.bar_height > 0:
+            self.repaint()
 
     def addScheduledTask(self, task: Callable, *args, **kwargs) -> None:
         with self._scheduled_tasks_lock:
@@ -350,14 +375,31 @@ class MainWindow(FluentWindowBase):
             return super().keyPressEvent(event)
 
     def paintEvent(self, e):
+        if not self.song_theme:
+            self.song_theme = QColor(self.backgroundColor)
+
         painter = QPainter(self)
         painter.setPen(Qt.PenStyle.NoPen)
-        if self.song_theme is None:
-            painter.setBrush(self.backgroundColor)
-        else:
+        painter.setBrush(
+            mixColor(
+                self.song_theme, QColor(self.backgroundColor), cfg.background_ratio
+            )
+        )
+        painter.drawRect(self.rect())
+        
+        if cfg.show_progress or self.bar_height > 0.1:
             painter.setBrush(
                 mixColor(
-                    self.song_theme, QColor(self.backgroundColor), cfg.background_ratio
+                    self.song_theme, QColor(255, 255, 255) if darkdetect_util.isDark() else QColor(0, 0, 0), cfg.background_ratio
                 )
             )
-        painter.drawRect(self.rect())
+            if cfg.progress_inter:
+                if self.right > self.width():
+                    self.motion = -self.motion
+                if self.left < 0:
+                    self.motion = -self.motion
+                self.right += self.motion
+                self.left += self.motion
+                painter.drawRect(self.left, 0, self.right - self.left, int(self.bar_height))
+            else:
+                painter.drawRect(0, 0, int(self.width() * self.draw_progress), int(self.bar_height))

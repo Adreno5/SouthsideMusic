@@ -204,26 +204,17 @@ class Sidebar(QWidget):
             "Lyrics Smooth Factor",
             "larger value means a more sudden change",
             0,
-            (self._app.primaryScreen().refreshRate() if self._app else 60),
-            0.5,
+            1,
+            0.01,
             "lyrics_smooth_factor",
         )
         self.addNumberSetting(
             "Acceleration Smooth Factor",
             "smaller value means a more bounce effect",
             0,
-            (self._app.primaryScreen().refreshRate() if self._app else 60),
-            0.5,
-            "acceleration_smooth_factor",
-        )
-        self.addSeparateWidget(SubtitleLabel("Desktop Lyrics"))
-        self.addNumberSetting(
-            'Song Progress Smooth Factor',
-            'larger value means a more sudden change',
-            0,
             1,
-            0.05,
-            'song_progress_smooth_factor'
+            0.01,
+            "acceleration_smooth_factor",
         )
 
         if lw:

@@ -289,6 +289,7 @@ def doWithMultiThreading(
     def __finish():
         if finished:
             finished()
+        cfg.show_progress = False
 
     manager.taskFinished.connect(__finish)
     manager.start()

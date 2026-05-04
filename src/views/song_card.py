@@ -5,6 +5,7 @@ import hashlib
 import logging
 import os
 import threading
+import time
 from typing import Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -45,10 +46,10 @@ from utils.base.base_util import (
 )
 from utils.icon_util import bindIcon, getQIcon
 from utils import darkdetect_util as darkdetect
-from utils.loading_util import doWithMultiThreading
+from utils.loading_util import doWithMultiThreading, downloadWithMultiThreading
 from utils.soundfile_util import getSongFormat, saveSongWithInformations
 from utils import requests_util as requests
-from utils.favorite_util import favs, saveFavorites
+from utils.favorite_util import FolderInfo, favs, saveFavorites
 
 from pyncm import apis
 import pyncm as ncm
@@ -144,7 +145,7 @@ class SongCard(QWidget):
         self._play_callback(self)
 
     def addToFavorites(self):
-        from utils.dialog_util import get_value_bylist
+        from utils.dialog_util import get_value_bylist, get_text_lineedit
 
         if self.info["privilege"] > ncm.GetCurrentSession().vipType:
             InfoBar.warning(
@@ -154,15 +155,8 @@ class SongCard(QWidget):
             )
             return
 
-        if not favs:
-            InfoBar.warning(
-                "No folders",
-                "Create a folder first in Favorites page",
-                parent=self._mwindow,
-            )
-            return
-
         folder_names = [f["folder_name"] for f in favs]
+        folder_names.append('Create New Folder...')
         chosen = get_value_bylist(
             self._mwindow,
             "Choose Folder",
@@ -171,10 +165,23 @@ class SongCard(QWidget):
         )
         if chosen is None:
             return
+        
+        if chosen == 'Create New Folder...':
+            chosen = get_text_lineedit(
+                self._mwindow,
+                "Create New Folder",
+                "My first folder",
+                self._mwindow
+            )
+            if chosen:
+                favs.append({"folder_name": chosen, "songs": []})
 
-        target_folder = next(f for f in favs if f["folder_name"] == chosen)
+            target_folder = FolderInfo(folder_name=chosen, songs=[])
+        else:
+            target_folder = next(f for f in favs if f["folder_name"] == chosen)
 
         result_container = []
+        _finished = False
 
         def _download():
             with ncm.GetCurrentSession():
@@ -188,11 +195,18 @@ class SongCard(QWidget):
                     str(self.info["id"]),  # type: ignore
                     bitrate=3200 * 1000,
                 )
-                music_bytes = requests.get(music_url["data"][0]["url"]).content  # type: ignore
+                
+                def _downloaded(music_bytes: bytes):
+                    nonlocal _finished
+                    result_container.append((image_bytes, music_bytes))
+                    _finished = True
 
-                result_container.append((image_bytes, music_bytes))
+                downloadWithMultiThreading(str(music_url), {}, {}, None, _downloaded)
 
         def _finish():
+            while not _finished:
+                time.sleep(0.2)
+
             image_bytes, music_bytes = result_container[0]
 
             image_cache_hash = hashlib.sha256(image_bytes).hexdigest()
@@ -386,7 +400,10 @@ class _SongCardItem(QWidget):
         result: dict[str, QImage] = {}
 
         def _decode():
-            image_bytes = self.storable.get_image_bytes()
+            try:
+                image_bytes = self.storable.get_image_bytes()
+            except FileNotFoundError:
+                return
             image = QImage()
             image.loadFromData(image_bytes)
             if not image.isNull():

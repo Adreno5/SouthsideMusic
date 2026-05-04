@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 import time
 from typing import TYPE_CHECKING, cast
@@ -7,7 +8,7 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from views.playing_page import PlayingPage
 
-from imports import QEvent, QPointF, Qt, QTimer
+from imports import QApplication, QEvent, QPointF, Qt, QTimer
 from imports import (
     QColor,
     QFont,
@@ -21,6 +22,7 @@ from imports import (
 )
 from imports import QWidget
 
+from utils.pyside_util import toQtInt
 from utils.time_util import float2time
 from utils.color_util import mixColor
 from utils import darkdetect_util as darkdetect
@@ -32,7 +34,7 @@ if TYPE_CHECKING:
 class LyricsViewer(QWidget):
     def __init__(
         self,
-        app,
+        app: QApplication,
         mgr,
         transmgr,
         ymgr,
@@ -77,11 +79,14 @@ class LyricsViewer(QWidget):
 
         self.setMouseTracking(True)
 
+        self.refresh_rate = max(60, app.primaryScreen().refreshRate() / 2)
+        logging.info(f'{self.refresh_rate=}')
+
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.repaint)
-        self.timer.start(int(1000 / app.primaryScreen().refreshRate()))
+        self.timer.start(int(1000 / self.refresh_rate))
 
-        self.delta = 1 / app.primaryScreen().refreshRate()
+        self.delta = 1 / self.refresh_rate
 
     def _hasTranslation(self) -> bool:
         return bool(self._transmgr.parsed)
@@ -109,24 +114,25 @@ class LyricsViewer(QWidget):
         now = time.perf_counter_ns()
         _elapsed: float = (now - self.last_draw) / 1_000_000_000
         self.last_draw = now
-        multiple_factor = _elapsed / self.delta
+        multiple_factor = self.delta / _elapsed
 
         self.target_acc = (
             (self.target_draw_offset - self.draw_offset)
             * self.delta
-            * self._cfg.lyrics_smooth_factor
+            * (self._cfg.lyrics_smooth_factor * self.refresh_rate)
+            * multiple_factor
         )
         self.acc += (
             (self.target_acc - self.acc)
             * self.delta
-            * self._cfg.acceleration_smooth_factor
+            * (self._cfg.acceleration_smooth_factor * self.refresh_rate)
             / max(0.5, min(1, abs(self.target_acc - self.acc)))
             * multiple_factor
         )
 
         if self.draw_offset != self.target_draw_offset:
             self.draw_offset += self.acc
-        if abs(self.target_draw_offset - self.draw_offset) < 0.01:
+        if abs(self.target_draw_offset - self.draw_offset) < 0.4:
             self.draw_offset = self.target_draw_offset
 
         position = self._player.getPosition()
@@ -204,11 +210,11 @@ class LyricsViewer(QWidget):
                 base_color = QColor(color)
                 base_color.setAlpha(120)
                 painter.setPen(base_color)
-                painter.drawText(_toQtInt(self.draw_x_offset), _toQtInt(y), content)
+                painter.drawText(toQtInt(self.draw_x_offset), toQtInt(y), content)
 
                 x = 0.0
-                clip_y = _toQtInt(y - self.metri.ascent())
-                clip_h = _toQtInt(self.font_height)
+                clip_y = toQtInt(y - self.metri.ascent())
+                clip_h = toQtInt(self.font_height)
                 for ch in y_line["chars"]:
                     text_width = self.metri.horizontalAdvance(ch["char"])
                     duration = ch["duration"]
@@ -221,22 +227,22 @@ class LyricsViewer(QWidget):
                     if clip_w > 0:
                         painter.save()
                         painter.setClipRect(
-                            _toQtInt(x + self.draw_x_offset),
+                            toQtInt(x + self.draw_x_offset),
                             clip_y,
-                            _toQtInt(math.ceil(clip_w)),
+                            toQtInt(math.ceil(clip_w)),
                             clip_h,
                         )
                         painter.setPen(color)
                         painter.drawText(
-                            _toQtInt(self.draw_x_offset), _toQtInt(y), content
+                            toQtInt(self.draw_x_offset), toQtInt(y), content
                         )
                         painter.restore()
                     x += text_width
             else:
                 painter.setPen(color)
                 painter.drawText(
-                    _toQtInt(self.draw_x_offset),
-                    _toQtInt(y),
+                    toQtInt(self.draw_x_offset),
+                    toQtInt(y),
                     line["content"].strip(),
                 )
 
@@ -262,8 +268,8 @@ class LyricsViewer(QWidget):
                     else QColor(0, 0, 0, 120)
                 )
                 painter.drawText(
-                    _toQtInt(self.draw_x_offset),
-                    _toQtInt(y + self.metri.descent() + 2 + self.tmetri.ascent()),
+                    toQtInt(self.draw_x_offset),
+                    toQtInt(y + self.metri.descent() + 2 + self.tmetri.ascent()),
                     self._transmgr.getCurrentLyric(trans_time)["content"].strip(),
                 )
                 painter.setFont(self.ft)
@@ -282,10 +288,10 @@ class LyricsViewer(QWidget):
                     )
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.drawRoundedRect(
-                        _toQtInt(self.draw_x_offset),
-                        _toQtInt(y - self.metri.ascent()),
-                        _toQtInt(self.width() - self.draw_x_offset),
-                        _toQtInt(self.font_height),
+                        toQtInt(self.draw_x_offset),
+                        toQtInt(y - self.metri.ascent()),
+                        toQtInt(self.width() - self.draw_x_offset),
+                        toQtInt(self.font_height),
                         5,
                         5,
                     )
@@ -294,10 +300,10 @@ class LyricsViewer(QWidget):
                         info = float2time(self.hovering_lyric["time"])
                     timetxt = f"{f'{info["minutes"]}'.zfill(2)}:{f'{info["seconds"]}'.zfill(2)}"
                     painter.drawText(
-                        _toQtInt(
+                        toQtInt(
                             self.width() - self.metri.horizontalAdvance(timetxt) - 5
                         ),
-                        _toQtInt(y),
+                        toQtInt(y),
                         timetxt,
                     )
 
@@ -324,15 +330,3 @@ class LyricsViewer(QWidget):
             self.hovering_lyric = None
             self.mouse_pos = None
         return super().mousePressEvent(event)
-
-
-def _toQtInt(value: float | int) -> int:
-    import math as _math
-    from functools import lru_cache as _lru_cache
-
-    _QT_INT_MIN = -(2**31)
-    _QT_INT_MAX = 2**31 - 1
-
-    if not _math.isfinite(value):
-        return 0
-    return max(_QT_INT_MIN, min(_QT_INT_MAX, int(value)))

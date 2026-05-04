@@ -131,8 +131,6 @@ class LyricsViewer(QWidget):
 
         if self.draw_offset != self.target_draw_offset:
             self.draw_offset += self.acc
-        if abs(self.target_draw_offset - self.draw_offset) < 0.4:
-            self.draw_offset = self.target_draw_offset
 
         position = self._player.getPosition()
         use_yrc = bool(self._ymgr.parsed)

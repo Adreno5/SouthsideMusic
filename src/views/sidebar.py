@@ -184,6 +184,11 @@ class Sidebar(QWidget):
             'play_speed',
             lambda val: self._player.setPlaySpeed(val),
         )
+        self.addCheckSetting(
+            'Pitch Correction',
+            'WSOLA pitch correction to keep original pitch when speed changes',
+            'pitch_correction',
+        )
         self.addNumberSetting(
             'Skip Threshold', 'the threshold of the skip', -100, 0, 1, 'skip_threshold'
         )

@@ -329,6 +329,97 @@ class PatchedAudioSegment(AudioSegment):
         )
 
 
+class WSOLAProcessor:
+    """Real-time WSOLA time-stretching for pitch-preserving speed changes."""
+
+    def __init__(self, channels: int = 1, sample_rate: int = 44100):
+        self.channels = channels
+        self.sample_rate = sample_rate
+        self.window_size = max(256, int(0.025 * sample_rate))
+        self.window_size += self.window_size % 2
+        self.hop_syn = self.window_size // 2
+        self.tolerance = self.window_size // 4
+
+        win = np.hanning(self.window_size).astype(np.float32)
+        self._window = win.reshape(-1, 1) if channels > 1 else win
+
+        self._src_pos: float = 0.0
+        self._overlap_buf: Optional[np.ndarray] = None
+        self._out_buf = np.zeros((0, channels), dtype=np.float32)
+        self._prev_src_tail: Optional[np.ndarray] = None
+
+    def reset(self, src_index: int = 0) -> None:
+        self._src_pos = float(src_index)
+        self._overlap_buf = None
+        self._out_buf = np.zeros((0, self.channels), dtype=np.float32)
+        self._prev_src_tail = None
+
+    def read(
+        self, samples: np.ndarray, speed: float, frames: int
+    ) -> tuple[np.ndarray, int]:
+        n = len(samples)
+        initial_pos = self._src_pos
+
+        if n == 0 or frames == 0:
+            return np.zeros((frames, self.channels), dtype=np.float32), 0
+
+        hop_ana = max(1, int(round(self.hop_syn * speed)))
+
+        while len(self._out_buf) < frames:
+            src_start = int(round(self._src_pos))
+            if src_start + self.window_size > n:
+                break
+
+            actual_start = src_start
+            if self._prev_src_tail is not None:
+                offset = self._best_offset(samples, src_start, n)
+                actual_start = max(0, min(src_start + offset, n - self.window_size))
+
+            block = samples[actual_start : actual_start + self.window_size]
+            windowed = block * self._window
+
+            if self._overlap_buf is not None:
+                output_chunk = self._overlap_buf + windowed[: self.hop_syn]
+            else:
+                output_chunk = windowed[: self.hop_syn].copy()
+
+            self._out_buf = np.concatenate([self._out_buf, output_chunk])
+            self._overlap_buf = windowed[self.hop_syn :].copy()
+            self._prev_src_tail = block[self.hop_syn :].copy()
+            self._src_pos += hop_ana
+
+        out_len = min(frames, len(self._out_buf))
+        output = np.zeros((frames, self.channels), dtype=np.float32)
+        if out_len > 0:
+            output[:out_len] = self._out_buf[:out_len]
+            self._out_buf = self._out_buf[out_len:]
+
+        consumed = int(round(self._src_pos - initial_pos))
+        return output, consumed
+
+    def _best_offset(self, samples: np.ndarray, nominal: int, n: int) -> int:
+        ref = self._prev_src_tail
+        if ref is None:
+            return 0
+        compare_len = len(ref)
+        search_start = max(0, nominal - self.tolerance)
+        search_end = min(n - compare_len, nominal + self.tolerance)
+        if search_start > search_end:
+            return 0
+
+        region = samples[search_start : search_end + compare_len]
+        if ref.ndim == 2 and ref.shape[1] > 1:
+            ref_mono = ref.mean(axis=1)
+            region_mono = region.mean(axis=1)
+        else:
+            ref_mono = ref.ravel()
+            region_mono = region.ravel()
+
+        corr = np.correlate(region_mono, ref_mono, mode='valid')
+        best_idx = int(np.argmax(corr))
+        return (search_start + best_idx) - nominal
+
+
 class AudioPlayer(QObject):
     onFullFinished = Signal()
     onEndingNoSound = Signal()
@@ -358,6 +449,8 @@ class AudioPlayer(QObject):
         self.fft_size = 1024
 
         self.play_speed = cfg.play_speed
+        self._wsola = WSOLAProcessor(channels=1, sample_rate=self.sample_rate)
+        self._last_consumed: int = 0
 
         self._lock = threading.RLock()
         devices = getAudioDevices()
@@ -449,6 +542,9 @@ class AudioPlayer(QObject):
             self._playback_time = 0.0
             self.is_playing = False
             self.is_paused = False
+            self._wsola = WSOLAProcessor(
+                channels=self.channels, sample_rate=self.sample_rate
+            )
 
     def loadFromFile(self, file_path: Path) -> None:
         audio = PatchedAudioSegment.from_file(str(file_path))
@@ -491,6 +587,7 @@ class AudioPlayer(QObject):
             self._playback_time = 0.0
             self.is_playing = False
             self.is_paused = False
+            self._wsola.reset(0)
 
     def setPosition(self, seconds: float) -> None:
         with self._lock:
@@ -498,6 +595,7 @@ class AudioPlayer(QObject):
                 return
             self._playback_time = max(0.0, seconds)
             self.current_index = int(self._playback_time * self.sample_rate)
+            self._wsola.reset(self.current_index)
 
     def getPosition(self) -> float:
         return round(self._playback_time, 2)
@@ -584,14 +682,22 @@ class AudioPlayer(QObject):
         n = len(self.samples)
         speed = self.play_speed
         if n == 0:
+            self._last_consumed = 0
             return np.zeros((0, self.channels), dtype=np.float32)
         if abs(speed - 1.0) < 1e-6:
+            self._last_consumed = frames
             return self.samples[start_idx : start_idx + frames].copy()
+
+        if cfg.pitch_correction:
+            output, consumed = self._wsola.read(self.samples, speed, frames)
+            self._last_consumed = consumed
+            return output
 
         src_frames = int(round(frames * speed))
         src_end = min(start_idx + src_frames, n)
         src_len = src_end - start_idx
         if src_len <= 0:
+            self._last_consumed = 0
             return np.zeros((0, self.channels), dtype=np.float32)
 
         src = self.samples[start_idx:src_end]
@@ -602,6 +708,7 @@ class AudioPlayer(QObject):
         frac = frac.reshape(-1, 1)
 
         out = src[low] * (1 - frac) + src[high] * frac
+        self._last_consumed = src_frames
         return out
 
     def _audio_callback(self, outdata, frames, time, status):
@@ -626,7 +733,7 @@ class AudioPlayer(QObject):
                     :, : self.output_channels
                 ]
 
-            src_frames = int(round(frames * self.play_speed))
+            src_frames = self._last_consumed
             self.current_index = min(self.current_index + src_frames, len(self.samples))
             self._playback_time = self.current_index / self.sample_rate
 

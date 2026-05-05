@@ -63,6 +63,7 @@ class Config:
     acceleration_smooth_factor: float = 0.20
 
     play_speed: float = 1
+    pitch_correction: bool = True
 
     def __setattr__(self, name: str, value: Any) -> None:
         global cfg_changed

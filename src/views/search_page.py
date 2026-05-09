@@ -23,8 +23,8 @@ from qfluentwidgets import (
 
 import pyncm
 from pyncm import apis
-from utils.loading_util import doWithMultiThreading
-from utils.base.base_util import SongInfo
+from core.downloader import doWithMultiThreading
+from core.models import SongInfo
 
 from views.song_card import SongCard
 from MusicLibrary.kuGouMusicApi import KuGouMusicApi

@@ -1,7 +1,16 @@
 import threading
 
-from imports import PRE_THEME_CHANGED, REFRESH_RATE_CHANGED, REPAINT, QApplication, QObject, QTimer, event_bus
-from utils import darkdetect_util
+from imports import (
+    PRE_THEME_CHANGED,
+    REFRESH_RATE_CHANGED,
+    REPAINT,
+    QApplication,
+    QObject,
+    QTimer,
+    event_bus,
+)
+from core import theme
+
 
 class EventsServices(QObject):
     def __init__(self, app: QApplication) -> None:
@@ -12,11 +21,16 @@ class EventsServices(QObject):
         self.repaint_timer = QTimer(self)
         self.repaint_timer.timeout.connect(lambda: event_bus.emit(REPAINT))
         self.repaint_timer.start(int(1000 / self.refresh_rate))
-        app.primaryScreen().refreshRateChanged.connect(lambda: event_bus.emit(REFRESH_RATE_CHANGED))
+        app.primaryScreen().refreshRateChanged.connect(
+            lambda: event_bus.emit(REFRESH_RATE_CHANGED)
+        )
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
 
         def _startListen():
-            darkdetect_util.getDarkdetect().listener(lambda theme: event_bus.emit(PRE_THEME_CHANGED, theme))
+            theme.getDarkdetect().listener(
+                lambda t: event_bus.emit(PRE_THEME_CHANGED, t)
+            )
+
         threading.Thread(target=_startListen, daemon=True).start()
 
     def _onRefreshRateChanged(self):

@@ -10,8 +10,8 @@ from typing import Callable, TYPE_CHECKING, cast, cast as _cast
 if TYPE_CHECKING:
     from views.main_window import MainWindow
     from views.playing_page import PlayingPage
-    from utils.play_util import AudioPlayer
-    from utils.websocket_util import WebSocketHandler
+    from core.audio_player import AudioPlayer
+    from core.ws_server import WebSocketHandler
 
 import numpy as np
 from imports import (
@@ -55,15 +55,15 @@ from qfluentwidgets import (
     TransparentPushButton,
 )
 
-from utils.base.base_util import SongStorable
-from utils.icon_util import bindIcon
-from utils import darkdetect_util as darkdetect
-from utils.loading_util import doWithMultiThreading
-from utils.loudness_balance_util import getAdjustedGainFactor
-from utils.play_util import AudioSegment, AudioPlayer
-from utils.config_util import cfg
+from core.models import SongStorable
+from core.icons import bindIcon
+from core import theme as darkdetect
+from core.downloader import doWithMultiThreading
+from core.loudness import getAdjustedGainFactor
+from core.audio_player import AudioSegment, AudioPlayer
+from core.config import cfg
 from views.song_card import DummyCard, PlaylistSongCard
-from utils.websocket_util import (
+from core.ws_server import (
     WebSocketServer,
     WebSocketHandler,
     QObjectHandler,

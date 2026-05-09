@@ -5,10 +5,10 @@ from imports import QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import TitleLabel
 import hPyT
 
-from utils import darkdetect_util as darkdetect
+from core import theme as darkdetect
 import time
 
-from utils.dialog_util import SubtitleLabel
+from core.dialogs import SubtitleLabel
 
 class LaunchWindow(QWidget):
     def __init__(self, app):

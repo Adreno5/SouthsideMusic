@@ -24,14 +24,14 @@ import imports as _ims
 from qfluentwidgets import setTheme, Theme
 import shiboken6
 
-from utils.config_util import loadConfig, saveConfig, cfg, autosave_thread
-from utils.favorite_util import loadFavorites, saveFavorites, favs
-from utils.icon_util import refreshBoundIcons
-from utils.play_util import AudioPlayer
+from core.config import loadConfig, saveConfig, cfg, autosave_thread
+from core.favorites import loadFavorites, saveFavorites, favs
+from core.icons import refreshBoundIcons
+from core.audio_player import AudioPlayer
 import pyncm as ncm
 from pyncm import apis
-from utils import darkdetect_util as darkdetect
-from utils.websocket_util import ws_server, ws_handler
+from core import theme as darkdetect
+from core.ws_server import ws_server, ws_handler
 from views.log_handler import LogHandler, hijackStreams
 from views.launch_window import LaunchWindow
 from views.search_page import SearchPage
@@ -48,7 +48,7 @@ logging_handler = LogHandler()
 logging.basicConfig(level=logging.DEBUG, handlers=[logging_handler])
 hijackStreams()
 
-_logger = logging.getLogger(__name__)
+_logger = logging.getLogger('main')
 
 
 def patchedExceptHook(
@@ -256,7 +256,7 @@ if __name__ == '__main__':
         _ims.QFontDatabase.addApplicationFont('fonts/HARMONYOS_SANS_SC_REGULAR.ttf')
     )[0]
 
-    from utils.lyric_util import LRCLyricParser, YRCLyricParser
+    from core.lyrics import LRCLyricParser, YRCLyricParser
 
     launchwindow.push('Initializing services...')
 

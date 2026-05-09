@@ -12,8 +12,8 @@ from typing import TypedDict
 import toml  # type: ignore[import-untyped]
 from imports import QMessageBox
 
-from utils import requests_util as requests
-from utils.config_util import cfg
+from core import http_utils as requests
+from core.config import cfg
 _logger = logging.getLogger(__name__)
 
 excludes = ['ffmpeg']

@@ -43,13 +43,13 @@ from qfluentwidgets import (
     TransparentToolButton,
 )
 
-from utils.icon_util import bindIcon
-from utils import darkdetect_util as darkdetect
-from utils.time_util import float2time
-from utils.lyric_util import LyricInfo, LRCLyricParser, YRCLyricParser
-from utils.play_util import AudioPlayer
-from utils.websocket_util import QObjectHandler
-from utils.config_util import cfg
+from core.icons import bindIcon
+from core import theme as darkdetect
+from core.time_format import float2time
+from core.lyrics import LyricInfo, LRCLyricParser, YRCLyricParser
+from core.audio_player import AudioPlayer
+from core.ws_server import QObjectHandler
+from core.config import cfg
 
 class PlayingController(QWidget):
     onSongFinish = Signal()

@@ -33,14 +33,14 @@ from imports import (
 )
 from imports import QWidget
 
-from utils.pyside_util import toQtInt
-from utils.time_util import float2time
-from utils.color_util import mixColor
-from utils import darkdetect_util as darkdetect
-from utils.lyric_util import LyricInfo, YRCLyricInfo
+from core.qt_utils import toQtInt
+from core.time_format import float2time
+from core.color import mixColor
+from core import theme as darkdetect
+from core.lyrics import LyricInfo, YRCLyricInfo
 
 if TYPE_CHECKING:
-    from utils.play_util import AudioPlayer
+    from core.audio_player import AudioPlayer
 
 
 class LyricsViewer(QWidget):

@@ -27,15 +27,15 @@ from imports import (
 )
 from imports import QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import CheckBox, FlowLayout, PushButton, FluentIcon, TitleLabel
-from utils.color_util import mixColor
-from utils.config_util import Config, cfg
-from utils import darkdetect_util as darkdetect
-from utils.lyric_util import LyricInfo, YRCLyricInfo
+from core.color import mixColor
+from core.config import Config, cfg
+from core import theme as darkdetect
+from core.lyrics import LyricInfo, YRCLyricInfo
 from views.lyrics_viewer import LyricsViewer
 
 if TYPE_CHECKING:
     from views.playing_page import PlayingPage
-    from utils.play_util import AudioPlayer
+    from core.audio_player import AudioPlayer
 
 
 class DesktopLyricsViewer(LyricsViewer):

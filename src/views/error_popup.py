@@ -9,8 +9,8 @@ from imports import (
     TransparentPushButton,
     QApplication,
 )
-from utils.dialog_util import SubtitleLabel
-from utils.icon_util import SouthsideIcon
+from core.dialogs import SubtitleLabel
+from core.icons import SouthsideIcon
 
 
 class ErrorPopupWindow(QDialog):

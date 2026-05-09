@@ -38,23 +38,23 @@ from qfluentwidgets import (
     ToolButton,
 )
 
-from utils.base.base_util import (
+from core.models import (
     IMAGE_DATA_DIR,
     MUSIC_DATA_DIR,
     SongDetail,
     SongInfo,
     SongStorable,
 )
-from utils.icon_util import bindIcon, getQIcon
-from utils import darkdetect_util as darkdetect
-from utils.loading_util import (
+from core.icons import bindIcon, getQIcon
+from core import theme as darkdetect
+from core.downloader import (
     doWithMultiThreading,
     downloadWithMultiThreading,
     DownloadingManager,
 )
-from utils.soundfile_util import getSongFormat, saveSongWithInformations
-from utils import requests_util as requests
-from utils.favorite_util import FolderInfo, favs, saveFavorites
+from core.soundfile import getSongFormat, saveSongWithInformations
+from core import http_utils as requests
+from core.favorites import FolderInfo, favs, saveFavorites
 
 from pyncm import apis
 import pyncm as ncm
@@ -150,7 +150,7 @@ class SongCard(QWidget):
         self._play_callback(self)
 
     def addToFavorites(self):
-        from utils.dialog_util import get_value_bylist, get_text_lineedit
+        from core.dialogs import get_value_bylist, get_text_lineedit
 
         if self.info['privilege'] > ncm.GetCurrentSession().vipType:
             InfoBar.warning(

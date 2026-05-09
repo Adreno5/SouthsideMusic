@@ -25,9 +25,9 @@ from qfluentwidgets import (
     TitleLabel,
 )
 
-from utils.base.base_util import FolderInfo, SongStorable
-from utils.favorite_util import loadFavorites, saveFavorites, favs
-from utils.icon_util import bindIcon
+from core.models import FolderInfo, SongStorable
+from core.favorites import loadFavorites, saveFavorites, favs
+from core.icons import bindIcon
 
 from views.song_card import FavoriteSongCard
 
@@ -97,7 +97,7 @@ class FavoritesPage(QWidget):
         self._lazy_timer.start(50)
 
     def renameFolder(self):
-        from utils.dialog_util import get_text_lineedit
+        from core.dialogs import get_text_lineedit
 
         got = get_text_lineedit(
             'Rename Folder',
@@ -192,7 +192,7 @@ class FavoritesPage(QWidget):
             return
 
     def newFolder(self):
-        from utils.base.base_util import FolderInfo
+        from core.models import FolderInfo
 
         favs = loadFavorites()
 

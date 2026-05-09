@@ -16,12 +16,13 @@ if TYPE_CHECKING:
     from views.sidebar import Sidebar
     from views.main_window import MainWindow
     from views.favorites_page import FavoritesPage
-    from utils.play_util import AudioPlayer
-    from utils.lyric_util import LRCLyricParser, YRCLyricParser
+    from core.audio_player import AudioPlayer
+    from core.lyrics import LRCLyricParser, YRCLyricParser
 
 import numpy as np
 from imports import (
     IMAGE_ASSET_PERSISTED,
+    PLAY_STATE_CHANGED,
     SONG_CHANGED,
     SWITCH_PAGE,
     UPDATE_FM,
@@ -49,27 +50,27 @@ from qfluentwidgets import (
     SubtitleLabel,
 )
 
-from utils.base.base_util import (
+from core.models import (
     IMAGE_DATA_DIR,
     LYRIC_DATA_DIR,
     MUSIC_DATA_DIR,
     SongStorable,
 )
-from utils.color_util import mixColor
-from utils.image_util import getAverageColorFromBytes
-from utils.config_util import cfg
-from utils.favorite_util import saveFavorites
-from utils.icon_util import bindIcon
-from utils.image_util import getAverageColor
-from utils.loading_util import doWithMultiThreading, downloadWithMultiThreading
-from utils.loudness_balance_util import getAdjustedGainFactor
-from utils.play_util import (
+from core.color import mixColor
+from core.image import getAverageColorFromBytes
+from core.config import cfg
+from core.favorites import saveFavorites
+from core.icons import bindIcon
+from core.image import getAverageColor
+from core.downloader import doWithMultiThreading, downloadWithMultiThreading
+from core.loudness import getAdjustedGainFactor
+from core.audio_player import (
     PatchedAudioSegment as AudioSegment_,
     get_cached_audio,
     cache_decoded_audio,
 )
-from utils.random_util import AdvancedRandom
-from utils import requests_util as requests
+from core.weighted_random import AdvancedRandom
+from core import http_utils as requests
 from views.song_card import DummyCard
 from views.lyrics_viewer import LyricsViewer
 from views.playing_controller import PlayingController
@@ -1111,6 +1112,7 @@ class PlayingPage(QWidget):
                 self._mwindow_obj.repaint()
 
             event_bus.emit(SONG_CHANGED, song_storable)
+            event_bus.emit(PLAY_STATE_CHANGED, True)
 
         doWithMultiThreading(_prepare, (), self._mwindow_obj, _finish)
 

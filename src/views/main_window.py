@@ -36,13 +36,13 @@ from qfluentwidgets import (
 )
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 
-from utils import darkdetect_util
-from utils.base.base_util import SongStorable
-from utils.color_util import mixColor
-from utils.config_util import saveConfig, cfg
-from utils.favorite_util import saveFavorites, favs
-from utils.icon_util import getQIcon
-from utils.loading_util import doWithMultiThreading
+from core import theme
+from core.models import SongStorable
+from core.color import mixColor
+from core.config import saveConfig, cfg
+from core.favorites import saveFavorites, favs
+from core.icons import getQIcon
+from core.downloader import doWithMultiThreading
 from views.playing_page import PlayingPage
 from views.song_card import DummyCard, SongCard
 from views.title_bar import SouthsideMusicTitleBar
@@ -197,11 +197,15 @@ class MainWindow(FluentWindowBase):
         self.last_draw = now
         multiple_factor = _elapsed * self.refresh_rate / 2
 
-        self.bar_height += ((5 if cfg.show_progress else 0) - self.bar_height) * multiple_factor * 0.3
+        self.bar_height += (
+            ((5 if cfg.show_progress else 0) - self.bar_height) * multiple_factor * 0.3
+        )
         self.bar_height = min(4, self.bar_height)
 
         if cfg.show_progress:
-            self.draw_progress += (cfg.progress - self.draw_progress) * multiple_factor * 0.9
+            self.draw_progress += (
+                (cfg.progress - self.draw_progress) * multiple_factor * 0.9
+            )
         else:
             self.draw_progress = 0
 
@@ -306,13 +310,13 @@ class MainWindow(FluentWindowBase):
         isTransparent=False,
     ) -> NavigationTreeWidget:
         if not interface.objectName():
-            raise ValueError('The object name of `interface` can\'t be empty string.')
+            raise ValueError("The object name of `interface` can't be empty string.")
 
         parentRouteKey = parent
         if parent and isinstance(parent, QWidget):
             parentRouteKey = parent.objectName()
             if not parentRouteKey:
-                raise ValueError('The object name of `parent` can\'t be empty string.')
+                raise ValueError("The object name of `parent` can't be empty string.")
 
         interface.setProperty('isStackedTransparent', isTransparent)
         self.stackedWidget.addWidget(interface)
@@ -342,7 +346,7 @@ class MainWindow(FluentWindowBase):
 
         self._dp.cur = None
 
-        self._dp.cur = card # type: ignore
+        self._dp.cur = card  # type: ignore
         self._dp.init()
 
     def init(self) -> None:
@@ -447,7 +451,7 @@ class MainWindow(FluentWindowBase):
             lambda: self._ws_handler.send(
                 json.dumps(
                     {
-                        'option': f'{'disable' if not self._sidebar.enableFFT_box.isChecked() else 'enable'}_fft'
+                        'option': f'{"disable" if not self._sidebar.enableFFT_box.isChecked() else "enable"}_fft'
                     }
                 )
             ),
@@ -501,9 +505,7 @@ class MainWindow(FluentWindowBase):
             painter.setBrush(
                 mixColor(
                     self.song_theme,
-                    QColor(255, 255, 255)
-                    if darkdetect_util.isDark()
-                    else QColor(0, 0, 0),
+                    QColor(255, 255, 255) if theme.isDark() else QColor(0, 0, 0),
                     cfg.background_ratio,
                 )
             )

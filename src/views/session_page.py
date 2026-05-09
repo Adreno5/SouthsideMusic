@@ -9,11 +9,11 @@ from imports import QPixmap
 from imports import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import MessageBox, PrimaryPushButton, SubtitleLabel, TitleLabel
 
-from utils import darkdetect_util as darkdetect
-from utils.dialog_util import QRCodeLoginDialog, get_value_bylist, get_text_lineedit
-from utils.icon_util import bindIcon
-from utils import requests_util as requests
-from utils.config_util import cfg
+from core import theme as darkdetect
+from core.dialogs import QRCodeLoginDialog, get_value_bylist, get_text_lineedit
+from core.icons import bindIcon
+from core import http_utils as requests
+from core.config import cfg
 import pyncm as ncm
 from pyncm import apis
 

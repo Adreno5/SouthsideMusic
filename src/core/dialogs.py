@@ -7,13 +7,13 @@ from pyncm import apis
 import qrcode
 from qfluentwidgets import (
     LineEdit,
-    ListWidget,
     MessageBoxBase,
     PrimaryPushButton,
     SubtitleLabel,
     TextEdit,
     TitleLabel,
 )
+from views.list_widget import SListWidget
 import requests
 
 
@@ -75,7 +75,7 @@ class ListDialog(MessageBoxBase):
         self.title_label = SubtitleLabel(title)
         self.desc_label = QLabel(desc)
 
-        self.inputer = ListWidget(self)
+        self.inputer = SListWidget(self)
         self.inputer.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.inputer.addItems(texts)
         self.inputer.setFixedSize(parent.size() * 0.5)

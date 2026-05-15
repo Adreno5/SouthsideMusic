@@ -13,6 +13,7 @@ from imports import (
     REFRESH_RATE_CHANGED,
     REPAINT,
     QApplication,
+    QEnterEvent,
     QEvent,
     QPointF,
     Qt,
@@ -55,6 +56,8 @@ class LyricsViewer(QWidget):
         harmony_font_family: str,
         cfg,
         dp: PlayingPage,
+        ft_size: int | None = None,
+        transft_size: int | None = None,
     ):
         super().__init__()
         self._logger = logging.getLogger(__name__)
@@ -73,11 +76,11 @@ class LyricsViewer(QWidget):
         self.acc: float = 0
         self.target_acc: float = 0
 
-        self.ft = QFont(harmony_font_family, 14)
+        self.ft = QFont(harmony_font_family, ft_size or 14)
         self.font_height = QFontMetricsF(self.ft).height()
         self.metri = QFontMetricsF(self.ft)
 
-        self.tft = QFont(harmony_font_family, 10)
+        self.tft = QFont(harmony_font_family, transft_size or 10)
         self.theight = QFontMetricsF(self.tft).height()
         self.tmetri = QFontMetricsF(self.tft)
 
@@ -99,6 +102,8 @@ class LyricsViewer(QWidget):
         self._logger.info(f'{self.refresh_rate=}')
 
         self.delta = 1 / self.refresh_rate
+
+        self.hovering = False
 
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(REPAINT, self._onRepaintTick)
@@ -180,6 +185,9 @@ class LyricsViewer(QWidget):
 
         if self.draw_offset != self.target_draw_offset:
             self.draw_offset += self.acc
+
+        if not self.isVisible():
+            return
 
         position = self._player.getPosition()
         use_yrc = bool(self._ymgr.parsed)
@@ -357,10 +365,15 @@ class LyricsViewer(QWidget):
 
         painter.end()
 
+    def enterEvent(self, event: QEnterEvent) -> None:
+        self.hovering = True
+        return super().enterEvent(event)
+
     def leaveEvent(self, event: QEvent) -> None:
         self.mouse_pos = None
         self.selecting = False
         self.hovering_lyric = None
+        self.hovering = False
         return super().leaveEvent(event)
 
     def wheelEvent(self, event: QWheelEvent) -> None:

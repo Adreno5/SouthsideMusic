@@ -33,6 +33,8 @@ class SouthsideIcon(FluentIconBase, Enum):
     SESSION = "session"
     DROP_UP = "drop_up"
     DROP_DOWN = "drop_down"
+    PLAYLIST = "playlist"
+    SETTINGS = "settings"
 
     @lru_cache
     def path(self, theme=Theme.AUTO) -> str:

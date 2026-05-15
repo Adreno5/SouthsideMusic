@@ -9,21 +9,42 @@ import time
 from typing import Any, Callable
 
 from imports import (
+    BACKGROUND_RATIO_CHANGED,
+    ENDING_NO_SOUND,
     LYRIC_LINE_CHANGED,
+    PLAYLAST,
+    PLAYNEXT,
     REFRESH_RATE_CHANGED,
     REPAINT,
     SONG_CHANGED,
-    SWITCH_PAGE,
+    SONG_FINISH,
+    START_INTER_LOADING,
+    START_PROGRESS_LOADING,
+    STOP_INTER_LOADING,
+    STOP_PROGRESS_LOADING,
+    UPDATE_LOADING_PROGRESS,
+    VIEW_FOLDER,
     WEBSOCKET_CONNECTED,
     WEBSOCKET_DISCONNECTED,
+    LineEdit,
+    QAbstractAnimation,
     QApplication,
+    QEasingCurve,
+    QFont,
+    QListWidgetItem,
+    QPropertyAnimation,
+    QRect,
+    QSize,
+    QStackedWidget,
     Qt,
     QTimer,
     Signal,
     QMutex,
+    TransparentPushButton,
     event_bus,
 )
 from imports import QCloseEvent, QColor, QIcon, QKeyEvent, QPainter
+from views.list_widget import SListWidget
 from imports import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
     FluentIconBase,
@@ -37,12 +58,15 @@ from qfluentwidgets import (
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 
 from core import theme
-from core.models import SongStorable
+from core.models import FolderInfo, SongStorable
 from core.color import mixColor
 from core.config import saveConfig, cfg
 from core.favorites import saveFavorites, favs
-from core.icons import getQIcon
+from core.icons import bindIcon, getQIcon
 from core.downloader import doWithMultiThreading
+from views.folder_card import FolderCard
+from views.line_edit import SearchLineEdit
+from views.playing_controller import PlayingController
 from views.playing_page import PlayingPage
 from views.song_card import DummyCard, SongCard
 from views.title_bar import SouthsideMusicTitleBar
@@ -59,11 +83,16 @@ class MainWindow(FluentWindowBase):
         dsp,
         fp,
         sep,
-        sidebar,
         player,
         ws_server,
         ws_handler,
         launchwindow,
+        harmony_font_family,
+        mgr,
+        transmgr,
+        ymgr,
+        stp,
+        plp,
         parent=None,
     ):
         super().__init__(parent)
@@ -74,12 +103,20 @@ class MainWindow(FluentWindowBase):
         self._dsp = dsp
         self._fp = fp
         self._sep = sep
-        self._sidebar = sidebar
         self._player = player
         self._ws_server = ws_server
         self._ws_handler = ws_handler
         self._launchwindow = launchwindow
         self._loading_song: bool = False
+        self._stp = stp
+        self._plp = plp
+
+        self._sp.resultGot.connect(lambda: setattr(self, 'searching', False))
+
+        self.contents_widget = QStackedWidget()
+        for w in [self._fp, self._sp, self._stp, self._sep]:
+            launchwindow.push(f'Adding {w} to stacked widget...')
+            self.contents_widget.addWidget(w)
 
         self._scheduled_tasks: list[
             tuple[Callable, tuple[Any, ...], dict[str, Any]]
@@ -88,29 +125,80 @@ class MainWindow(FluentWindowBase):
         self.scheduledTaskRequested.connect(self._runScheduledTasks)
         self.setTitleBar(SouthsideMusicTitleBar(self))
 
-        self.navigationInterface = NavigationInterface(self, showReturnButton=True)
-        self.widgetLayout = QVBoxLayout()
-
         contents_layout = QHBoxLayout()
+        contents_widget = QWidget(self)
+        contents_widget.setLayout(contents_layout)
+        contents_layout.addWidget(self.contents_widget)
 
-        left_layout = QVBoxLayout()
+        contents_widget.setContentsMargins(0, 0, 0, 52)  # for playing controller
+
+        self.loading_tasks: int = 0
+        self.loading_inter: bool = False
+        self.loading_progressing: bool = False
+        self.loading_progress: float = 0
+        self.loading_ft = QFont(harmony_font_family)
 
         self.song_theme: QColor | None = None
 
-        self.hBoxLayout.addWidget(self.navigationInterface)
-        self.hBoxLayout.addLayout(self.widgetLayout)
-        self.hBoxLayout.setStretchFactor(self.widgetLayout, 1)
-
-        left_layout.addWidget(self.stackedWidget)
         contents_layout.setContentsMargins(0, 48, 0, 0)
 
-        left_layout.addWidget(dp.controller, alignment=Qt.AlignmentFlag.AlignHCenter)
-        contents_layout.addLayout(left_layout)
-        contents_layout.addWidget(sidebar)
-        self.widgetLayout.addLayout(contents_layout)
+        self.controller = PlayingController(
+            player,
+            mgr,
+            transmgr,
+            ymgr,
+            dp,
+            self,
+            ws_handler,
+            app,
+            harmony_font_family,
+            stp,
+        )
+        player.onFullFinished.connect(lambda: event_bus.emit(SONG_FINISH))
+        player.onEndingNoSound.connect(dp.onEndingNoSound)
+        event_bus.subscribe(SONG_FINISH, lambda: dp.playNext(False))
+        self.controller.play_pausebtn.clicked.connect(dp.onPlayButtonClicked)
 
-        self.navigationInterface.displayModeChanged.connect(self.titleBar.raise_)
+        if launchwindow:
+            launchwindow.top('  Wiring signal connections...')
+        event_bus.subscribe(PLAYNEXT, lambda: dp.playNext(True))
+        event_bus.subscribe(PLAYLAST, lambda: dp.playLast())
+
+        self.controller.setParent(self)
+
+        self.folders_list = SListWidget()
+        self.folders_list.itemClicked.connect(self._onFolderItemClicked)
+
+        left_layout = QVBoxLayout()
+        left_layout.setContentsMargins(0, 48, 0, 52)
+
+        self.settings_btn = TransparentPushButton('Settings')
+        bindIcon(self.settings_btn, 'settings')
+        self.session_btn = TransparentPushButton('Session')
+        bindIcon(self.session_btn, 'session')
+        self.settings_btn.clicked.connect(self._onSettingsClicked)
+        self.session_btn.clicked.connect(self._onSessionClicked)
+
+        left_layout.addWidget(self.settings_btn)
+        left_layout.addWidget(self.session_btn)
+        left_layout.addWidget(self.folders_list, 1)
+
+        self.hBoxLayout.addLayout(left_layout, 1)
+        self.hBoxLayout.addWidget(contents_widget, 5)
+
+        self.searching = False
+        self.search_input = SearchLineEdit(self, harmony_font_family)
+        self.search_input.returnPressed.connect(self.search)
+        self.search_input.setParent(self)
+        self.search_input.setFixedHeight(self.titleBar.height() - 15)
+        self.search_input.move(
+            self.minimumWidth() // 2,
+            int((self.titleBar.height() - self.search_input.height()) * 0.5),
+        )
+        self.search_input.setFixedWidth(self.width() - self.minimumWidth())
+
         self.titleBar.raise_()
+        self.search_input.raise_()
 
         self.closing = False
         self.connected = False
@@ -125,33 +213,16 @@ class MainWindow(FluentWindowBase):
 
         self.setWindowTitle('Southside Music')
 
-        self.addSubInterface(
-            sp,
-            getQIcon('music'),
-            'Search',
-        )
-        self.addSubInterface(
-            dp,
-            getQIcon('studio'),
-            'Playing',
-        )
-        self.addSubInterface(
-            dsp,
-            getQIcon('island'),
-            'Desktop Lyrics',
-        )
-        self.addSubInterface(
-            fp,
-            getQIcon('fav'),
-            'Favorites',
-            NavigationItemPosition.BOTTOM,
-        )
-        self.addSubInterface(
-            sep,
-            getQIcon('session'),
-            'Session',
-            NavigationItemPosition.BOTTOM,
-        )
+        QTimer.singleShot(1750, ws_server.start)
+
+        self.refresh_rate = max(60, app.primaryScreen().refreshRate() / 2)
+        self._logger.info(f'{self.refresh_rate=}')
+
+        self.delta = 1 / self.refresh_rate
+
+        self.show()
+
+        self.setMinimumSize(app.primaryScreen().size() * 0.4)
 
         if cfg.window_width == 0 and cfg.window_height == 0:
             self.resize(app.primaryScreen().size() * 0.65)
@@ -162,28 +233,155 @@ class MainWindow(FluentWindowBase):
             cfg.window_height = self.height()
         else:
             self.move(cfg.window_x, cfg.window_y)
-            self.resize(cfg.window_width, 0)
+            self.resize(cfg.window_width, cfg.window_height)
 
             if cfg.window_maximized:
-                QTimer.singleShot(500, self.showMaximized)
+                self.showMaximized()
 
-        QTimer.singleShot(1750, ws_server.start)
+        self.controller.setFixedSize(max(1, self.width()), 52)
+        self.controller.move(0, self.height() - self.controller.height())
 
-        self.refresh_rate = max(60, app.primaryScreen().refreshRate() / 2)
-        self._logger.info(f'{self.refresh_rate=}')
+        self.dp_expanded = False
+        self.dp_animating = False
+        self._dp.setParent(self)
+        self._dp.hide()
+        self._dp.setFixedSize(self.size() - QSize(0, 100))
+        self._dp.move(0, 48)
+        self.controller.raise_()
+        self.controller.show()
 
-        self.delta = 1 / self.refresh_rate
+        self.pl_expanded = False
+        self.pl_animating = False
+        self._plp.setParent(self)
+        self._plp.hide()
+        self._plp.setFixedSize(int(self.width() * 0.45), self.height() - 110)
+        self._plp.move(self.width() - 5 - self._plp.width(), 53)
+        self.controller.raise_()
+        self.controller.show()
 
-        event_bus.subscribe(SONG_CHANGED, self._onSongChanged)
-        event_bus.subscribe(LYRIC_LINE_CHANGED, self._onLyricChanged)
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(REPAINT, self.updateDatas)
+        event_bus.subscribe(START_INTER_LOADING, self.onStartInterLoading)
+        event_bus.subscribe(STOP_INTER_LOADING, self.onStopInterLoading)
+        event_bus.subscribe(STOP_PROGRESS_LOADING, self.onStopProgressLoading)
+        event_bus.subscribe(START_PROGRESS_LOADING, self.onStartProgressLoading)
+        event_bus.subscribe(UPDATE_LOADING_PROGRESS, self.onUpdateLoadingProgress)
+        event_bus.subscribe(ENDING_NO_SOUND, lambda: event_bus.emit(SONG_FINISH))
+        event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self.updateDatas)
+        event_bus.subscribe(VIEW_FOLDER, self.onViewFolder)
 
-        self.stackedWidget.currentChanged.connect(self._syncTitleBarOnNavigation)
+    def _onSettingsClicked(self):
+        self.contents_widget.setCurrentWidget(self._stp)
 
-    def switchTo(self, interface: QWidget):
-        event_bus.emit(SWITCH_PAGE, interface)
-        return super().switchTo(interface)
+    def _onSessionClicked(self):
+        self.contents_widget.setCurrentWidget(self._sep)
+
+    def search(self):
+        if not self.search_input.text().strip():
+            InfoBar.warning('Search failed', 'the keyword is empty!', parent=self)
+            return
+        else:
+            self.contents_widget.setCurrentWidget(self._sp)
+
+        if self.searching:
+            return
+
+        self.searching = True
+
+        self._sp.search(self.search_input.text())
+
+    def onViewFolder(self, folder: FolderInfo):
+        self._fp.setDisplayFolder(folder)
+
+    def togglePlaylistExpand(self):
+        self.pl_expanded = not self.pl_expanded
+        self.pl_animating = True
+
+        self._plp.refreshPlaylistWidget()
+
+        anim = QPropertyAnimation(self._plp, b'geometry', self)
+        anim.setDuration(200)
+        anim.setEasingCurve(
+            QEasingCurve.Type.OutCirc if self.dp_expanded else QEasingCurve.Type.InCirc
+        )
+
+        r = self._plp.rect()
+        if self.pl_expanded:
+            self._plp.show()
+            anim.setStartValue(QRect(self.width() + 5, 53, r.width(), r.height()))
+            anim.setEndValue(
+                QRect(self.width() - 5 - r.width(), 53, r.width(), r.height())
+            )
+        else:
+            QTimer.singleShot(200, self._dp.hide)
+            anim.setStartValue(
+                QRect(self.width() - 5 - r.width(), 53, r.width(), r.height())
+            )
+            anim.setEndValue(QRect(self.width() + 5, 53, r.width(), r.height()))
+
+        def fini():
+            self.pl_animating = False
+
+        anim.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
+
+        QTimer.singleShot(225, fini)
+
+    def togglePlayingPageExpand(self):
+        self.dp_expanded = not self.dp_expanded
+        self.dp_animating = True
+
+        anim = QPropertyAnimation(self._dp, b'geometry', self)
+        anim.setDuration(200)
+        anim.setEasingCurve(
+            QEasingCurve.Type.OutCirc if self.dp_expanded else QEasingCurve.Type.InCirc
+        )
+
+        if self.dp_expanded:
+            self._dp.show()
+            anim.setStartValue(QRect(0, self.height(), self.width(), self.height()))
+            anim.setEndValue(QRect(0, 48, self.width(), self.height()))
+        else:
+            QTimer.singleShot(200, self._dp.hide)
+            anim.setStartValue(QRect(0, 48, self.width(), self.height()))
+            anim.setEndValue(QRect(0, self.height(), self.width(), self.height()))
+
+        def fini():
+            self.dp_animating = False
+
+        anim.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
+
+        if self.dp_expanded:
+            self.controller.hideLyrics()
+        else:
+            self.controller.showLyrics()
+
+        QTimer.singleShot(225, fini)
+
+    def onStartInterLoading(self):
+        self.loading_tasks += 1
+        if not self.loading_progressing:
+            self.loading_inter = True
+
+    def onStopInterLoading(self):
+        self.loading_tasks -= 1
+        if self.loading_tasks <= 0:
+            self.loading_tasks = 0
+            self.loading_inter = False
+
+    def onStopProgressLoading(self):
+        self.loading_progressing = False
+        if self.loading_tasks > 0:
+            self.loading_inter = True
+        else:
+            self.loading_inter = False
+
+    def onStartProgressLoading(self):
+        self.loading_progressing = True
+        if self.loading_tasks > 0:
+            self.loading_inter = False
+
+    def onUpdateLoadingProgress(self, progress: float):
+        self.loading_progress = progress
 
     def _onRefreshRateChanged(self):
         self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
@@ -197,91 +395,42 @@ class MainWindow(FluentWindowBase):
         self.last_draw = now
         multiple_factor = _elapsed * self.refresh_rate / 2
 
+        loading = self.loading_progressing or self.loading_tasks > 0
+
         self.bar_height += (
-            ((5 if cfg.show_progress else 0) - self.bar_height) * multiple_factor * 0.3
+            ((5 if loading else 0) - self.bar_height) * multiple_factor * 0.3
         )
         self.bar_height = min(4, self.bar_height)
 
-        if cfg.show_progress:
+        if loading:
             self.draw_progress += (
-                (cfg.progress - self.draw_progress) * multiple_factor * 0.9
+                (self.loading_progress - self.draw_progress) * multiple_factor * 0.9
             )
         else:
             self.draw_progress = 0
 
         if self.bar_height > 0:
-            if cfg.progress_inter:
-                if self.right < 0 or self.right > self.width():
-                    self.rmotion *= -1
-                    if self.right < 0:
-                        self.right = 0
-                    elif self.right > self.width():
-                        self.right = self.width()
-                if self.left < 0 or self.left > self.width():
-                    self.lmotion *= -1
-                    if self.left < 0:
-                        self.left = 0
-                    elif self.left > self.width():
-                        self.left = self.width()
-                if abs(self.left - self.right) < 300:
-                    self.lmotion *= -1
-                    self.rmotion *= -1
+            if self.loading_inter:
+                new_right = self.right + int(self.rmotion * multiple_factor)
+                new_left = self.left + int(self.lmotion * multiple_factor * 1.25)
+
+                if new_right > self.width():
+                    self.rmotion = -abs(self.rmotion)
+                elif new_right < 0:
+                    self.rmotion = abs(self.rmotion)
+
+                if new_left > self.width():
+                    self.lmotion = -abs(self.lmotion)
+                elif new_left < 0:
+                    self.lmotion = abs(self.lmotion)
+
                 self.right += int(self.rmotion * multiple_factor)
                 self.left += int(self.lmotion * multiple_factor * 1.25)
 
-            self.repaint()
+                self.right = max(0, min(self.width(), self.right))
+                self.left = max(0, min(self.width(), self.left))
 
-    def _syncTitleBarOnNavigation(self, _index: int):
-        if not isinstance(self.titleBar, SouthsideMusicTitleBar):
-            return
-        if self.stackedWidget.currentWidget() is self._dp:
-            self.titleBar.song_title.clear()
-            self.titleBar.lyric_label.clear()
-            self.titleBar.fm_label.clear()
-        elif isinstance(self._dp.cur, DummyCard):
-            self.titleBar.song_title.setText(self._dp.cur.storable.name)
-            self.titleBar.lyric_label.setText(self._dp.cur.storable.artists)
-            pixmap = self._dp.img_label.pixmap()
-            if pixmap and not pixmap.isNull():
-                self.titleBar.fm_label.setPixmap(
-                    pixmap.scaled(
-                        40,
-                        40,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                )
-
-    def _onSongChanged(self, song_storable):
-        if not isinstance(self.titleBar, SouthsideMusicTitleBar):
-            return
-        if self.stackedWidget.currentWidget() is self._dp:
-            self.titleBar.song_title.clear()
-            self.titleBar.lyric_label.clear()
-            self.titleBar.fm_label.clear()
-            return
-        self.titleBar.song_title.setText(song_storable.name)
-        self.titleBar.lyric_label.setText(song_storable.artists)
-        pixmap = self._dp.img_label.pixmap()
-        if pixmap and not pixmap.isNull():
-            self.titleBar.fm_label.setPixmap(
-                pixmap.scaled(
-                    40,
-                    40,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-            )
-
-    def _onLyricChanged(self, lyric_data: dict):
-        if not isinstance(self.titleBar, SouthsideMusicTitleBar):
-            return
-        if self.stackedWidget.currentWidget() is self._dp:
-            return
-        content = lyric_data.get('content', '')
-        self.titleBar.lyric_label.setText(
-            content if content else self._dp.artists_label.text()
-        )
+            self.update()
 
     def addScheduledTask(self, task: Callable, *args, **kwargs) -> None:
         with self._scheduled_tasks_lock:
@@ -300,47 +449,6 @@ class MainWindow(FluentWindowBase):
                 self._logger.exception('scheduled task failed')
                 raise e
 
-    def addSubInterface(
-        self,
-        interface: QWidget,
-        icon: FluentIconBase | QIcon | str,
-        text: str,
-        position=NavigationItemPosition.TOP,
-        parent=None,
-        isTransparent=False,
-    ) -> NavigationTreeWidget:
-        if not interface.objectName():
-            raise ValueError("The object name of `interface` can't be empty string.")
-
-        parentRouteKey = parent
-        if parent and isinstance(parent, QWidget):
-            parentRouteKey = parent.objectName()
-            if not parentRouteKey:
-                raise ValueError("The object name of `parent` can't be empty string.")
-
-        interface.setProperty('isStackedTransparent', isTransparent)
-        self.stackedWidget.addWidget(interface)
-
-        routeKey = interface.objectName()
-        item = self.navigationInterface.addItem(
-            routeKey=routeKey,
-            icon=icon,
-            text=text,
-            onClick=lambda: self.switchTo(interface),
-            position=position,
-            tooltip=text,
-            parentRouteKey=parentRouteKey,  # type: ignore
-        )
-
-        if self.stackedWidget.count() == 1:
-            self.stackedWidget.currentChanged.connect(self._onCurrentInterfaceChanged)
-            self.navigationInterface.setCurrentItem(routeKey)
-            qrouter.setDefaultRouteKey(self.stackedWidget, routeKey)  # type: ignore
-
-        self._updateStackedBackground()
-
-        return item
-
     def play(self, card: SongCard):
         self._logger.debug(card.info['id'])
 
@@ -356,10 +464,6 @@ class MainWindow(FluentWindowBase):
         last_playing_index = -1
 
         def _init():
-            self._launchwindow.push('Initializing services...')
-
-            self._sidebar.play_method_box.setCurrentText(cfg.play_method)
-
             nonlocal last_playlist, last_playing_index
 
             if cfg.last_playlist:
@@ -370,8 +474,6 @@ class MainWindow(FluentWindowBase):
         def _finish_init():
             if last_playlist:
                 self._launchwindow.top('restore playlist...')
-                for storable in last_playlist:
-                    self._sidebar.addSongCardToList(storable)
                 if 0 <= last_playing_index < len(last_playlist):
                     self._launchwindow.top('continue last song...')
 
@@ -390,6 +492,10 @@ class MainWindow(FluentWindowBase):
                 event_bus._lw = None
                 self._launchwindow.deleteLater()
 
+                self.refreshFolders()
+                if len(favs) > 0:
+                    self._fp.setDisplayFolder(favs[0])
+
             self.addScheduledTask(_show)
 
         doWithMultiThreading(_init, (), self, finished=_finish_init)
@@ -400,6 +506,24 @@ class MainWindow(FluentWindowBase):
             parent=self,
             duration=2000,
         )
+
+    def refreshFolders(self):
+        self.folders_list.clear()
+
+        for folder in favs:
+            card = FolderCard(folder, self.folders_list.width())
+            item = QListWidgetItem()
+            item.setData(Qt.ItemDataRole.UserRole, folder)
+            item.setSizeHint(card.sizeHint())
+            self.folders_list.addItem(item)
+            self.folders_list.setItemWidget(item, card)
+
+    def _onFolderItemClicked(self, item: QListWidgetItem):
+        self.contents_widget.setCurrentWidget(self._fp)
+        self._fp.updateGeometry()
+        folder = item.data(Qt.ItemDataRole.UserRole)
+        if folder is not None:
+            self._fp.setDisplayFolder(folder)
 
     def closeEvent(self, e: QCloseEvent):
         e.ignore()
@@ -415,14 +539,9 @@ class MainWindow(FluentWindowBase):
         cfg.last_playing_index = self._dp.current_index
         cfg.last_playing_time = self._player.getPosition()
 
-        cfg.play_method = self._sidebar.play_method_box.currentText()
-        cfg.window_x = self.x() + (
-            253 if self._dp.controller.expand_btn.text() == 'Collapse' else 0
-        )
+        cfg.window_x = self.x()
         cfg.window_y = self.y()
-        cfg.window_width = self.width() - (
-            505 if self._dp.controller.expand_btn.text() == 'Collapse' else 0
-        )
+        cfg.window_width = self.width()
         cfg.window_height = self.height()
         cfg.window_maximized = self.isMaximized()
 
@@ -436,8 +555,30 @@ class MainWindow(FluentWindowBase):
         sys.exit(0)
 
     def resizeEvent(self, e):
-        self.titleBar.move(46, 0)
-        self.titleBar.resize(self.width() - 46, self.titleBar.height())
+        self.titleBar.move(20, 0)
+        self.titleBar.resize(self.width() - 20, self.titleBar.height())
+
+        if hasattr(self, 'controller'):
+            self.controller.setFixedSize(max(1, self.width()), 52)
+            self.controller.move(0, self.height() - self.controller.height())
+
+        if hasattr(self, '_dp'):
+            self._dp.setFixedSize(self.size() - QSize(0, 100))
+            self._dp.move(0, 48)
+
+        if hasattr(self, '_plp'):
+            self._plp.setFixedSize(int(self.width() * 0.45), self.height() - 110)
+
+        if hasattr(self, 'controller'):
+            self.controller.raise_()
+
+        if hasattr(self, 'search_input'):
+            self.search_input.move(
+                self.minimumWidth() // 2,
+                int((self.titleBar.height() - self.search_input.height()) * 0.5),
+            )
+            self.search_input.setFixedWidth(self.width() - self.minimumWidth())
+            self.search_input.raise_()
 
     def onWebsocketConnected(self):
         InfoBar.success(
@@ -451,7 +592,7 @@ class MainWindow(FluentWindowBase):
             lambda: self._ws_handler.send(
                 json.dumps(
                     {
-                        'option': f'{"disable" if not self._sidebar.enableFFT_box.isChecked() else "enable"}_fft'
+                        'option': f'{"disable" if not self._stp.enableFFT_box.isChecked() else "enable"}_fft'
                     }
                 )
             ),
@@ -461,8 +602,8 @@ class MainWindow(FluentWindowBase):
 
         self.connected = True
 
-        self._sidebar.disconnect_btn.setEnabled(True)
-        self._sidebar.connect_btn.setEnabled(False)
+        self._stp.disconnect_btn.setEnabled(True)
+        self._stp.connect_btn.setEnabled(False)
 
         event_bus.emit(WEBSOCKET_CONNECTED)
 
@@ -476,14 +617,14 @@ class MainWindow(FluentWindowBase):
 
         self.connected = False
 
-        self._sidebar.connect_btn.setEnabled(True)
-        self._sidebar.disconnect_btn.setEnabled(False)
+        self._stp.connect_btn.setEnabled(True)
+        self._stp.disconnect_btn.setEnabled(False)
 
         event_bus.emit(WEBSOCKET_DISCONNECTED)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Space:
-            self._dp.controller.toggle()
+            self.controller.toggle()
             event.accept()
         else:
             return super().keyPressEvent(event)
@@ -494,6 +635,7 @@ class MainWindow(FluentWindowBase):
 
         painter = QPainter(self)
         painter.setPen(Qt.PenStyle.NoPen)
+        painter.setFont(self.loading_ft)
         painter.setBrush(
             mixColor(
                 self.song_theme, QColor(self.backgroundColor), cfg.background_ratio
@@ -501,7 +643,9 @@ class MainWindow(FluentWindowBase):
         )
         painter.drawRect(self.rect())
 
-        if cfg.show_progress or self.bar_height > 0.1:
+        loading = self.loading_progressing or self.loading_tasks > 0
+
+        if loading or self.bar_height > 0.1:
             painter.setBrush(
                 mixColor(
                     self.song_theme,
@@ -509,7 +653,7 @@ class MainWindow(FluentWindowBase):
                     cfg.background_ratio,
                 )
             )
-            if cfg.progress_inter:
+            if self.loading_inter:
                 painter.drawRect(
                     self.left, 0, self.right - self.left, int(self.bar_height)
                 )
@@ -517,3 +661,10 @@ class MainWindow(FluentWindowBase):
                 painter.drawRect(
                     0, 0, int(self.width() * self.draw_progress), int(self.bar_height)
                 )
+            painter.setPen(QColor(255, 255, 255) if theme.isDark() else QColor(0, 0, 0))
+
+            painter.drawText(
+                4,
+                int(self.bar_height + 18),
+                f'Loading... ({self.loading_progress if self.loading_progressing else self.loading_tasks})',
+            )

@@ -16,15 +16,14 @@ from qfluentwidgets import (
     FluentIcon,
     InfoBar,
     LineEdit,
-    ListWidget,
     PrimaryPushButton,
     SubtitleLabel,
 )
+from views.list_widget import SListWidget
 
-import pyncm
-from pyncm import apis
 from core.downloader import doWithMultiThreading
 from core.models import SongInfo
+from core.backend import get_backend
 
 from views.song_card import SongCard
 from MusicLibrary.kuGouMusicApi import KuGouMusicApi
@@ -45,18 +44,10 @@ class SearchPage(QWidget):
         if lw:
             lw.top('  creating search input')
         global_layout = QVBoxLayout()
-        top_layout = QHBoxLayout()
-        self.inputer = LineEdit()
-        self.search_btn = PrimaryPushButton(FluentIcon.SEARCH, 'Search')
-        self.search_btn.clicked.connect(self.search)
-        self.inputer.returnPressed.connect(self.search)
-        top_layout.addWidget(self.inputer)
-        top_layout.addWidget(self.search_btn)
-        global_layout.addLayout(top_layout)
 
         if lw:
             lw.top('  creating results list')
-        self.lst = ListWidget()
+        self.lst = SListWidget()
         self.lst.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.lst.verticalScrollBar().setSingleStep(14)
         self.lst.setResizeMode(QListWidget.ResizeMode.Adjust)
@@ -89,17 +80,7 @@ class SearchPage(QWidget):
     def setImage_(self, byte: bytes, ca: SongCard):
         ca.img_label.setPixmap(QPixmap(byte))
 
-    def search(self) -> None:
-        if not self.inputer.text().strip():
-            InfoBar.warning(
-                'Search failed', 'the keyword is empty!', parent=self._mwindow
-            )
-            return
-
-        if self.search_btn.isEnabled() is False:
-            return
-
-        self.search_btn.setEnabled(False)
+    def search(self, keywords: str) -> None:
         self.lst.clear()
         self.cards.clear()
         self.img_card_map.clear()
@@ -108,22 +89,16 @@ class SearchPage(QWidget):
 
         def _do():
             nonlocal result
-            with pyncm.GetCurrentSession():
-                resp = apis.cloudsearch.GetSearchResult(self.inputer.text()) # type: ignore
-            assert isinstance(resp, dict), 'Invalid response'
-
+            songs = get_backend().search(keywords)
             result = [SongInfo(
-                name=songdict['name'],
-                artists='、'.join(art['name'] for art in songdict['ar']),
-                id=songdict['id'],
-                privilege=songdict['fee'],
-            ) for songdict in resp['result']['songs']] # type: ignore
-            print(result)
+                name=song['name'],
+                artists='、'.join(art['name'] for art in song['artists']),
+                id=str(song['id']),
+                privilege=song['privilege']['fee'],
+            ) for song in songs]
 
         def _finish():
             nonlocal result
-
-            self.search_btn.setEnabled(True)
 
             self.resultGot.emit(result)
 

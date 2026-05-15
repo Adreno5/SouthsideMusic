@@ -5,6 +5,9 @@ import logging
 import os
 import sys
 
+from views.playlist_page import PlaylistPage
+from views.setting_page import SettingPage
+
 sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'views'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'services'))
@@ -28,14 +31,15 @@ from core.config import loadConfig, saveConfig, cfg, autosave_thread
 from core.favorites import loadFavorites, saveFavorites, favs
 from core.icons import refreshBoundIcons
 from core.audio_player import AudioPlayer
+from core.backend import init_backend
+from core.netease_backend import NeteaseCloudMusicBackend
+from core import theme as darkdetect
 import pyncm as ncm
 from pyncm import apis
-from core import theme as darkdetect
 from core.ws_server import ws_server, ws_handler
 from views.log_handler import LogHandler, hijackStreams
 from views.launch_window import LaunchWindow
 from views.search_page import SearchPage
-from views.sidebar import Sidebar
 from views.playing_page import PlayingPage
 from views.desktop_lyrics import DesktopLyricsPage
 from views.favorites_page import FavoritesPage
@@ -163,12 +167,18 @@ subprocess.call = patched_popen  # type: ignore
 import traceback
 from pathlib import Path
 
+_ims.QApplication.setHighDpiScaleFactorRoundingPolicy(
+    _ims.Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+)
+_ims.QApplication.setAttribute(_ims.Qt.ApplicationAttribute.AA_EnableHighDpiScaling)
+_ims.QApplication.setAttribute(_ims.Qt.ApplicationAttribute.AA_UseHighDpiPixmaps)
+_ims.QApplication.setAttribute(_ims.Qt.ApplicationAttribute.AA_CompressHighFrequencyEvents)
+
 app = _ims.QApplication(sys.argv)
 
 mwindow: MainWindow | None = None
 launchwindow: LaunchWindow | None = LaunchWindow(app)
 player: AudioPlayer | None = None
-sidebar: Sidebar | None = None
 dp: PlayingPage | None = None
 sp: SearchPage | None = None
 dsp: DesktopLyricsPage | None = None
@@ -203,17 +213,16 @@ if __name__ == '__main__':
     else:
         cfg.login_status = apis.login.GetCurrentLoginStatus()  # type: ignore
 
-    def _themeChanged(theme: str):
+    init_backend(NeteaseCloudMusicBackend())
 
+    def _themeChanged(theme: str):
         def _updateTheme():
-            global mwindow, sidebar
+            global mwindow
             darkdetect._is_dark = darkdetect.getDarkdetect().isDark()
             setTheme(Theme.LIGHT if theme == 'Light' else Theme.DARK)
             app.setStyleSheet(
-                f'QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}'
+                f'QLabel {{ color: {"white" if darkdetect.isDark() else "black"}; }}'
             )
-            if sidebar:
-                sidebar.updateTheme()
             refreshBoundIcons()
             _ims.event_bus.emit(_ims.POST_THEME_CHANGED)
 
@@ -242,7 +251,7 @@ if __name__ == '__main__':
     threading.Thread(target=_cleanCaches, daemon=True).start()
 
     app.setStyleSheet(
-        f'QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}'
+        f'QLabel {{ color: {"white" if darkdetect.isDark() else "black"}; }}'
     )
     setTheme(Theme.LIGHT if darkdetect.isLight() else Theme.DARK)
 
@@ -297,16 +306,6 @@ if __name__ == '__main__':
 
     launchwindow.clear()
     launchwindow.subtitle('Phase 2 (initialize components...)')
-    launchwindow.push('Initializing sidebar...')
-    sidebar = Sidebar(
-        None,
-        None,
-        player,
-        ws_server,
-        ws_handler,
-        app,
-        launchwindow=launchwindow,
-    )
     launchwindow.push('Initializing playing page...')
     dp = PlayingPage(
         app,
@@ -315,10 +314,11 @@ if __name__ == '__main__':
         transmgr,
         ymgr,
         None,
-        sidebar,
         favs,
         lock,
         ws_handler,
+        None,
+        None,
         harmony_font_family,
         launchwindow=launchwindow,
     )
@@ -338,11 +338,14 @@ if __name__ == '__main__':
         launchwindow,
     )
     launchwindow.push('Initializing favorites page...')
-    fp = FavoritesPage(dp, sidebar, None, launchwindow)
+    fp = FavoritesPage(dp, None, None, launchwindow)
     launchwindow.push('Initializing session page...')
     sep = SessionPage(None, launchwindow)
-
-    launchwindow.push('Initializing main window...')
+    launchwindow.push('Initializing setting page...')
+    stp = SettingPage(dsp, dp, mwindow, player, ws_server, ws_handler, app, launchwindow)
+    launchwindow.push('Initializing playlist page...')
+    plp = PlaylistPage(dp, mwindow, player, ws_server, ws_handler, app, launchwindow)
+    launchwindow.push('Initializing dependencies...')
     mwindow = MainWindow(
         app,
         dp,
@@ -350,34 +353,39 @@ if __name__ == '__main__':
         dsp,
         fp,
         sep,
-        sidebar,
         player,
         ws_server,
         ws_handler,
         launchwindow,
+        harmony_font_family,
+        mgr,
+        transmgr,
+        ymgr,
+        stp,
+        plp,
     )
 
     launchwindow.clear()
     launchwindow.subtitle('Phase 3 (inject dependencies...)')
-    launchwindow.push('injecting Playing Page to sidebar')
-    sidebar._dp = dp
-    launchwindow.top('injecting Main Window to sidebar')
-    sidebar._mwindow = mwindow
-    launchwindow.top('injecting Main Window to Playing Page')
+    launchwindow.top('injecting dependencies to Playing Page')
     dp._mwindow_obj = mwindow
-    launchwindow.top('injecting Main Window to Playing Controller')
-    dp.controller._mwindow = mwindow
-    launchwindow.top('injecting Main Window to Playing Lyrics Viewer')
+    dp._stp = stp
+    dp._plp = plp
+    launchwindow.top('injecting dependencies to Playing Controller')
+    mwindow.controller._mwindow = mwindow
+    launchwindow.top('injecting dependencies to Playing Lyrics Viewer')
     dp.viewer._mwindow = mwindow
-    launchwindow.top('injecting Main Window to Desktop Lyrics Viewer')
+    launchwindow.top('injecting dependencies to Desktop Lyrics Viewer')
     dsp.viewer._mwindow = mwindow
-    launchwindow.top('injecting Favorites page to Playing Page')
+    launchwindow.top('injecting dependencies to Playing Page')
     dp._fp = fp
-    launchwindow.top('injecting Main Window to Search Page')
+    launchwindow.top('injecting dependencies to Search Page')
     sp._mwindow = mwindow
-    launchwindow.top('injecting Main Window to Favorites Page')
+    launchwindow.top('injecting dependencies to Favorites Page')
     fp._mwindow = mwindow
-    launchwindow.top('injecting Main Window to Session Page')
+    fp._plp = plp
+    plp._mwindow = mwindow
+    launchwindow.top('injecting dependencies to Session Page')
     sep._mwindow = mwindow
 
     mwindow.init()

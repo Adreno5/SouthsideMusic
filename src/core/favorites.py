@@ -15,7 +15,8 @@ from core.models import (
     MUSIC_DATA_DIR,
     SongStorable,
 )
-from qfluentwidgets import ListWidget, MessageBoxBase, SubtitleLabel
+from qfluentwidgets import MessageBoxBase, SubtitleLabel
+from views.list_widget import SListWidget
 from imports import QHBoxLayout, QLabel, QListWidget, QVBoxLayout
 
 _logger = logging.getLogger(__name__)
@@ -117,14 +118,14 @@ class FavoriteSelectionDialog(MessageBoxBase):
         # Left: folder list
         folder_layout = QVBoxLayout()
         folder_layout.addWidget(QLabel("Folders:"))
-        self.folder_list = ListWidget()
+        self.folder_list = SListWidget()
         self.folder_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         folder_layout.addWidget(self.folder_list)
 
         # Right: song list
         song_layout = QVBoxLayout()
         song_layout.addWidget(QLabel("Songs:"))
-        self.song_list = ListWidget()
+        self.song_list = SListWidget()
         self.song_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         song_layout.addWidget(self.song_list)
 

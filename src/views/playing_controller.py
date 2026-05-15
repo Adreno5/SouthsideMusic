@@ -1,30 +1,49 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import numpy as np
 import time
-from typing import TYPE_CHECKING, cast as _cast
+from typing import TYPE_CHECKING, Any, cast as _cast
+
+from core.models import SongStorable
+from core.qt_utils import toQtInt
+from views.setting_page import SettingPage
 
 if TYPE_CHECKING:
     from views.main_window import MainWindow
-    from views.sidebar import Sidebar
     from views.playing_page import PlayingPage
 
+from core.color import mixColor
 from imports import (
+    BACKGROUND_RATIO_CHANGED,
     LYRIC_LINE_CHANGED,
     PLAY_STATE_CHANGED,
+    PLAYLAST,
+    PLAYNEXT,
+    POST_THEME_CHANGED,
+    REFRESH_RATE_CHANGED,
     REPAINT,
+    SONG_CHANGED,
     UPDATE_FM,
-    VOLUME_CHANGED,
+    QApplication,
     QEasingCurve,
+    QFont,
+    QFontMetricsF,
+    QImage,
+    QPixmap,
     QPointF,
     QPropertyAnimation,
+    QSizePolicy,
+    QSpacerItem,
     Qt,
     QRect,
     QSize,
     QTimer,
     Signal,
+    SubtitleLabel,
+    TitleLabel,
     event_bus,
 )
 from imports import (
@@ -46,26 +65,199 @@ from qfluentwidgets import (
 from core.icons import bindIcon
 from core import theme as darkdetect
 from core.time_format import float2time
-from core.lyrics import LyricInfo, LRCLyricParser, YRCLyricParser
+from core.lyrics import LyricInfo, LRCLyricParser, YRCLyricInfo, YRCLyricParser
 from core.audio_player import AudioPlayer
 from core.ws_server import QObjectHandler
 from core.config import cfg
 
-class PlayingController(QWidget):
-    onSongFinish = Signal()
-    playLastSignal = Signal()
-    playNextSignal = Signal()
 
+class PlayingControllerLyricsViewer(QWidget):
     def __init__(
         self,
-        player: AudioPlayer | None = None,
-        mgr: LRCLyricParser | None = None,
-        transmgr: LRCLyricParser | None = None,
-        ymgr: YRCLyricParser | None = None,
-        dp: PlayingPage | None = None,
-        sidebar: Sidebar | None = None,
-        mwindow: MainWindow | None = None,
-        ws_handler=None,
+        app: QApplication,
+        mgr,
+        ymgr,
+        player: AudioPlayer,
+        mwindow,
+        harmony_font_family: str,
+        cfg,
+        dp: PlayingPage,
+    ):
+        super().__init__()
+        self._logger = logging.getLogger(__name__)
+        self._app = app
+        self._mgr = mgr
+        self._ymgr = ymgr
+        self._player = player
+        self._mwindow = mwindow
+        self._cfg = cfg
+        self._dp = dp
+
+        self.ft = QFont(harmony_font_family, 9)
+        self.font_height = QFontMetricsF(self.ft).height()
+        self.metri = QFontMetricsF(self.ft)
+
+        self.last_draw: int = time.perf_counter_ns()
+
+        self._lyrics_ready = True
+        self._prewarm_version = 0
+
+        self.refresh_rate = max(60, app.primaryScreen().refreshRate() / 2)
+        self._logger.info(f'{self.refresh_rate=}')
+
+        self.delta = 1 / self.refresh_rate
+
+        event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
+        event_bus.subscribe(REPAINT, self._onRepaintTick)
+
+    def prewarmFontMetrics(self):
+        self._lyrics_ready = False
+        self._prewarm_version += 1
+        version = self._prewarm_version
+        QTimer.singleShot(0, lambda: self._doPrewarm(version))
+
+    def _doPrewarm(self, version: int):
+        if version != self._prewarm_version:
+            return
+        all_texts: set[str] = set()
+        for mgr in (self._mgr, self._ymgr):
+            for line in mgr.parsed:
+                content = line.get('content', '').strip()
+                if content:
+                    all_texts.add(content)
+                if 'chars' in line:
+                    for ch in line['chars']:
+                        c = ch['char'].strip()
+                        if c:
+                            all_texts.add(c)
+        for text in all_texts:
+            self.metri.horizontalAdvance(text)
+        self._lyrics_ready = True
+        self.update()
+
+    def _onRepaintTick(self):
+        now = time.perf_counter_ns()
+        _elapsed = min((now - self.last_draw) / 1_000_000_000, 0.1)
+        self.last_draw = now
+        multiple_factor = _elapsed * self.refresh_rate
+
+        position = self._player.getPosition()
+        if self._ymgr.parsed:
+            current = self._ymgr.getCurrentLyric(position)
+        elif self._mgr.parsed:
+            current = self._mgr.getCurrentLyric(position)
+        else:
+            current = None
+
+        target = 0
+        if current:
+            text = current.get('content', '').strip()
+            if text:
+                target = int(math.ceil(self.metri.horizontalAdvance(text))) + 20
+
+        self.setFixedWidth(max(1, int(target)))
+        self.update()
+
+    def _onRefreshRateChanged(self):
+        self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
+        self._logger.info(f'{self.refresh_rate=}')
+        self.delta = 1 / self.refresh_rate
+
+    def _currentLineBaseline(self) -> float:
+        return (self.height() - self.font_height) * 0.5 + self.metri.ascent()
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        if not self._mgr.parsed or not self._lyrics_ready:
+            return
+        if not self.isVisible():
+            return
+
+        position = self._player.getPosition()
+        use_yrc = bool(self._ymgr.parsed)
+        current_line = (
+            self._ymgr.getCurrentLyric(position)
+            if use_yrc
+            else self._mgr.getCurrentLyric(position)
+        )
+
+        if not current_line:
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHints(
+            QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing
+        )
+        painter.setFont(self.ft)
+
+        y = self._currentLineBaseline()
+
+        if current_line.get('isMetadata'):
+            tar_color = QColor(255, 255, 255)
+        else:
+            tar_color = (
+                QColor(255, 255, 255) if darkdetect.isDark() else QColor(0, 0, 0)
+            )
+
+        color = (
+            mixColor(
+                self._mwindow.song_theme, tar_color, self._cfg.background_ratio / 2
+            )
+            if self._mwindow and self._mwindow.song_theme
+            else tar_color
+        )
+
+        if use_yrc and not current_line.get('isMetadata'):
+            y_line = _cast(YRCLyricInfo, current_line)
+            content = (y_line['content'] or current_line['content']).strip()
+            base_color = QColor(color)
+            base_color.setAlpha(120)
+            painter.setPen(base_color)
+            painter.drawText(0, toQtInt(y), content)
+
+            x = 0.0
+            clip_y = toQtInt(y - self.metri.ascent())
+            clip_h = toQtInt(self.font_height)
+            for ch in y_line['chars']:
+                text_width = self.metri.horizontalAdvance(ch['char'])
+                duration = ch['duration']
+                if duration <= 0:
+                    progress = 1.0 if position >= ch['start'] else 0.0
+                else:
+                    progress = (position - ch['start']) / duration
+                progress = max(0.0, min(1.0, progress))
+                clip_w = text_width * progress
+                if clip_w > 0:
+                    painter.save()
+                    painter.setClipRect(
+                        toQtInt(x),
+                        clip_y,
+                        toQtInt(math.ceil(clip_w)),
+                        clip_h,
+                    )
+                    painter.setPen(color)
+                    painter.drawText(0, toQtInt(y), content)
+                    painter.restore()
+                x += text_width
+        else:
+            painter.setPen(color)
+            painter.drawText(0, toQtInt(y), current_line['content'].strip())
+
+        painter.end()
+
+
+class PlayingController(QWidget):
+    def __init__(
+        self,
+        player: AudioPlayer,
+        mgr: LRCLyricParser | None,
+        transmgr: LRCLyricParser | None,
+        ymgr: YRCLyricParser | None,
+        dp: PlayingPage,
+        mwindow: MainWindow | None,
+        ws_handler,
+        app: QApplication,
+        harmony_font_family: str,
+        stp: SettingPage | None
     ):
         super().__init__()
         self._player: AudioPlayer = _cast(AudioPlayer, player)
@@ -73,11 +265,10 @@ class PlayingController(QWidget):
         self._transmgr: LRCLyricParser = _cast(LRCLyricParser, transmgr)
         self._ymgr: YRCLyricParser = _cast(YRCLyricParser, ymgr)
         self._dp: PlayingPage = dp  # type: ignore
-        self._sidebar: Sidebar = sidebar  # type: ignore
         self._mwindow: MainWindow = mwindow  # type: ignore
         self._ws_handler: QObjectHandler = _cast(QObjectHandler, ws_handler)
+        self._stp: SettingPage = stp  # type: ignore
 
-        self.expanded = False
         self.dragging = False
 
         self.dev_mag: float = 1
@@ -85,6 +276,7 @@ class PlayingController(QWidget):
         self.lastfm = time.time()
 
         global_layout = QHBoxLayout()
+        global_layout.setContentsMargins(0, 0, 0, 0)
 
         self.cur_freqs: np.ndarray | None = None
         self.cur_magnitudes: np.ndarray | None = None
@@ -93,57 +285,56 @@ class PlayingController(QWidget):
         self.draw_magnitudes: np.ndarray = np.zeros(513, dtype=np.float32)
         self.last_lyric: LyricInfo = LyricInfo(time=0, content='')
 
-        self.time_label = QLabel()
-        global_layout.addWidget(
-            self.time_label,
-            alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+        self.fm_label = QLabel()
+        self.song_title_label = QLabel()
+        self.lyrics_viewer = PlayingControllerLyricsViewer(
+            app, mgr, ymgr, player, mwindow, harmony_font_family, cfg, dp
         )
+
+        self.middle_widget = QWidget()
+        self.middle_layout = QVBoxLayout()
+        self.middle_layout.addWidget(self.song_title_label)
+        self.middle_layout.addWidget(self.lyrics_viewer)
+        self.middle_widget.setLayout(self.middle_layout)
 
         self.last_btn = TransparentToolButton()
         bindIcon(self.last_btn, 'last')
+
         self.next_btn = TransparentToolButton()
         bindIcon(self.next_btn, 'next')
-        self.last_btn.clicked.connect(self.playLastSignal.emit)
-        self.next_btn.clicked.connect(self.playNextSignal.emit)
 
         self.play_pausebtn = TransparentToolButton()
         bindIcon(self.play_pausebtn, 'playa')
-        self.play_pausebtn.setIconSize(QSize(30, 30))
+
+        self.playlist_btn = TransparentToolButton()
+        bindIcon(self.playlist_btn, 'playlist')
+
         self.last_btn.setIconSize(QSize(30, 30))
+        self.play_pausebtn.setIconSize(QSize(30, 30))
         self.next_btn.setIconSize(QSize(30, 30))
+        self.playlist_btn.setIconSize(QSize(30, 30))
         self.play_pausebtn.clicked.connect(self.toggle)
-        global_layout.addWidget(
-            self.last_btn,
-            alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
-        )
-        global_layout.addWidget(
-            self.play_pausebtn,
-            alignment=Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
-        )
-        global_layout.addWidget(
-            self.next_btn,
-            alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-        )
+        self.playlist_btn.clicked.connect(self.onTogglePlaylist)
 
-        right_layout = QVBoxLayout()
+        self.next_btn.clicked.connect(lambda: event_bus.emit(PLAYNEXT))
+        self.last_btn.clicked.connect(lambda: event_bus.emit(PLAYLAST))
 
-        self.vol_slider = Slider(Qt.Orientation.Horizontal)
-        self.vol_slider.setRange(0, 100)
-        self.vol_slider.setValue(100)
-        self.vol_slider.valueChanged.connect(self.updateVol)
-        right_layout.addWidget(
-            self.vol_slider,
-            alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
+        global_layout.addWidget(self.fm_label)
+        global_layout.addWidget(self.middle_widget)
+        global_layout.addSpacerItem(
+            QSpacerItem(
+                0, 0, QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Minimum
+            )
         )
-        self.expand_btn = PushButton('Menu')
-        bindIcon(self.expand_btn, 'pl_expand')
-        right_layout.addWidget(
-            self.expand_btn,
-            alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom,
+        global_layout.addWidget(self.last_btn)
+        global_layout.addWidget(self.play_pausebtn)
+        global_layout.addWidget(self.next_btn)
+        global_layout.addSpacerItem(
+            QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
         )
-        self.expand_btn.clicked.connect(self.toggleExpand)
+        global_layout.addWidget(self.playlist_btn)
 
-        global_layout.addLayout(right_layout)
+        self.bg_color = QColor(0, 0, 0)
 
         self.setLayout(global_layout)
 
@@ -157,70 +348,62 @@ class PlayingController(QWidget):
         self._fm_timer.timeout.connect(self._updateFM)
         self._fm_timer.start(2500)
 
-        self.playingtime_lastupdate = time.perf_counter()
-
         self._player.fftDataReady.connect(self.updateFFTData)
 
         event_bus.subscribe(PLAY_STATE_CHANGED, self._onPlayStateChanged)
+        event_bus.subscribe(SONG_CHANGED, self._updateDatas)
+        event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
+        event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
+
+        self.bg_color = mixColor(
+            QColor(40, 40, 40) if darkdetect.isDark() else QColor(230, 230, 230),
+            self._mwindow.song_theme if self._mwindow.song_theme else QColor(0, 0, 0),
+            1 - cfg.background_ratio * 0.5,
+        )
+
+    def onTogglePlaylist(self):
+        if not self._mwindow.pl_animating:
+            self._mwindow.togglePlaylistExpand()
+
+    def hideLyrics(self):
+        self.lyrics_viewer.hide()
+        self.song_title_label.hide()
+        self.fm_label.hide()
+
+    def showLyrics(self):
+        self.lyrics_viewer.show()
+        self.song_title_label.show()
+        self.fm_label.show()
+
+    def _updateDatas(self, song: SongStorable | None = None):
+        self.bg_color = mixColor(
+            QColor(40, 40, 40) if darkdetect.isDark() else QColor(230, 230, 230),
+            self._mwindow.song_theme if self._mwindow.song_theme else QColor(0, 0, 0),
+            1 - cfg.background_ratio * 0.5,
+        )
+
+        if song:
+            pixmap = QPixmap.fromImage(QImage.fromData(song.get_image_bytes()))
+            pixmap = pixmap.scaled(
+                self.height(),
+                self.height(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            self.fm_label.setPixmap(pixmap)
+
+            self.song_title_label.setText(song.name)
+
+        self.update()
 
     def updateFFTData(self, freqs: np.ndarray, magnitudes: np.ndarray) -> None:
         self.cur_freqs = freqs
         self.cur_magnitudes = magnitudes
 
-    def toggleExpand(self):
-        self.expanded = not self.expanded
-        self.expand_btn.setEnabled(False)
-
-        if self.expanded:
-            if not self._mwindow.isMaximized():
-                mwindow_anim = QPropertyAnimation(self._mwindow, b'geometry', self)
-                mwindow_anim.setDuration(200)
-                mwindow_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-                mwindow_anim.setStartValue(self._mwindow.geometry())
-                mwindow_anim.finished.connect(lambda: self.expand_btn.setEnabled(True))
-                mwindow_anim.setEndValue(
-                    QRect(
-                        self._mwindow.x() - 250,
-                        self._mwindow.y(),
-                        self._mwindow.width() + 505,
-                        self._mwindow.height(),
-                    )
-                )
-                mwindow_anim.start()
-            else:
-                self.expand_btn.setEnabled(True)
-
-            self._sidebar.show()
-
-            self.expand_btn.setText('Collapse')
-            bindIcon(self.expand_btn, 'pl_collapse')
-        else:
-            self._sidebar.hide()
-            if not self._mwindow.isMaximized():
-                mwindow_anim = QPropertyAnimation(self._mwindow, b'geometry', self)
-                mwindow_anim.setDuration(200)
-                mwindow_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-                mwindow_anim.setStartValue(self._mwindow.geometry())
-                mwindow_anim.finished.connect(lambda: self.expand_btn.setEnabled(True))
-                mwindow_anim.setEndValue(
-                    QRect(
-                        self._mwindow.x() + 250,
-                        self._mwindow.y(),
-                        self._mwindow.width() - 505,
-                        self._mwindow.height(),
-                    )
-                )
-                mwindow_anim.start()
-            else:
-                self.expand_btn.setEnabled(True)
-
-            self.expand_btn.setText('Menu')
-            bindIcon(self.expand_btn, 'pl_expand')
-
     def _updateFFT(self):
         from views.song_card import DummyCard
 
-        if self._sidebar.enableFFT_box.isChecked():
+        if self._stp.enableFFT_box.isChecked():
             if not self._player.isPlaying():
                 self.cur_magnitudes = np.zeros(513, dtype=np.float32)
             window_size = int(cfg.fft_filtering_windowsize)
@@ -256,7 +439,7 @@ class PlayingController(QWidget):
             )
 
         if self._mwindow and self._mwindow.isVisible():
-            self.repaint()
+            self.update()
 
     def _updateLyric(self):
         cl = self._mgr.getCurrentLyric(self._player.getPosition())
@@ -295,31 +478,42 @@ class PlayingController(QWidget):
         else:
             bindIcon(self.play_pausebtn, 'playa')
 
-    def updateVol(self):
-        value = self.vol_slider.value()
-        if value == 0:
-            volume = 0
-        else:
-            volume = math.log(value / 100 * (math.e - 1) + 1)
-        cfg.volume = volume
-        self._player.setVolume(volume)
-        event_bus.emit(VOLUME_CHANGED, volume)
-
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        if event.position().y() < 8 and self._dp.preloaded:
+        if (
+            event.position().y() < 8
+            and event.position().x() > (52 if self.fm_label.isVisible() else 0)
+            and self._dp.preloaded
+        ):
             self.dragging = True
             playing_time = min(
                 self._dp.total_length,
-                max(0, (event.position().x() / self.width()) * self._dp.total_length),
+                max(
+                    0,
+                    (
+                        event.position().x()
+                        / (self.width() - (52 if self.fm_label.isVisible() else 0))
+                    )
+                    * self._dp.total_length,
+                ),
             )
             self._player.setPosition(playing_time)
+        elif event.position().y() > 8:
+            if not self._mwindow.dp_animating:
+                self._mwindow.togglePlayingPageExpand()
         return super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self.dragging and self._dp.preloaded:
             playing_time = min(
                 self._dp.total_length,
-                max(0, (event.position().x() / self.width()) * self._dp.total_length),
+                max(
+                    0,
+                    (
+                        event.position().x()
+                        / (self.width() - (52 if self.fm_label.isVisible() else 0))
+                    )
+                    * self._dp.total_length,
+                ),
             )
             self._player.setPosition(playing_time)
             self.dragging = False
@@ -329,7 +523,14 @@ class PlayingController(QWidget):
         if self.dragging and self._dp.preloaded:
             playing_time = min(
                 self._dp.total_length,
-                max(0, (event.position().x() / self.width()) * self._dp.total_length),
+                max(
+                    0,
+                    (
+                        event.position().x()
+                        / (self.width() - (52 if self.fm_label.isVisible() else 0))
+                    )
+                    * self._dp.total_length,
+                ),
             )
             self._player.setPosition(playing_time)
         return super().mouseMoveEvent(event)
@@ -342,17 +543,19 @@ class PlayingController(QWidget):
             self._player.resume()
             event_bus.emit(PLAY_STATE_CHANGED, True)
 
-    def setPlaytime(self, time_value: float) -> None:
-        self._player.setPosition(time_value)
-
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHints(QPainter.RenderHint.Antialiasing)
 
+        painter.setPen(Qt.PenStyle.NoPen)
+        self.bg_color.setAlpha(255)
+        painter.setBrush(self.bg_color)
+        painter.drawRoundedRect(self.rect(), 10, 10)
+
         isDark = darkdetect.isDark()
 
         if (
-            self._sidebar.enableFFT_box.isChecked()
+            self._stp.enableFFT_box.isChecked()
             and self.cur_freqs is not None
             and self.cur_magnitudes is not None
         ):
@@ -364,7 +567,9 @@ class PlayingController(QWidget):
             path = QPainterPath(QPointF(0, 0))
             total = int(self.cur_magnitudes.size * 0.67)
             for i in range(total):
-                x = ((i + 1) / total) * self.width()
+                x = (52 if self.fm_label.isVisible() else 0) + ((i + 1) / total) * (
+                    self.width() - (52 if self.fm_label.isVisible() else 0)
+                )
                 path.lineTo(
                     QPointF(
                         x,
@@ -396,17 +601,13 @@ class PlayingController(QWidget):
                 QPen(QColor(255, 255, 255) if isDark else QColor(0, 0, 0), 8)
             )
             painter.drawLine(
-                0,
+                52 if self.fm_label.isVisible() else 0,
                 0,
                 int(
-                    self.width() * (self._player.getPosition() / self._dp.total_length)
+                    (self.width() - (52 if self.fm_label.isVisible() else 0))
+                    * (self._player.getPosition() / self._dp.total_length)
                 ),
                 0,
-            )
-
-            cur_time = float2time(self._player.getPosition())
-            self.time_label.setText(
-                f'{str(cur_time['minutes']).zfill(2)}:{str(cur_time['seconds']).zfill(2)}'
             )
 
         painter.end()

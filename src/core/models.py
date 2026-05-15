@@ -297,3 +297,65 @@ class SongStorable:
 class FolderInfo(TypedDict):
     folder_name: str
     songs: list[SongStorable]
+
+
+class ArtistInfo(TypedDict):
+    id: int
+    name: str
+    avatar_url: str
+
+
+class AlbumInfo(TypedDict):
+    id: int
+    name: str
+    cover_url: str
+
+
+class PrivilegeInfo(TypedDict):
+    fee: int
+    max_br: int
+    is_vip_only: bool
+
+
+class SearchSongInfo(TypedDict):
+    id: int | str
+    name: str
+    artists: list[ArtistInfo]
+    album: AlbumInfo
+    privilege: PrivilegeInfo
+    duration: int
+
+
+class TrackDetailInfo(TypedDict):
+    cover_url: str
+    album_name: str
+    cd: str
+    track_no: int
+    publish_time: int
+
+
+class TrackAudioInfo(TypedDict):
+    url: str
+
+
+class TrackLyricsInfo(TypedDict):
+    lyric: str
+    translated_lyric: str
+    yrc_lyric: str
+
+
+class MusicServiceBackend(ABC):
+    @abstractmethod
+    def search(self, keywords: str, offset: int = 0, limit: int = 30) -> list[SearchSongInfo]: ...
+
+    @abstractmethod
+    def get_track_detail(self, track_id: int | str) -> TrackDetailInfo: ...
+
+    @abstractmethod
+    def get_track_audio(self, track_id: int | str, bitrate: int = 999000) -> TrackAudioInfo: ...
+
+    @abstractmethod
+    def get_track_lyrics(self, track_id: int | str) -> TrackLyricsInfo: ...
+
+    @abstractmethod
+    def user_privilege_level(self) -> int: ...

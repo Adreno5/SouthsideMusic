@@ -1,9 +1,11 @@
 import threading
 
 from imports import (
+    BACKGROUND_RATIO_CHANGED,
     PRE_THEME_CHANGED,
     REFRESH_RATE_CHANGED,
     REPAINT,
+    SONG_CHANGED,
     QApplication,
     QObject,
     QTimer,
@@ -32,6 +34,8 @@ class EventsServices(QObject):
             )
 
         threading.Thread(target=_startListen, daemon=True).start()
+
+        event_bus.subscribe(SONG_CHANGED, lambda s: event_bus.emit(BACKGROUND_RATIO_CHANGED))
 
     def _onRefreshRateChanged(self):
         self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)

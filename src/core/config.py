@@ -52,10 +52,6 @@ class Config:
 
     stereo: bool = True
 
-    show_progress: bool = False
-    progress_inter: bool = False
-    progress: float = 0
-
     background_ratio: float = 0.4
     volume: float = 1
 

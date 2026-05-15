@@ -11,10 +11,10 @@ from typing import Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from views.main_window import MainWindow
-    from views.sidebar import Sidebar
+    from views.playlist_page import PlaylistPage
     from views.playing_page import PlayingPage
 
-from imports import IMAGE_ASSET_PERSISTED, QSize, Qt, Signal, event_bus
+from imports import IMAGE_ASSET_PERSISTED, QAbstractAnimation, QPropertyAnimation, QSize, Qt, Signal, event_bus
 from imports import QImage, QMouseEvent, QPixmap
 from imports import (
     QFileDialog,
@@ -55,9 +55,7 @@ from core.downloader import (
 from core.soundfile import getSongFormat, saveSongWithInformations
 from core import http_utils as requests
 from core.favorites import FolderInfo, favs, saveFavorites
-
-from pyncm import apis
-import pyncm as ncm
+from core.backend import get_backend
 
 
 _image_download_locks: dict[str, threading.Lock] = {}
@@ -109,16 +107,17 @@ class SongCard(QWidget):
         artists_label = QLabel(info['artists'])
         artists_label.setWordWrap(True)
         top_layout.addWidget(artists_label)
+        user_vip = get_backend().user_privilege_level()
         self.vip_label = SubtitleLabel(
-            f'Need more privilege ({info["privilege"]}(song)>{ncm.GetCurrentSession().vipType}(yours))'
+            f'Need more privilege ({info["privilege"]}(song)>{user_vip}(yours))'
         )
         self.vip_label.setStyleSheet('color: red;')
-        if info['privilege'] <= ncm.GetCurrentSession().vipType:
+        if info['privilege'] <= user_vip:
             self.vip_label.hide()
         top_layout.addWidget(self.vip_label)
 
         pri_label = QLabel(
-            f'privilege: (song: {info["privilege"]}, yours: {ncm.GetCurrentSession().vipType})'
+            f'privilege: (song: {info["privilege"]}, yours: {user_vip})'
         )
         pri_label.setStyleSheet(
             f'color: {"#666666" if darkdetect.isDark() else "#CCCCCC"};'
@@ -152,7 +151,7 @@ class SongCard(QWidget):
     def addToFavorites(self):
         from core.dialogs import get_value_bylist, get_text_lineedit
 
-        if self.info['privilege'] > ncm.GetCurrentSession().vipType:
+        if self.info['privilege'] > get_backend().user_privilege_level():
             InfoBar.warning(
                 'Cannot add to favorites',
                 'Need more privilege',
@@ -195,22 +194,17 @@ class SongCard(QWidget):
 
         def _download():
             nonlocal _manager, image_bytes
-            with ncm.GetCurrentSession():
-                response = apis.track.GetTrackDetail(song_ids=[self.info['id']])
-                assert isinstance(response, dict), 'Invalid response'
-                image_url = response['songs'][0]['al']['picUrl']  # type: ignore
+            backend = get_backend()
+            detail = backend.get_track_detail(self.info['id'])
+            image_url = detail['cover_url']
+            image_bytes = requests.get(image_url).content
 
-                image_bytes = requests.get(image_url).content
+            audio = backend.get_track_audio(self.info['id'], bitrate=3200 * 1000)
+            music_url = audio['url']
 
-                audio_resp = apis.track.GetTrackAudio(
-                    str(self.info['id']),  # type: ignore
-                    bitrate=3200 * 1000,
-                )
-                music_url = audio_resp['data'][0]['url']  # type: ignore
-
-                _manager = downloadWithMultiThreading(
-                    music_url, {}, {}, None, _downloaded
-                )
+            _manager = downloadWithMultiThreading(
+                music_url, {}, {}, None, _downloaded
+            )
 
         def _finish():
             while not _finished:
@@ -255,15 +249,13 @@ class SongCard(QWidget):
         self.load = True
 
         def _do():
-            with ncm.GetCurrentSession():
-                response = apis.track.GetTrackDetail(song_ids=[self.info['id']])
-                assert isinstance(response, dict), 'Invalid response'
-                img_url = response['songs'][0]['al']['picUrl']  # type: ignore
-                self.detail['image_url'] = img_url
+            detail = get_backend().get_track_detail(self.info['id'])
+            img_url = detail['cover_url']
+            self.detail['image_url'] = img_url
 
-                img_bytes = requests.get(img_url).content
+            img_bytes = requests.get(img_url).content
 
-                self.imageLoaded.emit(img_bytes)
+            self.imageLoaded.emit(img_bytes)
 
         doWithMultiThreading(_do, (), self._mwindow)
 
@@ -290,7 +282,7 @@ class _SongCardItem(QWidget):
         storable: SongStorable,
         dp: PlayingPage | None = None,
         mwindow: MainWindow | None = None,
-        sidebar: Sidebar | None = None,
+        plp: PlaylistPage | None = None,
         parent=None,
         lazy: bool = False,
     ):
@@ -299,8 +291,10 @@ class _SongCardItem(QWidget):
         self.storable = storable
         self._dp: PlayingPage = dp  # type: ignore
         self._mwindow: MainWindow = mwindow  # type: ignore
-        self._sidebar: Sidebar = sidebar  # type: ignore
+        self._plp: PlaylistPage = plp  # type: ignore
         self.load = False
+
+        self.setWindowOpacity(0)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
@@ -388,11 +382,9 @@ class _SongCardItem(QWidget):
             ):
                 return
             try:
-                with ncm.GetCurrentSession():
-                    response = apis.track.GetTrackDetail(song_ids=[storable.id])
-                    assert isinstance(response, dict)
-                    image_url = response['songs'][0]['al']['picUrl']  # type: ignore
-                    image_bytes = requests.get(image_url).content
+                detail = get_backend().get_track_detail(storable.id)
+                image_url = detail['cover_url']
+                image_bytes = requests.get(image_url).content
             except Exception as e:
                 self._logger.warning(
                     f'failed to auto-download image for {storable.id}: {e}'
@@ -465,7 +457,7 @@ class _SongCardItem(QWidget):
 
 class PlaylistSongCard(_SongCardItem):
     def moveRequested(self, delta: int):
-        self._sidebar.movePlaylistSong(self.storable, delta)
+        self._plp.movePlaylistSong(self.storable, delta)
 
     def contextMenuEvent(self, event):
         menu = RoundMenu(parent=self)
@@ -501,43 +493,40 @@ class PlaylistSongCard(_SongCardItem):
         if export_path:
 
             def _export():
-                with ncm.GetCurrentSession():
-                    response = apis.track.GetTrackDetail(song_ids=[self.storable.id])
-                    assert isinstance(response, dict)
-                    detail = response['songs'][0]  # type: ignore
-                    image_url = detail['al']['picUrl']
+                detail = get_backend().get_track_detail(self.storable.id)
+                image_url = detail['cover_url']
 
-                    image_bytes = requests.get(image_url).content
+                image_bytes = requests.get(image_url).content
 
-                    album = detail['al']['name']
-                    track_number = f'{detail["cd"]}/{detail["no"]}'
-                    publish_time = detail.get('publishTime', 0)
-                    year = ''
-                    if publish_time:
-                        import datetime
+                album = detail['album_name']
+                track_number = f'{detail["cd"]}/{detail["track_no"]}'
+                publish_time = detail.get('publish_time', 0)
+                year = ''
+                if publish_time:
+                    import datetime
 
-                        year = str(
-                            datetime.datetime.fromtimestamp(publish_time / 1000).year
-                        )
+                    year = str(
+                        datetime.datetime.fromtimestamp(publish_time / 1000).year
+                    )
 
-                    with open(
-                        os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash),
-                        'rb',
-                    ) as song:
-                        saveSongWithInformations(
-                            song.read(),
-                            image_bytes,
-                            self.storable.name,
-                            self.storable.artists,
-                            export_path,
-                            self.storable.lyric,
-                            album,
-                            '',
-                            year,
-                            track_number,
-                            '',
-                            '',
-                        )
+                with open(
+                    os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash),
+                    'rb',
+                ) as song:
+                    saveSongWithInformations(
+                        song.read(),
+                        image_bytes,
+                        self.storable.name,
+                        self.storable.artists,
+                        export_path,
+                        self.storable.lyric,
+                        album,
+                        '',
+                        year,
+                        track_number,
+                        '',
+                        '',
+                    )
 
             def _final():
                 InfoBar.success(
@@ -560,8 +549,8 @@ class PlaylistSongCard(_SongCardItem):
         if self._dp.current_index >= insert_index:
             self._dp.current_index += 1
         self._dp.song_randomer.init(self._dp.playlist)
-        self._sidebar.refreshPlaylistWidget()
-        self._sidebar.lst.setCurrentRow(insert_index)
+        self._plp.refreshPlaylistWidget()
+        self._plp.lst.setCurrentRow(insert_index)
 
     def _removeSong(self):
         for i, storable in enumerate(self._dp.playlist):
@@ -569,7 +558,7 @@ class PlaylistSongCard(_SongCardItem):
                 self._dp.playlist.remove(self._dp.playlist[i])
                 break
 
-        self._sidebar.refreshPlaylistWidget()
+        self._plp.refreshPlaylistWidget()
 
         if self._dp.cur:
             if self.storable.id == self._dp.cur.storable.id:
@@ -582,13 +571,13 @@ class FavoriteSongCard(_SongCardItem):
         storable,
         dp,
         mwindow,
-        sidebar,
+        plp,
         remove_callback=None,
         move_callback=None,
         parent=None,
         lazy=False,
     ):
-        super().__init__(storable, dp, mwindow, sidebar, parent, lazy=lazy)
+        super().__init__(storable, dp, mwindow, plp, parent, lazy=lazy)
         self._remove_callback = remove_callback
         self._move_callback = move_callback
 
@@ -631,43 +620,40 @@ class FavoriteSongCard(_SongCardItem):
         if export_path:
 
             def _export():
-                with ncm.GetCurrentSession():
-                    response = apis.track.GetTrackDetail(song_ids=[self.storable.id])
-                    assert isinstance(response, dict)
-                    detail = response['songs'][0]  # type: ignore
-                    image_url = detail['al']['picUrl']
+                detail = get_backend().get_track_detail(self.storable.id)
+                image_url = detail['cover_url']
 
-                    image_bytes = requests.get(image_url).content
+                image_bytes = requests.get(image_url).content
 
-                    album = detail['al']['name']
-                    track_number = f'{detail["cd"]}/{detail["no"]}'
-                    publish_time = detail.get('publishTime', 0)
-                    year = ''
-                    if publish_time:
-                        import datetime
+                album = detail['album_name']
+                track_number = f'{detail["cd"]}/{detail["track_no"]}'
+                publish_time = detail.get('publish_time', 0)
+                year = ''
+                if publish_time:
+                    import datetime
 
-                        year = str(
-                            datetime.datetime.fromtimestamp(publish_time / 1000).year
-                        )
+                    year = str(
+                        datetime.datetime.fromtimestamp(publish_time / 1000).year
+                    )
 
-                    with open(
-                        os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash),
-                        'rb',
-                    ) as song:
-                        saveSongWithInformations(
-                            song.read(),
-                            image_bytes,
-                            self.storable.name,
-                            self.storable.artists,
-                            export_path,
-                            self.storable.lyric,
-                            album,
-                            '',
-                            year,
-                            track_number,
-                            '',
-                            '',
-                        )
+                with open(
+                    os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash),
+                    'rb',
+                ) as song:
+                    saveSongWithInformations(
+                        song.read(),
+                        image_bytes,
+                        self.storable.name,
+                        self.storable.artists,
+                        export_path,
+                        self.storable.lyric,
+                        album,
+                        '',
+                        year,
+                        track_number,
+                        '',
+                        '',
+                    )
 
             def _final():
                 InfoBar.success(

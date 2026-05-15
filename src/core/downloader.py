@@ -5,7 +5,7 @@ import math
 import threading
 from typing import Callable, Dict, Optional
 
-from imports import QObject, QThread, Signal, Slot, event_bus
+from imports import START_INTER_LOADING, START_PROGRESS_LOADING, STOP_INTER_LOADING, STOP_PROGRESS_LOADING, UPDATE_LOADING_PROGRESS, QObject, QThread, Signal, Slot, event_bus
 import requests
 
 from core.config import cfg
@@ -55,13 +55,13 @@ class DownloadingManager(QObject):
 
     @Slot(float)
     def progress(self, progress: float):
-        cfg.progress = max(0.0, min(1.0, progress))
+        event_bus.emit(UPDATE_LOADING_PROGRESS, max(0.0, min(1.0, progress)))
 
     @Slot(bytes)
     def _finish_download(self, data: bytes):
         if data:
-            cfg.progress = 1.0
-        cfg.show_progress = False
+            event_bus.emit(UPDATE_LOADING_PROGRESS, 1.0)
+        event_bus.emit(STOP_PROGRESS_LOADING)
         self.downloadFinished.emit(data)
 
 
@@ -232,7 +232,6 @@ class TaskManager(QObject):
 
     @Slot()
     def _finish_task(self):
-        cfg.show_progress = False
         self.taskFinished.emit()
 
 
@@ -263,9 +262,8 @@ def downloadWithMultiThreading(
     parent=None,
     finished: Optional[Callable[[bytes], None]] = None,
 ) -> DownloadingManager:
-    cfg.progress = 0
-    cfg.show_progress = True
-    cfg.progress_inter = False
+    event_bus.emit(UPDATE_LOADING_PROGRESS, 0)
+    event_bus.emit(START_PROGRESS_LOADING)
     box = DownloadingManager(parent, url, headers, data)
 
     def __finish(data: bytes):
@@ -283,15 +281,14 @@ def doWithMultiThreading(
     parent,
     finished: Optional[Callable[[], None]] = None,
 ) -> TaskManager:
-    cfg.show_progress = True
-    cfg.progress_inter = True
+    event_bus.emit(START_INTER_LOADING)
 
     manager = TaskManager(task, args, parent)
 
     def __finish():
         if finished:
             finished()
-        cfg.show_progress = False
+        event_bus.emit(STOP_INTER_LOADING)
 
     manager.taskFinished.connect(__finish)
     manager.start()

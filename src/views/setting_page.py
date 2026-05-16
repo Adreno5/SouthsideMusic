@@ -182,7 +182,7 @@ class SettingPage(QWidget):
             'larger value means a more sudden change',
             0,
             1,
-            0.01,
+            0.002,
             'lyrics_smooth_factor',
         )
         self.addNumberSetting(
@@ -190,7 +190,7 @@ class SettingPage(QWidget):
             'smaller value means a more bounce effect',
             0,
             1,
-            0.01,
+            0.002,
             'acceleration_smooth_factor',
         )
 
@@ -325,15 +325,16 @@ class SettingPage(QWidget):
         title: str,
         description: str,
         min: float | int,
-        max: float | int,
+        max_v: float | int,
         step: float | int,
         configurationName: str,
         onChanged: Callable[[float], None] | None = None,
     ) -> None:
         box = DoubleSpinBox()
-        box.setRange(min, max)
+        box.setRange(min, max_v)
         box.setValue(getattr(cfg, configurationName))
         box.setSingleStep(step)
+        box.setDecimals(max(int(len(str(step)) - 2), 0))
 
         def _valueChanged(value: float | int):
             setattr(cfg, configurationName, value)

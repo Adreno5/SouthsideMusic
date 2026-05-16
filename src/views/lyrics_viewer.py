@@ -266,25 +266,26 @@ class LyricsViewer(QWidget):
         return super().mouseMoveEvent(event)
 
     def paintEvent(self, event: QPaintEvent) -> None:
-        self.hovering_lyric = None
-        if not self._mgr.parsed or not self._lyrics_ready:
-            return
-
         now = time.perf_counter_ns()
         _elapsed: float = min((now - self.last_draw) / 1_000_000_000, 0.1)
         self.last_draw = now
         multiple_factor = _elapsed * self.refresh_rate
 
+        self.hovering_lyric = None
+        if not self._mgr.parsed or not self._lyrics_ready:
+            return
+
         self.target_acc = (
             (self.target_draw_offset - self.draw_offset)
             * self.delta
             * (self._cfg.lyrics_smooth_factor * self.refresh_rate)
+            * multiple_factor
         )
         self.acc += (
             (self.target_acc - self.acc)
             * self.delta
             * (self._cfg.acceleration_smooth_factor * self.refresh_rate)
-            / max(0.5, min(1, abs(self.target_acc - self.acc)))
+            # / max(0.5, min(1, abs(self.target_acc - self.acc)))
             * multiple_factor
         )
 

@@ -583,7 +583,7 @@ class FavoriteSongCard(_SongCardItem):
 
     def moveRequested(self, delta: int):
         if self._move_callback:
-            self._move_callback(delta)
+            self._move_callback(self.storable, delta)
 
     def contextMenuEvent(self, event):
         menu = RoundMenu(parent=self)

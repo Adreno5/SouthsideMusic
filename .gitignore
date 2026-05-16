@@ -34,3 +34,5 @@ data/
 .agents/
 .mypy_cache/
 .vscode/
+
+.codex/

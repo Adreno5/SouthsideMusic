@@ -217,7 +217,7 @@ class PlaylistPage(QWidget):
         self._dp.playing_manager.refreshRandom()
 
         self.refreshPlaylistWidget()
-        self.lst.setCurrentRow(new_index)
+        self._syncPlaylistSelection()
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)

@@ -87,6 +87,10 @@ class LyricsViewer(QWidget):
 
         self._lyrics_ready = True
         self._prewarm_version = 0
+        self._translation_lookup_key: tuple[int, int] | None = None
+        self._translation_by_time: dict[int, str] = {}
+        self._shifted_translation_by_time: dict[int, str] = {}
+        self._translation_timing_shifted = False
 
         self.refresh_rate = max(60, ctx.app.primaryScreen().refreshRate() / 2)
         self._logger.info(f'{self.refresh_rate=}')
@@ -135,6 +139,69 @@ class LyricsViewer(QWidget):
     def _hasTranslation(self) -> bool:
         return bool(self._transmgr.parsed)
 
+    def _timeKey(self, value: float) -> int:
+        return round(value * 1000)
+
+    def _timesClose(self, left: float, right: float) -> bool:
+        return abs(left - right) <= self._TRANSLATION_TIME_TOLERANCE
+
+    def _translationLookupKey(self) -> tuple[int, int]:
+        return (
+            getattr(self._mgr, 'version', 0),
+            getattr(self._transmgr, 'version', 0),
+        )
+
+    def _ensureTranslationLookup(self) -> None:
+        key = self._translationLookupKey()
+        if key == self._translation_lookup_key:
+            return
+
+        self._translation_lookup_key = key
+        self._translation_by_time = {}
+        self._shifted_translation_by_time = {}
+        self._translation_timing_shifted = False
+
+        original_lines = [
+            line
+            for line in self._mgr.parsed
+            if line.get('content', '').strip() and not line.get('isMetadata')
+        ]
+        translated_lines = [
+            line
+            for line in self._transmgr.parsed
+            if line.get('content', '').strip() and not line.get('isMetadata')
+        ]
+
+        for line in translated_lines:
+            self._translation_by_time[self._timeKey(line['time'])] = line[
+                'content'
+            ].strip()
+
+        if len(original_lines) < 2 or len(translated_lines) + 1 != len(original_lines):
+            return
+
+        empty_times = getattr(self._transmgr, 'empty_times', [])
+        if not any(
+            self._timesClose(empty_time, original_lines[0]['time'])
+            for empty_time in empty_times
+        ):
+            return
+
+        shifted_timestamps_match = all(
+            self._timesClose(translated_line['time'], original_line['time'])
+            for translated_line, original_line in zip(
+                translated_lines, original_lines[1:]
+            )
+        )
+        if not shifted_timestamps_match:
+            return
+
+        self._translation_timing_shifted = True
+        self._shifted_translation_by_time = {
+            self._timeKey(original_line['time']): translated_line['content'].strip()
+            for original_line, translated_line in zip(original_lines, translated_lines)
+        }
+
     def _translationTimeForLine(
         self,
         line: LyricInfo | YRCLyricInfo,
@@ -160,7 +227,16 @@ class LyricsViewer(QWidget):
             or not self._transmgr.parsed
         ):
             return ''
+        self._ensureTranslationLookup()
         trans_time = self._translationTimeForLine(line, use_yrc)
+
+        if self._translation_timing_shifted:
+            return self._shifted_translation_by_time.get(self._timeKey(trans_time), '')
+
+        direct_match = self._translation_by_time.get(self._timeKey(trans_time))
+        if direct_match is not None:
+            return direct_match
+
         for trans_line in self._transmgr.parsed:
             if abs(trans_line['time'] - trans_time) <= self._TRANSLATION_TIME_TOLERANCE:
                 return trans_line['content'].strip()

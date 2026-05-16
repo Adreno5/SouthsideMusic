@@ -2,6 +2,11 @@
     "python-envs.defaultEnvManager": "ms-python.python:venv",
     "python.analysis.autoImportCompletions": true,
     "vscode_custom_css.imports": [
-        "D:/PythonProjects/SouthsideMusic/index.js"
+        "file:///D:/PythonProjects/SouthsideMusic/index.js",
+        "file:///C:/Users/Adreno/.vscode/extensions/brandonkirbyson.vscode-animations-2.0.7/dist/updateHandler.js"
     ],
+    "animations.Scrolling": "Slide",
+    "animations.Default-Duration": 180,
+    "animations.Enabled": false,
+    "editor.cursorBlinking": "smooth"
 }

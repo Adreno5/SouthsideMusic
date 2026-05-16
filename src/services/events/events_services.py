@@ -1,29 +1,41 @@
 import threading
+from typing import TYPE_CHECKING
 
+from core.app_context import AppContext
+from core.dialogs import get_text_lineedit
 from imports import (
     BACKGROUND_RATIO_CHANGED,
+    MWINDOW_REFRESH_FOLDERS,
     PRE_THEME_CHANGED,
     REFRESH_RATE_CHANGED,
+    REMOVE_FOLDER,
+    RENAME_FOLDER,
     REPAINT,
     SONG_CHANGED,
     QApplication,
+    QDialog,
+    QMessageBox,
     QObject,
     QTimer,
     event_bus,
 )
 from core import theme
+from core.favorites import favs
+
+from views.folder_card import FolderCard
 
 
 class EventsServices(QObject):
-    def __init__(self, app: QApplication) -> None:
+    def __init__(self, ctx: AppContext) -> None:
         super().__init__()
-        self._app = app
+        self._ctx = ctx
+        self._app = ctx.app
 
-        self.refresh_rate = max(60, app.primaryScreen().refreshRate() / 2)
+        self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
         self.repaint_timer = QTimer(self)
         self.repaint_timer.timeout.connect(lambda: event_bus.emit(REPAINT))
         self.repaint_timer.start(int(1000 / self.refresh_rate))
-        app.primaryScreen().refreshRateChanged.connect(
+        self._app.primaryScreen().refreshRateChanged.connect(
             lambda: event_bus.emit(REFRESH_RATE_CHANGED)
         )
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
@@ -36,6 +48,29 @@ class EventsServices(QObject):
         threading.Thread(target=_startListen, daemon=True).start()
 
         event_bus.subscribe(SONG_CHANGED, lambda s: event_bus.emit(BACKGROUND_RATIO_CHANGED))
+        event_bus.subscribe(REMOVE_FOLDER, self.removeFolder)
+        event_bus.subscribe(RENAME_FOLDER, self.renameFolder)
+
+    def removeFolder(self, card: FolderCard):
+        confirmed: bool = QMessageBox.question(
+            None,
+            'Remove Folder',
+            f'Are you sure to remove folder \'{card.folder['folder_name']}\'?',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        ) == QMessageBox.StandardButton.Yes
+        if confirmed:
+            favs.remove(card.folder)
+            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+
+    def renameFolder(self, card: FolderCard):
+        new = get_text_lineedit('Rename Folder', 'enter new name of your folder', 'my folder', self._ctx.mwindow)
+        if new:
+            for folder in favs:
+                if folder['folder_name'] == card.folder['folder_name']:
+                    folder['folder_name'] = new
+                    break
+            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
 
     def _onRefreshRateChanged(self):
         self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)

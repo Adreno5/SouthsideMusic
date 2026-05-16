@@ -152,7 +152,6 @@ import subprocess  # noqa: E402
 
 original_popen = subprocess.Popen
 
-
 def patched_popen(*args, **kwargs):
     startupinfo = subprocess.STARTUPINFO()
     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -303,9 +302,6 @@ if __name__ == '__main__':
     csession.deviceId = uuid.uuid4().hex
     ncm.SetCurrentSession(csession)
 
-    launchwindow.push('Initializing events services...')
-    events_service = EventsServices(app)
-
     launchwindow.clear()
     launchwindow.subtitle('Phase 2 (initialize components...)')
 
@@ -325,6 +321,9 @@ if __name__ == '__main__':
         lock=lock,
     )
     ctx.launchwindow = launchwindow
+
+    launchwindow.push('Initializing events services...')
+    events_service = EventsServices(ctx)
 
     launchwindow.push('Initializing playing page...')
     dp = PlayingPage(ctx)

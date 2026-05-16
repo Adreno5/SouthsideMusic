@@ -13,7 +13,11 @@ REFRESH_RATE_CHANGED = 'refresh_rate_changed'
 REPAINT = 'repaint'
 UPDATE_FM = 'update_fm'
 BACKGROUND_RATIO_CHANGED = 'background_ratio_changed'
+
 VIEW_FOLDER = 'view_folder'
+REMOVE_FOLDER = 'remove_folder'
+MWINDOW_REFRESH_FOLDERS = 'mwindow_refresh_folders'
+RENAME_FOLDER = 'rename_folder'
 
 START_INTER_LOADING = 'start_inter_loading'
 START_PROGRESS_LOADING = 'start_progress_loading'

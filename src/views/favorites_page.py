@@ -108,12 +108,39 @@ class FavoritesPage(QWidget):
                 self._mwindow,
                 self._plp,
                 remove_callback=lambda s=song: self.deleteSong(s),
+                move_callback=self.moveSong,
                 lazy=True,
             )
             card.clicked.connect(lambda s, it=item: self._onSongClicked(s, it))
             self.song_viewer.addItem(item)
             self.song_viewer.setItemWidget(item, card)
             self._song_cards.append(card)
+
+    def moveSong(self, song: SongStorable, delta: int):
+        songs = self.curr_folder['songs']
+        try:
+            old_index = songs.index(song)
+        except ValueError:
+            return
+
+        new_index = old_index + delta
+        if new_index < 0 or new_index >= len(songs):
+            return
+
+        current_song = None
+        if 0 <= self._dp.current_index < len(songs):
+            current_song = songs[self._dp.current_index]
+
+        songs[old_index], songs[new_index] = (
+            songs[new_index],
+            songs[old_index],
+        )
+        if current_song is not None:
+            self._dp.current_index = songs.index(current_song)
+        self._dp.playing_manager.refreshRandom()
+
+        self.refresh()
+        saveFavorites()
 
     def deleteSong(self, song_storable: SongStorable):
         favs = loadFavorites()

@@ -36,7 +36,7 @@ class LineinputDialog(MessageBoxBase):
         self.viewLayout.addWidget(self.inputer)
 
 
-def get_text_lineedit(title: str, desc: str, place: str, parent: QWidget):
+def get_text_lineedit(title: str, desc: str, place: str, parent: QWidget | None):
     dialog = LineinputDialog(parent, title, desc, place)
     response = dialog.exec()
 

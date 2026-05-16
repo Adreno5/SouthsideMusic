@@ -561,10 +561,9 @@ class PlayingPage(QWidget):
                     return
 
                 self.next_song_audio = audio  # type: ignore
-                if (
-                    next_song.loudness_gain == 1.0
-                    or next_song.target_lufs != cfg.target_lufs
-                ) and isinstance(self.next_song_audio, AudioSegment_):
+                if next_song.target_lufs != cfg.target_lufs and isinstance(
+                    self.next_song_audio, AudioSegment_
+                ):
                     next_song.loudness_gain = getAdjustedGainFactor(
                         cfg.target_lufs, self.next_song_audio
                     )
@@ -1071,16 +1070,13 @@ class PlayingPage(QWidget):
                     audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
                     if cache_key:
                         cache_decoded_audio(cache_key, audio)
-                gain_db = 20 * np.log10(
-                    getAdjustedGainFactor(cfg.target_lufs, audio)
-                    if song_storable.target_lufs != cfg.target_lufs
-                    else song_storable.loudness_gain
-                )
-                audio = audio.apply_gain(gain_db)
                 if song_storable.target_lufs != cfg.target_lufs:
-                    song_storable.target_lufs = cfg.target_lufs
                     gain = getAdjustedGainFactor(cfg.target_lufs, audio)
+                    song_storable.target_lufs = cfg.target_lufs
                     song_storable.loudness_gain = gain
+                else:
+                    gain = song_storable.loudness_gain
+                audio = audio.apply_gain(20 * np.log10(gain))
 
             self._mwindow_obj._loading_song = False
 
@@ -1107,6 +1103,9 @@ class PlayingPage(QWidget):
             self.next_song_audio = None
             self.next_song_gain = None
             self.next_song_selection = None
+
+            if song_storable not in self.playlist:
+                self.playlist.insert(self.current_index, song_storable)
 
             self._plp.refreshPlaylistWidget()
             self.sendSongFMAndInfo()

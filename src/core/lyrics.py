@@ -215,6 +215,8 @@ class LRCLyricParser:
         self._logger = logging.getLogger(__name__)
         self.cur: str = ""
         self.parsed: list[LyricInfo] = []
+        self.empty_times: list[float] = []
+        self.version: int = 0
 
     def getCurrentLyric(self, time: float) -> LyricInfo:
         return self._getCurrentLyric(time)
@@ -276,6 +278,8 @@ class LRCLyricParser:
         self._getCurrentLyricIndex.cache_clear()
 
         self.parsed.clear()
+        self.empty_times.clear()
+        self.version += 1
 
         if not self.cur:
             return
@@ -289,6 +293,15 @@ class LRCLyricParser:
                 continue
 
             if _is_json_metadata(stripped):
+                continue
+
+            m = _LRC_TIME_RE.match(stripped)
+            if m and not stripped[m.end() :].strip():
+                minutes = int(m.group(1))
+                seconds = int(m.group(2))
+                ms_raw = m.group(3).ljust(3, '0')[:3]
+                ms = int(ms_raw)
+                self.empty_times.append(minutes * 60 + seconds + ms / 1000)
                 continue
 
             info = _try_parse_lrc_line(stripped)

@@ -10,10 +10,12 @@ from typing import Any, Callable
 
 from core.app_context import AppContext
 
+from core.dialogs import get_text_lineedit
 from imports import (
     BACKGROUND_RATIO_CHANGED,
     ENDING_NO_SOUND,
     LYRIC_LINE_CHANGED,
+    MWINDOW_REFRESH_FOLDERS,
     PLAYLAST,
     PLAYNEXT,
     POST_THEME_CHANGED,
@@ -29,11 +31,13 @@ from imports import (
     VIEW_FOLDER,
     WEBSOCKET_CONNECTED,
     WEBSOCKET_DISCONNECTED,
+    FluentIcon,
     LineEdit,
     QAbstractAnimation,
     QApplication,
     QEasingCurve,
     QFont,
+    QListWidget,
     QListWidgetItem,
     QPropertyAnimation,
     QRect,
@@ -150,6 +154,7 @@ class MainWindow(FluentWindowBase):
 
         self.folders_list = SListWidget()
         self.folders_list.itemClicked.connect(self._onFolderItemClicked)
+        self.folders_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
 
         left_layout = QVBoxLayout()
         left_layout.setContentsMargins(0, 48, 0, 52)
@@ -251,6 +256,7 @@ class MainWindow(FluentWindowBase):
         event_bus.subscribe(ENDING_NO_SOUND, lambda: event_bus.emit(SONG_FINISH))
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self.updateDatas)
         event_bus.subscribe(VIEW_FOLDER, self.onViewFolder)
+        event_bus.subscribe(MWINDOW_REFRESH_FOLDERS, self.refreshFolders)
 
     def onStackedWidgetChanged(self):
         if self.dp_expanded and not self.dp_animating:
@@ -501,6 +507,23 @@ class MainWindow(FluentWindowBase):
             item.setSizeHint(card.sizeHint())
             self.folders_list.addItem(item)
             self.folders_list.setItemWidget(item, card)
+
+        item = QListWidgetItem()
+        widget = TransparentPushButton(FluentIcon.ADD_TO, 'Add folder')
+        widget.clicked.connect(self.onAddFolder)
+        item.setSizeHint(widget.sizeHint())
+        self.folders_list.addItem(item)
+        self.folders_list.setItemWidget(item, widget)
+
+        saveFavorites()
+
+    def onAddFolder(self):
+        name = get_text_lineedit('Add New Folder', 'enter name of your new folder', 'my folder', self)
+        if name:
+            new = FolderInfo(folder_name=name, songs=[])
+            favs.append(new)
+            self.refreshFolders()
+            self._fp.setDisplayFolder(new)
 
     def _onFolderItemClicked(self, item: QListWidgetItem):
         self.contents_widget.setCurrentWidget(self._fp)

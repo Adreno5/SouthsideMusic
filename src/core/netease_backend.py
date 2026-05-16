@@ -94,9 +94,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
 
         tlyric = data.get('tlyric')
         if isinstance(tlyric, dict):
-            translated_lyric = '\n'.join(
-                tlyric.get('lyric', '').splitlines()[1:]
-            )
+            translated_lyric = tlyric.get('lyric', '')
         else:
             translated_lyric = ''
 

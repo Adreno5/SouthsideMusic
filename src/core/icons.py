@@ -36,6 +36,7 @@ class SouthsideIcon(FluentIconBase, Enum):
     PLAYLIST = "playlist"
     SETTINGS = "settings"
     SEARCH = 'search'
+    RENAME = 'rename'
 
     @lru_cache
     def path(self, theme=Theme.AUTO) -> str:

@@ -400,6 +400,9 @@ class PlayingPage(QWidget):
                 yrc_lyric=yrc_lyric,
             )
 
+            self.playlist.insert(self.current_index + 1, storable)
+            self._plp.refreshPlaylistWidget()
+
             self.cur = DummyCard(storable)
             self.playStorable(storable)
 

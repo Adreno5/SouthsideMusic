@@ -650,5 +650,5 @@ class MainWindow(FluentWindowBase):
             painter.drawText(
                 4,
                 int(self.bar_height + 18),
-                f'Loading... ({self.loading_progress if self.loading_progressing else self.loading_tasks})',
+                f'Loading... ({f'{round(self.loading_progress * 100, 2)}%' if self.loading_progressing else self.loading_tasks})',
             )

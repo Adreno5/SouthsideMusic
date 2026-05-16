@@ -4,6 +4,7 @@ from core.color import mixColor
 from core.config import cfg
 from core.icons import SouthsideIcon, bindIcon
 from core.models import SongStorable
+from core.smooth import EaseOutTimer, SmoothTimer
 from imports import (
     BACKGROUND_RATIO_CHANGED,
     POST_THEME_CHANGED,
@@ -19,6 +20,7 @@ from imports import (
     QPaintEvent,
     QPainter,
     QPoint,
+    QRect,
     Qt,
     event_bus,
 )
@@ -40,14 +42,16 @@ class SearchLineEdit(QLineEdit):
         self.setCursor(Qt.CursorShape.IBeamCursor)
         self.setFrame(False)
 
-        self.status = 'idle'
         self.handler = self.IconHandler()
         self.hovering = False
         self.draw_pixmap = None
         self._text_padding = 12
-        self._icon_padding = 0
+        self._icon_padding = 3
         self._icon_gap = 6
         bindIcon(self.handler, 'search')
+
+        self.iconx_timer = EaseOutTimer(0.3, 3)
+        self.bgwidth_timer = EaseOutTimer(0.3, 3)
 
         self.ft = QFont(font_family, point_size or 14)
         self.setFont(self.ft)
@@ -57,7 +61,6 @@ class SearchLineEdit(QLineEdit):
         self._applyTextColor()
         self._updateIconLayout()
 
-        self.textChanged.connect(self._onTextChanged)
         event_bus.subscribe(POST_THEME_CHANGED, self._onThemeChanged)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._onThemeChanged)
         event_bus.subscribe(REPAINT, self._repaintTick)
@@ -97,41 +100,22 @@ class SearchLineEdit(QLineEdit):
         self.update()
 
     def _repaintTick(self, song: SongStorable | None = None):
-        self.update()
+        if self.iconx_timer.is_animating or self.bgwidth_timer.is_animating:
+            self.update()
 
-    def _onTextChanged(self, text: str):
-        if text or self.hasFocus():
-            self.status = 'inputing'
-        else:
-            self.status = 'hovering' if self.hovering else 'idle'
-        self.update()
-
-    def enterEvent(self, event: QEnterEvent) -> None:
-        self.hovering = True
-        if self.status != 'inputing':
-            self.status = 'hovering'
-        return super().enterEvent(event)
-
-    def leaveEvent(self, event: QEvent) -> None:
-        self.hovering = False
-        if self.status != 'inputing':
-            self.status = 'idle'
-        return super().leaveEvent(event)
+    def shouldExpand(self) -> bool:
+        return bool(self.text().strip()) or self.hasFocus()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         self.setFocus(Qt.FocusReason.MouseFocusReason)
-        self.status = 'inputing'
         self.update()
         return super().mousePressEvent(event)
 
     def focusInEvent(self, event: QFocusEvent) -> None:
-        self.status = 'inputing'
         self.update()
         return super().focusInEvent(event)
 
     def focusOutEvent(self, event: QFocusEvent) -> None:
-        if not self.text():
-            self.status = 'hovering' if self.hovering else 'idle'
         self.update()
         return super().focusOutEvent(event)
 
@@ -146,14 +130,23 @@ class SearchLineEdit(QLineEdit):
         )
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(self.bg_color)
-        radius = int(min(self.width() / 2, self.height() * 0.5))
-        painter.drawRoundedRect(self.rect(), radius, radius)
-
+        should = self.shouldExpand()
         if hasattr(self, 'draw_pixmap') and self.draw_pixmap:
             icon_size = self.draw_pixmap.width()
+            radius = int(min(self.width() / 2, self.height() * 0.5))
+            if should : self.bgwidth_timer.target_value = self.width()
+            else: self.bgwidth_timer.target_value = self.height() * 1.32
+            draw_rect = self.rect()
+            draw_width = int(self.bgwidth_timer.current_value)
+            draw_rect.setX(int((self.width() - draw_width) * 0.5))
+            draw_rect.setWidth(draw_width)
+            painter.drawRoundedRect(draw_rect, radius, radius)
+
+            if should : self.iconx_timer.target_value = self.width() - icon_size
+            else: self.iconx_timer.target_value = (self.width() - icon_size) * 0.5
             painter.drawPixmap(
                 QPoint(
-                    self.width() - icon_size,
+                    int(self.iconx_timer.current_value) + self._icon_gap,
                     3,
                 ),
                 self.draw_pixmap,

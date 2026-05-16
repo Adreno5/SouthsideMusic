@@ -1,4 +1,7 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:venv",
     "python.analysis.autoImportCompletions": true,
+    "vscode_custom_css.imports": [
+        "D:/PythonProjects/SouthsideMusic/index.js"
+    ],
 }

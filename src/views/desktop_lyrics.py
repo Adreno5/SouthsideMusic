@@ -71,21 +71,52 @@ class DesktopLyricsViewer(LyricsViewer):
             return
         self.indentation = False
 
+    def _currentLyricLine(
+        self,
+        position: float | None = None,
+    ) -> YRCLyricInfo | LyricInfo | None:
+        if position is None:
+            position = self._player.getPosition()
+        if self._ymgr.parsed:
+            return self._ymgr.getCurrentLyric(position)
+        if self._mgr.parsed:
+            return self._mgr.getCurrentLyric(position)
+        return None
+
+    def _shouldDrawTranslationForLine(
+        self,
+        line: LyricInfo | YRCLyricInfo,
+        use_yrc: bool,
+        is_current_line: bool,
+    ) -> bool:
+        return is_current_line
+
+    def _hasCurrentLineTranslation(
+        self,
+        line: YRCLyricInfo | LyricInfo | None = None,
+    ) -> bool:
+        if line is None:
+            line = self._currentLyricLine()
+        return bool(line and self._translationTextForLine(line))
+
+    def _hasTranslation(self) -> bool:
+        return self._hasCurrentLineTranslation()
+
+    def _lineStep(self) -> float:
+        if self._transmgr.parsed:
+            return self.font_height + self.theight + self.font_height * 0.75
+        return self.font_height * 1.85
+
     def updateDatas(self):
         self.indentation_y += (
             (-self.height() + 8 if self.indentation else 0) - self.indentation_y
         ) * 0.2
 
-        cur_line: YRCLyricInfo | LyricInfo | None = (
-            self._ymgr.getCurrentLyric(self._player.getPosition())
-            if self._ymgr.parsed
-            else self._mgr.getCurrentLyric(self._player.getPosition())
-            if self._mgr.parsed
-            else None
-        )
+        position = self._player.getPosition()
+        cur_line = self._currentLyricLine(position)
         meta = cur_line.get('isMetadata') if cur_line else False
 
-        has_translation = bool(self._transmgr.parsed)
+        has_translation = self._hasCurrentLineTranslation(cur_line)
         tar_height = 65 if has_translation else 46
         if meta:
             tar_height = self.font_height + 2
@@ -93,7 +124,6 @@ class DesktopLyricsViewer(LyricsViewer):
         self.setFixedHeight(int(self.cheight))
 
         tar_width = 0
-        position = self._player.getPosition()
         if self._ymgr.parsed:
             yidx = self._ymgr.getCurrentIndex(position)
             y_line = (

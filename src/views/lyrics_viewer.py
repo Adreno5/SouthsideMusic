@@ -40,6 +40,8 @@ from core.lyrics import LyricInfo, YRCLyricInfo
 
 
 class LyricsViewer(QWidget):
+    _TRANSLATION_TIME_TOLERANCE = 0.02
+
     def __init__(
         self,
         ctx: AppContext,
@@ -133,6 +135,45 @@ class LyricsViewer(QWidget):
     def _hasTranslation(self) -> bool:
         return bool(self._transmgr.parsed)
 
+    def _translationTimeForLine(
+        self,
+        line: LyricInfo | YRCLyricInfo,
+        use_yrc: bool | None = None,
+    ) -> float:
+        trans_time = line['time']
+        if use_yrc is None:
+            use_yrc = 'chars' in line
+        if use_yrc and self._mgr.parsed:
+            lrc_line = self._mgr.getCurrentLyric(line['time'])
+            if lrc_line.get('content', '').strip():
+                trans_time = lrc_line['time']
+        return trans_time
+
+    def _translationTextForLine(
+        self,
+        line: LyricInfo | YRCLyricInfo,
+        use_yrc: bool | None = None,
+    ) -> str:
+        if (
+            not line.get('content', '').strip()
+            or line.get('isMetadata')
+            or not self._transmgr.parsed
+        ):
+            return ''
+        trans_time = self._translationTimeForLine(line, use_yrc)
+        for trans_line in self._transmgr.parsed:
+            if abs(trans_line['time'] - trans_time) <= self._TRANSLATION_TIME_TOLERANCE:
+                return trans_line['content'].strip()
+        return ''
+
+    def _shouldDrawTranslationForLine(
+        self,
+        line: LyricInfo | YRCLyricInfo,
+        use_yrc: bool,
+        is_current_line: bool,
+    ) -> bool:
+        return bool(self._transmgr.parsed)
+
     def _lineStep(self) -> float:
         if self._hasTranslation():
             return self.font_height + self.theight + self.font_height * 0.75
@@ -215,14 +256,9 @@ class LyricsViewer(QWidget):
         )
         painter.setFont(self.ft)
 
-        current_line = (
-            self._ymgr.getCurrentLyric(position)
-            if use_yrc
-            else self._mgr.getCurrentLyric(position)
-        )
         y = self.draw_offset + current_baseline
         for i, line in enumerate(lines):
-            is_current_line = line == current_line
+            is_current_line = i == idx
             if is_current_line:
                 if line.get('isMetadata'):
                     tar_color = QColor(255, 255, 255)
@@ -288,21 +324,12 @@ class LyricsViewer(QWidget):
                     line['content'].strip(),
                 )
 
-            if self._transmgr.parsed:
-                trans_time = line['time']
-                if use_yrc:
-                    lrc_candidates = [
-                        lrc_line
-                        for lrc_line in self._mgr.parsed
-                        if lrc_line['content'].strip() == line['content'].strip()
-                    ]
-                    lrc_line = min(
-                        lrc_candidates,
-                        key=lambda lrc_line: abs(lrc_line['time'] - line['time']),
-                        default=None,
-                    )
-                    if lrc_line:
-                        trans_time = lrc_line['time']
+            translation_text = (
+                self._translationTextForLine(line, use_yrc)
+                if self._shouldDrawTranslationForLine(line, use_yrc, is_current_line)
+                else ''
+            )
+            if translation_text:
                 painter.setFont(self.tft)
                 painter.setPen(
                     QColor(255, 255, 255, 120)
@@ -312,7 +339,7 @@ class LyricsViewer(QWidget):
                 painter.drawText(
                     toQtInt(self.draw_x_offset),
                     toQtInt(y + self.metri.descent() + 2 + self.tmetri.ascent()),
-                    self._transmgr.getCurrentLyric(trans_time)['content'].strip(),
+                    translation_text,
                 )
                 painter.setFont(self.ft)
 

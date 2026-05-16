@@ -5,15 +5,12 @@ import logging
 import math
 import numpy as np
 import time
-from typing import TYPE_CHECKING, Any, cast as _cast
+from typing import Any, cast as _cast
 
+from core.app_context import AppContext
 from core.models import SongStorable
 from core.qt_utils import toQtInt
 from views.setting_page import SettingPage
-
-if TYPE_CHECKING:
-    from views.main_window import MainWindow
-    from views.playing_page import PlayingPage
 
 from core.color import mixColor
 from imports import (
@@ -74,26 +71,20 @@ from core.config import cfg
 class PlayingControllerLyricsViewer(QWidget):
     def __init__(
         self,
-        app: QApplication,
-        mgr,
-        ymgr,
-        player: AudioPlayer,
-        mwindow,
-        harmony_font_family: str,
-        cfg,
-        dp: PlayingPage,
+        ctx: AppContext,
     ):
         super().__init__()
         self._logger = logging.getLogger(__name__)
-        self._app = app
-        self._mgr = mgr
-        self._ymgr = ymgr
-        self._player = player
-        self._mwindow = mwindow
-        self._cfg = cfg
-        self._dp = dp
+        self.ctx = ctx
+        self._app = ctx.app
+        self._mgr = ctx.mgr
+        self._ymgr = ctx.ymgr
+        self._player = ctx.player
+        self._mwindow = ctx.mwindow
+        self._cfg = ctx.cfg
+        self._dp = ctx.dp
 
-        self.ft = QFont(harmony_font_family, 9)
+        self.ft = QFont(ctx.harmony_font_family, 9)
         self.font_height = QFontMetricsF(self.ft).height()
         self.metri = QFontMetricsF(self.ft)
 
@@ -102,7 +93,7 @@ class PlayingControllerLyricsViewer(QWidget):
         self._lyrics_ready = True
         self._prewarm_version = 0
 
-        self.refresh_rate = max(60, app.primaryScreen().refreshRate() / 2)
+        self.refresh_rate = max(60, ctx.app.primaryScreen().refreshRate() / 2)
         self._logger.info(f'{self.refresh_rate=}')
 
         self.delta = 1 / self.refresh_rate
@@ -248,26 +239,18 @@ class PlayingControllerLyricsViewer(QWidget):
 class PlayingController(QWidget):
     def __init__(
         self,
-        player: AudioPlayer,
-        mgr: LRCLyricParser | None,
-        transmgr: LRCLyricParser | None,
-        ymgr: YRCLyricParser | None,
-        dp: PlayingPage,
-        mwindow: MainWindow | None,
-        ws_handler,
-        app: QApplication,
-        harmony_font_family: str,
-        stp: SettingPage | None
+        ctx: AppContext,
     ):
         super().__init__()
-        self._player: AudioPlayer = _cast(AudioPlayer, player)
-        self._mgr: LRCLyricParser = _cast(LRCLyricParser, mgr)
-        self._transmgr: LRCLyricParser = _cast(LRCLyricParser, transmgr)
-        self._ymgr: YRCLyricParser = _cast(YRCLyricParser, ymgr)
-        self._dp: PlayingPage = dp  # type: ignore
-        self._mwindow: MainWindow = mwindow  # type: ignore
-        self._ws_handler: QObjectHandler = _cast(QObjectHandler, ws_handler)
-        self._stp: SettingPage = stp  # type: ignore
+        self.ctx = ctx
+        self._player: AudioPlayer = _cast(AudioPlayer, ctx.player)
+        self._mgr: LRCLyricParser = _cast(LRCLyricParser, ctx.mgr)
+        self._transmgr: LRCLyricParser = _cast(LRCLyricParser, ctx.transmgr)
+        self._ymgr: YRCLyricParser = _cast(YRCLyricParser, ctx.ymgr)
+        self._dp: PlayingPage = ctx.dp  # type: ignore
+        self._mwindow: MainWindow = ctx.mwindow  # type: ignore
+        self._ws_handler: QObjectHandler = _cast(QObjectHandler, ctx.ws_handler)
+        self._stp: SettingPage = ctx.stp  # type: ignore
 
         self.dragging = False
 
@@ -287,9 +270,7 @@ class PlayingController(QWidget):
 
         self.fm_label = QLabel()
         self.song_title_label = QLabel()
-        self.lyrics_viewer = PlayingControllerLyricsViewer(
-            app, mgr, ymgr, player, mwindow, harmony_font_family, cfg, dp
-        )
+        self.lyrics_viewer = PlayingControllerLyricsViewer(ctx)
 
         self.middle_widget = QWidget()
         self.middle_layout = QVBoxLayout()
@@ -355,14 +336,21 @@ class PlayingController(QWidget):
         event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
 
-        self.bg_color = mixColor(
-            QColor(40, 40, 40) if darkdetect.isDark() else QColor(230, 230, 230),
-            self._mwindow.song_theme if self._mwindow.song_theme else QColor(0, 0, 0),
-            1 - cfg.background_ratio * 0.5,
-        )
+        if self._mwindow:
+            self.bg_color = mixColor(
+                QColor(40, 40, 40) if darkdetect.isDark() else QColor(230, 230, 230),
+                self._mwindow.song_theme
+                if self._mwindow.song_theme
+                else QColor(0, 0, 0),
+                1 - cfg.background_ratio * 0.5,
+            )
+        else:
+            self.bg_color = (
+                QColor(40, 40, 40) if darkdetect.isDark() else QColor(230, 230, 230)
+            )
 
     def onTogglePlaylist(self):
-        if not self._mwindow.pl_animating:
+        if self._mwindow and not self._mwindow.pl_animating:
             self._mwindow.togglePlaylistExpand()
 
     def hideLyrics(self):
@@ -378,7 +366,9 @@ class PlayingController(QWidget):
     def _updateDatas(self, song: SongStorable | None = None):
         self.bg_color = mixColor(
             QColor(40, 40, 40) if darkdetect.isDark() else QColor(230, 230, 230),
-            self._mwindow.song_theme if self._mwindow.song_theme else QColor(0, 0, 0),
+            self._mwindow.song_theme
+            if self._mwindow and self._mwindow.song_theme
+            else QColor(0, 0, 0),
             1 - cfg.background_ratio * 0.5,
         )
 
@@ -498,7 +488,7 @@ class PlayingController(QWidget):
             )
             self._player.setPosition(playing_time)
         elif event.position().y() > 8:
-            if not self._mwindow.dp_animating:
+            if self._mwindow and not self._mwindow.dp_animating:
                 self._mwindow.togglePlayingPageExpand()
         return super().mousePressEvent(event)
 

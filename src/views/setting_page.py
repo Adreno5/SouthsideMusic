@@ -3,15 +3,9 @@ from __future__ import annotations
 import io
 import logging
 
-from typing import Callable, TYPE_CHECKING, cast
+from typing import Callable, cast
 
-if TYPE_CHECKING:
-    from views.main_window import MainWindow
-    from views.playing_page import PlayingPage
-    from core.audio_player import AudioPlayer
-    from core.ws_server import WebSocketHandler, WebSocketServer, QObjectHandler
-    from views.desktop_lyrics import DesktopLyricsPage
-
+from core.app_context import AppContext
 
 import numpy as np
 from imports import (
@@ -29,7 +23,6 @@ from imports import (
 )
 from imports import QColor
 from imports import (
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QSlider,
@@ -41,6 +34,8 @@ from qfluentwidgets import (
     CheckBox,
     ComboBox,
     DoubleSpinBox,
+    FluentIcon,
+    PushButton,
     Slider,
     SubtitleLabel,
     TitleLabel,
@@ -64,41 +59,34 @@ from core.ws_server import (
 class SettingPage(QWidget):
     def __init__(
         self,
-        dsp: DesktopLyricsPage,
-        dp: PlayingPage | None = None,
-        mwindow: MainWindow | None = None,
-        player: AudioPlayer | None = None,
-        ws_server=None,
-        ws_handler=None,
-        app=None,
-        launchwindow=None
+        ctx: AppContext,
     ):
         super().__init__()
         self._logger = logging.getLogger(__name__)
-        if launchwindow:
-            self._launchwindow = launchwindow
-        else:
-            self._launchwindow = None
-        self._dp: PlayingPage = dp  # type: ignore
-        self._mwindow: MainWindow = mwindow  # type: ignore
-        self._player: AudioPlayer = player  # type: ignore
-        self._ws_server: WebSocketServer = ws_server  # type: ignore
-        self._ws_handler: QObjectHandler = ws_handler  # type: ignore
-        self._dsp: DesktopLyricsPage = dsp
-        self._app = app
+        self.ctx = ctx
+        self._launchwindow = ctx.launchwindow
+        self._ws_server: WebSocketServer = ctx.ws_server  # type: ignore
+        self._ws_handler: QObjectHandler = ctx.ws_handler  # type: ignore
+        self._app = ctx.app
 
         global_layout = QVBoxLayout()
 
         self.scroller = SmoothScrollArea()
-        self.scroller.setScrollAnimation(Qt.Orientation.Vertical, 450, QEasingCurve.Type.OutCubic)
+        self.scroller.setScrollAnimation(
+            Qt.Orientation.Vertical, 450, QEasingCurve.Type.OutCubic
+        )
 
         self.setObjectName('SettingPage')
         self.updateTheme()
-        self.options_layout = QGridLayout()
+        self.options_layout = QVBoxLayout()
+        self.options_layout.setContentsMargins(24, 24, 24, 24)
+        self.options_layout.setSpacing(10)
+        self._section_count = 0
         self.options_widget = QWidget()
         self.options_widget.setLayout(self.options_layout)
         self._initOptions()
-        
+        self.options_layout.addStretch(1)
+
         self.scroller.setWidget(self.options_widget)
         self.scroller.setWidgetResizable(True)
 
@@ -110,6 +98,22 @@ class SettingPage(QWidget):
         event_bus.subscribe(WEBSOCKET_DISCONNECTED, self._onWsDisconnected)
         event_bus.subscribe(POST_THEME_CHANGED, self.updateTheme)
 
+    @property
+    def _dp(self):
+        return self.ctx.dp
+
+    @property
+    def _mwindow(self):
+        return self.ctx.mwindow
+
+    @property
+    def _player(self):
+        return self.ctx.player
+
+    @property
+    def _dsp(self):
+        return self.ctx.dsp
+
     def updateTheme(self) -> None:
         self.setStyleSheet(
             f'background: #{"000000" if darkdetect.isDark() else "FFFFFF"}'
@@ -120,7 +124,7 @@ class SettingPage(QWidget):
         if lw:
             lw.push('Setting up sidebar options...')
 
-        self.addSeparateWidget(TitleLabel('Playing'))
+        self.addSection('Playing', 'Playback order, stereo output, speed and skip behavior.')
 
         self.play_method_box = ComboBox()
         self.play_method_box.addItems(
@@ -146,7 +150,7 @@ class SettingPage(QWidget):
             'Skip Threshold', 'the threshold of the skip', -100, 0, 1, 'skip_threshold'
         )
         self.now_volume = QLabel('Current volume(db): 0')
-        self.addSeparateWidget(self.now_volume)
+        self.addSetting('Current Volume', 'live playback volume in db', self.now_volume)
 
         self.addNumberSetting(
             'Remain time to Skip',
@@ -159,7 +163,7 @@ class SettingPage(QWidget):
 
         if lw:
             lw.top('Setting up window options...')
-        self.addSeparateWidget(TitleLabel('Window'))
+        self.addSection('Window', 'Theme-sensitive background mixing.')
         self.addNumberSetting(
             'Window Background Mix Ratio',
             'larger value make color of backgound nearly to image of playing song',
@@ -172,7 +176,7 @@ class SettingPage(QWidget):
 
         if lw:
             lw.top('Setting up lyrics options...')
-        self.addSeparateWidget(TitleLabel('Lyrics'))
+        self.addSection('Lyrics', 'Smoothing controls for the main lyrics animation.')
         self.addNumberSetting(
             'Lyrics Smooth Factor',
             'larger value means a more sudden change',
@@ -193,16 +197,37 @@ class SettingPage(QWidget):
         if lw:
             lw.top('Setting up Desktop lyrics options...')
 
-        self.addSeparateWidget(TitleLabel('Desktop Lyrics'))
-        self.addSeparateWidget(self._dsp.inputer)
-        self.addSeparateWidget(self._dsp.reset_pos)
+        self.addSection('Desktop Lyrics', 'Floating lyrics window controls.')
+        dsp = self._dsp
+        assert dsp is not None, 'Desktop lyrics page must be initialized before settings'
+        self.desktop_lyrics_box = CheckBox('Enable Desktop Lyrics')
+        self.desktop_lyrics_box.checkStateChanged.connect(
+            lambda: self._onDesktopLyricsEnableChanged()
+        )
+        self.desktop_lyrics_box.setChecked(cfg.enable_desktop_lyrics)
+        self.addSetting(
+            'Enable Desktop Lyrics',
+            'show lyrics in a floating always-on-top window',
+            self.desktop_lyrics_box,
+        )
+        self.desktop_lyrics_reset_pos = PushButton(FluentIcon.SYNC, 'Reset Position')
+        self.desktop_lyrics_reset_pos.clicked.connect(dsp.onResetPos)
+        self.addSetting(
+            'Reset Position',
+            'move the desktop lyrics window back to the origin',
+            self.desktop_lyrics_reset_pos,
+        )
 
         if lw:
             lw.top('Setting up FFT options...')
-        self.addSeparateWidget(TitleLabel('FFT'))
+        self.addSection('FFT', 'Frequency visualization tuning for local and client output.')
         self.enableFFT_box = CheckBox('Enable Frequency Graphics')
-        self.addSeparateWidget(self.enableFFT_box)
         self.enableFFT_box.setChecked(cfg.enable_fft)
+        self.addSetting(
+            'Frequency Graphics',
+            'enable FFT-driven visual effects',
+            self.enableFFT_box,
+        )
         self.addNumberSetting(
             'FFT Filtering Window size',
             'larger value means more smoothing',
@@ -238,7 +263,7 @@ class SettingPage(QWidget):
 
         if lw:
             lw.top('Setting up loudness balance...')
-        self.addSeparateWidget(TitleLabel('Loudness Balance'))
+        self.addSection('Loudness', 'Target volume normalization for playback.')
         self.target_lufs = Slider(Qt.Orientation.Horizontal)
         self.target_lufs.valueChanged.connect(self.onTargetLUFSChanged)
         self.target_lufs.wheelEvent = lambda e: e.ignore()
@@ -246,27 +271,23 @@ class SettingPage(QWidget):
         self.target_lufs.setRange(-60, 0)
         self.target_lufs.setSingleStep(1)
         self.target_lufs.setValue(cfg.target_lufs)
-        self.addSeparateWidget(self.target_lufs)
         self.target_lufs_label = SubtitleLabel(f'Target LUFS: {cfg.target_lufs}')
+        self.addSetting('Target LUFS', 'restart to apply loudness changes', self.target_lufs)
         self.addSeparateWidget(self.target_lufs_label)
-        self.addSeparateWidget(
-            QLabel(
-                'Target LUFS Help:'
-                '\nRange: -60(quietest)~0(loudest)'
-                '\nRecommend: -16~-18'
-                '\nReference:'
-                '\nYoutube : -14LUFS'
-                '\nNetflix : -27LUFS'
-                '\nTikTok / Instagram Reels : -13LUFS'
-                '\nApple Music (Video) : -16LUFS'
-                '\nSpotify (Video): -14LUFS : -16LUFS'
-            )
+        self.addInfoBlock(
+            'Reference',
+            'Range: -60(quietest)~0(loudest)\n'
+            'Recommend: -16~-18\n'
+            'Youtube: -14 LUFS\n'
+            'Netflix: -27 LUFS\n'
+            'TikTok / Instagram Reels: -13 LUFS\n'
+            'Apple Music (Video): -16 LUFS\n'
+            'Spotify (Video): -14 LUFS / -16 LUFS',
         )
 
         if lw:
             lw.top('Setting up connection options...')
-        self.addSeparateWidget(QLabel())
-        self.addSeparateWidget(TitleLabel('Connection'))
+        self.addSection('Connection', 'SouthsideClient websocket status and controls.')
         self.southsideclient_status_label = SubtitleLabel(
             "Connection Status: <span style='color: red;'>Disconnected</span>"
         )
@@ -275,12 +296,18 @@ class SettingPage(QWidget):
         bindIcon(self.disconnect_btn, 'disc')
         self.disconnect_btn.clicked.connect(self.disconnectFromSouthsideClient)
         self.disconnect_btn.setEnabled(False)
-        self.addSeparateWidget(self.disconnect_btn)
         self.connect_btn = TransparentPushButton('Try connect')
         bindIcon(self.connect_btn, 'cnnt')
         self.connect_btn.clicked.connect(self.connectToSouthsideClient)
         self.connect_btn.setEnabled(False)
-        self.addSeparateWidget(self.connect_btn)
+        connection_buttons = QWidget()
+        connection_layout = QHBoxLayout()
+        connection_layout.setContentsMargins(0, 0, 0, 0)
+        connection_layout.addWidget(self.disconnect_btn)
+        connection_layout.addWidget(self.connect_btn)
+        connection_layout.addStretch(1)
+        connection_buttons.setLayout(connection_layout)
+        self.addSeparateWidget(connection_buttons)
 
         for slider in self.findChildren(QSlider):
             slider.wheelEvent = lambda e: e.ignore()  # type: ignore[method-assign]
@@ -290,7 +317,7 @@ class SettingPage(QWidget):
             'Need Restart',
             'Restart the application to apply the new LUFS',
             duration=7000,
-            parent=self._mwindow
+            parent=self._mwindow,
         )
 
     def addNumberSetting(
@@ -328,7 +355,20 @@ class SettingPage(QWidget):
         box.setChecked(getattr(cfg, configurationName))
         self.addSetting(title, description, box)
 
-    def addSetting(self, name: str, description: str, widget: QWidget) -> None:
+    def addSection(self, title: str, description: str) -> None:
+        if self._section_count:
+            self.options_layout.addSpacing(12)
+        title_l = TitleLabel(title)
+        desc_l = QLabel(description)
+        desc_l.setWordWrap(True)
+        desc_l.setStyleSheet(
+            f'color: {"#A8A8A8" if darkdetect.isDark() else "#666666"};'
+        )
+        self.options_layout.addWidget(title_l)
+        self.options_layout.addWidget(desc_l)
+        self._section_count += 1
+
+    def _createTransparentCard(self) -> CardWidget:
         card = CardWidget()
         card.paintEvent = lambda e: self._patched_paint_event(card, e)
         card.setBackgroundColor(QColor(255, 255, 255, 0))
@@ -336,19 +376,46 @@ class SettingPage(QWidget):
         card._hoverBackgroundColor = lambda: QColor(255, 255, 255, 0)
         card._pressedBackgroundColor = lambda: QColor(255, 255, 255, 0)
         card._focusInBackgroundColor = lambda: QColor(255, 255, 255, 0)
-        global_layout = QVBoxLayout()
-        top_layout = QHBoxLayout()
+        return card
+
+    def addSetting(self, name: str, description: str, widget: QWidget) -> None:
+        card = self._createTransparentCard()
+        global_layout = QHBoxLayout()
+        global_layout.setContentsMargins(16, 12, 16, 12)
+        global_layout.setSpacing(18)
+        text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(4)
         name_l = QLabel(name)
         name_l.setStyleSheet('font-weight: bold;')
         name_l.setWordWrap(True)
-        top_layout.addWidget(name_l)
-        top_layout.addWidget(widget)
-        global_layout.addLayout(top_layout)
         desc_l = QLabel(description)
         desc_l.setWordWrap(True)
-        global_layout.addWidget(desc_l)
+        desc_l.setStyleSheet(
+            f'color: {"#A8A8A8" if darkdetect.isDark() else "#666666"};'
+        )
+        text_layout.addWidget(name_l)
+        text_layout.addWidget(desc_l)
+        global_layout.addLayout(text_layout, 1)
+        global_layout.addWidget(widget, 0, Qt.AlignmentFlag.AlignRight)
         card.setLayout(global_layout)
-        self.options_layout.addWidget(card, self.options_layout.rowCount(), 0, 2, 2)
+        self.options_layout.addWidget(card)
+
+    def addInfoBlock(self, title: str, text: str) -> None:
+        card = self._createTransparentCard()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(16, 12, 16, 12)
+        title_l = QLabel(title)
+        title_l.setStyleSheet('font-weight: bold;')
+        body_l = QLabel(text)
+        body_l.setWordWrap(True)
+        body_l.setStyleSheet(
+            f'color: {"#A8A8A8" if darkdetect.isDark() else "#666666"};'
+        )
+        layout.addWidget(title_l)
+        layout.addWidget(body_l)
+        card.setLayout(layout)
+        self.options_layout.addWidget(card)
 
     def _onBackgroundRatioChanged(self, v):
         event_bus.emit(BACKGROUND_RATIO_CHANGED)
@@ -367,6 +434,9 @@ class SettingPage(QWidget):
         self.now_volume.setText(
             f'Current volume(db): {(round(volume * 10) / 10) if volume != float("-inf") else "-inf"}'
         )
+
+    def _onDesktopLyricsEnableChanged(self) -> None:
+        self._dsp.setLyricsVisible(self.desktop_lyrics_box.isChecked())
 
     def _patched_paint_event(self, card: CardWidget, e):
         from PySide6.QtGui import QPainter, QPainterPath
@@ -420,7 +490,7 @@ class SettingPage(QWidget):
         painter.drawRoundedRect(rect, r, r)
 
     def addSeparateWidget(self, widget: QWidget) -> None:
-        self.options_layout.addWidget(widget, self.options_layout.rowCount(), 0, 1, 2)
+        self.options_layout.addWidget(widget)
 
     def disconnectFromSouthsideClient(self):
         self._ws_server.tryGetHandler()

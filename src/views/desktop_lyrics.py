@@ -1,7 +1,8 @@
 from __future__ import annotations
 import logging
 import time
-from typing import TYPE_CHECKING
+
+from core.app_context import AppContext
 
 from imports import (
     QApplication,
@@ -33,28 +34,14 @@ from core import theme as darkdetect
 from core.lyrics import LyricInfo, YRCLyricInfo
 from views.lyrics_viewer import LyricsViewer
 
-if TYPE_CHECKING:
-    from views.playing_page import PlayingPage
-    from core.audio_player import AudioPlayer
-
 
 class DesktopLyricsViewer(LyricsViewer):
     def __init__(
         self,
-        app,
-        mgr,
-        transmgr,
-        ymgr,
-        player: AudioPlayer,
-        mwindow,
-        harmony_font_family,
-        cfg,
-        dp: PlayingPage,
+        ctx: AppContext,
     ):
-        super().__init__(
-            app, mgr, transmgr, ymgr, player, mwindow, harmony_font_family, cfg, dp
-        )
-        self.scr_size: QSize = app.primaryScreen().size()
+        super().__init__(ctx)
+        self.scr_size: QSize = ctx.app.primaryScreen().size()
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -188,102 +175,105 @@ class DesktopLyricsViewer(LyricsViewer):
         return super().moveEvent(event)
 
     def paintEvent(self, event: QPaintEvent) -> None:
-        if not self._mwindow:
+        mwindow = self.ctx.mwindow
+        if not mwindow:
             return
+        song_theme = getattr(mwindow, 'song_theme', None) or QColor(0, 0, 0)
 
         painter = QPainter(self)
-        painter.setPen(Qt.PenStyle.NoPen)
+        try:
+            painter.setPen(Qt.PenStyle.NoPen)
 
-        draw_rect = QRect(12, 0, self.width() - 24, self.height())
+            draw_rect = QRect(12, 0, self.width() - 24, self.height())
 
-        painter.setBrush(
-            mixColor(
-                self._mwindow.song_theme,
-                QColor(255, 255, 255) if darkdetect.isLight() else QColor(0, 0, 0),
-                cfg.background_ratio * 0.2,
+            painter.setBrush(
+                mixColor(
+                    song_theme,
+                    QColor(255, 255, 255) if darkdetect.isLight() else QColor(0, 0, 0),
+                    cfg.background_ratio * 0.2,
+                )
             )
-        )
 
-        if cfg.desktop_lyrics_anchor == 'normal':
-            radius = int(self.height() * 0.5)
-            painter.drawRoundedRect(draw_rect, radius, radius)
-            if self._dp.total_length > 0:
-                painter.save()
-                painter.setBrush(
-                    mixColor(
-                        self._mwindow.song_theme,
-                        QColor(125, 125, 125)
-                        if darkdetect.isDark()
-                        else QColor(80, 80, 80),
-                        cfg.background_ratio * 0.5,
+            if cfg.desktop_lyrics_anchor == 'normal':
+                radius = int(self.height() * 0.5)
+                painter.drawRoundedRect(draw_rect, radius, radius)
+                if self._dp.total_length > 0:
+                    painter.save()
+                    painter.setBrush(
+                        mixColor(
+                            song_theme,
+                            QColor(125, 125, 125)
+                            if darkdetect.isDark()
+                            else QColor(80, 80, 80),
+                            cfg.background_ratio * 0.5,
+                        )
                     )
-                )
-                painter.drawRect(
-                    self.height() // 2,
-                    0,
-                    int(
-                        (self.width() - self.height())
-                        * (self._player.getPosition() / self._dp.total_length)
-                    ),
-                    1,
-                )
-                painter.restore()
-        elif cfg.desktop_lyrics_anchor == 'top-center':
-            painter.drawRoundedRect(draw_rect, 20, 20)
-
-            draw_path = QPainterPath()
-            draw_path.moveTo(4, 0)
-            draw_path.lineTo(36, 0)
-            draw_path.lineTo(12, 16)
-            draw_path.closeSubpath()
-
-            exclude_path = QPainterPath()
-            exclude_path.addRect(0, 0, 12, 25)
-
-            clip_path = draw_path - exclude_path
-            painter.save()
-            painter.setClipPath(clip_path)
-            painter.drawPath(draw_path)
-            painter.restore()
-
-            draw_path_r = QPainterPath()
-            draw_path_r.moveTo(self.width() - 4, 0)
-            draw_path_r.lineTo(self.width() - 36, 0)
-            draw_path_r.lineTo(self.width() - 12, 16)
-            draw_path_r.closeSubpath()
-
-            exclude_path_r = QPainterPath()
-            exclude_path_r.addRect(self.width() - 12, 0, 12, 25)
-
-            clip_path_r = draw_path_r - exclude_path_r
-            painter.save()
-            painter.setClipPath(clip_path_r)
-            painter.drawPath(draw_path_r)
-            painter.restore()
-
-            if self._dp.total_length > 0:
-                painter.save()
-                painter.setBrush(
-                    mixColor(
-                        self._mwindow.song_theme,
-                        QColor(125, 125, 125)
-                        if darkdetect.isDark()
-                        else QColor(80, 80, 80),
-                        cfg.background_ratio * 0.5,
+                    painter.drawRect(
+                        self.height() // 2,
+                        0,
+                        int(
+                            (self.width() - self.height())
+                            * (self._player.getPosition() / self._dp.total_length)
+                        ),
+                        1,
                     )
-                )
-                painter.drawRect(
-                    12,
-                    0,
-                    int(
-                        (self.width() - 24)
-                        * (self._player.getPosition() / self._dp.total_length)
-                    ),
-                    1,
-                )
+                    painter.restore()
+            elif cfg.desktop_lyrics_anchor == 'top-center':
+                painter.drawRoundedRect(draw_rect, 20, 20)
+
+                draw_path = QPainterPath()
+                draw_path.moveTo(4, 0)
+                draw_path.lineTo(36, 0)
+                draw_path.lineTo(12, 16)
+                draw_path.closeSubpath()
+
+                exclude_path = QPainterPath()
+                exclude_path.addRect(0, 0, 12, 25)
+
+                clip_path = draw_path - exclude_path
+                painter.save()
+                painter.setClipPath(clip_path)
+                painter.drawPath(draw_path)
                 painter.restore()
 
-        painter.end()
+                draw_path_r = QPainterPath()
+                draw_path_r.moveTo(self.width() - 4, 0)
+                draw_path_r.lineTo(self.width() - 36, 0)
+                draw_path_r.lineTo(self.width() - 12, 16)
+                draw_path_r.closeSubpath()
+
+                exclude_path_r = QPainterPath()
+                exclude_path_r.addRect(self.width() - 12, 0, 12, 25)
+
+                clip_path_r = draw_path_r - exclude_path_r
+                painter.save()
+                painter.setClipPath(clip_path_r)
+                painter.drawPath(draw_path_r)
+                painter.restore()
+
+                if self._dp.total_length > 0:
+                    painter.save()
+                    painter.setBrush(
+                        mixColor(
+                            song_theme,
+                            QColor(125, 125, 125)
+                            if darkdetect.isDark()
+                            else QColor(80, 80, 80),
+                            cfg.background_ratio * 0.5,
+                        )
+                    )
+                    painter.drawRect(
+                        12,
+                        0,
+                        int(
+                            (self.width() - 24)
+                            * (self._player.getPosition() / self._dp.total_length)
+                        ),
+                        1,
+                    )
+                    painter.restore()
+        finally:
+            painter.end()
         return super().paintEvent(event)
 
     def wheelEvent(self, event: QWheelEvent) -> None:
@@ -293,35 +283,25 @@ class DesktopLyricsViewer(LyricsViewer):
 class DesktopLyricsPage(QWidget):
     def __init__(
         self,
-        app,
-        mgr,
-        transmgr,
-        ymgr,
-        player,
-        mwindow,
-        harmony_font_family,
-        cfg: Config,
-        dp: PlayingPage,
-        launchwindow=None,
+        ctx: AppContext,
     ) -> None:
         super().__init__()
-        if launchwindow:
-            launchwindow.top('Initializing desktop lyrics page...')
-        self._app = app
+        if ctx.launchwindow:
+            ctx.launchwindow.top('Initializing desktop lyrics page...')
+        self.ctx = ctx
+        self._app = ctx.app
         self.setObjectName('desktop_lyrics_page')
 
-        if launchwindow:
-            launchwindow.top('  Creating desktop lyrics viewer...')
-        self.viewer = DesktopLyricsViewer(
-            app, mgr, transmgr, ymgr, player, mwindow, harmony_font_family, cfg, dp
-        )
+        if ctx.launchwindow:
+            ctx.launchwindow.top('  Creating desktop lyrics viewer...')
+        self.viewer = DesktopLyricsViewer(ctx)
         self.viewer.setVisible(cfg.enable_desktop_lyrics)
 
         self.viewer.move(cfg.desktop_lyrics_x, cfg.desktop_lyrics_y)
-        self.viewer.resize(app.primaryScreen().size().width(), 65)
+        self.viewer.resize(ctx.app.primaryScreen().size().width(), 65)
 
-        if launchwindow:
-            launchwindow.top('  Building settings panel...')
+        if ctx.launchwindow:
+            ctx.launchwindow.top('  Building settings panel...')
         global_layout = QVBoxLayout()
         global_layout.addWidget(TitleLabel('Desktop Lyrics'))
         self.inputer = CheckBox('Enable Desktop Lyrics')
@@ -339,6 +319,16 @@ class DesktopLyricsPage(QWidget):
         self.viewer.move(0, 0)
         cfg.desktop_lyrics_anchor = 'normal'
 
-    def onEnableChanged(self):
-        self.viewer.setVisible(self.inputer.isChecked())
-        cfg.enable_desktop_lyrics = self.inputer.isChecked()
+    def setLyricsVisible(self, visible: bool) -> None:
+        cfg.enable_desktop_lyrics = visible
+        if self.inputer.isChecked() != visible:
+            self.inputer.setChecked(visible)
+            return
+        if visible:
+            self.viewer.show()
+            self.viewer.raise_()
+        else:
+            self.viewer.hide()
+
+    def onEnableChanged(self, _state=None):
+        self.setLyricsVisible(self.inputer.isChecked())

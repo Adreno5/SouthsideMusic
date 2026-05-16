@@ -10,19 +10,12 @@ import math
 import os
 import threading
 import time
-from typing import Callable, TYPE_CHECKING, cast as _cast
+from typing import Callable, cast as _cast
 
+from core.app_context import AppContext
 from core.lyrics import LyricInfo
 from core.time_format import float2time
 from core.ws_server import QObjectHandler
-
-if TYPE_CHECKING:
-    from views.main_window import MainWindow
-    from views.favorites_page import FavoritesPage
-    from core.audio_player import AudioPlayer
-    from core.lyrics import LRCLyricParser, YRCLyricParser
-    from views.setting_page import SettingPage
-    from views.playlist_page import PlaylistPage
 
 import darkdetect
 import numpy as np
@@ -88,6 +81,7 @@ from core.config import cfg
 from core.favorites import saveFavorites
 from core.icons import bindIcon
 from core.image import getAverageColor
+from core.playing_manager import PlayingManager, PlayMode, PlaySelection
 from core.downloader import doWithMultiThreading, downloadWithMultiThreading
 from core.loudness import getAdjustedGainFactor
 from core.audio_player import (
@@ -95,7 +89,6 @@ from core.audio_player import (
     get_cached_audio,
     cache_decoded_audio,
 )
-from core.weighted_random import AdvancedRandom
 from core import http_utils as requests
 from views.song_card import DummyCard
 from views.lyrics_viewer import LyricsViewer
@@ -109,39 +102,24 @@ class PlayingPage(QWidget):
 
     def __init__(
         self,
-        app,
-        player: AudioPlayer,
-        mgr: LRCLyricParser,
-        transmgr: LRCLyricParser,
-        ymgr: YRCLyricParser,
-        mwindow: MainWindow | None,
-        favs_ref: list,
-        lock: threading.Lock,
-        ws_handler,
-        stp: SettingPage | None = None,
-        plp: PlaylistPage | None = None,
-        harmony_font_family: str = '',
-        launchwindow=None,
+        ctx: AppContext,
     ) -> None:
         super().__init__()
         self._logger = logging.getLogger(__name__)
-        if launchwindow:
-            launchwindow.top('Initializing playing page...')
-            self._lw = launchwindow
+        if ctx.launchwindow:
+            ctx.launchwindow.top('Initializing playing page...')
+            self._lw = ctx.launchwindow
         else:
             self._lw = None
-        self._app = app
-        self._player = player
-        self._mgr = mgr
-        self._transmgr = transmgr
-        self._ymgr = ymgr
-        self._mwindow_obj: MainWindow = mwindow  # type: ignore
-        self._favs_ref = favs_ref
-        self._lock = lock
-        self._ws_handler = ws_handler
-        self._fp: FavoritesPage = None  # type: ignore  # post-init wiring
-        self._stp: SettingPage = stp  # type: ignore
-        self._plp: PlaylistPage = plp  # type: ignore
+        self.ctx = ctx
+        self._app = ctx.app
+        self._player = ctx.player
+        self._mgr = ctx.mgr
+        self._transmgr = ctx.transmgr
+        self._ymgr = ctx.ymgr
+        self._favs_ref = ctx.favs
+        self._lock = ctx.lock
+        self._ws_handler = ctx.ws_handler
 
         self.setObjectName('studio_page')
         self.cur: DummyCard | None = None
@@ -151,10 +129,10 @@ class PlayingPage(QWidget):
         self._preload_triggered = False
         self.preloaded: bool = False
 
-        self.playlist: list[SongStorable] = []
-        self.current_index = -1
+        self.playing_manager = PlayingManager()
         self.next_song_audio: AudioSegment_ | None = None
         self.next_song_gain: float | None = None
+        self.next_song_selection: PlaySelection | None = None
 
         self._gain_cache: dict[str, float] = {}
 
@@ -196,7 +174,9 @@ class PlayingPage(QWidget):
         topleft_layout.addWidget(
             self.artists_label, alignment=ali.AlignLeft | ali.AlignTop
         )
-        topleft_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding))
+        topleft_layout.addSpacerItem(
+            QSpacerItem(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+        )
         self.artists_label.setWordWrap(True)
         self.title_label.setWordWrap(True)
         top_layout.addWidget(topleft_widget)
@@ -208,15 +188,8 @@ class PlayingPage(QWidget):
         global_layout.addWidget(contents_widget, stretch=-1)
         if lw:
             lw.top('  Creating lyrics viewer...')
-        self.viewer = LyricsViewer(
-            app, mgr, transmgr, ymgr, player, mwindow, harmony_font_family, cfg, self
-        )
+        self.viewer = LyricsViewer(ctx)
         global_layout.addWidget(self.viewer, stretch=2)
-
-        if lw:
-            lw.top('  Initializing randomizer...')
-        self.song_randomer = AdvancedRandom()
-        self.song_randomer.init(self.playlist)
 
         self.setLayout(global_layout)
 
@@ -227,6 +200,46 @@ class PlayingPage(QWidget):
         event_bus.subscribe(SONG_CHANGED, self._updateDatas)
         event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
+
+    @property
+    def _mwindow_obj(self):
+        return self.ctx.mwindow
+
+    @property
+    def _fp(self):
+        return self.ctx.fp
+
+    @property
+    def _stp(self):
+        return self.ctx.stp
+
+    @property
+    def _plp(self):
+        return self.ctx.plp
+
+    @property
+    def playlist(self) -> list[SongStorable]:
+        return self.playing_manager.playlist
+
+    @playlist.setter
+    def playlist(self, value: list[SongStorable]) -> None:
+        self.playing_manager.setPlaylist(value)
+
+    @property
+    def current_index(self) -> int:
+        return self.playing_manager.current_index
+
+    @current_index.setter
+    def current_index(self, value: int) -> None:
+        self.playing_manager.setCurrentIndex(value)
+
+    @property
+    def play_mode(self) -> PlayMode:
+        if self.ctx.stp:
+            mode = self.ctx.stp.play_method_box.currentText()
+            if mode in ('Repeat one', 'Repeat list', 'Shuffle', 'Play in order'):
+                return mode
+        return cfg.play_method
 
     def _updateDatas(self, song: SongStorable | None = None):
         self.bg_color = mixColor(
@@ -252,10 +265,13 @@ class PlayingPage(QWidget):
     def _onSongChangedEvent(self, _song_storable):
         if not self._player.isPlaying():
             return
-        if not self._preload_triggered and self.current_index < len(self.playlist) - 1:
+        if not self._preload_triggered and self.playing_manager.getNextSong(
+            self.play_mode,
+            reserve=True,
+        ) is not None:
             self._preload_triggered = True
             self.preloadNextSong()
-        if self.current_index >= len(self.playlist) - 1:
+        if self.playing_manager.getNextSong(self.play_mode) is None:
             self.preloaded = True
 
     def onNosoundSkipChanged(self, state: Qt.CheckState):
@@ -462,41 +478,24 @@ class PlayingPage(QWidget):
     def preloadNextSong(self):
         if len(self.playlist) <= 1:
             return
-        if self.current_index >= len(self.playlist) - 1:
+
+        selection = self.playing_manager.getNextSelection(
+            self.play_mode,
+            reserve=True,
+        )
+        if selection is None:
             return
 
         try:
             self.preloaded = False
             self._logger.info('preloading')
 
-            next_song = self.playlist[self.current_index + 1]
+            next_song = selection.song
 
             self._logger.debug(next_song)
 
-            if self._stp.play_method_box.currentText() == 'Play in order':
-                if self.current_index + 1 >= len(self.playlist):
-                    return
-            elif self._stp.play_method_box.currentText() == 'Repeat list':
-                if self.current_index + 1 >= len(self.playlist):
-                    next_song = self.playlist[0]
-                else:
-                    next_song = self.playlist[self.current_index + 1]
-            else:
-                next_song = self.playlist[self.current_index + 1]
-            if not (
-                self._stp.play_method_box.currentText()
-                in ['Play in order', 'Repeat list']
-            ):
-                return
-
-            preload_base_index = self.current_index
-
             def _is_preload_current() -> bool:
-                return (
-                    self.current_index == preload_base_index
-                    and preload_base_index + 1 < len(self.playlist)
-                    and self.playlist[preload_base_index + 1] is next_song
-                )
+                return self.playing_manager.isSelectionCurrent(selection)
 
             def _start_preload(redownload_on_failure: bool = True):
                 threading.Thread(
@@ -508,6 +507,7 @@ class PlayingPage(QWidget):
                 self._logger.info('downloading next song before preload')
                 self.next_song_audio = None
                 self.next_song_gain = None
+                self.next_song_selection = None
 
                 def _after_download(success: bool):
                     if not success:
@@ -545,6 +545,7 @@ class PlayingPage(QWidget):
                     saveFavorites()
                     self.next_song_audio = None
                     self.next_song_gain = None
+                    self.next_song_selection = None
                     self._logger.warning(
                         f'skipping preload because cached audio is invalid: {e}'
                     )
@@ -580,6 +581,7 @@ class PlayingPage(QWidget):
                     f'(Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}'
                 )
 
+                self.next_song_selection = selection
                 self.preloaded = True
 
             image_missing, music_missing = self._storable_asset_missing(next_song)
@@ -598,7 +600,9 @@ class PlayingPage(QWidget):
             if self.cur:
                 data = get_backend().get_track_lyrics(str(self.cur.info['id']))
             self._mgr.cur = data.get('lyric', '[00:00.000]') or '[00:00.000]'
-            self._transmgr.cur = data.get('translated_lyric', '[00:00.000]') or '[00:00.000]'
+            self._transmgr.cur = (
+                data.get('translated_lyric', '[00:00.000]') or '[00:00.000]'
+            )
             self._ymgr.cur = data.get('yrc_lyric', '')
 
             def _real():
@@ -642,7 +646,8 @@ class PlayingPage(QWidget):
             self.downloadLyric()
 
         audio = get_backend().get_track_audio(
-            str(self.cur.info['id']), bitrate=3200 * 1000,
+            str(self.cur.info['id']),
+            bitrate=3200 * 1000,
         )
         self._logger.debug(f'{audio["url"]=}')
         downloadWithMultiThreading(
@@ -681,48 +686,44 @@ class PlayingPage(QWidget):
         self._logger.debug(
             f'(Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}'
         )
+
+        selection = self.playing_manager.getNextSelection(
+            self.play_mode,
+            by_user=byuser,
+        )
+        if selection is None:
+            InfoBar.warning(
+                'Warning',
+                'This song is the last song in the playlist.',
+                parent=self._mwindow_obj,
+            )
+            self._player.setPosition(0)
+            return
+
         if (
             isinstance(self.next_song_audio, AudioSegment_)
             and isinstance(self.next_song_gain, float)
-            and (
-                self._stp.play_method_box.currentText()
-                in ['Play in order', 'Repeat list']
-            )
+            and self.next_song_selection == selection
+            and self.playing_manager.isSelectionCurrent(selection)
         ):
-            self.playPreloadedSong()
-            self.current_index += 1
-            return
-
-        if self.current_index < 0 or self.current_index >= len(self.playlist) - 1:
-            if self._stp.play_method_box.currentText() == 'Play in order':
-                InfoBar.warning(
-                    'Warning',
-                    'This song is the last song in the playlist.',
-                    parent=self._mwindow_obj,
-                )
-                self._player.setPosition(0)
+            consumed = self.playing_manager.consumeNextSelection(
+                self.play_mode,
+                by_user=byuser,
+            )
+            if consumed is None:
                 return
-            elif self._stp.play_method_box.currentText() == 'Repeat list':
-                self.current_index = 0
-                self.playSongAtIndex(self.current_index)
-                return
-
-        if self._stp.play_method_box.currentText() == 'Repeat one' and not byuser:
-            self.playSongAtIndex(self.current_index)
-            return
-        elif self._stp.play_method_box.currentText() == 'Shuffle':
-            start_storable: SongStorable = self.playlist[self.current_index]
-            cur_storable: SongStorable = self.playlist[self.current_index]
-            while self.current_index == self.playlist.index(start_storable):
-                cur_storable = self.song_randomer.random()
-                self.current_index = self.playlist.index(cur_storable)
-            self.playSongAtIndex(self.current_index)
+            self.playPreloadedSong(consumed)
             return
 
-        self.current_index += 1
-        self.playSongAtIndex(self.current_index)
+        consumed = self.playing_manager.consumeNextSelection(
+            self.play_mode,
+            by_user=byuser,
+        )
+        if consumed is None:
+            return
+        self.playSongAtIndex(consumed.index)
 
-    def playPreloadedSong(self) -> None:
+    def playPreloadedSong(self, selection: PlaySelection) -> None:
         if (not isinstance(self.next_song_audio, AudioSegment_)) or (
             not isinstance(self.next_song_gain, float)
         ):
@@ -733,16 +734,15 @@ class PlayingPage(QWidget):
 
         self._logger.info('using preloaded song')
 
-        song_storable = self.playlist[self.current_index + 1]
-
-        self.playStorable(song_storable, preloaded_audio=self.next_song_audio)
+        self.playStorable(selection.song, preloaded_audio=self.next_song_audio)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         self.update()
         return super().resizeEvent(event)
 
     def playLast(self):
-        if self.current_index < 1 or self.current_index >= len(self.playlist):
+        selection = self.playing_manager.consumePreviousSelection(self.play_mode)
+        if selection is None:
             InfoBar.warning(
                 'Warning',
                 'This song is the first song in the playlist.',
@@ -754,9 +754,9 @@ class PlayingPage(QWidget):
         self._preload_triggered = False
         self.next_song_audio = None
         self.next_song_gain = None
+        self.next_song_selection = None
 
-        self.current_index -= 1
-        self.playSongAtIndex(self.current_index)
+        self.playSongAtIndex(selection.index)
 
     def continueLastSong(self, index: int):
         if index < 0 or index >= len(self.playlist):
@@ -838,6 +838,7 @@ class PlayingPage(QWidget):
             self._preload_triggered = False
             self.next_song_audio = None
             self.next_song_gain = None
+            self.next_song_selection = None
 
             self._plp.refreshPlaylistWidget()
             self.sendSongFMAndInfo()
@@ -860,6 +861,8 @@ class PlayingPage(QWidget):
                     int(avg_color[0]), int(avg_color[1]), int(avg_color[2])
                 )
                 self._mwindow_obj.update()
+
+            event_bus.emit(POST_THEME_CHANGED)
 
         doWithMultiThreading(_prepare, (), self._mwindow_obj, _finish)
 
@@ -908,7 +911,8 @@ class PlayingPage(QWidget):
 
                 if music_missing:
                     audio = get_backend().get_track_audio(
-                        str(song_storable.id), bitrate=3200 * 1000,
+                        str(song_storable.id),
+                        bitrate=3200 * 1000,
                     )
                     self._logger.debug(f'{audio["url"]=}')
                     prepared['music_url'] = audio['url']
@@ -1099,6 +1103,7 @@ class PlayingPage(QWidget):
             self._preload_triggered = False
             self.next_song_audio = None
             self.next_song_gain = None
+            self.next_song_selection = None
 
             self._plp.refreshPlaylistWidget()
             self.sendSongFMAndInfo()
@@ -1156,8 +1161,12 @@ class PlayingPage(QWidget):
                     self._transmgr.cur = '[00:00.000]'
                 self._ymgr.cur = lyrics['yrc_lyric']
             else:
-                self._mgr.cur = lyric_result.get('lyric', '[00:00.000]') or '[00:00.000]'
-                self._transmgr.cur = lyric_result.get('translated_lyric', '[00:00.000]') or '[00:00.000]'
+                self._mgr.cur = (
+                    lyric_result.get('lyric', '[00:00.000]') or '[00:00.000]'
+                )
+                self._transmgr.cur = (
+                    lyric_result.get('translated_lyric', '[00:00.000]') or '[00:00.000]'
+                )
                 self._ymgr.cur = lyric_result.get('yrc_lyric', '')
                 lyric_target.write_lyrics(
                     self._mgr.cur,

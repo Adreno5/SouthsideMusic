@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from core.app_context import AppContext
 from imports import QSize, Qt, QTimer, Signal
 from imports import QPixmap
 from imports import (
@@ -25,19 +26,20 @@ from core.downloader import doWithMultiThreading
 from core.models import SongInfo
 from core.backend import get_backend
 
+from views.main_window import MainWindow
 from views.song_card import SongCard
-from MusicLibrary.kuGouMusicApi import KuGouMusicApi
+
 
 class SearchPage(QWidget):
     resultGot = Signal(list)
 
-    def __init__(self, mwindow, launchwindow=None) -> None:
+    def __init__(self, ctx: AppContext) -> None:
         super().__init__()
         self._logger = logging.getLogger(__name__)
-        lw = launchwindow
+        self.ctx = ctx
+        lw = ctx.launchwindow
         if lw:
             lw.top('Initializing search page...')
-        self._mwindow = mwindow
         self.setObjectName('search_page')
         self.img_card_map: dict[str, SongCard] = {}
 
@@ -64,6 +66,10 @@ class SearchPage(QWidget):
 
         self.cards: list[SongCard] = []
 
+    @property
+    def _mwindow(self):
+        return self.ctx.mwindow
+
     def checkRect(self) -> None:
         for i, card in enumerate(self.cards):
             item = self.lst.item(i)
@@ -74,7 +80,7 @@ class SearchPage(QWidget):
             viewport_rect = self.lst.viewport().rect()
 
             if viewport_rect.intersects(item_rect) and not card.load:
-                self._logger.debug(f'loading {card.info['name']}')
+                self._logger.debug(f'loading {card.info["name"]}')
                 card.loadDetailAndImage()
 
     def setImage_(self, byte: bytes, ca: SongCard):
@@ -90,12 +96,15 @@ class SearchPage(QWidget):
         def _do():
             nonlocal result
             songs = get_backend().search(keywords)
-            result = [SongInfo(
-                name=song['name'],
-                artists='、'.join(art['name'] for art in song['artists']),
-                id=str(song['id']),
-                privilege=song['privilege']['fee'],
-            ) for song in songs]
+            result = [
+                SongInfo(
+                    name=song['name'],
+                    artists='、'.join(art['name'] for art in song['artists']),
+                    id=str(song['id']),
+                    privilege=song['privilege']['fee'],
+                )
+                for song in songs
+            ]
 
         def _finish():
             nonlocal result
@@ -110,7 +119,7 @@ class SearchPage(QWidget):
             item.setSizeHint(QSize(0, 150))
             self.lst.addItem(item)
             content_widget = SongCard(
-                song, lambda c: self._mwindow.play(c), self._mwindow
+                song, lambda c: self._mwindow.play(c), self._mwindow # type: ignore
             )
             self.lst.setItemWidget(item, content_widget)
             self.cards.append(content_widget)

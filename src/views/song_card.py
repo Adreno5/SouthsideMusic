@@ -548,7 +548,7 @@ class PlaylistSongCard(_SongCardItem):
         self._dp.playlist.insert(insert_index, self.storable)
         if self._dp.current_index >= insert_index:
             self._dp.current_index += 1
-        self._dp.song_randomer.init(self._dp.playlist)
+        self._dp.playing_manager.refreshRandom()
         self._plp.refreshPlaylistWidget()
         self._plp.lst.setCurrentRow(insert_index)
 

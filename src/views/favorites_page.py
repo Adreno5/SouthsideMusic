@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.app_context import AppContext
 from imports import PushButton, QSize, Qt, QTimer
 from imports import (
     QListWidget,
@@ -25,14 +26,12 @@ from views.song_card import FavoriteSongCard
 
 
 class FavoritesPage(QWidget):
-    def __init__(self, dp, mwindow, plp, launchwindow=None) -> None:
+    def __init__(self, ctx: AppContext) -> None:
         super().__init__()
-        lw = launchwindow
+        self.ctx = ctx
+        lw = ctx.launchwindow
         if lw:
             lw.top('Initializing favorites page...')
-        self._dp: PlayingPage = dp
-        self._mwindow = mwindow
-        self._plp = plp
         self.setObjectName('favorites_page')
 
         global_layout = QVBoxLayout(self)
@@ -59,6 +58,18 @@ class FavoritesPage(QWidget):
         self._lazy_timer = QTimer(self)
         self._lazy_timer.timeout.connect(self._checkVisibleCards)
         self._lazy_timer.start(50)
+
+    @property
+    def _dp(self):
+        return self.ctx.dp
+
+    @property
+    def _mwindow(self):
+        return self.ctx.mwindow
+
+    @property
+    def _plp(self):
+        return self.ctx.plp
 
     def setDisplayFolder(self, folder: FolderInfo):
         self.curr_folder = folder
@@ -134,11 +145,11 @@ class FavoritesPage(QWidget):
         self._dp.playlist.clear()
         for song in self.curr_folder['songs']:
             self._dp.playlist.append(song)
-        self._dp.song_randomer.init(self._dp.playlist)
+        self._dp.playing_manager.refreshRandom()
         self._plp.refreshPlaylistWidget()
         InfoBar.success(
             'Playlist replaced',
-            f'Playlist replaced with {self.curr_folder['folder_name']}',
+            f'Playlist replaced with {self.curr_folder["folder_name"]}',
             parent=self._mwindow,
         )
 
@@ -157,7 +168,7 @@ class FavoritesPage(QWidget):
                 parent=self._mwindow,
             )
 
-        self._dp.song_randomer.init(self._dp.playlist)
+        self._dp.playing_manager.refreshRandom()
 
     def _onSongClicked(self, storable: SongStorable, item: QListWidgetItem):
         self.song_viewer.setCurrentItem(item)

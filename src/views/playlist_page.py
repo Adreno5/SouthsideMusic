@@ -2,17 +2,12 @@ from __future__ import annotations
 
 import logging
 
-from typing import TYPE_CHECKING
+from core import theme
+from core.app_context import AppContext
 
 import darkdetect
 
 from core.config import cfg
-
-if TYPE_CHECKING:
-    from views.main_window import MainWindow
-    from views.playing_page import PlayingPage
-    from core.audio_player import AudioPlayer
-    from core.ws_server import WebSocketHandler, WebSocketServer, QObjectHandler
 
 from core.color import mixColor
 from imports import (
@@ -22,6 +17,7 @@ from imports import (
     QColor,
     QPaintEvent,
     QPainter,
+    QPen,
     QSize,
     Qt,
     QTimer,
@@ -43,31 +39,25 @@ from core.icons import bindIcon
 from views.song_card import DummyCard, PlaylistSongCard
 from views.setting_page import SettingPage
 
+WHITE = QColor(255, 255, 255, 100)
+BLACK = QColor(0, 0, 0, 100)
 
 class PlaylistPage(QWidget):
     def __init__(
         self,
-        dp: PlayingPage | None = None,
-        mwindow: MainWindow | None = None,
-        player: AudioPlayer | None = None,
-        ws_server=None,
-        ws_handler=None,
-        app=None,
-        launchwindow=None,
+        ctx: AppContext,
     ):
         super().__init__()
         self._logger = logging.getLogger(__name__)
-        if launchwindow:
-            launchwindow.top('Initializing sidebar...')
-            self._launchwindow = launchwindow
+        self.ctx = ctx
+        if ctx.launchwindow:
+            ctx.launchwindow.top('Initializing sidebar...')
+            self._launchwindow = ctx.launchwindow
         else:
             self._launchwindow = None
-        self._dp: PlayingPage = dp  # type: ignore
-        self._mwindow: MainWindow = mwindow  # type: ignore
-        self._player: AudioPlayer = player  # type: ignore
-        self._ws_server: WebSocketServer = ws_server  # type: ignore
-        self._ws_handler: QObjectHandler = ws_handler  # type: ignore
-        self._app = app
+        self._ws_server: WebSocketServer = ctx.ws_server  # type: ignore
+        self._ws_handler: QObjectHandler = ctx.ws_handler  # type: ignore
+        self._app = ctx.app
 
         self.setObjectName('PlaylistPage')
         self.setFixedWidth(500)
@@ -107,15 +97,31 @@ class PlaylistPage(QWidget):
         event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
 
+    @property
+    def _dp(self):
+        return self.ctx.dp
+
+    @property
+    def _mwindow(self):
+        return self.ctx.mwindow
+
+    @property
+    def _player(self):
+        return self.ctx.player
+
     def _updateDatas(self, song: SongStorable | None = None):
         if self._mwindow:
             self.bg_color = mixColor(
                 QColor(40, 40, 40) if darkdetect.isDark() else QColor(230, 230, 230),
-                self._mwindow.song_theme if self._mwindow.song_theme else QColor(0, 0, 0),
+                self._mwindow.song_theme
+                if self._mwindow.song_theme
+                else QColor(0, 0, 0),
                 1 - cfg.background_ratio * 0.5,
             )
         else:
-            self.bg_color = QColor(40, 40, 40) if darkdetect.isDark() else QColor(230, 230, 230)
+            self.bg_color = (
+                QColor(40, 40, 40) if darkdetect.isDark() else QColor(230, 230, 230)
+            )
 
         self.update()
 
@@ -208,13 +214,13 @@ class PlaylistPage(QWidget):
         )
         if current_song is not None:
             self._dp.current_index = playlist.index(current_song)
-        self._dp.song_randomer.init(playlist)
+        self._dp.playing_manager.refreshRandom()
 
         self.refreshPlaylistWidget()
         self.lst.setCurrentRow(new_index)
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
-        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setPen(QPen(WHITE if theme.isDark() else BLACK, 1))
         painter.setBrush(self.bg_color)
         painter.drawRoundedRect(self.rect(), 10, 10)

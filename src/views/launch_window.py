@@ -10,6 +10,7 @@ import time
 
 from core.dialogs import SubtitleLabel
 
+
 class LaunchWindow(QWidget):
     def __init__(self, app):
         super().__init__()
@@ -42,7 +43,7 @@ class LaunchWindow(QWidget):
         self.setLayout(launchlayout)
 
         self.setStyleSheet(
-            f'QWidget {{ background-color: {'#FFFFFF' if darkdetect.isLight() else '#000000'} }} QLabel {{ color: {'white' if darkdetect.isDark() else 'black'}; }}'
+            f'QWidget {{ background-color: {"#FFFFFF" if darkdetect.isLight() else "#000000"} }} QLabel {{ color: {"white" if darkdetect.isDark() else "black"}; }}'
         )
 
         self.show()

@@ -58,7 +58,7 @@ _logger = logging.getLogger('main')
 def patchedExceptHook(
     exc_type: type[BaseException],
     exc_value: BaseException,
-    exc_traceback: TracebackType,
+    exc_traceback: TracebackType | None,
 ):
     global mwindow, launchwindow, app
 
@@ -70,14 +70,15 @@ def patchedExceptHook(
     inf.append('| Unhandled Exception occurred |')
     inf.append(f'Caused by {exc_type.__name__}')
     inf.append('Traceback:')
-    stack_frames = traceback.extract_tb(exc_traceback)
-    for frame in stack_frames:
-        _logger.error(
-            f'    at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}'
-        )
-        inf.append(
-            f'    at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}'
-        )
+    if exc_traceback:
+        stack_frames = traceback.extract_tb(exc_traceback)
+        for frame in stack_frames:
+            _logger.error(
+                f'    at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}'
+            )
+            inf.append(
+                f'    at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}'
+            )
     _logger.error('Exception chain:')
     inf.append('Exception chain:')
     current_exc = exc_value
@@ -170,20 +171,14 @@ from pathlib import Path
 _ims.QApplication.setHighDpiScaleFactorRoundingPolicy(
     _ims.Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
 )
-_ims.QApplication.setAttribute(_ims.Qt.ApplicationAttribute.AA_EnableHighDpiScaling)
-_ims.QApplication.setAttribute(_ims.Qt.ApplicationAttribute.AA_UseHighDpiPixmaps)
-_ims.QApplication.setAttribute(_ims.Qt.ApplicationAttribute.AA_CompressHighFrequencyEvents)
+_ims.QApplication.setAttribute(
+    _ims.Qt.ApplicationAttribute.AA_CompressHighFrequencyEvents
+)
 
 app = _ims.QApplication(sys.argv)
 
 mwindow: MainWindow | None = None
 launchwindow: LaunchWindow | None = LaunchWindow(app)
-player: AudioPlayer | None = None
-dp: PlayingPage | None = None
-sp: SearchPage | None = None
-dsp: DesktopLyricsPage | None = None
-fp: FavoritesPage | None = None
-sep: SessionPage | None = None
 lock: threading.Lock = threading.Lock()
 
 _ims.event_bus._lw = launchwindow
@@ -241,10 +236,17 @@ if __name__ == '__main__':
                 for file in files:
                     if file.startswith('ffcache'):
                         caches.append(file)
+                cleared_count = 0
                 for cache in caches:
-                    os.remove(cache)
-                if len(caches) > 0:
-                    _logger.info(f'cleared {len(caches)} caches')
+                    try:
+                        os.remove(cache)
+                        cleared_count += 1
+                    except PermissionError:
+                        _logger.debug(f'skip locked cache file: {cache}')
+                    except OSError as e:
+                        _logger.debug(f'failed to remove cache file {cache}: {e}')
+                if cleared_count > 0:
+                    _logger.info(f'cleared {cleared_count} caches')
 
             time.sleep(10)
 
@@ -306,87 +308,57 @@ if __name__ == '__main__':
 
     launchwindow.clear()
     launchwindow.subtitle('Phase 2 (initialize components...)')
-    launchwindow.push('Initializing playing page...')
-    dp = PlayingPage(
-        app,
-        player,
-        mgr,
-        transmgr,
-        ymgr,
-        None,
-        favs,
-        lock,
-        ws_handler,
-        None,
-        None,
-        harmony_font_family,
-        launchwindow=launchwindow,
-    )
-    launchwindow.push('Initializing search page...')
-    sp = SearchPage(None, launchwindow)
-    launchwindow.push('Initializing desktop lyrics page...')
-    dsp = DesktopLyricsPage(
-        app,
-        mgr,
-        transmgr,
-        ymgr,
-        player,
-        None,
-        harmony_font_family,
-        cfg,
-        dp,
-        launchwindow,
-    )
-    launchwindow.push('Initializing favorites page...')
-    fp = FavoritesPage(dp, None, None, launchwindow)
-    launchwindow.push('Initializing session page...')
-    sep = SessionPage(None, launchwindow)
-    launchwindow.push('Initializing setting page...')
-    stp = SettingPage(dsp, dp, mwindow, player, ws_server, ws_handler, app, launchwindow)
-    launchwindow.push('Initializing playlist page...')
-    plp = PlaylistPage(dp, mwindow, player, ws_server, ws_handler, app, launchwindow)
-    launchwindow.push('Initializing dependencies...')
-    mwindow = MainWindow(
-        app,
-        dp,
-        sp,
-        dsp,
-        fp,
-        sep,
-        player,
-        ws_server,
-        ws_handler,
-        launchwindow,
-        harmony_font_family,
-        mgr,
-        transmgr,
-        ymgr,
-        stp,
-        plp,
-    )
 
-    launchwindow.clear()
-    launchwindow.subtitle('Phase 3 (inject dependencies...)')
-    launchwindow.top('injecting dependencies to Playing Page')
-    dp._mwindow_obj = mwindow
-    dp._stp = stp
-    dp._plp = plp
-    launchwindow.top('injecting dependencies to Playing Controller')
-    mwindow.controller._mwindow = mwindow
-    launchwindow.top('injecting dependencies to Playing Lyrics Viewer')
-    dp.viewer._mwindow = mwindow
-    launchwindow.top('injecting dependencies to Desktop Lyrics Viewer')
-    dsp.viewer._mwindow = mwindow
-    launchwindow.top('injecting dependencies to Playing Page')
-    dp._fp = fp
-    launchwindow.top('injecting dependencies to Search Page')
-    sp._mwindow = mwindow
-    launchwindow.top('injecting dependencies to Favorites Page')
-    fp._mwindow = mwindow
-    fp._plp = plp
-    plp._mwindow = mwindow
-    launchwindow.top('injecting dependencies to Session Page')
-    sep._mwindow = mwindow
+    from core.app_context import AppContext
+
+    ctx = AppContext(
+        app=app,
+        player=player,
+        cfg=cfg,
+        mgr=mgr,
+        transmgr=transmgr,
+        ymgr=ymgr,
+        ws_server=ws_server,
+        ws_handler=ws_handler,
+        harmony_font_family=harmony_font_family,
+        favs=favs,
+        lock=lock,
+    )
+    ctx.launchwindow = launchwindow
+
+    launchwindow.push('Initializing playing page...')
+    dp = PlayingPage(ctx)
+    ctx.dp = dp
+    launchwindow.push('Initializing search page...')
+    sp = SearchPage(ctx)
+    ctx.sp = sp
+    launchwindow.push('Initializing desktop lyrics page...')
+    dsp = DesktopLyricsPage(ctx)
+    ctx.dsp = dsp
+    launchwindow.push('Initializing favorites page...')
+    fp = FavoritesPage(ctx)
+    ctx.fp = fp
+    launchwindow.push('Initializing session page...')
+    sep = SessionPage(ctx)
+    ctx.sep = sep
+    launchwindow.push('Initializing setting page...')
+    stp = SettingPage(ctx)
+    ctx.stp = stp
+    launchwindow.push('Initializing playlist page...')
+    plp = PlaylistPage(ctx)
+    ctx.plp = plp
+
+    ctx.dp = dp
+    ctx.sp = sp
+    ctx.dsp = dsp
+    ctx.fp = fp
+    ctx.sep = sep
+    ctx.stp = stp
+    ctx.plp = plp
+
+    launchwindow.push('Initializing main window...')
+    mwindow = MainWindow(ctx)
+    ctx.mwindow = mwindow
 
     mwindow.init()
 

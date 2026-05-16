@@ -2,8 +2,6 @@
 
 Advanced desktop music player — stream from NetEase CloudMusic with a custom audio engine.
 
-![SouthsideMusic](images/showcase.png)
-
 ## Features
 
 - **Search & stream** from NetEase CloudMusic's full catalog
@@ -38,11 +36,8 @@ Log in on the **Session** page with your NetEase CloudMusic account (cell phone 
 git clone https://github.com/Adreno61/SouthsideMusic.git
 cd SouthsideMusic
 
-# Python 3.12 required
-uv sync
-
-# run
-python src/main.py
+# setup
+python setup_workspace.py
 ```
 
 ### Build

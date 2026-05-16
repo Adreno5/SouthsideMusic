@@ -46,13 +46,13 @@ class SouthsideMusicTitleBar(TitleBar):
         self.titleLabel.setText(title)
         self.titleLabel.adjustSize()
 
-    def mousePressEvent(self, e):
-        event_bus.enabled = False
-        return super().mousePressEvent(e)
-
-    def mouseReleaseEvent(self, e):
-        event_bus.enabled = True
-        return super().mouseReleaseEvent(e)
+    def canDrag(self, pos):
+        search_input = getattr(self.window(), 'search_input', None)
+        if search_input and search_input.isVisible():
+            window_pos = self.mapTo(self.window(), pos)
+            if search_input.geometry().contains(window_pos):
+                return False
+        return super().canDrag(pos)
     
     def paintEvent(self, event: QPaintEvent) -> None:
         pass

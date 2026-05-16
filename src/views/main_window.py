@@ -8,12 +8,15 @@ import threading
 import time
 from typing import Any, Callable
 
+from core.app_context import AppContext
+
 from imports import (
     BACKGROUND_RATIO_CHANGED,
     ENDING_NO_SOUND,
     LYRIC_LINE_CHANGED,
     PLAYLAST,
     PLAYNEXT,
+    POST_THEME_CHANGED,
     REFRESH_RATE_CHANGED,
     REPAINT,
     SONG_CHANGED,
@@ -77,46 +80,36 @@ class MainWindow(FluentWindowBase):
 
     def __init__(
         self,
-        app: QApplication,
-        dp: PlayingPage,
-        sp,
-        dsp,
-        fp,
-        sep,
-        player,
-        ws_server,
-        ws_handler,
-        launchwindow,
-        harmony_font_family,
-        mgr,
-        transmgr,
-        ymgr,
-        stp,
-        plp,
+        ctx: AppContext,
         parent=None,
     ):
         super().__init__(parent)
         self._logger = logging.getLogger(__name__)
-        self._app = app
-        self._dp = dp
-        self._sp = sp
-        self._dsp = dsp
-        self._fp = fp
-        self._sep = sep
-        self._player = player
-        self._ws_server = ws_server
-        self._ws_handler = ws_handler
-        self._launchwindow = launchwindow
+        self.ctx = ctx
+        ctx.mwindow = self
+        self._app = ctx.app
+        self._dp = ctx.dp
+        self._sp = ctx.sp
+        self._dsp = ctx.dsp
+        self._fp = ctx.fp
+        self._sep = ctx.sep
+        self._player = ctx.player
+        self._ws_server = ctx.ws_server
+        self._ws_handler = ctx.ws_handler
+        self._launchwindow = ctx.launchwindow
         self._loading_song: bool = False
-        self._stp = stp
-        self._plp = plp
+        self._stp = ctx.stp
+        self._plp = ctx.plp
 
         self._sp.resultGot.connect(lambda: setattr(self, 'searching', False))
 
         self.contents_widget = QStackedWidget()
         for w in [self._fp, self._sp, self._stp, self._sep]:
-            launchwindow.push(f'Adding {w} to stacked widget...')
+            if ctx.launchwindow:
+                ctx.launchwindow.push(f'Adding {w} to stacked widget...')
             self.contents_widget.addWidget(w)
+
+        self.contents_widget.currentChanged.connect(self.onStackedWidgetChanged)
 
         self._scheduled_tasks: list[
             tuple[Callable, tuple[Any, ...], dict[str, Any]]
@@ -136,33 +129,22 @@ class MainWindow(FluentWindowBase):
         self.loading_inter: bool = False
         self.loading_progressing: bool = False
         self.loading_progress: float = 0
-        self.loading_ft = QFont(harmony_font_family)
+        self.loading_ft = QFont(ctx.harmony_font_family)
 
         self.song_theme: QColor | None = None
 
         contents_layout.setContentsMargins(0, 48, 0, 0)
 
-        self.controller = PlayingController(
-            player,
-            mgr,
-            transmgr,
-            ymgr,
-            dp,
-            self,
-            ws_handler,
-            app,
-            harmony_font_family,
-            stp,
-        )
-        player.onFullFinished.connect(lambda: event_bus.emit(SONG_FINISH))
-        player.onEndingNoSound.connect(dp.onEndingNoSound)
-        event_bus.subscribe(SONG_FINISH, lambda: dp.playNext(False))
-        self.controller.play_pausebtn.clicked.connect(dp.onPlayButtonClicked)
+        self.controller = PlayingController(ctx)
+        ctx.player.onFullFinished.connect(lambda: event_bus.emit(SONG_FINISH))
+        ctx.player.onEndingNoSound.connect(ctx.dp.onEndingNoSound)
+        event_bus.subscribe(SONG_FINISH, lambda: ctx.dp.playNext(False))
+        self.controller.play_pausebtn.clicked.connect(ctx.dp.onPlayButtonClicked)
 
-        if launchwindow:
-            launchwindow.top('  Wiring signal connections...')
-        event_bus.subscribe(PLAYNEXT, lambda: dp.playNext(True))
-        event_bus.subscribe(PLAYLAST, lambda: dp.playLast())
+        if ctx.launchwindow:
+            ctx.launchwindow.top('  Wiring signal connections...')
+        event_bus.subscribe(PLAYNEXT, lambda: ctx.dp.playNext(True))
+        event_bus.subscribe(PLAYLAST, lambda: ctx.dp.playLast())
 
         self.controller.setParent(self)
 
@@ -174,20 +156,20 @@ class MainWindow(FluentWindowBase):
 
         self.settings_btn = TransparentPushButton('Settings')
         bindIcon(self.settings_btn, 'settings')
-        self.session_btn = TransparentPushButton('Session')
+        self.session_btn = TransparentPushButton('Account')
         bindIcon(self.session_btn, 'session')
         self.settings_btn.clicked.connect(self._onSettingsClicked)
         self.session_btn.clicked.connect(self._onSessionClicked)
 
+        left_layout.addWidget(self.folders_list, 1)
         left_layout.addWidget(self.settings_btn)
         left_layout.addWidget(self.session_btn)
-        left_layout.addWidget(self.folders_list, 1)
 
         self.hBoxLayout.addLayout(left_layout, 1)
         self.hBoxLayout.addWidget(contents_widget, 5)
 
         self.searching = False
-        self.search_input = SearchLineEdit(self, harmony_font_family)
+        self.search_input = SearchLineEdit(self, ctx.harmony_font_family)
         self.search_input.returnPressed.connect(self.search)
         self.search_input.setParent(self)
         self.search_input.setFixedHeight(self.titleBar.height() - 15)
@@ -213,19 +195,19 @@ class MainWindow(FluentWindowBase):
 
         self.setWindowTitle('Southside Music')
 
-        QTimer.singleShot(1750, ws_server.start)
+        QTimer.singleShot(1750, ctx.ws_server.start)
 
-        self.refresh_rate = max(60, app.primaryScreen().refreshRate() / 2)
+        self.refresh_rate = max(60, ctx.app.primaryScreen().refreshRate() / 2)
         self._logger.info(f'{self.refresh_rate=}')
 
         self.delta = 1 / self.refresh_rate
 
         self.show()
 
-        self.setMinimumSize(app.primaryScreen().size() * 0.4)
+        self.setMinimumSize(ctx.app.primaryScreen().size() * 0.4)
 
         if cfg.window_width == 0 and cfg.window_height == 0:
-            self.resize(app.primaryScreen().size() * 0.65)
+            self.resize(ctx.app.primaryScreen().size() * 0.65)
 
             cfg.window_x = self.x()
             cfg.window_y = self.y()
@@ -270,6 +252,10 @@ class MainWindow(FluentWindowBase):
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self.updateDatas)
         event_bus.subscribe(VIEW_FOLDER, self.onViewFolder)
 
+    def onStackedWidgetChanged(self):
+        if self.dp_expanded and not self.dp_animating:
+            self.togglePlayingPageExpand()
+
     def _onSettingsClicked(self):
         self.contents_widget.setCurrentWidget(self._stp)
 
@@ -297,12 +283,10 @@ class MainWindow(FluentWindowBase):
         self.pl_expanded = not self.pl_expanded
         self.pl_animating = True
 
-        self._plp.refreshPlaylistWidget()
-
         anim = QPropertyAnimation(self._plp, b'geometry', self)
         anim.setDuration(200)
         anim.setEasingCurve(
-            QEasingCurve.Type.OutCirc if self.dp_expanded else QEasingCurve.Type.InCirc
+            QEasingCurve.Type.OutCirc if self.pl_expanded else QEasingCurve.Type.InCirc
         )
 
         r = self._plp.rect()
@@ -313,7 +297,7 @@ class MainWindow(FluentWindowBase):
                 QRect(self.width() - 5 - r.width(), 53, r.width(), r.height())
             )
         else:
-            QTimer.singleShot(200, self._dp.hide)
+            QTimer.singleShot(200, self._plp.hide)
             anim.setStartValue(
                 QRect(self.width() - 5 - r.width(), 53, r.width(), r.height())
             )

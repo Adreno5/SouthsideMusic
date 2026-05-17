@@ -17,6 +17,7 @@ from imports import (
     BACKGROUND_RATIO_CHANGED,
     LYRIC_LINE_CHANGED,
     PLAY_STATE_CHANGED,
+    PLAY_START_PLAYLIST,
     PLAYLAST,
     PLAYNEXT,
     POST_THEME_CHANGED,
@@ -526,6 +527,9 @@ class PlayingController(QWidget):
         return super().mouseMoveEvent(event)
 
     def toggle(self):
+        if self._dp.cur is None:
+            event_bus.emit(PLAY_START_PLAYLIST)
+            return
         if self._player.isPlaying():
             self._player.pause()
             event_bus.emit(PLAY_STATE_CHANGED, False)

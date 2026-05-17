@@ -10,14 +10,15 @@ from typing import Any, Callable
 
 from core.app_context import AppContext
 
+from core.backend import get_backend
 from core.dialogs import get_text_lineedit
 from imports import (
     BACKGROUND_RATIO_CHANGED,
     ENDING_NO_SOUND,
     LYRIC_LINE_CHANGED,
     MWINDOW_REFRESH_FOLDERS,
-    PLAYLAST,
-    PLAYNEXT,
+    PLAY_CONTINUE_LAST_SONG,
+    PLAY_SEARCH_SONG,
     POST_THEME_CHANGED,
     REFRESH_RATE_CHANGED,
     REPAINT,
@@ -65,13 +66,13 @@ from qfluentwidgets import (
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 
 from core import theme
-from core.models import FolderInfo, SongStorable
+from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable
 from core.color import mixColor
 from core.config import saveConfig, cfg
 from core.favorites import saveFavorites, favs
 from core.icons import bindIcon, getQIcon
 from core.downloader import doWithMultiThreading
-from views.folder_card import FolderCard
+from views.folder_card import CloudFolderCard, LocalFolderCard
 from views.line_edit import SearchLineEdit
 from views.playing_controller import PlayingController
 from views.playing_page import PlayingPage
@@ -141,14 +142,10 @@ class MainWindow(FluentWindowBase):
 
         self.controller = PlayingController(ctx)
         ctx.player.onFullFinished.connect(lambda: event_bus.emit(SONG_FINISH))
-        ctx.player.onEndingNoSound.connect(ctx.dp.onEndingNoSound)
-        event_bus.subscribe(SONG_FINISH, lambda: ctx.dp.playNext(False))
-        self.controller.play_pausebtn.clicked.connect(ctx.dp.onPlayButtonClicked)
+        ctx.player.onEndingNoSound.connect(ctx.playing_manager.onEndingNoSound)
 
         if ctx.launchwindow:
             ctx.launchwindow.top('  Wiring signal connections...')
-        event_bus.subscribe(PLAYNEXT, lambda: ctx.dp.playNext(True))
-        event_bus.subscribe(PLAYLAST, lambda: ctx.dp.playLast())
 
         self.controller.setParent(self)
 
@@ -282,7 +279,7 @@ class MainWindow(FluentWindowBase):
 
         self._sp.search(self.search_input.text())
 
-    def onViewFolder(self, folder: FolderInfo):
+    def onViewFolder(self, folder: LocalFolderInfo):
         self._fp.setDisplayFolder(folder)
 
     def togglePlaylistExpand(self):
@@ -441,11 +438,7 @@ class MainWindow(FluentWindowBase):
 
     def play(self, card: SongCard):
         self._logger.debug(card.info['id'])
-
-        self._dp.cur = None
-
-        self._dp.cur = card  # type: ignore
-        self._dp.init()
+        event_bus.emit(PLAY_SEARCH_SONG, card.info, card.detail['image_url'])
 
     def init(self) -> None:
         self._launchwindow.clear()
@@ -468,7 +461,7 @@ class MainWindow(FluentWindowBase):
                     self._launchwindow.top('continue last song...')
 
                     def _continue():
-                        self._dp.continueLastSong(cfg.last_playing_index)
+                        event_bus.emit(PLAY_CONTINUE_LAST_SONG, cfg.last_playing_index)
 
                     self.addScheduledTask(_continue)
 
@@ -500,8 +493,11 @@ class MainWindow(FluentWindowBase):
     def refreshFolders(self):
         self.folders_list.clear()
 
+        self.folders_list.addItem(QListWidgetItem('Local'))
+
         for folder in favs:
-            card = FolderCard(folder, self.folders_list.width())
+            card = LocalFolderCard(folder, self.folders_list.width())
+            card.clicked.connect(lambda f=folder: self._openFolder(f))
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, folder)
             item.setSizeHint(card.sizeHint())
@@ -510,17 +506,61 @@ class MainWindow(FluentWindowBase):
 
         item = QListWidgetItem()
         widget = TransparentPushButton(FluentIcon.ADD_TO, 'Add folder')
-        widget.clicked.connect(self.onAddFolder)
+        widget.clicked.connect(self.onAddLocalFolder)
         item.setSizeHint(widget.sizeHint())
         self.folders_list.addItem(item)
         self.folders_list.setItemWidget(item, widget)
 
+        def _cloud():
+            self.addScheduledTask(
+                lambda: self.folders_list.addItem(QListWidgetItem('Cloud'))
+            )
+            playlists = get_backend().get_user_playlists()
+
+            def add():
+                nonlocal playlists
+                for inf in playlists:
+                    card = CloudFolderCard(inf, self.folders_list.width(), self.ctx)
+                    card.clicked.connect(lambda f=inf: self._openFolder(f))
+                    item = QListWidgetItem()
+                    item.setData(Qt.ItemDataRole.UserRole, inf)
+                    item.setSizeHint(card.sizeHint())
+                    self.folders_list.addItem(item)
+                    self.folders_list.setItemWidget(item, card)
+
+                item = QListWidgetItem()
+                widget = TransparentPushButton(FluentIcon.ADD_TO, 'Add folder')
+                widget.clicked.connect(self.onAddCloudFolder)
+                item.setSizeHint(widget.sizeHint())
+                self.folders_list.addItem(item)
+                self.folders_list.setItemWidget(item, widget)
+
+            self.addScheduledTask(add)
+
+        if not get_backend().user_anonymous():
+            doWithMultiThreading(_cloud, (), self)
+
         saveFavorites()
 
-    def onAddFolder(self):
-        name = get_text_lineedit('Add New Folder', 'enter name of your new folder', 'my folder', self)
+    def _openFolder(self, folder):
+        self.contents_widget.setCurrentWidget(self._fp)
+        self._fp.updateGeometry()
+        self._fp.setDisplayFolder(folder)
+
+    def onAddCloudFolder(self):
+        name = get_text_lineedit(
+            'Add New Folder', 'enter name of your new folder', 'my folder', self
+        )
         if name:
-            new = FolderInfo(folder_name=name, songs=[])
+            get_backend().create_playlist(name, False)
+            self.refreshFolders()
+
+    def onAddLocalFolder(self):
+        name = get_text_lineedit(
+            'Add New Folder', 'enter name of your new folder', 'my folder', self
+        )
+        if name:
+            new = LocalFolderInfo(folder_name=name, songs=[])
             favs.append(new)
             self.refreshFolders()
             self._fp.setDisplayFolder(new)
@@ -673,5 +713,5 @@ class MainWindow(FluentWindowBase):
             painter.drawText(
                 4,
                 int(self.bar_height + 18),
-                f'Loading... ({f'{round(self.loading_progress * 100, 2)}%' if self.loading_progressing else self.loading_tasks})',
+                f'Loading... ({f"{round(self.loading_progress * 100, 2)}%" if self.loading_progressing else self.loading_tasks})',
             )

@@ -32,6 +32,7 @@ from core.icons import refreshBoundIcons
 from core.audio_player import AudioPlayer
 from core.backend import init_backend
 from core.netease_backend import NeteaseCloudMusicBackend
+from core.playing_manager import PlayingManager
 from core import theme as darkdetect
 import pyncm as ncm
 from pyncm import apis
@@ -320,6 +321,7 @@ if __name__ == '__main__':
         lock=lock,
     )
     ctx.launchwindow = launchwindow
+    ctx.playing_manager = PlayingManager(ctx)
 
     launchwindow.push('Initializing events services...')
     events_service = EventsServices(ctx)

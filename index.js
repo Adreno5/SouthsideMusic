@@ -3,11 +3,11 @@
 // Configuration
 
 // Set the color of the cursor trail to match the user's cursor color
-const Color = "#ffffff" // If set to "default," it will use the theme's cursor color.
+const Color = '#ffffff' // If set to 'default,' it will use the theme's cursor color.
 // }
 // Set the style of the cursor to either a line or block
 // line option use fill() to draw trail, block option use lineTo to draw trail
-const CursorStyle = "line" // Options are 'line' or 'block'
+const CursorStyle = 'line' // Options are 'line' or 'block'
 
 // Set the length of the cursor trail. A higher value may cause lag.
 const TrailLength = 7
@@ -17,20 +17,23 @@ const CursorUpdatePollingRate = 200
 
 // Set the whole cursor trail animation speed multiplier.
 const AnimationSpeed = 1
+const MaxVerticalAnimationSpeedup = 10
+const MaxVerticalTrailCompression = 0.2
 
 // Use shadow
 const UseShadow = true
-const ShadowColor = Color
-const ShadowBlur = 4
+const ShadowColor = '#ffffff4c'
+const ShadowBlur = 2
 
 
 // imported from https://github.com/tholman/cursor-effects/blob/master/src/rainbowCursor.js
 function createTrail(options) {
   const totalParticles = options?.length || 20
-  let particlesColor = options?.color || "#A052FF"
-  const style = options?.style || "block"
+  let particlesColor = options?.color || '#A052FF'
+  const style = options?.style || 'block'
   const canvas = options?.canvas
-  const context = canvas.getContext("2d")
+  const context = canvas.getContext('2d')
+  context.font = '50px serif';
   let cursor = { x: 0, y: 0 }
   let animatedCursor = { x: 0, y: 0 }
   let particles = []
@@ -89,11 +92,11 @@ function createTrail(options) {
 
     const rgb = value.match(/^rgba?\(([^)]+)\)$/i)
     if (rgb) {
-      const [r, g, b] = rgb[1].split(",").map(part => part.trim())
+      const [r, g, b] = rgb[1].split(',').map(part => part.trim())
       return `rgba(${r}, ${g}, ${b}, ${alpha})`
     }
 
-    return alpha === 1 ? color : "transparent"
+    return alpha === 1 ? color : 'transparent'
   }
 
   function createTrailGradient() {
@@ -108,12 +111,17 @@ function createTrail(options) {
   }
 
   function calculatePosition() {
-    const speed = Math.max(0, Math.min(AnimationSpeed, 1))
-    const chainSpeedX = 1 - Math.pow(1 - 0.47, speed)
-    const chainSpeedY = 1 - Math.pow(1 - 0.52, speed)
+    const xDelta = (cursor.x - animatedCursor.x)
+    const yDelta = (cursor.y - animatedCursor.y)
+    const yDeltaRatio = height ? Math.min(Math.abs(yDelta) / height, 1) : 0
+    const verticalSpeedup = yDeltaRatio * MaxVerticalAnimationSpeedup
+    const speed = Math.max(0, Math.min(AnimationSpeed + verticalSpeedup, 1))
+    const yTrailCompression = yDeltaRatio * MaxVerticalTrailCompression
+    const chainSpeedX = 1 - Math.pow(1 - 0.67, speed)
+    const chainSpeedY = (1 - Math.pow(1 - 0.7, speed)) * (1 - yTrailCompression)
 
-    animatedCursor.x += (cursor.x - animatedCursor.x) * speed
-    animatedCursor.y += (cursor.y - animatedCursor.y) * speed
+    animatedCursor.x += xDelta * speed
+    animatedCursor.y += yDelta * speed
 
     let x = animatedCursor.x,y = animatedCursor.y
 
@@ -132,7 +140,7 @@ function createTrail(options) {
   // for block cursor
   function drawLines() {
     context.beginPath()
-    context.lineJoin = "round"
+    context.lineJoin = 'round'
     context.strokeStyle = createTrailGradient()
     const lineWidth = Math.min(sizeX,sizeY)
     context.lineWidth = lineWidth
@@ -190,8 +198,8 @@ function createTrail(options) {
     context.clearRect(0, 0, width, height)
     calculatePosition()
 
-    if (style=="line") drawPath()
-    else if (style=="block") drawLines()
+    if (style=='line') drawPath()
+    else if (style=='block') drawLines()
   }
 
   function updateCursorSize(newSize,newSizeY) {
@@ -216,7 +224,7 @@ async function createCursorHandler(handlerFunctions) {
   let editor
   while (!editor) {
     await new Promise(resolve=>setTimeout(resolve, 100))
-    editor = document.querySelector(".part.editor")
+    editor = document.querySelector('.part.editor')
   }
   handlerFunctions?.onStarted(editor)
 
@@ -248,7 +256,7 @@ async function createCursorHandler(handlerFunctions) {
       if (revX<=0 || revY<=0) return
 
       // if it is invisible, ignore
-      if (target.style.visibility == "hidden") return
+      if (target.style.visibility == 'hidden') return
 
       // if moved over minimap, ignore
       if (minimap && minimap.offsetWidth != 0) {
@@ -268,28 +276,28 @@ async function createCursorHandler(handlerFunctions) {
   }
 
   // handle cursor create/destroy event (using polling, due to event handlers are LAGGY)
-  let lastVisibility = "hidden"
+  let lastVisibility = 'hidden'
   setInterval(async ()=>{
     let now = [],count = 0
     // created
-    for (const target of editor.getElementsByClassName("cursor")) {
-      if (target.style.visibility != "hidden") count++
-      if (target.hasAttribute("cursorId")) {
-        now.push(+target.getAttribute("cursorId"))
+    for (const target of editor.getElementsByClassName('cursor')) {
+      if (target.style.visibility != 'hidden') count++
+      if (target.hasAttribute('cursorId')) {
+        now.push(+target.getAttribute('cursorId'))
         continue
       }
       let thisCursorId = cursorId++
       now.push(thisCursorId)
       lastObjects[thisCursorId] = target
-      target.setAttribute("cursorId",thisCursorId)
+      target.setAttribute('cursorId',thisCursorId)
       let cursorHolder = target.parentElement.parentElement.parentElement
-      let minimap = cursorHolder.parentElement.querySelector(".minimap")
+      let minimap = cursorHolder.parentElement.querySelector('.minimap')
       createCursorUpdateHandler(target,thisCursorId,cursorHolder,minimap)
-      // console.log("DEBUG-CursorCreated",thisCursorId)
+      // console.log('DEBUG-CursorCreated',thisCursorId)
     }
     
     // update visible
-    let visibility = count<=1 ? "visible" : "hidden"
+    let visibility = count<=1 ? 'visible' : 'hidden'
     if (visibility != lastVisibility) {
       handlerFunctions?.onCursorVisibilityChanged(visibility)
       lastVisibility = visibility
@@ -299,7 +307,7 @@ async function createCursorHandler(handlerFunctions) {
     for (const id in lastObjects) {
       if (now.includes(+id)) continue
       delete lastObjects[+id]
-      // console.log("DEBUG-CursorRemoved",+id)
+      // console.log('DEBUG-CursorRemoved',+id)
     }
   },handlerFunctions?.cursorUpdatePollingRate || 500)
 
@@ -333,22 +341,22 @@ createCursorHandler({
   // When editor instance stared
   onStarted: (editor)=>{
     // create new canvas for make animation
-    cursorCanvas = document.createElement("canvas")
-    cursorCanvas.style.pointerEvents = "none"
-    cursorCanvas.style.position = "absolute"
-    cursorCanvas.style.top = "0px"
-    cursorCanvas.style.left = "0px"
-    cursorCanvas.style.zIndex = "1000"
+    cursorCanvas = document.createElement('canvas')
+    cursorCanvas.style.pointerEvents = 'none'
+    cursorCanvas.style.position = 'absolute'
+    cursorCanvas.style.top = '0px'
+    cursorCanvas.style.left = '0px'
+    cursorCanvas.style.zIndex = '1000'
     editor.appendChild(cursorCanvas)
 
     // create rainbow cursor effect
     // thanks to https://github.com/tholman/cursor-effects/blob/master/src/rainbowCursor.js
     // we can create trail effect!
     let color = Color
-    if (color == "default") {
+    if (color == 'default') {
       color = getComputedStyle(
-        document.querySelector("body>.monaco-workbench"))
-        .getPropertyValue("--vscode-editorCursor-background")
+        document.querySelector('body>.monaco-workbench'))
+        .getPropertyValue('--vscode-editorCursor-background')
         .trim()
     }
 

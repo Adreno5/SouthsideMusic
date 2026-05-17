@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import NotRequired, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 import base64
 import hashlib
 import json
@@ -294,9 +294,15 @@ class SongStorable:
         )
 
 
-class FolderInfo(TypedDict):
+class LocalFolderInfo(TypedDict):
     folder_name: str
     songs: list[SongStorable]
+
+
+class CloudFolderInfo(TypedDict):
+    folder_name: str
+    image_url: str
+    id: str
 
 
 class ArtistInfo(TypedDict):
@@ -346,16 +352,40 @@ class TrackLyricsInfo(TypedDict):
 
 class MusicServiceBackend(ABC):
     @abstractmethod
-    def search(self, keywords: str, offset: int = 0, limit: int = 30) -> list[SearchSongInfo]: ...
+    def search(
+        self, keywords: str, offset: int = 0, limit: int = 30
+    ) -> list[SearchSongInfo]: ...
 
     @abstractmethod
     def get_track_detail(self, track_id: int | str) -> TrackDetailInfo: ...
 
     @abstractmethod
-    def get_track_audio(self, track_id: int | str, bitrate: int = 999000) -> TrackAudioInfo: ...
+    def get_track_audio(
+        self, track_id: int | str, bitrate: int = 999000
+    ) -> TrackAudioInfo: ...
 
     @abstractmethod
     def get_track_lyrics(self, track_id: int | str) -> TrackLyricsInfo: ...
 
     @abstractmethod
     def user_privilege_level(self) -> int: ...
+
+    @abstractmethod
+    def get_user_playlists(self) -> list[CloudFolderInfo]: ...
+
+    @abstractmethod
+    def user_anonymous(self) -> bool: ...
+
+    @abstractmethod
+    def create_playlist(self, name: str, privacy: bool) -> None: ...
+
+    @abstractmethod
+    def remove_playlist(self, id: str) -> None: ...
+
+    @abstractmethod
+    def edit_playlist(
+        self, option: Literal['add', 'del'], song_id: str, folder_id: str
+    ) -> None: ...
+
+    @abstractmethod
+    def get_playlist_tracks(self, playlist_id: str) -> list[SongStorable]: ...

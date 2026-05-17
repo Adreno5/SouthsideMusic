@@ -1,13 +1,38 @@
+import hashlib
+import os
+
+import requests
+
+from core.app_context import AppContext
+from core.downloader import doWithMultiThreading
 from core.icons import SouthsideIcon, getQIcon
-from core.models import FolderInfo, SongStorable
-from imports import REMOVE_FOLDER, RENAME_FOLDER, FlowLayout, FluentIcon, QAction, QContextMenuEvent, QHBoxLayout, QLabel, QMouseEvent, QPixmap, Qt, QVBoxLayout, QWidget, RoundMenu, Signal, event_bus
+from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable
+from imports import (
+    CLOUD_REMOVE_FOLDER,
+    LOCAL_REMOVE_FOLDER,
+    LOCAL_RENAME_FOLDER,
+    FlowLayout,
+    FluentIcon,
+    QAction,
+    QContextMenuEvent,
+    QHBoxLayout,
+    QLabel,
+    QMouseEvent,
+    QPixmap,
+    Qt,
+    QVBoxLayout,
+    QWidget,
+    RoundMenu,
+    Signal,
+    event_bus,
+)
 from qfluentwidgets import SubtitleLabel
 
 
-class FolderCard(QWidget):
+class LocalFolderCard(QWidget):
     clicked = Signal()
 
-    def __init__(self, folder: FolderInfo, width):
+    def __init__(self, folder: LocalFolderInfo, width):
         super().__init__()
         self.setFixedSize(width, 52)
         self.folder = folder
@@ -23,7 +48,9 @@ class FolderCard(QWidget):
         layout.addWidget(self.img_label)
 
         title_label = QLabel(folder['folder_name'])
-        title_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        title_label.setAlignment(
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+        )
         title_label.font().setPointSize(16)
         title_label.setWordWrap(True)
         title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -53,13 +80,97 @@ class FolderCard(QWidget):
     def mousePressEvent(self, event: QMouseEvent) -> None:
         self.clicked.emit()
         return super().mousePressEvent(event)
-    
+
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         menu = RoundMenu()
         rm_ac = QAction(FluentIcon.REMOVE.icon(), 'Remove')
-        rm_ac.triggered.connect(lambda: event_bus.emit(REMOVE_FOLDER, self))
+        rm_ac.triggered.connect(lambda: event_bus.emit(LOCAL_REMOVE_FOLDER, self))
         rn_ac = QAction(SouthsideIcon.RENAME.icon(), 'Rename')
-        rn_ac.triggered.connect(lambda: event_bus.emit(RENAME_FOLDER, self))
+        rn_ac.triggered.connect(lambda: event_bus.emit(LOCAL_RENAME_FOLDER, self))
         menu.addAction(rm_ac)
         menu.addAction(rn_ac)
+        menu.exec(event.globalPos())
+
+
+class CloudFolderCard(QWidget):
+    clicked = Signal()
+
+    def __init__(self, folder: CloudFolderInfo, width, ctx: AppContext):
+        super().__init__()
+        self.setFixedSize(width, 52)
+        self.folder = folder
+        self._ctx = ctx
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        self.img_label = QLabel()
+        self.img_label.setFixedSize(50, 50)
+        self.img_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.img_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        layout.addWidget(self.img_label)
+
+        title_label = QLabel(folder['folder_name'])
+        title_label.setAlignment(
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+        )
+        title_label.font().setPointSize(16)
+        title_label.setWordWrap(True)
+        title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        layout.addWidget(title_label)
+
+        self._loadCoverImage()
+
+    def _loadCoverImage(self):
+        if not self.folder['image_url']:
+            return
+        os.makedirs(os.path.join('data', 'cover'), exist_ok=True)
+        hashed = hashlib.sha256(self.folder['image_url'].encode()).hexdigest()
+        file = os.path.join('data', 'cover', hashed)
+
+        if not os.path.isfile(file):
+
+            def _download():
+                image_bytes = requests.get(self.folder['image_url']).content
+
+                def applyPixmap():
+                    pixmap = QPixmap()
+                    pixmap.loadFromData(image_bytes)
+                    if not pixmap.isNull():
+                        scaled = pixmap.scaled(
+                            self.img_label.size(),
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                        self.img_label.setPixmap(scaled)
+
+                    with open(file, 'wb') as f:
+                        f.write(image_bytes)
+
+                self._ctx.mwindow.addScheduledTask(applyPixmap)
+
+            doWithMultiThreading(_download, (), self._ctx.mwindow)
+        else:
+            with open(file, 'rb') as f:
+                image_bytes = f.read()
+                pixmap = QPixmap()
+                pixmap.loadFromData(image_bytes)
+                if not pixmap.isNull():
+                    scaled = pixmap.scaled(
+                        self.img_label.size(),
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    self.img_label.setPixmap(scaled)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        self.clicked.emit()
+        return super().mousePressEvent(event)
+
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        menu = RoundMenu()
+        rm_ac = QAction(FluentIcon.REMOVE.icon(), 'Remove')
+        rm_ac.triggered.connect(lambda: event_bus.emit(CLOUD_REMOVE_FOLDER, self))
+        menu.addAction(rm_ac)
         menu.exec(event.globalPos())

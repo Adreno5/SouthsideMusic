@@ -6,7 +6,7 @@ import shutil
 import stat
 from core.models import (
     DATA_DIR,
-    FolderInfo,
+    LocalFolderInfo,
     IMAGE_DATA_DIR,
     LEGACY_CACHE_DIR,
     LEGACY_IMAGE_CACHE_DIR,
@@ -25,7 +25,7 @@ _logger = logging.getLogger(__name__)
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _FAVORITES_PATH = os.path.join(_PROJECT_ROOT, "favorites.json")
 
-favs: list[FolderInfo] = []
+favs: list[LocalFolderInfo] = []
 
 
 def _ensure_favorite_dirs() -> None:
@@ -188,7 +188,7 @@ def getFavoriteSong(mwindow, favs) -> SongStorable | None:
         return None
 
 
-def loadFavorites() -> list[FolderInfo]:
+def loadFavorites() -> list[LocalFolderInfo]:
     global favs
     restoreOldFavoritesFormat()
 
@@ -202,7 +202,7 @@ def loadFavorites() -> list[FolderInfo]:
                 storable = SongStorable.fromObject(song)
                 songs.append(storable)
 
-            folder_info = FolderInfo(folder_name=folder["folder_name"], songs=songs)
+            folder_info = LocalFolderInfo(folder_name=folder["folder_name"], songs=songs)
             favs.append(folder_info)
     return favs
 

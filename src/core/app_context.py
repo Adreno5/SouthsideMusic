@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from core.audio_player import AudioPlayer
     from core.config import Config
     from core.lyrics import LRCLyricParser, YRCLyricParser
+    from core.playing_manager import PlayingManager
     from core.ws_server import WebSocketServer, QObjectHandler
     from PySide6.QtWidgets import QApplication
     from views.desktop_lyrics import DesktopLyricsPage
@@ -46,6 +47,7 @@ class AppContext:
         self.harmony_font_family = harmony_font_family
         self.favs = favs if favs is not None else []
         self.lock = lock if lock is not None else threading.Lock()
+        self.playing_manager: PlayingManager = cast('PlayingManager', None)
 
         # main.py injects these after AppContext construction while building pages.
         self.launchwindow: LaunchWindow = cast('LaunchWindow', None)

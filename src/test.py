@@ -10,8 +10,8 @@ with open('config.json', 'r', encoding='utf-8') as f:
     pyncm.WriteLoginInfo(data['login_status'])
     pyncm.SetCurrentSession(pyncm.LoadSessionFromString(data['session']))
 
-    with open('res.json', 'w') as f:
-        f.write(json.dumps(pyncm.apis.cloudsearch.GetSearchResult('123'), indent=4))
+    # with open('res.json', 'w') as f:
+    #     f.write(json.dumps(pyncm.apis.cloudsearch.GetSearchResult('123'), indent=4))
 
     # pprint(pyncm.apis.track.GetTrackLyricsNew('518904426'))
 
@@ -170,6 +170,10 @@ with open('config.json', 'r', encoding='utf-8') as f:
     #   'updateFrequency': None,
     #   'updateTime': 1777105731012,
     #   'userId': 13149209959}]
+
+
+
+
     # pprint(pyncm.apis.playlist.GetPlaylistAllTracks(17923377465))
     # =>
     # {'code': 200,
@@ -432,4 +436,6 @@ with open('config.json', 'r', encoding='utf-8') as f:
     #             'tagPicList': None,
     #             'tns': ['诡丽仙境'],
     #             'v': 142,
-    #             'version': 108}]}
+    #             'version': 108}]}'
+
+    # pyncm.apis.playlist.SetRemovePlaylist()

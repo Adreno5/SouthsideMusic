@@ -8,5 +8,6 @@
     "animations.Scrolling": "Slide",
     "animations.Default-Duration": 180,
     "animations.Enabled": false,
-    "editor.cursorBlinking": "smooth"
+    "editor.cursorBlinking": "smooth",
+    "editor.cursorSmoothCaretAnimation": "off"
 }

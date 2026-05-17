@@ -8,7 +8,7 @@ import sys
 import numpy as np
 import sounddevice as sd
 from pathlib import Path
-from imports import QObject, Signal
+from imports import DB_CHANGED, QObject, Signal, event_bus
 from typing import Optional, TypedDict, override
 import threading
 from scipy.fft import rfft, rfftfreq
@@ -645,6 +645,7 @@ class AudioPlayer(QObject):
                 self.db = 20 * np.log10(rms)
             else:
                 self.db = -float('inf')
+            event_bus.emit(DB_CHANGED, self.db)
 
             remain = self.getLength() - self._playback_time
             if (

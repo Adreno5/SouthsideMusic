@@ -12,6 +12,9 @@ from core.config import cfg
 from core.color import mixColor
 from imports import (
     BACKGROUND_RATIO_CHANGED,
+    PLAY_PLAYLIST_STORABLE,
+    PLAY_SONG_AT_INDEX,
+    PLAYLIST_CHANGED,
     POST_THEME_CHANGED,
     SONG_CHANGED,
     QColor,
@@ -94,6 +97,7 @@ class PlaylistPage(QWidget):
 
         event_bus.subscribe(SONG_CHANGED, self._onSongChanged)
         event_bus.subscribe(SONG_CHANGED, self._updateDatas)
+        event_bus.subscribe(PLAYLIST_CHANGED, self.refreshPlaylistWidget)
         event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
 
@@ -108,6 +112,10 @@ class PlaylistPage(QWidget):
     @property
     def _player(self):
         return self.ctx.player
+
+    @property
+    def _pm(self):
+        return self.ctx.playing_manager
 
     def _updateDatas(self, song: SongStorable | None = None):
         if self._mwindow:
@@ -134,17 +142,17 @@ class PlaylistPage(QWidget):
         if not hasattr(self._dp.cur, 'storable'):
             return
         storable = self._dp.cur.storable
-        for i, song in enumerate(self._dp.playlist):
+        for i, song in enumerate(self._pm.playlist):
             if song.name == storable.name:
                 self.lst.setCurrentRow(i)
                 return
 
     def removeAllSongs(self) -> None:
-        self._dp.playlist.clear()
+        self._pm.playlist.clear()
         if isinstance(self._dp.cur, DummyCard) and isinstance(
             self._dp.cur.storable, SongStorable
         ):
-            self._dp.playlist.append(self._dp.cur.storable)
+            self._pm.playlist.append(self._dp.cur.storable)
 
         self.refreshPlaylistWidget()
 
@@ -159,7 +167,7 @@ class PlaylistPage(QWidget):
         card = PlaylistSongCard(
             song, self._dp, mwindow=self._mwindow, plp=self, lazy=True
         )
-        card.clicked.connect(lambda s, it=item: self._dp.onPlaylistCardClicked(s, it))
+        card.clicked.connect(lambda s, it=item: event_bus.emit(PLAY_PLAYLIST_STORABLE, s))
         self.lst.addItem(item)
         self.lst.setItemWidget(item, card)
         self._song_cards.append(card)
@@ -187,14 +195,14 @@ class PlaylistPage(QWidget):
         self._song_cards = []
         self.lst.clear()
 
-        for song in self._dp.playlist:
+        for song in self._pm.playlist:
             self.addSongCardToList(song)
 
-        self._dp._preload_triggered = False
+        self._pm.clearPreload()
         self.lst.verticalScrollBar().setValue(val)
 
     def movePlaylistSong(self, song: SongStorable, delta: int):
-        playlist = self._dp.playlist
+        playlist = self._pm.playlist
         try:
             old_index = playlist.index(song)
         except ValueError:
@@ -205,16 +213,16 @@ class PlaylistPage(QWidget):
             return
 
         current_song = None
-        if 0 <= self._dp.current_index < len(playlist):
-            current_song = playlist[self._dp.current_index]
+        if 0 <= self._pm.current_index < len(playlist):
+            current_song = playlist[self._pm.current_index]
 
         playlist[old_index], playlist[new_index] = (
             playlist[new_index],
             playlist[old_index],
         )
         if current_song is not None:
-            self._dp.current_index = playlist.index(current_song)
-        self._dp.playing_manager.refreshRandom()
+            self._pm.current_index = playlist.index(current_song)
+        self._pm.refreshRandom()
 
         self.refreshPlaylistWidget()
         self._syncPlaylistSelection()

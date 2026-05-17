@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Literal
 
 import pyncm
 from pyncm import apis
@@ -8,9 +9,12 @@ from pyncm import apis
 from core.models import (
     AlbumInfo,
     ArtistInfo,
+    CloudFolderInfo,
+    LocalFolderInfo,
     MusicServiceBackend,
     PrivilegeInfo,
     SearchSongInfo,
+    SongStorable,
     TrackAudioInfo,
     TrackDetailInfo,
     TrackLyricsInfo,
@@ -20,7 +24,6 @@ _logger = logging.getLogger(__name__)
 
 
 class NeteaseCloudMusicBackend(MusicServiceBackend):
-
     def search(
         self, keywords: str, offset: int = 0, limit: int = 30
     ) -> list[SearchSongInfo]:
@@ -79,9 +82,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
     def get_track_audio(
         self, track_id: int | str, bitrate: int = 999000
     ) -> TrackAudioInfo:
-        resp = apis.track.GetTrackAudio(
-            [str(track_id)], bitrate=bitrate
-        )
+        resp = apis.track.GetTrackAudio([str(track_id)], bitrate=bitrate)
         assert isinstance(resp, dict), 'Invalid track audio response'
         url = resp['data'][0]['url']  # type: ignore
         return TrackAudioInfo(url=url)
@@ -108,3 +109,56 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
 
     def user_privilege_level(self) -> int:
         return pyncm.GetCurrentSession().vipType
+
+    def user_anonymous(self) -> bool:
+        return bool(pyncm.GetCurrentSession().is_anonymous)
+
+    def get_user_playlists(self) -> list[CloudFolderInfo]:
+        with pyncm.GetCurrentSession() as session:
+            response = apis.user.GetUserPlaylists(session.uid)
+            assert isinstance(response, dict), 'Invaild Response'
+            assert not session.is_anonymous, 'Anonymous Account'
+
+            data = response['playlist']  # type: ignore
+
+            return [
+                CloudFolderInfo(
+                    folder_name=p['name'], image_url=p['coverImgUrl'], id=str(p['id'])
+                )
+                for p in data
+            ]
+
+    def create_playlist(self, name: str, privacy: bool) -> None:
+        with pyncm.GetCurrentSession():
+            apis.playlist.SetCreatePlaylist(name, privacy)
+
+    def remove_playlist(self, id: str) -> None:
+        with pyncm.GetCurrentSession():
+            apis.playlist.SetRemovePlaylist(id)  # type: ignore
+
+    def edit_playlist(
+        self, option: Literal['add'] | Literal['del'], song_id: str, folder_id: str
+    ) -> None:
+        with pyncm.GetCurrentSession():
+            apis.playlist.SetManipulatePlaylistTracks(song_id, folder_id, op=option)
+
+    def get_playlist_tracks(self, playlist_id: str) -> list[SongStorable]:
+        with pyncm.GetCurrentSession():
+            response = apis.playlist.GetPlaylistAllTracks(int(playlist_id))
+            assert isinstance(response, dict), 'Invalid Response'
+            assert response.get('code') == 200, f'API Error: {response}'
+            songs = response['songs']  # type: ignore
+            result: list[SongStorable] = []
+            for s in songs:
+                artist_names = [a['name'] for a in (s.get('ar') or [])]
+                storable = SongStorable(
+                    info={
+                        'name': s['name'],
+                        'artists': '/'.join(artist_names),
+                        'id': str(s['id']),
+                        'privilege': -1,
+                    },
+                    image=None,
+                )
+                result.append(storable)
+            return result

@@ -10,6 +10,7 @@ from core.app_context import AppContext
 import numpy as np
 from imports import (
     BACKGROUND_RATIO_CHANGED,
+    DB_CHANGED,
     LUFS_TARGET_CHANGED,
     POST_THEME_CHANGED,
     WEBSOCKET_CONNECTED,
@@ -62,6 +63,8 @@ class SettingPage(QWidget):
         ctx: AppContext,
     ):
         super().__init__()
+        self.now_volume = QLabel('Current volume(db): 0')
+
         self._logger = logging.getLogger(__name__)
         self.ctx = ctx
         self._launchwindow = ctx.launchwindow
@@ -97,6 +100,7 @@ class SettingPage(QWidget):
         event_bus.subscribe(WEBSOCKET_CONNECTED, self._onWsConnected)
         event_bus.subscribe(WEBSOCKET_DISCONNECTED, self._onWsDisconnected)
         event_bus.subscribe(POST_THEME_CHANGED, self.updateTheme)
+        event_bus.subscribe(DB_CHANGED, lambda v: self.now_volume.setText(f'Current volume(db): {int(v)}'))
 
     @property
     def _dp(self):
@@ -149,7 +153,6 @@ class SettingPage(QWidget):
         self.addNumberSetting(
             'Skip Threshold', 'the threshold of the skip', -100, 0, 1, 'skip_threshold'
         )
-        self.now_volume = QLabel('Current volume(db): 0')
         self.addSetting('Current Volume', 'live playback volume in db', self.now_volume)
 
         self.addNumberSetting(

@@ -409,7 +409,12 @@ class _SongCardItem(QWidget):
                     f.write(image_bytes)
             storable.image_cache_hash = cache_hash
             saveFavorites()
-            event_bus.emit(IMAGE_ASSET_PERSISTED, storable)
+            if self._mwindow:
+                self._mwindow.addScheduledTask(
+                    lambda s=storable: event_bus.emit(IMAGE_ASSET_PERSISTED, s)
+                )
+            else:
+                event_bus.emit(IMAGE_ASSET_PERSISTED, storable)
         finally:
             lock.release()
 

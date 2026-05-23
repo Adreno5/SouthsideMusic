@@ -33,8 +33,11 @@ cache/
 data/
 .agents/
 .mypy_cache/
-.vscode/
-
-.codex/
+ffmpeg/
 
 nul
+
+# 个人
+index.js
+.codex/
+.vscode/

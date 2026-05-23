@@ -1,131 +1,166 @@
 from __future__ import annotations
 
-import hashlib
+import io
+import json
 import logging
-import os
-
+import time
+import zipfile
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import TypedDict
 
+import requests as raw_requests
 import toml  # type: ignore[import-untyped]
-from imports import QMessageBox
+from imports import (
+    QMessageBox,
+    event_bus,
+    START_PROGRESS_LOADING,
+    STOP_PROGRESS_LOADING,
+    UPDATE_LOADING_PROGRESS,
+)
 
-from core import http_utils as requests
-from core.config import cfg
+
 _logger = logging.getLogger(__name__)
 
 excludes = ['ffmpeg']
-
-
-class UpdateFileInfo(TypedDict):
-    path: str
-    download_url: str
-    sha: str
+_CHECK_INTERVAL_SECONDS = 24 * 3600
+_LAST_CHECK_FILE = Path('update_check_time.json')
+USER_AGENT = (
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+    'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36'
+)
 
 
 class UpdateInfo(TypedDict):
     newest: int
     current: int
-    files: list[UpdateFileInfo]
+    download_url: str
 
 
-def _git_blob_sha(path: str) -> str | None:
-    file = Path(path)
-    if not file.exists() or not file.is_file():
+def _should_check_updates() -> bool:
+    now = time.time()
+    try:
+        data = json.loads(_LAST_CHECK_FILE.read_text(encoding='utf-8'))
+        last_check = data.get('last_check', 0.0)
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
+        return True
+    return now - last_check > _CHECK_INTERVAL_SECONDS
+
+
+def _record_check_time() -> None:
+    try:
+        _LAST_CHECK_FILE.write_text(
+            json.dumps({'last_check': time.time()}), encoding='utf-8'
+        )
+    except OSError:
+        pass
+
+
+def _read_current_version() -> int:
+    parsed = toml.load(Path('pyproject.toml').read_text(encoding='utf-8'))
+    return int(parsed['project']['version'].removeprefix('v'))
+
+
+def _fetch_latest_release() -> dict | None:
+    try:
+        resp = raw_requests.get(
+            'https://api.github.com/repos/Adreno5/SouthsideMusic/releases/latest',
+            headers={'User-Agent': USER_AGENT},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if not isinstance(data, dict) or 'tag_name' not in data:
+            _logger.warning('Unexpected release API response: %s', data)
+            return None
+        return data
+    except Exception as e:
+        _logger.warning('Failed to fetch latest release: %s', e)
         return None
-    data = file.read_bytes()
-    return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
-
-
-def _collect_update_files(api_url: str, file_list: list[UpdateFileInfo]) -> None:
-    items = requests.get(api_url).json()
-    if not isinstance(items, list):
-        return
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        if item.get('type') == 'file' and item.get('name') not in excludes:
-            download_url = item.get('download_url')
-            path = item.get('path')
-            sha = item.get('sha')
-            if (
-                isinstance(download_url, str)
-                and isinstance(path, str)
-                and isinstance(sha, str)
-            ):
-                file_list.append(
-                    UpdateFileInfo(path=path, download_url=download_url, sha=sha)
-                )
-        elif (
-            item.get('type') == 'dir'
-            and isinstance(item.get('url'), str)
-            and item.get('name') not in excludes
-        ):
-            _collect_update_files(item['url'], file_list)
 
 
 def checkForUpdates() -> UpdateInfo | None:
-    with open('pyproject.toml', 'r', encoding='utf-8') as f:
-        parsed = toml.load(f)
-    current = int(parsed['project']['version'].removeprefix('v'))
-    latest = requests.get(
-        'https://api.github.com/repos/Adreno5/SouthsideMusic/releases/latest'
-    ).json()
-    newest = int(latest['tag_name'].removeprefix('v'))
+    if not _should_check_updates():
+        return None
+
+    current = _read_current_version()
+
+    latest = _fetch_latest_release()
+    if latest is None:
+        return None
+
+    tag_name = latest.get('tag_name', '')
+    newest = int(tag_name.removeprefix('v'))
     if newest <= current:
+        _record_check_time()
         return None
 
-    file_list: list[UpdateFileInfo] = []
-    _collect_update_files(
-        'https://api.github.com/repos/Adreno5/SouthsideMusic/contents', file_list
-    )
-
-    changed_files = [
-        item for item in file_list if _git_blob_sha(item['path']) != item['sha']
-    ]
-    if not changed_files:
+    zipball_url = latest.get('zipball_url')
+    if not isinstance(zipball_url, str) or not zipball_url:
+        _record_check_time()
         return None
-    return UpdateInfo(current=current, newest=newest, files=changed_files)
+
+    _record_check_time()
+    return UpdateInfo(current=current, newest=newest, download_url=zipball_url)
 
 
 def applyUpdate(update_info: UpdateInfo) -> bool:
     try:
-        total = max(1, len(update_info['files']))
-        completed = 0
-        progress_lock = threading.Lock()
-        cfg.progress = 0
-        cfg.progress_inter = False
-        cfg.show_progress = True
+        event_bus.emit(START_PROGRESS_LOADING)
+        event_bus.emit(UPDATE_LOADING_PROGRESS, 0.0)
 
-        def _download_file(item: UpdateFileInfo) -> None:
-            nonlocal completed
-            if _git_blob_sha(item['path']) == item['sha']:
-                with progress_lock:
-                    completed += 1
-                    cfg.progress = completed / total
-                return
-            data = requests.get(item['download_url']).content
-            path = Path(item['path'])
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(data)
-            with progress_lock:
-                completed += 1
-                cfg.progress = completed / total
+        response = raw_requests.get(
+            update_info['download_url'],
+            headers={'User-Agent': USER_AGENT, 'Accept': 'application/zip,*/*'},
+            stream=True,
+            timeout=180,
+        )
+        response.raise_for_status()
 
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [
-                executor.submit(_download_file, item) for item in update_info['files']
-            ]
-            for future in as_completed(futures):
-                future.result()
+        total_size = int(response.headers.get('content-length', 0))
+        downloaded = 0
+        raw_data = bytearray()
+        for chunk in response.iter_content(chunk_size=65536):
+            if not chunk:
+                continue
+            raw_data.extend(chunk)
+            downloaded += len(chunk)
+            if total_size > 0:
+                event_bus.emit(UPDATE_LOADING_PROGRESS, 0.5 * downloaded / total_size)
 
-        cfg.progress = 1
-        cfg.show_progress = False
+        event_bus.emit(UPDATE_LOADING_PROGRESS, 0.5)
+
+        with zipfile.ZipFile(io.BytesIO(bytes(raw_data))) as zf:
+            namelist = zf.namelist()
+            if not namelist:
+                raise ValueError('Empty archive')
+
+            first_entry = namelist[0]
+            if '/' not in first_entry:
+                raise ValueError(f'Unexpected archive structure: {first_entry}')
+            root_prefix = first_entry.split('/')[0] + '/'
+            file_names = [n for n in namelist if not n.endswith('/')]
+            total_files = max(1, len(file_names))
+
+            for i, name in enumerate(file_names):
+                relative = name[len(root_prefix) :]
+                parts = Path(relative).parts
+                if parts and parts[0] in excludes:
+                    continue
+                target = Path(relative)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(zf.read(name))
+                event_bus.emit(
+                    UPDATE_LOADING_PROGRESS, 0.5 + 0.5 * (i + 1) / total_files
+                )
+
+        _record_check_time()
+        event_bus.emit(UPDATE_LOADING_PROGRESS, 1.0)
+        event_bus.emit(STOP_PROGRESS_LOADING)
         return True
+
     except Exception as e:
-        cfg.show_progress = False
+        event_bus.emit(STOP_PROGRESS_LOADING)
         _logger.exception(e)
         return False
 

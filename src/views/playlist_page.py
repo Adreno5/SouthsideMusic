@@ -53,9 +53,9 @@ class PlaylistPage(QWidget):
         super().__init__()
         self._logger = logging.getLogger(__name__)
         self.ctx = ctx
-        if ctx.launchwindow:
-            ctx.launchwindow.top('Initializing sidebar...')
-            self._launchwindow = ctx.launchwindow
+        if ctx.launch_window:
+            ctx.launch_window.top('Initializing sidebar...')
+            self._launchwindow = ctx.launch_window
         else:
             self._launchwindow = None
         self._ws_server: WebSocketServer = ctx.ws_server  # type: ignore
@@ -103,11 +103,11 @@ class PlaylistPage(QWidget):
 
     @property
     def _dp(self):
-        return self.ctx.dp
+        return self.ctx.playing_page
 
     @property
     def _mwindow(self):
-        return self.ctx.mwindow
+        return self.ctx.main_window
 
     @property
     def _player(self):

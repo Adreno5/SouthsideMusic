@@ -34,7 +34,7 @@ data/
 .agents/
 .mypy_cache/
 ffmpeg/
-
+update_check_time.json
 nul
 
 # 个人

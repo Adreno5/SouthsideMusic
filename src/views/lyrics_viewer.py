@@ -56,9 +56,9 @@ class LyricsViewer(QWidget):
         self._transmgr = ctx.transmgr
         self._ymgr = ctx.ymgr
         self._player = ctx.player
-        self._mwindow = ctx.mwindow
+        self._mwindow = ctx.main_window
         self._cfg = ctx.cfg
-        self._dp = ctx.dp
+        self._dp = ctx.playing_page
 
         self.draw_offset: float = 0
         self.target_draw_offset: float = 0

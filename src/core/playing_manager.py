@@ -107,11 +107,11 @@ class PlayingManager:
 
     @property
     def _mwindow_obj(self):
-        return self.ctx.mwindow if self.ctx is not None else None
+        return self.ctx.main_window if self.ctx is not None else None
 
     @property
     def _fp(self):
-        return self.ctx.fp if self.ctx is not None else None
+        return self.ctx.favorites_page if self.ctx is not None else None
 
     @property
     def _lock(self):
@@ -123,8 +123,8 @@ class PlayingManager:
 
     @property
     def play_mode(self) -> PlayMode:
-        if self.ctx is not None and self.ctx.stp:
-            mode = self.ctx.stp.play_method_box.currentText()
+        if self.ctx is not None and self.ctx.setting_page:
+            mode = self.ctx.setting_page.play_method_box.currentText()
             if mode in ('Repeat one', 'Repeat list', 'Shuffle', 'Play in order'):
                 return mode
         return cfg.play_method

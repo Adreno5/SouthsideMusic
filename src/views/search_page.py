@@ -37,11 +37,14 @@ class SearchPage(QWidget):
         super().__init__()
         self._logger = logging.getLogger(__name__)
         self.ctx = ctx
-        lw = ctx.launchwindow
+        lw = ctx.launch_window
         if lw:
             lw.top('Initializing search page...')
         self.setObjectName('search_page')
         self.img_card_map: dict[str, SongCard] = {}
+
+        self.searching = False
+        self.curr_offset = 0
 
         if lw:
             lw.top('  creating search input')
@@ -68,7 +71,7 @@ class SearchPage(QWidget):
 
     @property
     def _mwindow(self):
-        return self.ctx.mwindow
+        return self.ctx.main_window
 
     def checkRect(self) -> None:
         for i, card in enumerate(self.cards):
@@ -83,19 +86,27 @@ class SearchPage(QWidget):
                 self._logger.debug(f'loading {card.info["name"]}')
                 card.loadDetailAndImage()
 
+        bar = self.lst.verticalScrollBar()
+        if self.ctx.main_window and bar.value() >= bar.maximum() - 5 and not self.searching and self.ctx.main_window.contents_widget.currentWidget() == self:
+            self._logger.info(f'load more')
+            self.search(self.ctx.main_window.search_input.text(), self.curr_offset)
+
     def setImage_(self, byte: bytes, ca: SongCard):
         ca.img_label.setPixmap(QPixmap(byte))
 
-    def search(self, keywords: str) -> None:
-        self.lst.clear()
-        self.cards.clear()
-        self.img_card_map.clear()
+    def search(self, keywords: str, offset: int = 0) -> None:
+        self.searching = True
+
+        if offset == 0:
+            self.lst.clear()
+            self.cards.clear()
+            self.img_card_map.clear()
 
         result: list[SongInfo] = []
 
         def _do():
             nonlocal result
-            songs = get_backend().search(keywords)
+            songs = get_backend().search(keywords, offset=offset)
             result = [
                 SongInfo(
                     name=song['name'],
@@ -124,3 +135,7 @@ class SearchPage(QWidget):
             self.lst.setItemWidget(item, content_widget)
             self.cards.append(content_widget)
             content_widget.load = False
+
+        self.curr_offset += len(result)
+
+        self.searching = False

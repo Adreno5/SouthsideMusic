@@ -3,6 +3,8 @@ from __future__ import annotations
 import threading
 from typing import TYPE_CHECKING, cast
 
+from views.dependences_window import DependencesWindow
+
 if TYPE_CHECKING:
     from core.audio_player import AudioPlayer
     from core.config import Config
@@ -48,14 +50,16 @@ class AppContext:
         self.favs = favs if favs is not None else []
         self.lock = lock if lock is not None else threading.Lock()
         self.playing_manager: PlayingManager = cast('PlayingManager', None)
+        self.dependences_available: bool = True
 
         # main.py injects these after AppContext construction while building pages.
-        self.launchwindow: LaunchWindow = cast('LaunchWindow', None)
-        self.mwindow: MainWindow = cast('MainWindow', None)
-        self.dp: PlayingPage = cast('PlayingPage', None)
-        self.sp: SearchPage = cast('SearchPage', None)
-        self.dsp: DesktopLyricsPage = cast('DesktopLyricsPage', None)
-        self.fp: FavoritesPage = cast('FavoritesPage', None)
-        self.sep: SessionPage = cast('SessionPage', None)
-        self.stp: SettingPage = cast('SettingPage', None)
-        self.plp: PlaylistPage = cast('PlaylistPage', None)
+        self.launch_window: LaunchWindow = cast('LaunchWindow', None)
+        self.main_window: MainWindow = cast('MainWindow', None)
+        self.playing_page: PlayingPage = cast('PlayingPage', None)
+        self.search_page: SearchPage = cast('SearchPage', None)
+        self.desktop_lyrics_page: DesktopLyricsPage = cast('DesktopLyricsPage', None)
+        self.favorites_page: FavoritesPage = cast('FavoritesPage', None)
+        self.session_page: SessionPage = cast('SessionPage', None)
+        self.setting_page: SettingPage = cast('SettingPage', None)
+        self.playlist_page: PlaylistPage = cast('PlaylistPage', None)
+        self.dependences_window: DependencesWindow = cast('DependencesWindow', None)

@@ -29,7 +29,7 @@ from qfluentwidgets import (
 from views.list_widget import SListWidget
 
 from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable
-from core.favorites import loadFavorites, saveFavorites, favs
+from core.favorites import favorites_manager
 from core.backend import get_backend
 
 from views.playing_page import PlayingPage
@@ -40,7 +40,7 @@ class FavoritesPage(QWidget):
     def __init__(self, ctx: AppContext) -> None:
         super().__init__()
         self.ctx = ctx
-        lw = ctx.launchwindow
+        lw = ctx.launch_window
         if lw:
             lw.top('Initializing favorites page...')
         self.setObjectName('favorites_page')
@@ -76,15 +76,15 @@ class FavoritesPage(QWidget):
 
     @property
     def _dp(self):
-        return self.ctx.dp
+        return self.ctx.playing_page
 
     @property
     def _mwindow(self):
-        return self.ctx.mwindow
+        return self.ctx.main_window
 
     @property
     def _plp(self):
-        return self.ctx.plp
+        return self.ctx.playlist_page
 
     @property
     def _pm(self):
@@ -136,7 +136,7 @@ class FavoritesPage(QWidget):
         threading.Thread(target=_fetch, daemon=True).start()
 
     def _get_favs(self):
-        return favs
+        return favorites_manager.folders
 
     def _checkVisibleCards(self):
         for card in self._song_cards:
@@ -152,9 +152,6 @@ class FavoritesPage(QWidget):
                 card.loadDetailAndImage()
 
     def refresh(self):
-        if not self.is_cloud:
-            loadFavorites()
-
         self._song_cards = []
         self.song_viewer.clear()
 
@@ -211,23 +208,23 @@ class FavoritesPage(QWidget):
         if new_index < 0 or new_index >= len(songs):
             return
 
-        current_song = None
-        if 0 <= self._pm.current_index < len(songs):
-            current_song = songs[self._pm.current_index]
-
-        songs[old_index], songs[new_index] = (
-            songs[new_index],
-            songs[old_index],
+        current_song = (
+            songs[self._pm.current_index]
+            if 0 <= self._pm.current_index < len(songs)
+            else None
         )
-        if current_song is not None:
-            self._pm.current_index = songs.index(current_song)
-        self._pm.refreshRandom()
 
+        favorites_manager.moveSong(self.curr_folder['folder_name'], song, delta)
+
+        if current_song is not None:
+            try:
+                self._pm.current_index = songs.index(current_song)
+            except ValueError:
+                pass
+        self._pm.refreshRandom()
         self.refresh()
-        saveFavorites()
 
     def deleteSong(self, song_storable: SongStorable):
-        favs = loadFavorites()
         song_name = song_storable.name
 
         reply = QMessageBox.question(
@@ -237,18 +234,7 @@ class FavoritesPage(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
-            for folder in favs:
-                folder['songs'] = [s for s in folder['songs'] if s.name != song_name]
-            saveFavorites()
-
-            curr_folder_name = (
-                self.curr_folder['folder_name'] if self.curr_folder else ''
-            )
-            for folder in favs:
-                if folder['folder_name'] == curr_folder_name:
-                    self.curr_folder = folder
-                    break
-
+            favorites_manager.removeSong(song_name)
             self.refresh()
             InfoBar.success(
                 'Song deleted', f'Song {song_name} deleted', parent=self._mwindow

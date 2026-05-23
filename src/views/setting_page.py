@@ -67,7 +67,7 @@ class SettingPage(QWidget):
 
         self._logger = logging.getLogger(__name__)
         self.ctx = ctx
-        self._launchwindow = ctx.launchwindow
+        self._launchwindow = ctx.launch_window
         self._ws_server: WebSocketServer = ctx.ws_server  # type: ignore
         self._ws_handler: QObjectHandler = ctx.ws_handler  # type: ignore
         self._app = ctx.app
@@ -104,11 +104,11 @@ class SettingPage(QWidget):
 
     @property
     def _dp(self):
-        return self.ctx.dp
+        return self.ctx.playing_page
 
     @property
     def _mwindow(self):
-        return self.ctx.mwindow
+        return self.ctx.main_window
 
     @property
     def _player(self):
@@ -116,7 +116,7 @@ class SettingPage(QWidget):
 
     @property
     def _dsp(self):
-        return self.ctx.dsp
+        return self.ctx.desktop_lyrics_page
 
     def updateTheme(self) -> None:
         self.setStyleSheet(

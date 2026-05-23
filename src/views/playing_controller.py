@@ -81,9 +81,9 @@ class PlayingControllerLyricsViewer(QWidget):
         self._mgr = ctx.mgr
         self._ymgr = ctx.ymgr
         self._player = ctx.player
-        self._mwindow = ctx.mwindow
+        self._mwindow = ctx.main_window
         self._cfg = ctx.cfg
-        self._dp = ctx.dp
+        self._dp = ctx.playing_page
 
         self.ft = QFont(ctx.harmony_font_family, 9)
         self.font_height = QFontMetricsF(self.ft).height()
@@ -248,10 +248,10 @@ class PlayingController(QWidget):
         self._mgr: LRCLyricParser = _cast(LRCLyricParser, ctx.mgr)
         self._transmgr: LRCLyricParser = _cast(LRCLyricParser, ctx.transmgr)
         self._ymgr: YRCLyricParser = _cast(YRCLyricParser, ctx.ymgr)
-        self._dp: PlayingPage = ctx.dp  # type: ignore
-        self._mwindow: MainWindow = ctx.mwindow  # type: ignore
+        self._dp: PlayingPage = ctx.playing_page  # type: ignore
+        self._mwindow: MainWindow = ctx.main_window  # type: ignore
         self._ws_handler: QObjectHandler = _cast(QObjectHandler, ctx.ws_handler)
-        self._stp: SettingPage = ctx.stp  # type: ignore
+        self._stp: SettingPage = ctx.setting_page  # type: ignore
 
         self.dragging = False
 

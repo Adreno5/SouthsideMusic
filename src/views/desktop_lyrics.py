@@ -205,7 +205,7 @@ class DesktopLyricsViewer(LyricsViewer):
         return super().moveEvent(event)
 
     def paintEvent(self, event: QPaintEvent) -> None:
-        mwindow = self.ctx.mwindow
+        mwindow = self.ctx.main_window
         if not mwindow:
             return
         song_theme = getattr(mwindow, 'song_theme', None) or QColor(0, 0, 0)
@@ -316,22 +316,22 @@ class DesktopLyricsPage(QWidget):
         ctx: AppContext,
     ) -> None:
         super().__init__()
-        if ctx.launchwindow:
-            ctx.launchwindow.top('Initializing desktop lyrics page...')
+        if ctx.launch_window:
+            ctx.launch_window.top('Initializing desktop lyrics page...')
         self.ctx = ctx
         self._app = ctx.app
         self.setObjectName('desktop_lyrics_page')
 
-        if ctx.launchwindow:
-            ctx.launchwindow.top('  Creating desktop lyrics viewer...')
+        if ctx.launch_window:
+            ctx.launch_window.top('  Creating desktop lyrics viewer...')
         self.viewer = DesktopLyricsViewer(ctx)
         self.viewer.setVisible(cfg.enable_desktop_lyrics)
 
         self.viewer.move(cfg.desktop_lyrics_x, cfg.desktop_lyrics_y)
         self.viewer.resize(ctx.app.primaryScreen().size().width(), 65)
 
-        if ctx.launchwindow:
-            ctx.launchwindow.top('  Building settings panel...')
+        if ctx.launch_window:
+            ctx.launch_window.top('  Building settings panel...')
         global_layout = QVBoxLayout()
         global_layout.addWidget(TitleLabel('Desktop Lyrics'))
         self.inputer = CheckBox('Enable Desktop Lyrics')

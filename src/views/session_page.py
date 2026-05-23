@@ -24,7 +24,7 @@ class SessionPage(QWidget):
         super().__init__()
         self._logger = logging.getLogger(__name__)
         self.ctx = ctx
-        lw = ctx.launchwindow
+        lw = ctx.launch_window
         if lw:
             lw.top('Initializing session page...')
         self.setObjectName('session_page')
@@ -72,7 +72,7 @@ class SessionPage(QWidget):
 
     @property
     def _mwindow(self):
-        return self.ctx.mwindow
+        return self.ctx.main_window
 
     def _dialog_parent(self) -> QWidget:
         return self._mwindow or self

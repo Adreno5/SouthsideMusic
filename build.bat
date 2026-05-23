@@ -19,8 +19,6 @@ title Building - Copy fonts
 xcopy .\fonts .\build.result\fonts /E /I /Y
 title Building - Copy icons
 xcopy .\icons .\build.result\icons /E /I /Y
-title Building - Copy ffmpeg
-xcopy .\ffmpeg .\build.result\ffmpeg /E /I /Y
 title Building - Copy images
 xcopy .\images .\build.result\images /E /I /Y
 

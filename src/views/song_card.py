@@ -64,7 +64,8 @@ from core.downloader import (
 )
 from core.soundfile import getSongFormat, saveSongWithInformations
 from core import http_utils as requests
-from core.favorites import LocalFolderInfo, favs, saveFavorites
+from core.favorites import favorites_manager
+from core.models import LocalFolderInfo
 from core.backend import get_backend
 
 
@@ -167,7 +168,7 @@ class SongCard(QWidget):
             )
             return
 
-        folder_names = [f['folder_name'] for f in favs]
+        folder_names = [f['folder_name'] for f in favorites_manager.folders]
         folder_names.append('Create New Folder...')
         chosen = get_value_bylist(
             self._mwindow,
@@ -183,11 +184,13 @@ class SongCard(QWidget):
                 self._mwindow, 'Create New Folder', 'My first folder', self._mwindow
             )
             if chosen:
-                favs.append({'folder_name': chosen, 'songs': []})
+                favorites_manager.addFolder(chosen)
 
             target_folder = LocalFolderInfo(folder_name=chosen, songs=[])
         else:
-            target_folder = next(f for f in favs if f['folder_name'] == chosen)
+            target_folder = next(
+                f for f in favorites_manager.folders if f['folder_name'] == chosen
+            )
 
         result_container = []
         _finished = False
@@ -239,8 +242,14 @@ class SongCard(QWidget):
                 content_cache_hash=content_cache_hash,
                 lyric='',
             )
-            target_folder['songs'].append(storable)
-            saveFavorites()
+            if not favorites_manager.addSong(chosen, storable):
+                InfoBar.warning(
+                    'Folder not found',
+                    f"Folder '{chosen}' may have been removed",
+                    parent=self._mwindow,
+                    duration=3000,
+                )
+                return
 
             InfoBar.success(
                 'Favorited',
@@ -408,7 +417,7 @@ class _SongCardItem(QWidget):
                 with open(cache_path, 'wb') as f:
                     f.write(image_bytes)
             storable.image_cache_hash = cache_hash
-            saveFavorites()
+            favorites_manager._save()
             if self._mwindow:
                 self._mwindow.addScheduledTask(
                     lambda s=storable: event_bus.emit(IMAGE_ASSET_PERSISTED, s)

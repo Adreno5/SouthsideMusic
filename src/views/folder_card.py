@@ -148,9 +148,9 @@ class CloudFolderCard(QWidget):
                     with open(file, 'wb') as f:
                         f.write(image_bytes)
 
-                self._ctx.mwindow.addScheduledTask(applyPixmap)
+                self._ctx.main_window.addScheduledTask(applyPixmap)
 
-            doWithMultiThreading(_download, (), self._ctx.mwindow)
+            doWithMultiThreading(_download, (), self._ctx.main_window)
         else:
             with open(file, 'rb') as f:
                 image_bytes = f.read()

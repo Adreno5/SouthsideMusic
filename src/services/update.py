@@ -3,14 +3,18 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
+import subprocess
+import sys
 import time
 import zipfile
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
+from urllib.parse import quote as _url_quote
 
 import requests as raw_requests
-import toml  # type: ignore[import-untyped]
 from imports import (
     QMessageBox,
     event_bus,
@@ -19,22 +23,23 @@ from imports import (
     UPDATE_LOADING_PROGRESS,
 )
 
-
 _logger = logging.getLogger(__name__)
 
 excludes = ['ffmpeg']
 _CHECK_INTERVAL_SECONDS = 24 * 3600
 _LAST_CHECK_FILE = Path('update_check_time.json')
-USER_AGENT = (
+_INSTALLED_SHA_FILE = Path('installed_release.json')
+_USER_AGENT = (
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
     'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36'
 )
+_REPO_OWNER = 'Adreno5'
+_REPO_NAME = 'SouthsideMusic'
 
 
 class UpdateInfo(TypedDict):
-    newest: int
-    current: int
-    download_url: str
+    tag_name: str
+    published_at: str
 
 
 def _should_check_updates() -> bool:
@@ -56,21 +61,51 @@ def _record_check_time() -> None:
         pass
 
 
-def _read_current_version() -> int:
-    parsed = toml.load(Path('pyproject.toml').read_text(encoding='utf-8'))
-    return int(parsed['project']['version'].removeprefix('v'))
+def _read_installed_published_at() -> str | None:
+    try:
+        data = json.loads(_INSTALLED_SHA_FILE.read_text(encoding='utf-8'))
+        return data.get('published_at')
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
+        return None
+
+
+def _write_installed_release(published_at: str, tag_name: str) -> None:
+    try:
+        _INSTALLED_SHA_FILE.write_text(
+            json.dumps({'published_at': published_at, 'tag_name': tag_name}),
+            encoding='utf-8',
+        )
+    except OSError:
+        pass
+
+
+def _parse_iso_timestamp(s: str) -> datetime | None:
+    for suffix in ('Z', '+00:00', '-00:00'):
+        if s.endswith(suffix):
+            s = s[: -len(suffix)] + '+00:00'
+            break
+    else:
+        s = s + '+00:00'
+    try:
+        return datetime.fromisoformat(s)
+    except ValueError:
+        return None
 
 
 def _fetch_latest_release() -> dict | None:
     try:
         resp = raw_requests.get(
-            'https://api.github.com/repos/Adreno5/SouthsideMusic/releases/latest',
-            headers={'User-Agent': USER_AGENT},
+            f'https://api.github.com/repos/{_REPO_OWNER}/{_REPO_NAME}/releases/latest',
+            headers={'User-Agent': _USER_AGENT},
             timeout=30,
         )
         resp.raise_for_status()
         data = resp.json()
-        if not isinstance(data, dict) or 'tag_name' not in data:
+        if (
+            not isinstance(data, dict)
+            or 'tag_name' not in data
+            or 'published_at' not in data
+        ):
             _logger.warning('Unexpected release API response: %s', data)
             return None
         return data
@@ -83,25 +118,39 @@ def checkForUpdates() -> UpdateInfo | None:
     if not _should_check_updates():
         return None
 
-    current = _read_current_version()
-
     latest = _fetch_latest_release()
     if latest is None:
         return None
 
-    tag_name = latest.get('tag_name', '')
-    newest = int(tag_name.removeprefix('v'))
-    if newest <= current:
+    published_at: str = latest.get('published_at', '')
+    tag_name: str = latest.get('tag_name', '')
+
+    latest_dt = _parse_iso_timestamp(published_at)
+    if latest_dt is None:
+        _logger.warning('Could not parse published_at: %s', published_at)
+        return None
+
+    installed_ts = _read_installed_published_at()
+    if installed_ts is None:
+        _write_installed_release(published_at, tag_name)
         _record_check_time()
         return None
 
-    zipball_url = latest.get('zipball_url')
-    if not isinstance(zipball_url, str) or not zipball_url:
+    installed_dt = _parse_iso_timestamp(installed_ts)
+    if installed_dt is not None and latest_dt <= installed_dt:
         _record_check_time()
         return None
 
     _record_check_time()
-    return UpdateInfo(current=current, newest=newest, download_url=zipball_url)
+    return UpdateInfo(tag_name=tag_name, published_at=published_at)
+
+
+def _build_codeload_url(tag_name: str) -> str:
+    encoded = _url_quote(tag_name, safe='')
+    return (
+        f'https://codeload.github.com/{_REPO_OWNER}/{_REPO_NAME}'
+        f'/zip/refs/tags/{encoded}'
+    )
 
 
 def applyUpdate(update_info: UpdateInfo) -> bool:
@@ -109,9 +158,11 @@ def applyUpdate(update_info: UpdateInfo) -> bool:
         event_bus.emit(START_PROGRESS_LOADING)
         event_bus.emit(UPDATE_LOADING_PROGRESS, 0.0)
 
+        download_url = _build_codeload_url(update_info['tag_name'])
+
         response = raw_requests.get(
-            update_info['download_url'],
-            headers={'User-Agent': USER_AGENT, 'Accept': 'application/zip,*/*'},
+            download_url,
+            headers={'User-Agent': _USER_AGENT, 'Accept': 'application/zip,*/*'},
             stream=True,
             timeout=180,
         )
@@ -154,6 +205,7 @@ def applyUpdate(update_info: UpdateInfo) -> bool:
                     UPDATE_LOADING_PROGRESS, 0.5 + 0.5 * (i + 1) / total_files
                 )
 
+        _write_installed_release(update_info['published_at'], update_info['tag_name'])
         _record_check_time()
         event_bus.emit(UPDATE_LOADING_PROGRESS, 1.0)
         event_bus.emit(STOP_PROGRESS_LOADING)
@@ -187,11 +239,10 @@ def applyUpdateImmediately(update_info: UpdateInfo, mwindow=None) -> None:
             QMessageBox.information(
                 mwindow,
                 'Update Complete',
-                'Update completed. Please restart the app.',
+                'Update completed. Restarting...',
                 QMessageBox.StandardButton.Ok,
             )
-            if mwindow:
-                mwindow.close()
+            _restart_app()
         else:
             QMessageBox.warning(
                 mwindow,
@@ -202,3 +253,18 @@ def applyUpdateImmediately(update_info: UpdateInfo, mwindow=None) -> None:
 
     if mwindow:
         mwindow.addScheduledTask(_show_result)
+    else:
+        _show_result()
+
+
+def _restart_app() -> None:
+    args = [sys.executable] + sys.argv
+    if sys.platform == 'win32':
+        subprocess.Popen(
+            args,
+            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
+            close_fds=True,
+        )
+    else:
+        subprocess.Popen(args, start_new_session=True, close_fds=True)
+    os._exit(0)

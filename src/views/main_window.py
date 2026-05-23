@@ -69,7 +69,7 @@ from core import theme
 from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable
 from core.color import mixColor
 from core.config import saveConfig, cfg
-from core.favorites import saveFavorites, favs
+from core.favorites import favorites_manager, saveFavorites
 from core.icons import bindIcon, getQIcon
 from core.downloader import doWithMultiThreading
 from views.folder_card import CloudFolderCard, LocalFolderCard
@@ -91,27 +91,27 @@ class MainWindow(FluentWindowBase):
         super().__init__(parent)
         self._logger = logging.getLogger(__name__)
         self.ctx = ctx
-        ctx.mwindow = self
+        ctx.main_window = self
         self._app = ctx.app
-        self._dp = ctx.dp
-        self._sp = ctx.sp
-        self._dsp = ctx.dsp
-        self._fp = ctx.fp
-        self._sep = ctx.sep
+        self._dp = ctx.playing_page
+        self._sp = ctx.search_page
+        self._dsp = ctx.desktop_lyrics_page
+        self._fp = ctx.favorites_page
+        self._sep = ctx.session_page
         self._player = ctx.player
         self._ws_server = ctx.ws_server
         self._ws_handler = ctx.ws_handler
-        self._launchwindow = ctx.launchwindow
+        self._launchwindow = ctx.launch_window
         self._loading_song: bool = False
-        self._stp = ctx.stp
-        self._plp = ctx.plp
+        self._stp = ctx.setting_page
+        self._plp = ctx.playlist_page
 
         self._sp.resultGot.connect(lambda: setattr(self, 'searching', False))
 
         self.contents_widget = QStackedWidget()
         for w in [self._fp, self._sp, self._stp, self._sep]:
-            if ctx.launchwindow:
-                ctx.launchwindow.push(f'Adding {w} to stacked widget...')
+            if ctx.launch_window:
+                ctx.launch_window.push(f'Adding {w} to stacked widget...')
             self.contents_widget.addWidget(w)
 
         self.contents_widget.currentChanged.connect(self.onStackedWidgetChanged)
@@ -144,8 +144,8 @@ class MainWindow(FluentWindowBase):
         ctx.player.onFullFinished.connect(lambda: event_bus.emit(SONG_FINISH))
         ctx.player.onEndingNoSound.connect(ctx.playing_manager.onEndingNoSound)
 
-        if ctx.launchwindow:
-            ctx.launchwindow.top('  Wiring signal connections...')
+        if ctx.launch_window:
+            ctx.launch_window.top('  Wiring signal connections...')
 
         self.controller.setParent(self)
 
@@ -204,7 +204,8 @@ class MainWindow(FluentWindowBase):
 
         self.delta = 1 / self.refresh_rate
 
-        self.show()
+        if self.ctx.dependences_available:
+            self.show()
 
         self.setMinimumSize(ctx.app.primaryScreen().size() * 0.4)
 
@@ -476,8 +477,8 @@ class MainWindow(FluentWindowBase):
                 self._launchwindow.deleteLater()
 
                 self.refreshFolders()
-                if len(favs) > 0:
-                    self._fp.setDisplayFolder(favs[0])
+                if favorites_manager.folders:
+                    self._fp.setDisplayFolder(favorites_manager.folders[0])
 
             self.addScheduledTask(_show)
 
@@ -485,7 +486,7 @@ class MainWindow(FluentWindowBase):
 
         InfoBar.info(
             'Initialization',
-            f'Loaded {len(favs)} folders',
+            f'Loaded {len(favorites_manager.folders)} folders',
             parent=self,
             duration=2000,
         )
@@ -495,7 +496,7 @@ class MainWindow(FluentWindowBase):
 
         self.folders_list.addItem(QListWidgetItem('Local'))
 
-        for folder in favs:
+        for folder in favorites_manager.folders:
             card = LocalFolderCard(folder, self.folders_list.width())
             card.clicked.connect(lambda f=folder: self._openFolder(f))
             item = QListWidgetItem()
@@ -560,8 +561,7 @@ class MainWindow(FluentWindowBase):
             'Add New Folder', 'enter name of your new folder', 'my folder', self
         )
         if name:
-            new = LocalFolderInfo(folder_name=name, songs=[])
-            favs.append(new)
+            new = favorites_manager.addFolder(name)
             self.refreshFolders()
             self._fp.setDisplayFolder(new)
 

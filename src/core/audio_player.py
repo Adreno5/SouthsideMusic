@@ -1,10 +1,14 @@
 import array
+import json
 import logging
 
+import re
+from shutil import which
 import struct
 import subprocess
 from queue import Queue, Full
 import sys
+from warnings import warn
 import numpy as np
 import sounddevice as sd
 from pathlib import Path
@@ -15,7 +19,7 @@ from scipy.fft import rfft, rfftfreq
 from imports import QMessageBox
 from core.config import cfg
 
-from pydub.utils import mediainfo_json, fsdecode, _fd_or_path_or_tempfile, audioop
+from pydub.utils import fsdecode, _fd_or_path_or_tempfile, audioop, mediainfo_json
 from pydub.logging_utils import log_conversion
 from pydub.exceptions import CouldntDecodeError
 from pydub import AudioSegment
@@ -95,11 +99,6 @@ def getAudioDevices() -> list[DevicesInfo]:
 
 class PatchedAudioSegment(AudioSegment):
     _logger = logging.getLogger(__name__)
-
-    def __init__(self, data=None, *args, **kwargs):
-        super().__init__(data, *args, **kwargs)
-        self.converter = r'ffmpeg\bin\ffmpeg.exe'
-        self.ffmpeg = r'ffmpeg\bin\ffmpeg.exe'
 
     @override
     @classmethod
@@ -181,7 +180,7 @@ class PatchedAudioSegment(AudioSegment):
                 ]  # type: ignore
 
         conversion_command = [
-            r'ffmpeg\bin\ffmpeg.exe',
+            cls.converter,
             '-y',  # always overwrite existing files
         ]
 
@@ -644,7 +643,7 @@ class AudioPlayer(QObject):
             if rms > 0:
                 self.db = 20 * np.log10(rms)
             else:
-                self.db = -float('inf')
+                self.db = -100
             event_bus.emit(DB_CHANGED, self.db)
 
             remain = self.getLength() - self._playback_time

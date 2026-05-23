@@ -7,6 +7,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'views'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'services'))
 sys.path.append(os.path.dirname(__file__))
 
+from views.dependences_window import DependencesWindow
 import logging
 
 from views.playlist_page import PlaylistPage
@@ -27,7 +28,7 @@ from qfluentwidgets import setTheme, Theme
 import shiboken6
 
 from core.config import loadConfig, saveConfig, cfg, autosave_thread
-from core.favorites import loadFavorites, saveFavorites, favs
+from core.favorites import favorites_manager
 from core.icons import refreshBoundIcons
 from core.audio_player import AudioPlayer
 from core.backend import init_backend
@@ -137,20 +138,10 @@ def patchedExceptHook(
 
 sys.excepthook = patchedExceptHook
 
-pydub.AudioSegment.converter = r'ffmpeg\bin\ffmpeg.exe'
-pydub.AudioSegment.ffmpeg = r'ffmpeg\bin\ffmpeg.exe'
-
-if getattr(sys, 'frozen', False):
-    base_dir = os.path.dirname(sys.executable)
-else:
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-
-ffmpeg_dir = os.path.join(base_dir, 'ffmpeg', 'bin')
-os.environ['PATH'] = ffmpeg_dir + os.pathsep + os.environ['PATH']
-
 import subprocess  # noqa: E402
 
 original_popen = subprocess.Popen
+
 
 def patched_popen(*args, **kwargs):
     startupinfo = subprocess.STARTUPINFO()
@@ -277,7 +268,7 @@ if __name__ == '__main__':
     player = AudioPlayer()
 
     launchwindow.push('Loading favorites...')
-    loadFavorites()
+    favorites_manager.load()
 
     autosave_thread.start()
 
@@ -317,55 +308,63 @@ if __name__ == '__main__':
         ws_server=ws_server,
         ws_handler=ws_handler,
         harmony_font_family=harmony_font_family,
-        favs=favs,
+        favs=favorites_manager.folders,
         lock=lock,
     )
-    ctx.launchwindow = launchwindow
+    ctx.launch_window = launchwindow
     ctx.playing_manager = PlayingManager(ctx)
 
-    launchwindow.push('Initializing events services...')
-    events_service = EventsServices(ctx)
+    launchwindow.subtitle('Preparing (checking dependences...)')
+    depwindow = DependencesWindow(ctx)
 
-    launchwindow.push('Initializing playing page...')
-    dp = PlayingPage(ctx)
-    ctx.dp = dp
-    launchwindow.push('Initializing search page...')
-    sp = SearchPage(ctx)
-    ctx.sp = sp
-    launchwindow.push('Initializing desktop lyrics page...')
-    dsp = DesktopLyricsPage(ctx)
-    ctx.dsp = dsp
-    launchwindow.push('Initializing favorites page...')
-    fp = FavoritesPage(ctx)
-    ctx.fp = fp
-    launchwindow.push('Initializing session page...')
-    sep = SessionPage(ctx)
-    ctx.sep = sep
-    launchwindow.push('Initializing setting page...')
-    stp = SettingPage(ctx)
-    ctx.stp = stp
-    launchwindow.push('Initializing playlist page...')
-    plp = PlaylistPage(ctx)
-    ctx.plp = plp
+    def _postStageInit():
+        if not launchwindow:
+            return
+        launchwindow.push('Initializing events services...')
+        events_service = EventsServices(ctx)
 
-    ctx.dp = dp
-    ctx.sp = sp
-    ctx.dsp = dsp
-    ctx.fp = fp
-    ctx.sep = sep
-    ctx.stp = stp
-    ctx.plp = plp
+        launchwindow.push('Initializing playing page...')
+        dp = PlayingPage(ctx)
+        ctx.playing_page = dp
+        launchwindow.push('Initializing search page...')
+        sp = SearchPage(ctx)
+        ctx.search_page = sp
+        launchwindow.push('Initializing desktop lyrics page...')
+        dsp = DesktopLyricsPage(ctx)
+        ctx.desktop_lyrics_page = dsp
+        launchwindow.push('Initializing favorites page...')
+        fp = FavoritesPage(ctx)
+        ctx.favorites_page = fp
+        launchwindow.push('Initializing session page...')
+        sep = SessionPage(ctx)
+        ctx.session_page = sep
+        launchwindow.push('Initializing setting page...')
+        stp = SettingPage(ctx)
+        ctx.setting_page = stp
+        launchwindow.push('Initializing playlist page...')
+        plp = PlaylistPage(ctx)
+        ctx.playlist_page = plp
 
-    launchwindow.push('Initializing main window...')
-    mwindow = MainWindow(ctx)
-    ctx.mwindow = mwindow
+        ctx.playing_page = dp
+        ctx.search_page = sp
+        ctx.desktop_lyrics_page = dsp
+        ctx.favorites_page = fp
+        ctx.session_page = sep
+        ctx.setting_page = stp
+        ctx.playlist_page = plp
 
-    mwindow.init()
+        launchwindow.push('Initializing main window...')
+        mwindow = MainWindow(ctx)
+        ctx.main_window = mwindow
 
-    fp.refresh()
+        mwindow.init()
 
-    _ims.QTimer.singleShot(2000, lambda: startUpdateCheck(mwindow))
+        fp.refresh()
 
-    _logger.debug(f'{sys.path=}')
+        _ims.QTimer.singleShot(2000, lambda: startUpdateCheck(mwindow))
+
+        _logger.debug(f'{sys.path=}')
+
+    depwindow.all_checked.connect(_postStageInit)
 
     app.exec()

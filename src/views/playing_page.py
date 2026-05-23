@@ -53,9 +53,9 @@ class PlayingPage(QWidget):
     ) -> None:
         super().__init__()
         self._logger = logging.getLogger(__name__)
-        if ctx.launchwindow:
-            ctx.launchwindow.top('Initializing playing page...')
-            self._lw = ctx.launchwindow
+        if ctx.launch_window:
+            ctx.launch_window.top('Initializing playing page...')
+            self._lw = ctx.launch_window
         else:
             self._lw = None
         self.ctx = ctx
@@ -130,7 +130,7 @@ class PlayingPage(QWidget):
 
     @property
     def _mwindow_obj(self):
-        return self.ctx.mwindow
+        return self.ctx.main_window
 
     @property
     def playlist(self) -> list[SongStorable]:

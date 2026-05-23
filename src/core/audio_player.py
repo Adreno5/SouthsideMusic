@@ -90,6 +90,7 @@ class DevicesInfo(TypedDict):
 
 def getAudioDevices() -> list[DevicesInfo]:
     devices = sd.query_devices()
+    print(devices)
     result: list[DevicesInfo] = []
     for i, dev in enumerate(devices):
         if dev['max_output_channels'] > 0:
@@ -683,3 +684,6 @@ class AudioPlayer(QObject):
 
             if was_playing:
                 self._start_stream()
+
+    def getCurrentOutputDevice(self) -> DevicesInfo:
+        return getAudioDevices()[self._device_id]

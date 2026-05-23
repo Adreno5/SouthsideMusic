@@ -27,6 +27,8 @@ class Config:
     last_playing_index: int = -1
     last_playing_time: float = 0
 
+    output_device_index: int = 0
+
     window_x: int = 0
     window_y: int = 0
     window_width: int = 0

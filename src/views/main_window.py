@@ -252,7 +252,7 @@ class MainWindow(FluentWindowBase):
         event_bus.subscribe(START_PROGRESS_LOADING, self.onStartProgressLoading)
         event_bus.subscribe(UPDATE_LOADING_PROGRESS, self.onUpdateLoadingProgress)
         event_bus.subscribe(ENDING_NO_SOUND, lambda: event_bus.emit(SONG_FINISH))
-        event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self.updateDatas)
+        event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self.update)
         event_bus.subscribe(VIEW_FOLDER, self.onViewFolder)
         event_bus.subscribe(MWINDOW_REFRESH_FOLDERS, self.refreshFolders)
 

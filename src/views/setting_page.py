@@ -48,7 +48,7 @@ from core.icons import bindIcon
 from core import theme as darkdetect
 from core.downloader import doWithMultiThreading
 from core.loudness import getAdjustedGainFactor
-from core.audio_player import AudioSegment, AudioPlayer
+from core.audio_player import AudioSegment, AudioPlayer, getAudioDevices
 from core.config import cfg
 from views.song_card import DummyCard
 from core.ws_server import (
@@ -163,6 +163,15 @@ class SettingPage(QWidget):
             1,
             'skip_remain_time',
         )
+
+        self.device_selector = ComboBox()
+        self.device_selector.addItems([
+            f'{obj['index'] + 1}. {obj['display_name']}' for obj in getAudioDevices()
+        ])
+        self.device_selector.setCurrentIndex(self._player._device_id)
+        self.device_selector.currentIndexChanged.connect(self.deviceChanged)
+        self.device_selector.setCurrentIndex(cfg.output_device_index)
+        self.addSetting('Output Device', 'the device to output audio', self.device_selector)
 
         if lw:
             lw.top('Setting up window options...')
@@ -314,6 +323,18 @@ class SettingPage(QWidget):
 
         for slider in self.findChildren(QSlider):
             slider.wheelEvent = lambda e: e.ignore()  # type: ignore[method-assign]
+
+    def deviceChanged(self, idx: int):
+        try:
+            device = getAudioDevices()[idx]
+            self._player.setOutputDevice(device)
+            if self._mwindow:
+                InfoBar.success(
+                    'Device changed', f'changed output deivce to {device['display_name']}', duration=3000, parent=self._mwindow
+                )
+            cfg.output_device_index = idx
+        except:
+            pass
 
     def onSliderReleased(self):
         InfoBar.info(

@@ -7,7 +7,7 @@ import logging
 import os
 import threading
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import numpy as np
 
@@ -26,7 +26,7 @@ from core.loudness import getAdjustedGainFactor
 from core.models import (
     IMAGE_DATA_DIR,
     MUSIC_DATA_DIR,
-    SongInfo,
+    SearchSongInfo,
     SongStorable,
     TrackLyricsInfo,
 )
@@ -323,10 +323,14 @@ class PlayingManager:
         player = self._player
         if player is None or not player.isPlaying():
             return
-        if not self._preload_triggered and self.getNextSong(
-            self.play_mode,
-            reserve=True,
-        ) is not None:
+        if (
+            not self._preload_triggered
+            and self.getNextSong(
+                self.play_mode,
+                reserve=True,
+            )
+            is not None
+        ):
             self._preload_triggered = True
             self.preloadNextSong()
         if self.getNextSong(self.play_mode) is None:
@@ -360,7 +364,7 @@ class PlayingManager:
         if favorites_changed:
             saveFavorites()
 
-    def playSearchSong(self, info: SongInfo, image_url: str) -> None:
+    def playSearchSong(self, info: SearchSongInfo, image_url: str) -> None:
         player = self._player
         if player is not None and player.isPlaying():
             player.stop()
@@ -394,7 +398,12 @@ class PlayingManager:
             prepared['_playing'] = True
 
             storable = SongStorable(
-                info=info,
+                info={
+                    'name': info['name'],
+                    'artists': '、'.join(a['name'] for a in info['artists']),
+                    'id': str(info['id']),
+                    'privilege': info['privilege']['fee'],
+                },
                 image=image,
                 music_bin=music,
                 lyric=lyrics_data.get('lyric', ''),
@@ -436,7 +445,7 @@ class PlayingManager:
 
         def _process_audio() -> None:
             try:
-                audio = get_backend().get_track_audio(song_id, bitrate=3200 * 1000)
+                audio = get_backend().get_track_audio(song_id, bitrate=info['privilege']['max_br'])
                 prepared['music_url'] = audio['url']
             except Exception as e:
                 prepared['music_error'] = str(e)
@@ -495,7 +504,9 @@ class PlayingManager:
                     daemon=True,
                 ).start()
 
-            def _download_then_preload(image_missing: bool, music_missing: bool) -> None:
+            def _download_then_preload(
+                image_missing: bool, music_missing: bool
+            ) -> None:
                 self._logger.info('downloading next song before preload')
                 self.next_song_audio = None
                 self.next_song_gain = None
@@ -553,16 +564,18 @@ class PlayingManager:
                     self._logger.info('discarding stale preload')
                     return
 
-                self.next_song_audio = audio
+                self.next_song_audio = audio # type: ignore
                 if next_song.target_lufs != cfg.target_lufs:
-                    gain = getAdjustedGainFactor(cfg.target_lufs, self.next_song_audio)
+                    gain = getAdjustedGainFactor(cfg.target_lufs, self.next_song_audio) # type: ignore
                     self._setStorableLoudness(next_song, cfg.target_lufs, gain)
-                self.next_song_gain = next_song.loudness_gain
+                else:
+                    gain = next_song.loudness_gain
+                self.next_song_gain = gain
 
                 self._logger.debug(
                     f'preload -> applying gain {self.next_song_gain} {cfg.target_lufs=}'
                 )
-                self.next_song_audio = self.next_song_audio.apply_gain(
+                self.next_song_audio = self.next_song_audio.apply_gain( # type: ignore
                     20 * np.log10(self.next_song_gain)
                 )
 
@@ -821,7 +834,7 @@ class PlayingManager:
         self,
         song_storable: SongStorable,
         preloaded_audio: AudioSegment_ | None = None,
-    ) -> AudioSegment_:
+    ) -> AudioSegment_ | Any:
         if preloaded_audio is not None:
             return preloaded_audio
 
@@ -946,16 +959,19 @@ class PlayingManager:
             try:
                 lyric_result = get_backend().get_track_lyrics(song_storable.id)
             except Exception:
-                self._logger.exception('failed to download lyrics for storable playback')
+                self._logger.exception(
+                    'failed to download lyrics for storable playback'
+                )
                 lyric_result = None
 
         def _apply() -> None:
             if self.current_song is not lyric_target:
                 return
 
-            mgr = self.ctx.mgr
-            transmgr = self.ctx.transmgr
-            ymgr = self.ctx.ymgr
+            if self.ctx:
+                mgr = self.ctx.mgr
+                transmgr = self.ctx.transmgr
+                ymgr = self.ctx.ymgr
 
             if lyric_result is None:
                 lyrics = lyric_target.get_lyrics()
@@ -965,8 +981,7 @@ class PlayingManager:
             else:
                 mgr.cur = lyric_result.get('lyric', '[00:00.000]') or '[00:00.000]'
                 transmgr.cur = (
-                    lyric_result.get('translated_lyric', '[00:00.000]')
-                    or '[00:00.000]'
+                    lyric_result.get('translated_lyric', '[00:00.000]') or '[00:00.000]'
                 )
                 ymgr.cur = lyric_result.get('yrc_lyric', '')
                 lyric_target.write_lyrics(

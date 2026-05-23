@@ -38,6 +38,7 @@ if TYPE_CHECKING:
 class DependencesWindow(QWidget):
     check_done = Signal(str, bool, str)
     all_checked = Signal()
+    _configure_pydub = Signal(str, str)
 
     update_progress = Signal(float)
 
@@ -48,6 +49,9 @@ class DependencesWindow(QWidget):
         self.logger = logging.getLogger(__name__)
 
         self.check_done.connect(self._on_check_done, Qt.ConnectionType.QueuedConnection)
+        self._configure_pydub.connect(
+            self._set_pydub_config, Qt.ConnectionType.QueuedConnection
+        )
 
         self.setWindowTitle('Dependences Checking')
         self.setWindowFlags(
@@ -187,11 +191,7 @@ class DependencesWindow(QWidget):
         manager = downloadWithMultiThreading(url, parent=self, finished=_finished)
         manager.receiveProgress.connect(_progress)
 
-    def _add_ffmpeg_to_path(self, ffmpeg_dir: str) -> None:
-        bin_path = os.path.abspath(os.path.join(ffmpeg_dir, 'bin'))
-        ffmpeg_exe = os.path.join(bin_path, 'ffmpeg.exe')
-        ffprobe_exe = os.path.join(bin_path, 'ffprobe.exe')
-
+    def _set_pydub_config(self, ffmpeg_exe: str, ffprobe_exe: str) -> None:
         import pydub
 
         pydub.AudioSegment.converter = ffmpeg_exe
@@ -199,6 +199,13 @@ class DependencesWindow(QWidget):
             import pydub.utils as _pu
 
             _pu.get_prober_name = lambda: ffprobe_exe
+
+    def _add_ffmpeg_to_path(self, ffmpeg_dir: str) -> None:
+        bin_path = os.path.abspath(os.path.join(ffmpeg_dir, 'bin'))
+        ffmpeg_exe = os.path.join(bin_path, 'ffmpeg.exe')
+        ffprobe_exe = os.path.join(bin_path, 'ffprobe.exe')
+
+        self._configure_pydub.emit(ffmpeg_exe, ffprobe_exe)
 
         current_path = os.environ.get('PATH', '')
         if bin_path.lower() in (p.lower() for p in current_path.split(os.pathsep)):

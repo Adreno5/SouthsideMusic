@@ -8,7 +8,7 @@ import darkdetect
 from core.app_context import AppContext
 from core.color import mixColor
 from core.config import cfg
-from core.models import SongInfo, SongStorable
+from core.models import SearchSongInfo, SongStorable
 from core.playing_manager import PlayMode
 from imports import (
     BACKGROUND_RATIO_CHANGED,
@@ -258,7 +258,7 @@ class PlayingPage(QWidget):
         painter.setBrush(card.backgroundColor)
         painter.drawRoundedRect(rect, r, r)
 
-    def _onPlaybackSongLoading(self, song: SongStorable | SongInfo) -> None:
+    def _onPlaybackSongLoading(self, song: SongStorable | SearchSongInfo) -> None:
         for label in self.findChildren(QLabel):
             label.setWordWrap(True)
 
@@ -269,7 +269,7 @@ class PlayingPage(QWidget):
         else:
             self.cur = None
             self.title_label.setText(song['name'])
-            self.artists_label.setText(song['artists'])
+            self.artists_label.setText('、'.join(a['name'] for a in song['artists']))
 
         self._mgr.cur = ''
         self._transmgr.cur = ''
@@ -285,7 +285,7 @@ class PlayingPage(QWidget):
 
     def _onPlaybackImageLoaded(
         self,
-        song: SongStorable | SongInfo,
+        song: SongStorable | SearchSongInfo,
         image_bytes: bytes,
         avg_color: list[int] | tuple[int, int, int] | None = None,
     ) -> None:
@@ -335,9 +335,7 @@ class PlayingPage(QWidget):
         if pixmap is None or pixmap.isNull():
             return
 
-        pixmap = pixmap.scaled(
-            pixmap.size(), Qt.AspectRatioMode.KeepAspectRatio
-        )
+        pixmap = pixmap.scaled(pixmap.size(), Qt.AspectRatioMode.KeepAspectRatio)
 
         buffer = QBuffer()
         buffer.open(QIODevice.OpenModeFlag.WriteOnly)

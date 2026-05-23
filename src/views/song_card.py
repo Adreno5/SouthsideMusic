@@ -51,6 +51,7 @@ from qfluentwidgets import (
 from core.models import (
     IMAGE_DATA_DIR,
     MUSIC_DATA_DIR,
+    SearchSongInfo,
     SongDetail,
     SongInfo,
     SongStorable,
@@ -94,7 +95,7 @@ class DummyCard:
 class SongCard(QWidget):
     imageLoaded = Signal(bytes)
 
-    def __init__(self, info: SongInfo, play_callback: Callable, mwindow) -> None:
+    def __init__(self, info: SearchSongInfo, play_callback: Callable, mwindow) -> None:
         super().__init__()
         self.info = info
         self._play_callback = play_callback
@@ -113,25 +114,19 @@ class SongCard(QWidget):
         self.ring = IndeterminateProgressRing()
         self.ring.setFixedSize(100, 100)
         top_layout.addWidget(self.ring)
+        artists_text = '、'.join(a['name'] for a in info['artists'])
         title_label = SubtitleLabel(info['name'])
         top_layout.addWidget(title_label)
-        artists_label = QLabel(info['artists'])
+        artists_label = QLabel(artists_text)
         artists_label.setWordWrap(True)
         top_layout.addWidget(artists_label)
-        user_vip = get_backend().user_privilege_level()
         self.vip_label = SubtitleLabel(
-            f'Need more privilege ({info["privilege"]}(song)>{user_vip}(yours))'
+            f'Need more privilege'
         )
         self.vip_label.setStyleSheet('color: red;')
-        if info['privilege'] <= user_vip:
+        if self.privilege():
             self.vip_label.hide()
         top_layout.addWidget(self.vip_label)
-
-        pri_label = QLabel(f'privilege: (song: {info["privilege"]}, yours: {user_vip})')
-        pri_label.setStyleSheet(
-            f'color: {"#666666" if darkdetect.isDark() else "#CCCCCC"};'
-        )
-        top_layout.addWidget(pri_label)
 
         bottom_layout = FlowLayout()
 
@@ -157,10 +152,13 @@ class SongCard(QWidget):
     def play(self):
         self._play_callback(self)
 
+    def privilege(self) -> bool:
+        return not self.info['privilege']['is_vip_only']
+
     def addToFavorites(self):
         from core.dialogs import get_value_bylist, get_text_lineedit
 
-        if self.info['privilege'] > get_backend().user_privilege_level():
+        if not self.privilege():
             InfoBar.warning(
                 'Cannot add to favorites',
                 'Need more privilege',
@@ -206,11 +204,11 @@ class SongCard(QWidget):
         def _download():
             nonlocal _manager, image_bytes
             backend = get_backend()
-            detail = backend.get_track_detail(self.info['id'])
+            detail = backend.get_track_detail(str(self.info['id']))
             image_url = detail['cover_url']
             image_bytes = requests.get(image_url).content
 
-            audio = backend.get_track_audio(self.info['id'], bitrate=3200 * 1000)
+            audio = backend.get_track_audio(str(self.info['id']), bitrate=self.info['privilege']['max_br'])
             music_url = audio['url']
 
             _manager = downloadWithMultiThreading(music_url, {}, {}, None, _downloaded)
@@ -234,8 +232,8 @@ class SongCard(QWidget):
             storable = SongStorable(
                 info={
                     'name': self.info['name'],
-                    'artists': self.info['artists'],
-                    'id': self.info['id'],
+                    'artists': '、'.join(a['name'] for a in self.info['artists']),
+                    'id': str(self.info['id']),
                     'privilege': -1,
                 },
                 image_cache_hash=image_cache_hash,
@@ -264,7 +262,7 @@ class SongCard(QWidget):
         self.load = True
 
         def _do():
-            detail = get_backend().get_track_detail(self.info['id'])
+            detail = get_backend().get_track_detail(str(self.info['id']))
             img_url = detail['cover_url']
             self.detail['image_url'] = img_url
 

@@ -23,7 +23,7 @@ from qfluentwidgets import (
 from views.list_widget import SListWidget
 
 from core.downloader import doWithMultiThreading
-from core.models import SongInfo
+from core.models import SearchSongInfo
 from core.backend import get_backend
 
 from views.main_window import MainWindow
@@ -87,7 +87,12 @@ class SearchPage(QWidget):
                 card.loadDetailAndImage()
 
         bar = self.lst.verticalScrollBar()
-        if self.ctx.main_window and bar.value() >= bar.maximum() - 5 and not self.searching and self.ctx.main_window.contents_widget.currentWidget() == self:
+        if (
+            self.ctx.main_window
+            and bar.value() >= bar.maximum() - 5
+            and not self.searching
+            and self.ctx.main_window.contents_widget.currentWidget() == self
+        ):
             self._logger.info(f'load more')
             self.search(self.ctx.main_window.search_input.text(), self.curr_offset)
 
@@ -102,20 +107,11 @@ class SearchPage(QWidget):
             self.cards.clear()
             self.img_card_map.clear()
 
-        result: list[SongInfo] = []
+        result: list[SearchSongInfo] = []
 
         def _do():
             nonlocal result
-            songs = get_backend().search(keywords, offset=offset)
-            result = [
-                SongInfo(
-                    name=song['name'],
-                    artists='、'.join(art['name'] for art in song['artists']),
-                    id=str(song['id']),
-                    privilege=song['privilege']['fee'],
-                )
-                for song in songs
-            ]
+            result = get_backend().search(keywords, offset=offset)
 
         def _finish():
             nonlocal result
@@ -124,13 +120,15 @@ class SearchPage(QWidget):
 
         doWithMultiThreading(_do, (), self._mwindow, _finish)
 
-    def addSongs(self, result: list[SongInfo]) -> None:
+    def addSongs(self, result: list[SearchSongInfo]) -> None:
         for i, song in enumerate(result):
             item = QListWidgetItem()
             item.setSizeHint(QSize(0, 150))
             self.lst.addItem(item)
             content_widget = SongCard(
-                song, lambda c: self._mwindow.play(c), self._mwindow # type: ignore
+                song,
+                lambda c: self._mwindow.play(c),
+                self._mwindow,  # type: ignore
             )
             self.lst.setItemWidget(item, content_widget)
             self.cards.append(content_widget)

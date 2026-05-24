@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from views.playing_page import PlayingPage
 
 from imports import (
+    FAVORITES_CHANGED,
     IMAGE_ASSET_PERSISTED,
     PLAYLIST_CHANGED,
     PLAY_SONG_AT_INDEX,
@@ -120,13 +121,6 @@ class SongCard(QWidget):
         artists_label = QLabel(artists_text)
         artists_label.setWordWrap(True)
         top_layout.addWidget(artists_label)
-        self.vip_label = SubtitleLabel(
-            f'Need more privilege'
-        )
-        self.vip_label.setStyleSheet('color: red;')
-        if self.privilege():
-            self.vip_label.hide()
-        top_layout.addWidget(self.vip_label)
 
         bottom_layout = FlowLayout()
 
@@ -152,19 +146,8 @@ class SongCard(QWidget):
     def play(self):
         self._play_callback(self)
 
-    def privilege(self) -> bool:
-        return not self.info['privilege']['is_vip_only']
-
     def addToFavorites(self):
         from core.dialogs import get_value_bylist, get_text_lineedit
-
-        if not self.privilege():
-            InfoBar.warning(
-                'Cannot add to favorites',
-                'Need more privilege',
-                parent=self._mwindow,
-            )
-            return
 
         folder_names = [f['folder_name'] for f in favorites_manager.folders]
         folder_names.append('Create New Folder...')
@@ -208,7 +191,9 @@ class SongCard(QWidget):
             image_url = detail['cover_url']
             image_bytes = requests.get(image_url).content
 
-            audio = backend.get_track_audio(str(self.info['id']), bitrate=self.info['privilege']['max_br'])
+            audio = backend.get_track_audio(
+                str(self.info['id']), bitrate=self.info['privilege']['max_br']
+            )
             music_url = audio['url']
 
             _manager = downloadWithMultiThreading(music_url, {}, {}, None, _downloaded)
@@ -248,6 +233,8 @@ class SongCard(QWidget):
                     duration=3000,
                 )
                 return
+
+            event_bus.emit(FAVORITES_CHANGED, chosen)
 
             InfoBar.success(
                 'Favorited',

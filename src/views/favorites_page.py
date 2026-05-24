@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
 import threading
+
+_logger = logging.getLogger(__name__)
 
 from core.app_context import AppContext
 from imports import (
+    FAVORITES_CHANGED,
     PLAYLIST_CHANGED,
     PLAY_STORABLE,
     PushButton,
@@ -73,6 +77,19 @@ class FavoritesPage(QWidget):
         self.curr_cloud_folder: CloudFolderInfo | None = None
         self.curr_cloud_songs: list[SongStorable] = []
         self._cloud_loading = False
+
+        event_bus.subscribe(FAVORITES_CHANGED, self._onFavoritesChanged)
+
+    def _onFavoritesChanged(self, folder_name=None):
+        if self.is_cloud:
+            return
+        if (
+            folder_name
+            and self.curr_folder
+            and folder_name != self.curr_folder['folder_name']
+        ):
+            return
+        self.refresh()
 
     @property
     def _dp(self):
@@ -226,19 +243,74 @@ class FavoritesPage(QWidget):
 
     def deleteSong(self, song_storable: SongStorable):
         song_name = song_storable.name
+        _logger.info('deleteSong: name=%r, id=%s', song_name, song_storable.id)
+        if self.curr_folder:
+            _logger.info(
+                'curr_folder=%r, songs_count=%d',
+                self.curr_folder['folder_name'],
+                len(self.curr_folder['songs']),
+            )
 
         reply = QMessageBox.question(
             self._mwindow,
             'Confirm Delete',
             f'Are you sure you want to delete song {song_name} from favorites?',
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
-        if reply == QMessageBox.StandardButton.Yes:
-            favorites_manager.removeSong(song_name)
-            self.refresh()
-            InfoBar.success(
-                'Song deleted', f'Song {song_name} deleted', parent=self._mwindow
-            )
+        _logger.info('deleteSong: reply=%r', reply)
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        _logger.info('deleteSong: calling removeSong(%r)', song_name)
+        favorites_manager.removeSong(song_name)
+
+        if self.curr_folder:
+            _logger.info('after remove: songs_count=%d', len(self.curr_folder['songs']))
+        self.refresh()
+
+        InfoBar.success(
+            'Song deleted', f'Song {song_name} deleted', parent=self._mwindow
+        )
+
+        reply = QMessageBox.question(
+            self._mwindow,
+            'Confirm Delete',
+            f'Are you sure you want to delete song {song_name} from favorites?',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        _logger.info(
+            'deleteSong: reply=%r, Yes=%r', reply, QMessageBox.StandardButton.Yes
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            _logger.info('deleteSong: cancelled (reply=%r)', reply)
+            return
+
+        _logger.info('deleteSong: removing from favorites_manager')
+        for f in favorites_manager.folders:
+            before = len(f['songs'])
+            f['songs'] = [s for s in f['songs'] if s.name != song_name]
+            after = len(f['songs'])
+            if before != after:
+                _logger.info(
+                    "Removed %d song(s) from folder '%s'",
+                    before - after,
+                    f['folder_name'],
+                )
+        favorites_manager._save()
+
+        _logger.info(
+            'deleteSong: refreshing, curr_folder songs count=%d',
+            len(self.curr_folder['songs']) if self.curr_folder else -1,
+        )
+        self.refresh()
+
+        InfoBar.success(
+            'Song deleted', f'Song {song_name} deleted', parent=self._mwindow
+        )
 
     def deleteCloudSong(self, song_storable: SongStorable):
         if not self.curr_cloud_folder:

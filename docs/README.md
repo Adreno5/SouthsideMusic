@@ -45,7 +45,7 @@ python setup_workspace.py
 build.bat
 ```
 
-Requires a Python 3.12.7 embeddable distribution placed at `embed_python/`. See `build.bat` for the full packaging pipeline (copies `src/`, `icons/`, `fonts/`, `ffmpeg/`, `images/` into `build.result/`).
+Requires a Python 3.12.7 embeddable distribution placed at `embed_python/`. See `build.bat` for the full packaging pipeline (copies `src/`, `icons/`, `fonts/`, `images/` into `build.result/`).
 
 ## Tech Stack
 
@@ -55,7 +55,7 @@ Requires a Python 3.12.7 embeddable distribution placed at `embed_python/`. See 
 | Audio     | [pydub](https://github.com/jiaaro/pydub) + [sounddevice](https://github.com/spatialaudio/python-sounddevice)            |
 | Math      | [NumPy](https://numpy.org/) + [SciPy](https://scipy.org/) (FFT, signal processing)                                      |
 | Metadata  | [mutagen](https://github.com/quodlibet/mutagen) (ID3, Vorbis, MP4 tags)                                                 |
-| API       | [pyncm](https://github.com/greats3an/pyncm) (NetEase CloudMusic)                                                        |
+| API       | pyncm (Source has been deleted) (NetEase CloudMusic)                                                                    |
 | WebSocket | [Tornado](https://www.tornadoweb.org/)                                                                                  |
 | Packaging | [Nuitka](https://nuitka.net/)                                                                                           |
 | Font      | HarmonyOS Sans SC                                                                                                       |

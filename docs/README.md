@@ -23,8 +23,6 @@ Advanced desktop music player — stream from NetEase CloudMusic with a custom a
 
 Download the [latest release](https://github.com/Adreno5/SouthsideMusic/releases), unzip, and run `Launch.exe`.
 
-> **Note**: `ffmpeg/bin/` is bundled with the release for audio decoding.
-
 ## Usage
 
 Log in on the **Session** page with your NetEase CloudMusic account (cell phone or QR code). Anonymous accounts have limited access to high-quality streams.

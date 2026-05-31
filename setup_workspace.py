@@ -52,6 +52,11 @@ USER_AGENT = (
     'Chrome/125.0.0.0 Safari/537.36'
 )
 
+INNO_SETUP_RELEASES_API = (
+    'https://api.github.com/repos/jrsoftware/issrc/releases/latest'
+)
+INNO_SETUP_INSTALL_ARGS = ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-']
+
 # Files / dirs to clean up on abnormal exit
 _temp_files: list[str] = []
 _cleanup_lock = threading.Lock()
@@ -290,9 +295,20 @@ def _precheck_required_files() -> None:
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
+    innosetup_only = '--innosetup' in sys.argv
+
     print('SouthsideMusic Workspace Setup')
     print(f'  Python: {sys.version}')
     print(f'  Script dir: {SCRIPT_DIR}')
+
+    if innosetup_only:
+        ensure_module('tqdm')
+        ensure_module('requests')
+        import tqdm as _tqdm
+        import requests as _requests
+
+        _ensure_innosetup(_tqdm, _requests)
+        return
 
     # 0. Pre-check required files
     _precheck_required_files()
@@ -343,7 +359,7 @@ def main() -> None:
     _ensure_uv(_maybe_inquirer)
 
     # 6. Sync uv project environment
-    print('\n[1/4] Syncing uv environment...')
+    print('\n[1/5] Syncing uv environment...')
     _uv_sync_with_retry()
 
     # 7. Set up embedded Python
@@ -354,6 +370,9 @@ def main() -> None:
 
     # 9. Quick validation
     _validate_embed_python()
+
+    # 10. Inno Setup
+    _ensure_innosetup(tqdm, requests)
 
     print('\nSetup complete!')
 
@@ -418,7 +437,7 @@ def _uv_sync_with_retry(retries: int = 3) -> None:
 # Step: embedded Python
 # ---------------------------------------------------------------------------
 def _setup_embed_python(tqdm, requests, zipfile) -> None:
-    print('\n[2/4] Setting up embedded Python...')
+    print('\n[2/5] Setting up embedded Python...')
 
     embed_exe = os.path.join(EMBED_DIR, 'python.exe')
     if os.path.isfile(embed_exe):
@@ -523,7 +542,7 @@ def _install_embed_requirements() -> None:
         raise SetupError(f'Embedded Python not found at {embed_exe}.')
 
     # Install pip if not present
-    print('\n[3/4] Ensuring pip in embedded Python...')
+    print('\n[3/5] Ensuring pip in embedded Python...')
     try:
         run([embed_exe, '-m', 'pip', '--version'], capture_output=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
@@ -534,7 +553,7 @@ def _install_embed_requirements() -> None:
             raise SetupError('Failed to install pip in embedded Python.')
 
     # Install requirements
-    print('\n[4/4] Installing requirements into embedded Python...')
+    print('\n[4/5] Installing requirements into embedded Python...')
     _validate_requirements_file(REQUIREMENTS)
 
     if not _requirements_changed():
@@ -657,6 +676,165 @@ def _validate_embed_python() -> None:
         )
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         raise SetupError(f'Embedded Python failed validation smoke test: {e}')
+
+
+# ---------------------------------------------------------------------------
+# Inno Setup
+# ---------------------------------------------------------------------------
+def _is_innosetup_installed() -> bool:
+    """Check whether Inno Setup is installed (PATH or registry)."""
+    import shutil as _shutil
+
+    if _shutil.which('iscc') is not None:
+        return True
+
+    try:
+        import winreg
+    except ImportError:
+        return False
+
+    keys = [
+        # win64 native
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 7_is1',
+        ),
+        # win32 on win64
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 7_is1',
+        ),
+        # Inno Setup 6 fallbacks
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1',
+        ),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1',
+        ),
+    ]
+    for hive, subkey in keys:
+        try:
+            with winreg.OpenKey(hive, subkey) as key:
+                path, _ = winreg.QueryValueEx(key, 'InstallLocation')
+                iscc = os.path.join(path, 'ISCC.exe')
+                if os.path.isfile(iscc):
+                    return True
+        except OSError:
+            continue
+    return False
+
+
+def _ensure_innosetup(tqdm, requests) -> None:
+    if _is_innosetup_installed():
+        print('  Inno Setup already installed.')
+        return
+
+    print('\nInno Setup is not installed.')
+
+    inquirer_mod = None
+    try:
+        import inquirer
+
+        inquirer_mod = inquirer
+    except ImportError:
+        pass
+
+    if inquirer_mod is not None:
+        try:
+            ok = inquirer_mod.confirm(
+                'Download and install Inno Setup automatically?', default=True
+            )
+        except Exception:
+            ok = True
+    else:
+        ok = True
+
+    if not ok:
+        print('Download Inno Setup manually:\n  https://jrsoftware.org/isdl.php')
+        return
+
+    print('\n[5/5] Installing Inno Setup...')
+    _check_network('https://api.github.com')
+
+    api_url = INNO_SETUP_RELEASES_API
+    resp = requests.get(api_url, headers={'User-Agent': USER_AGENT}, timeout=30)
+    resp.raise_for_status()
+    release = resp.json()
+
+    assets = release.get('assets', [])
+    exe_assets = [a for a in assets if a.get('name', '').endswith('.exe')]
+    if not exe_assets:
+        print(
+            '  No .exe assets found in the latest GitHub release. '
+            'Please download Inno Setup manually:\n'
+            '  https://jrsoftware.org/isdl.php'
+        )
+        return
+
+    asset = _pick_innosetup_asset(exe_assets, inquirer_mod)
+    if asset is None:
+        return
+
+    installer_path = os.path.join(tempfile.gettempdir(), asset['name'])
+    _download_file(
+        asset['browser_download_url'],
+        installer_path,
+        'Inno Setup',
+        tqdm,
+        requests,
+        retries=3,
+    )
+
+    print('  Running Inno Setup installer (silent)...')
+    try:
+        run([installer_path] + INNO_SETUP_INSTALL_ARGS, timeout=120)
+    except subprocess.CalledProcessError as e:
+        print(f'  [WARNING] Inno Setup installer exited with error: {e}')
+    finally:
+        _safe_remove(installer_path)
+
+    if _is_innosetup_installed():
+        print('  Inno Setup installed successfully.')
+    else:
+        print('  [WARNING] ISCC still not found on PATH after installation.')
+        print('  Try running build.bat — it will auto-detect via registry.')
+
+
+def _pick_innosetup_asset(assets: list[dict], inquirer_mod: Any | None) -> dict | None:
+    """Pick the right Inno Setup .exe from the list of release assets.
+
+    Returns the selected asset dict, or None if the user cancels.
+    When there is exactly one asset it is returned immediately;
+    otherwise inquirer is used to let the user choose.
+    """
+    if len(assets) == 1:
+        print(f'  Found installer: {assets[0]["name"]}')
+        return assets[0]
+
+    # Multiple .exe found — need user input
+    if inquirer_mod is None:
+        print('  Multiple Inno Setup .exe files found:')
+        for a in assets:
+            print(f'    - {a["name"]}')
+        print(
+            '  Install "inquirer" (pip install inquirer) to enable interactive selection.'
+        )
+        print('  Defaulting to the first asset.')
+        return assets[0]
+
+    choices = [(a['name'], a) for a in sorted(assets, key=lambda x: x['name'])]
+
+    try:
+        result = inquirer_mod.list_input(
+            'Multiple Inno Setup installers found. Which one to download?',
+            choices=choices,
+        )
+        return result
+    except Exception as e:
+        print(f'  [WARNING] inquirer selection failed ({e}), using first asset.')
+        return assets[0]
 
 
 # ---------------------------------------------------------------------------

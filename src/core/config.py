@@ -8,6 +8,7 @@ import time
 from typing import Any, Literal
 
 from core.models import SongStorable
+
 _logger = logging.getLogger(__name__)
 
 cfg_changed: bool = False
@@ -71,8 +72,9 @@ class Config:
 cfg = Config()
 
 
-CONFIG_PATH = './config.json'
-LEGACY_PICKLE_CONFIG_PATH = './config.pkl'
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+CONFIG_PATH = os.path.join(_PROJECT_ROOT, 'config.json')
+LEGACY_PICKLE_CONFIG_PATH = os.path.join(_PROJECT_ROOT, 'config.pkl')
 
 
 def _song_to_object(song: SongStorable | None):

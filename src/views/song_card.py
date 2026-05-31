@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import logging
 
 import os
@@ -204,16 +203,6 @@ class SongCard(QWidget):
 
             image_bytes, music_bytes = result_container[0]
 
-            image_cache_hash = hashlib.sha256(image_bytes).hexdigest()
-            content_cache_hash = hashlib.sha256(music_bytes).hexdigest()
-
-            os.makedirs(IMAGE_DATA_DIR, exist_ok=True)
-            os.makedirs(MUSIC_DATA_DIR, exist_ok=True)
-            with open(os.path.join(IMAGE_DATA_DIR, image_cache_hash), 'wb') as f:
-                f.write(image_bytes)
-            with open(os.path.join(MUSIC_DATA_DIR, content_cache_hash), 'wb') as f:
-                f.write(music_bytes)
-
             storable = SongStorable(
                 info={
                     'name': self.info['name'],
@@ -221,8 +210,8 @@ class SongCard(QWidget):
                     'id': str(self.info['id']),
                     'privilege': -1,
                 },
-                image_cache_hash=image_cache_hash,
-                content_cache_hash=content_cache_hash,
+                image=image_bytes,
+                music_bin=music_bytes,
                 lyric='',
             )
             if not favorites_manager.addSong(chosen, storable):
@@ -368,20 +357,14 @@ class _SongCardItem(QWidget):
 
     def _auto_download_missing_image(self):
         storable = self.storable
-        storable._ensure_cache_fields()
-        if storable.image_cache_hash and os.path.exists(
-            os.path.join(IMAGE_DATA_DIR, storable.image_cache_hash)
-        ):
+        if storable.image_cached():
             return
 
         lock = _get_image_download_lock(storable.id)
         if not lock.acquire(blocking=False):
             return
         try:
-            storable._ensure_cache_fields()
-            if storable.image_cache_hash and os.path.exists(
-                os.path.join(IMAGE_DATA_DIR, storable.image_cache_hash)
-            ):
+            if storable.image_cached():
                 return
             try:
                 detail = get_backend().get_track_detail(storable.id)
@@ -395,13 +378,7 @@ class _SongCardItem(QWidget):
 
             if not image_bytes:
                 return
-            os.makedirs(IMAGE_DATA_DIR, exist_ok=True)
-            cache_hash = hashlib.sha256(image_bytes).hexdigest()
-            cache_path = os.path.join(IMAGE_DATA_DIR, cache_hash)
-            if not os.path.exists(cache_path):
-                with open(cache_path, 'wb') as f:
-                    f.write(image_bytes)
-            storable.image_cache_hash = cache_hash
+            storable._write_cache(image_bytes, IMAGE_DATA_DIR, 'image_cache_hash')
             favorites_manager._save()
             if self._mwindow:
                 self._mwindow.addScheduledTask(
@@ -698,11 +675,133 @@ class CloudFavoriteSongCard(_SongCardItem):
         export.setIcon(getQIcon('export'))
         export.triggered.connect(lambda: self._exportSong())
 
+        add = Action('Add to Local Folder', menu)
+        add.setIcon(getQIcon('add'))
+        add.triggered.connect(self._addToLocalFolder)
+
         remove = Action('Remove', menu)
         remove.setIcon(getQIcon('remove'))
         remove.triggered.connect(self._removeSong)
 
-        menu.addActions([export, remove])
+        menu.addActions([export, add, remove])
+
+        menu.exec(event.globalPos(), aniType=MenuAnimationType.DROP_DOWN)
+
+    def _removeSong(self):
+        if self._remove_callback:
+            self._remove_callback()
+
+    def _addToLocalFolder(self):
+        from core.dialogs import get_value_bylist, get_text_lineedit
+
+        folder_names = [f['folder_name'] for f in favorites_manager.folders]
+        if not folder_names:
+            folder_names.append('Create New Folder...')
+            chosen = get_text_lineedit(
+                self._mwindow, 'Create New Folder', 'My first folder', self._mwindow
+            )
+        else:
+            folder_names.append('Create New Folder...')
+            chosen = get_value_bylist(
+                self._mwindow,
+                'Choose Folder',
+                'Which folder to save this song?',
+                folder_names,
+            )
+        if chosen is None:
+            return
+
+        if chosen == 'Create New Folder...':
+            chosen = get_text_lineedit(
+                self._mwindow, 'Create New Folder', 'My first folder', self._mwindow
+            )
+            if not chosen:
+                return
+            favorites_manager.addFolder(chosen)
+
+        storable = self.storable
+
+        def _add(folder_name: str) -> None:
+            if favorites_manager.addSong(folder_name, storable):
+                event_bus.emit(FAVORITES_CHANGED, folder_name)
+                InfoBar.success(
+                    'Added',
+                    f"Added {storable.name} to '{folder_name}'",
+                    parent=self._mwindow,
+                    duration=3000,
+                )
+
+        if storable.image_cached() and storable.audio_cached():
+            _add(chosen)
+            return
+
+        def _do_download() -> None:
+            backend = get_backend()
+            detail = backend.get_track_detail(str(storable.id))
+            image_url = detail['cover_url']
+            image_bytes = requests.get(image_url).content
+            if not storable.image_cached():
+                storable.cache_image(image_bytes)
+
+            audio = backend.get_track_audio(str(storable.id), bitrate=3200 * 1000)
+            music_url = audio['url']
+
+            def _on_music_done(music_bytes: bytes) -> None:
+                if not storable.audio_cached():
+                    storable.cache_audio(music_bytes)
+                if self._mwindow is not None:
+                    self._mwindow.addScheduledTask(lambda c=chosen: _add(c))
+
+            downloadWithMultiThreading(music_url, {}, {}, None, _on_music_done)
+
+        threading.Thread(target=_do_download, daemon=True).start()
+
+    def _exportSong(self):
+        if not self._dp.playing_manager.ensureAssets(self.storable):
+            return
+        with open(
+            os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash), 'rb'
+        ) as f:
+            export_path, fmt = QFileDialog.getSaveFileName(
+                self._mwindow,
+                'Export song',
+                f'./{self.storable.name} - {self.storable.artists}{getSongFormat(f.read())}',
+                'Song Files (*.mp3, *.m4a, *.flac, *.wav, *.ogg, *.opus)',
+            )
+        if not export_path:
+            return
+        content = f.read()
+        try:
+            saveSongWithInformations(
+                export_path, content, self.storable, self.storable.get_image_bytes()
+            )
+        except Exception as e:
+            InfoBar.error('Error', f'{e}', duration=-1, parent=self._mwindow)
+            return
+
+        InfoBar.success(
+            'Done',
+            f'Song exported to {os.path.basename(os.path.dirname(export_path))}',
+            parent=self._mwindow,
+        )
+        self._remove_callback = remove_callback
+
+    def contextMenuEvent(self, event):
+        menu = RoundMenu(parent=self)
+
+        export = Action('Export', menu)
+        export.setIcon(getQIcon('export'))
+        export.triggered.connect(lambda: self._exportSong())
+
+        add = Action('Add to Local Folder', menu)
+        add.setIcon(getQIcon('add'))
+        add.triggered.connect(self._addToLocalFolder)
+
+        remove = Action('Remove', menu)
+        remove.setIcon(getQIcon('remove'))
+        remove.triggered.connect(self._removeSong)
+
+        menu.addActions([export, add, remove])
 
         menu.exec(event.globalPos(), aniType=MenuAnimationType.DROP_DOWN)
 

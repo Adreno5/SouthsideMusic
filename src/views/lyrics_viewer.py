@@ -207,14 +207,19 @@ class LyricsViewer(QWidget):
         line: LyricInfo | YRCLyricInfo,
         use_yrc: bool | None = None,
     ) -> float:
-        trans_time = line['time']
-        if use_yrc is None:
-            use_yrc = 'chars' in line
+        if 'chars' not in line:
+            return line['time']
+        yrc_time = line['time']
+        # If translation is YRC-aligned (ytlrc), time already matches — use directly.
+        for trans_line in self._transmgr.parsed:
+            if abs(trans_line['time'] - yrc_time) <= self._TRANSLATION_TIME_TOLERANCE:
+                return yrc_time
+        # Otherwise remap YRC time → nearest LRC time (tlyric fallback).
         if use_yrc and self._mgr.parsed:
-            lrc_line = self._mgr.getCurrentLyric(line['time'])
+            lrc_line = self._mgr.getCurrentLyric(yrc_time)
             if lrc_line.get('content', '').strip():
-                trans_time = lrc_line['time']
-        return trans_time
+                return lrc_line['time']
+        return yrc_time
 
     def _translationTextForLine(
         self,

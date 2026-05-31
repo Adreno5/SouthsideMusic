@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import io
 import logging
 import os
@@ -445,7 +444,9 @@ class PlayingManager:
 
         def _process_audio() -> None:
             try:
-                audio = get_backend().get_track_audio(song_id, bitrate=info['privilege']['max_br'])
+                audio = get_backend().get_track_audio(
+                    song_id, bitrate=info['privilege']['max_br']
+                )
                 prepared['music_url'] = audio['url']
             except Exception as e:
                 prepared['music_error'] = str(e)
@@ -564,21 +565,17 @@ class PlayingManager:
                     self._logger.info('discarding stale preload')
                     return
 
-                self.next_song_audio = audio # type: ignore
+                self.next_song_audio = audio  # type: ignore
                 if next_song.target_lufs != cfg.target_lufs:
-                    gain = getAdjustedGainFactor(cfg.target_lufs, self.next_song_audio) # type: ignore
+                    gain = getAdjustedGainFactor(cfg.target_lufs, self.next_song_audio)  # type: ignore
                     self._setStorableLoudness(next_song, cfg.target_lufs, gain)
                 else:
                     gain = next_song.loudness_gain
                 self.next_song_gain = gain
 
                 self._logger.debug(
-                    f'preload -> applying gain {self.next_song_gain} {cfg.target_lufs=}'
+                    f'preload -> gain {self.next_song_gain} {cfg.target_lufs=}'
                 )
-                self.next_song_audio = self.next_song_audio.apply_gain( # type: ignore
-                    20 * np.log10(self.next_song_gain)
-                )
-
                 self._logger.info('preloaded')
                 self._logger.debug(
                     f'(Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}'
@@ -680,23 +677,7 @@ class PlayingManager:
         self.playStorable(storable)
 
     def _storable_asset_missing(self, song_storable: SongStorable) -> tuple[bool, bool]:
-        song_storable._ensure_cache_fields()
-        image_missing = not song_storable.image_cache_hash or not os.path.exists(
-            os.path.join(IMAGE_DATA_DIR, song_storable.image_cache_hash)
-        )
-        music_missing = not song_storable.content_cache_hash or not os.path.exists(
-            os.path.join(MUSIC_DATA_DIR, song_storable.content_cache_hash)
-        )
-        return image_missing, music_missing
-
-    def _write_storable_asset(self, cache_dir: str, data: bytes) -> str:
-        os.makedirs(cache_dir, exist_ok=True)
-        cache_hash = hashlib.sha256(data).hexdigest()
-        cache_path = os.path.join(cache_dir, cache_hash)
-        if not os.path.exists(cache_path):
-            with open(cache_path, 'wb') as f:
-                f.write(data)
-        return cache_hash
+        return not song_storable.image_cached(), not song_storable.audio_cached()
 
     def _downloadStorableMissingAssets(
         self,
@@ -732,18 +713,16 @@ class PlayingManager:
                     image_bytes = prepared.get('image')
                     if not isinstance(image_bytes, bytes) or not image_bytes:
                         return False
-                    song_storable.image_cache_hash = self._write_storable_asset(
-                        IMAGE_DATA_DIR,
-                        image_bytes,
+                    song_storable._write_cache(
+                        image_bytes, IMAGE_DATA_DIR, 'image_cache_hash'
                     )
                     image_just_persisted = True
 
                 if music_missing:
                     if not music_bytes:
                         return False
-                    song_storable.content_cache_hash = self._write_storable_asset(
-                        MUSIC_DATA_DIR,
-                        music_bytes,
+                    song_storable._write_cache(
+                        music_bytes, MUSIC_DATA_DIR, 'content_cache_hash'
                     )
 
                 saveFavorites()
@@ -842,18 +821,11 @@ class PlayingManager:
         cache_key = song_storable.content_cache_hash
         cached = get_cached_audio(cache_key) if cache_key else None
         if cached is not None:
-            audio = cached
-        else:
-            audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
-            if cache_key:
-                cache_decoded_audio(cache_key, audio)
-
-        if song_storable.target_lufs != cfg.target_lufs:
-            gain = getAdjustedGainFactor(cfg.target_lufs, audio)
-            self._setStorableLoudness(song_storable, cfg.target_lufs, gain)
-        else:
-            gain = song_storable.loudness_gain
-        return audio.apply_gain(20 * np.log10(gain))
+            return cached
+        audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
+        if cache_key:
+            cache_decoded_audio(cache_key, audio)
+        return audio
 
     def playStorable(
         self,
@@ -906,6 +878,13 @@ class PlayingManager:
             self.total_length = player.getLength()
             if not player.isPlaying():
                 player.play()
+
+            if (
+                song_storable.target_lufs == cfg.target_lufs
+                and song_storable.loudness_gain != 1.0
+            ):
+                player.setGain(song_storable.loudness_gain)
+
             if restore_position is not None:
                 player.setPosition(restore_position)
             if pause_after_load:
@@ -931,6 +910,14 @@ class PlayingManager:
                 self.refreshRandom()
 
             event_bus.emit(PLAYLIST_CHANGED)
+
+            # Show original lyrics immediately (no translation)
+            self._show_original_lyrics(song_storable)
+
+            # Start async gain computation
+            self._compute_gain_async(song_storable, result.get('audio'))
+
+            # Start async translation fetch
             self._download_update_lyrics(song_storable)
 
             image_bytes = result.get('image')
@@ -948,13 +935,51 @@ class PlayingManager:
 
         doWithMultiThreading(_prepare, (), self._mwindow_obj, _finish)
 
+    def _show_original_lyrics(self, song_storable: SongStorable) -> None:
+        if not self.ctx:
+            return
+        lyrics = song_storable.get_lyrics()
+        self.ctx.mgr.cur = lyrics['lyric'] or '[00:00.000]'
+        self.ctx.transmgr.cur = ''
+        self.ctx.ymgr.cur = ''
+        self.ctx.mgr.parse()
+        self.ctx.transmgr.parse()
+        self.ctx.ymgr.parse()
+        event_bus.emit(PLAYBACK_LYRICS_UPDATED, song_storable)
+
+    def _compute_gain_async(
+        self,
+        song_storable: SongStorable,
+        raw_audio: AudioSegment_ | None,
+    ) -> None:
+        if raw_audio is None:
+            return
+        if song_storable.target_lufs == cfg.target_lufs:
+            return
+
+        def _compute_and_apply() -> None:
+            player = self._player
+            if player is None:
+                return
+            gain = getAdjustedGainFactor(cfg.target_lufs, raw_audio)
+            self._setStorableLoudness(song_storable, cfg.target_lufs, gain)
+            if self.current_song is song_storable:
+                if self._mwindow_obj is not None:
+                    self._mwindow_obj.addScheduledTask(
+                        lambda g=gain: player.animateLoudnessGain(g)
+                    )
+
+        threading.Thread(target=_compute_and_apply, daemon=True).start()
+
     def _download_update_lyrics(self, song_storable: SongStorable) -> None:
         lyric_target = song_storable
         lyric_result: TrackLyricsInfo | None = None
 
         def _download() -> None:
             nonlocal lyric_result
-            if not song_storable.yrc_lyrics_missing():
+            need_yrc = song_storable.yrc_lyrics_missing()
+            need_ytlrc = song_storable.ytlrc_missing()
+            if not need_yrc and not need_ytlrc:
                 return
             try:
                 lyric_result = get_backend().get_track_lyrics(song_storable.id)
@@ -976,18 +1001,28 @@ class PlayingManager:
             if lyric_result is None:
                 lyrics = lyric_target.get_lyrics()
                 mgr.cur = lyrics['lyric'] or '[00:00.000]'
-                transmgr.cur = lyrics['translated_lyric'] or '[00:00.000]'
                 ymgr.cur = lyrics['yrc_lyric']
+                ytlrc = lyrics.get('ytlrc_lyric', '')
+                if ymgr.cur and ytlrc:
+                    transmgr.cur = ytlrc
+                else:
+                    transmgr.cur = lyrics['translated_lyric'] or '[00:00.000]'
             else:
                 mgr.cur = lyric_result.get('lyric', '[00:00.000]') or '[00:00.000]'
-                transmgr.cur = (
-                    lyric_result.get('translated_lyric', '[00:00.000]') or '[00:00.000]'
-                )
                 ymgr.cur = lyric_result.get('yrc_lyric', '')
+                ytlrc = lyric_result.get('ytlrc_lyric', '')
+                if ymgr.cur and ytlrc:
+                    transmgr.cur = ytlrc
+                else:
+                    transmgr.cur = (
+                        lyric_result.get('translated_lyric', '[00:00.000]')
+                        or '[00:00.000]'
+                    )
                 lyric_target.write_lyrics(
                     mgr.cur,
                     transmgr.cur if transmgr.cur != '[00:00.000]' else '',
                     ymgr.cur,
+                    ytlrc,
                 )
                 saveFavorites()
 

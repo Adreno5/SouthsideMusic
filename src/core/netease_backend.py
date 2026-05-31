@@ -18,6 +18,7 @@ from core.models import (
     TrackAudioInfo,
     TrackDetailInfo,
     TrackLyricsInfo,
+    get_cached_hashes,
 )
 
 _logger = logging.getLogger(__name__)
@@ -100,11 +101,13 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             translated_lyric = ''
 
         yrc_lyric = data.get('yrc', {}).get('lyric', '')
+        ytlrc_lyric = data.get('ytlrc', {}).get('lyric', '')
 
         return TrackLyricsInfo(
             lyric=lyric,
             translated_lyric=translated_lyric,
             yrc_lyric=yrc_lyric,
+            ytlrc_lyric=ytlrc_lyric,
         )
 
     def user_privilege_level(self) -> int:
@@ -151,6 +154,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             result: list[SongStorable] = []
             for s in songs:
                 artist_names = [a['name'] for a in (s.get('ar') or [])]
+                cached = get_cached_hashes(str(s['id']))
                 storable = SongStorable(
                     info={
                         'name': s['name'],
@@ -159,6 +163,8 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
                         'privilege': -1,
                     },
                     image=None,
+                    image_cache_hash=cached.get('image_cache_hash', ''),
+                    content_cache_hash=cached.get('content_cache_hash', ''),
                 )
                 result.append(storable)
             return result

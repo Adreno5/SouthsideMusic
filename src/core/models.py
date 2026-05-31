@@ -9,13 +9,58 @@ import logging
 import os
 import shutil
 
-DATA_DIR = './data'
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+DATA_DIR = os.path.join(_PROJECT_ROOT, 'data')
 MUSIC_DATA_DIR = os.path.join(DATA_DIR, 'music')
 IMAGE_DATA_DIR = os.path.join(DATA_DIR, 'image')
 LYRIC_DATA_DIR = os.path.join(DATA_DIR, 'lyrics')
-LEGACY_CACHE_DIR = './cache'
+LEGACY_CACHE_DIR = os.path.join(_PROJECT_ROOT, 'cache')
 LEGACY_MUSIC_CACHE_DIR = os.path.join(LEGACY_CACHE_DIR, 'music')
 LEGACY_IMAGE_CACHE_DIR = os.path.join(LEGACY_CACHE_DIR, 'image')
+
+_CACHE_INDEX_PATH = os.path.join(DATA_DIR, 'cache_index.json')
+_cache_index: dict[str, dict[str, str]] = {}
+_cache_index_loaded: bool = False
+
+
+def _load_cache_index() -> dict[str, dict[str, str]]:
+    global _cache_index, _cache_index_loaded
+    if _cache_index_loaded:
+        return _cache_index
+    _cache_index_loaded = True
+    if not os.path.exists(_CACHE_INDEX_PATH):
+        return _cache_index
+    with open(_CACHE_INDEX_PATH, 'r', encoding='utf-8') as f:
+        loaded = json.load(f)
+    if isinstance(loaded, dict):
+        _cache_index = loaded
+    return _cache_index
+
+
+def _save_cache_index() -> None:
+    global _cache_index
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(_CACHE_INDEX_PATH, 'w', encoding='utf-8') as f:
+        json.dump(_cache_index or {}, f, ensure_ascii=False, indent=2)
+
+
+def _update_cache_index(
+    song_id: str, image_hash: str = '', audio_hash: str = ''
+) -> None:
+    global _cache_index
+    idx = _load_cache_index()
+    entry = idx.get(song_id, {})
+    if image_hash:
+        entry['image_cache_hash'] = image_hash
+    if audio_hash:
+        entry['content_cache_hash'] = audio_hash
+    if entry:
+        idx[song_id] = entry
+        _save_cache_index()
+
+
+def get_cached_hashes(song_id: str) -> dict[str, str]:
+    return _load_cache_index().get(song_id, {})
 
 
 class SongInfo(TypedDict):
@@ -83,6 +128,14 @@ class SongStorable:
         self.loudness_gain = gain
         self.target_lufs = target_lufs
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, SongStorable):
+            return NotImplemented
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
     def _write_cache(self, data: bytes, cache_dir: str, hash_attr: str) -> str:
         os.makedirs(cache_dir, exist_ok=True)
         cache_hash = hashlib.sha256(data).hexdigest()
@@ -91,6 +144,11 @@ class SongStorable:
             with open(cache_path, 'wb') as f:
                 f.write(data)
         setattr(self, hash_attr, cache_hash)
+        if self.id:
+            if hash_attr == 'image_cache_hash':
+                _update_cache_index(self.id, image_hash=cache_hash)
+            elif hash_attr == 'content_cache_hash':
+                _update_cache_index(self.id, audio_hash=cache_hash)
         return cache_hash
 
     @staticmethod
@@ -125,6 +183,24 @@ class SongStorable:
             with open(cache_path, 'rb') as f:
                 return f.read()
         return None
+
+    def image_cached(self) -> bool:
+        self._ensure_cache_fields()
+        return bool(self.image_cache_hash) and os.path.exists(
+            self._get_cache_path(IMAGE_DATA_DIR, self.image_cache_hash)
+        )
+
+    def audio_cached(self) -> bool:
+        self._ensure_cache_fields()
+        return bool(self.content_cache_hash) and os.path.exists(
+            self._get_cache_path(MUSIC_DATA_DIR, self.content_cache_hash)
+        )
+
+    def cache_image(self, data: bytes) -> str:
+        return self._write_cache(data, IMAGE_DATA_DIR, 'image_cache_hash')
+
+    def cache_audio(self, data: bytes) -> str:
+        return self._write_cache(data, MUSIC_DATA_DIR, 'content_cache_hash')
 
     def _ensure_cache_fields(self) -> None:
         if not hasattr(self, 'image_cache_hash'):
@@ -173,13 +249,19 @@ class SongStorable:
         self._ensure_cache_fields()
         path = self.get_lyric_path()
         if not os.path.exists(path):
-            return {'lyric': '', 'translated_lyric': '', 'yrc_lyric': ''}
+            return {
+                'lyric': '',
+                'translated_lyric': '',
+                'yrc_lyric': '',
+                'ytlrc_lyric': '',
+            }
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         return {
             'lyric': data.get('lyric', ''),
             'translated_lyric': data.get('translated_lyric', ''),
             'yrc_lyric': data.get('yrc_lyric', ''),
+            'ytlrc_lyric': data.get('ytlrc_lyric', ''),
         }
 
     @property
@@ -199,6 +281,7 @@ class SongStorable:
         lyric: str = '',
         translated_lyric: str = '',
         yrc_lyric: str = '',
+        ytlrc_lyric: str = '',
     ) -> None:
         os.makedirs(LYRIC_DATA_DIR, exist_ok=True)
         self.lyric_cache_hash = f'{self.id}.json'
@@ -209,6 +292,7 @@ class SongStorable:
                     'lyric': lyric,
                     'translated_lyric': translated_lyric,
                     'yrc_lyric': yrc_lyric,
+                    'ytlrc_lyric': ytlrc_lyric,
                     'has_yrc_lyric': bool(yrc_lyric),
                 },
                 f,
@@ -231,16 +315,29 @@ class SongStorable:
             return True
         return not data.get('has_yrc_lyric')
 
+    def ytlrc_missing(self) -> bool:
+        self._ensure_cache_fields()
+        if self.lyrics_missing():
+            return True
+        try:
+            with open(self.get_lyric_path(), 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception:
+            return True
+        return not data.get('ytlrc_lyric')
+        self._ensure_cache_fields()
+        if self.lyrics_missing():
+            return True
+        try:
+            with open(self.get_lyric_path(), 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception:
+            return True
+        return not data.get('has_yrc_lyric')
+
     def ensure_cached_assets(self) -> bool:
         self._ensure_cache_fields()
-        changed = False
-        for attr, cache_dir in [
-            ('image_cache_hash', IMAGE_DATA_DIR),
-            ('content_cache_hash', MUSIC_DATA_DIR),
-        ]:
-            if self._read_cache(getattr(self, attr), cache_dir) is None:
-                changed = True
-        return changed
+        return not (self.image_cached() and self.audio_cached())
 
     def toObject(self) -> SongStorableDict:
         return {
@@ -348,6 +445,7 @@ class TrackLyricsInfo(TypedDict):
     lyric: str
     translated_lyric: str
     yrc_lyric: str
+    ytlrc_lyric: str
 
 
 class MusicServiceBackend(ABC):

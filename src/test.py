@@ -10,8 +10,8 @@ with open('config.json', 'r', encoding='utf-8') as f:
     pyncm.WriteLoginInfo(data['login_status'])
     pyncm.SetCurrentSession(pyncm.LoadSessionFromString(data['session']))
 
-    # with open('res.json', 'w') as f:
-    #     f.write(json.dumps(pyncm.apis.cloudsearch.GetSearchResult('123'), indent=4))
+    with open('res.json', 'w') as f:
+        f.write(json.dumps(pyncm.apis.track.GetTrackLyricsNew(song_id='1992859765'), indent=4))
 
     # pprint(pyncm.apis.track.GetTrackLyricsNew('518904426'))
 

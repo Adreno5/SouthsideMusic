@@ -668,28 +668,6 @@ class CloudFavoriteSongCard(_SongCardItem):
         )
         self._remove_callback = remove_callback
 
-    def contextMenuEvent(self, event):
-        menu = RoundMenu(parent=self)
-
-        export = Action('Export', menu)
-        export.setIcon(getQIcon('export'))
-        export.triggered.connect(lambda: self._exportSong())
-
-        add = Action('Add to Local Folder', menu)
-        add.setIcon(getQIcon('add'))
-        add.triggered.connect(self._addToLocalFolder)
-
-        remove = Action('Remove', menu)
-        remove.setIcon(getQIcon('remove'))
-        remove.triggered.connect(self._removeSong)
-
-        menu.addActions([export, add, remove])
-
-        menu.exec(event.globalPos(), aniType=MenuAnimationType.DROP_DOWN)
-
-    def _removeSong(self):
-        if self._remove_callback:
-            self._remove_callback()
 
     def _addToLocalFolder(self):
         from core.dialogs import get_value_bylist, get_text_lineedit
@@ -698,7 +676,7 @@ class CloudFavoriteSongCard(_SongCardItem):
         if not folder_names:
             folder_names.append('Create New Folder...')
             chosen = get_text_lineedit(
-                self._mwindow, 'Create New Folder', 'My first folder', self._mwindow
+                '', 'Create New Folder', 'My first folder', self._mwindow
             )
         else:
             folder_names.append('Create New Folder...')
@@ -713,7 +691,7 @@ class CloudFavoriteSongCard(_SongCardItem):
 
         if chosen == 'Create New Folder...':
             chosen = get_text_lineedit(
-                self._mwindow, 'Create New Folder', 'My first folder', self._mwindow
+                '', 'Create New Folder', 'My first folder', self._mwindow
             )
             if not chosen:
                 return
@@ -756,35 +734,7 @@ class CloudFavoriteSongCard(_SongCardItem):
 
         threading.Thread(target=_do_download, daemon=True).start()
 
-    def _exportSong(self):
-        if not self._dp.playing_manager.ensureAssets(self.storable):
-            return
-        with open(
-            os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash), 'rb'
-        ) as f:
-            export_path, fmt = QFileDialog.getSaveFileName(
-                self._mwindow,
-                'Export song',
-                f'./{self.storable.name} - {self.storable.artists}{getSongFormat(f.read())}',
-                'Song Files (*.mp3, *.m4a, *.flac, *.wav, *.ogg, *.opus)',
-            )
-        if not export_path:
-            return
-        content = f.read()
-        try:
-            saveSongWithInformations(
-                export_path, content, self.storable, self.storable.get_image_bytes()
-            )
-        except Exception as e:
-            InfoBar.error('Error', f'{e}', duration=-1, parent=self._mwindow)
-            return
 
-        InfoBar.success(
-            'Done',
-            f'Song exported to {os.path.basename(os.path.dirname(export_path))}',
-            parent=self._mwindow,
-        )
-        self._remove_callback = remove_callback
 
     def contextMenuEvent(self, event):
         menu = RoundMenu(parent=self)

@@ -484,13 +484,6 @@ class MainWindow(FluentWindowBase):
 
         doWithMultiThreading(_init, (), self, finished=_finish_init)
 
-        InfoBar.info(
-            'Initialization',
-            f'Loaded {len(favorites_manager.folders)} folders',
-            parent=self,
-            duration=2000,
-        )
-
     def refreshFolders(self):
         self.folders_list.clear()
 

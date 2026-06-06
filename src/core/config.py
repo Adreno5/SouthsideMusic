@@ -3,15 +3,12 @@ import json
 import logging
 import os
 
-import threading
-import time
 from typing import Any, Literal
 
 from core.models import SongStorable
 
 _logger = logging.getLogger(__name__)
 
-cfg_changed: bool = False
 cfg_cache: dict[str, Any] = {}
 
 
@@ -63,11 +60,6 @@ class Config:
 
     play_speed: float = 1
 
-    def __setattr__(self, name: str, value: Any) -> None:
-        global cfg_changed
-        cfg_changed = True
-        super().__setattr__(name, value)
-
 
 cfg = Config()
 
@@ -75,11 +67,6 @@ cfg = Config()
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 CONFIG_PATH = os.path.join(_PROJECT_ROOT, 'config.json')
 LEGACY_PICKLE_CONFIG_PATH = os.path.join(_PROJECT_ROOT, 'config.pkl')
-
-
-def _song_to_object(song: SongStorable | None):
-    return song.toObject() if isinstance(song, SongStorable) else None
-
 
 def _song_from_object(data: Any) -> SongStorable | None:
     if not isinstance(data, dict):
@@ -130,8 +117,7 @@ def _delete_legacy_pickle_config() -> None:
 
 
 def loadConfig() -> None:
-    global cfg, cfg_changed
-
+    global cfg
     if not os.path.exists(CONFIG_PATH):
         saveConfig()
     else:
@@ -146,7 +132,6 @@ def loadConfig() -> None:
             saveConfig()
 
     _delete_legacy_pickle_config()
-    cfg_changed = False
 
 
 def saveConfig() -> None:
@@ -154,16 +139,3 @@ def saveConfig() -> None:
         json.dump(_config_to_json_object(), f, ensure_ascii=False, indent=2)
 
         _logger.info('saved config')
-
-
-def autoSave():
-    global cfg_changed
-    while True:
-        time.sleep(1)
-        if cfg_changed:
-            saveConfig()
-            cfg_changed = False
-
-
-autosave_thread = threading.Thread(target=autoSave)
-autosave_thread.daemon = True

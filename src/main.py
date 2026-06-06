@@ -27,7 +27,7 @@ import imports as _ims
 from qfluentwidgets import setTheme, Theme
 import shiboken6
 
-from core.config import loadConfig, saveConfig, cfg, autosave_thread
+from core.config import loadConfig, saveConfig, cfg
 from core.favorites import favorites_manager
 from core.icons import refreshBoundIcons
 from core.audio_player import AudioPlayer
@@ -269,8 +269,6 @@ if __name__ == '__main__':
 
     launchwindow.push('Loading favorites...')
     favorites_manager.load()
-
-    autosave_thread.start()
 
     launchwindow.push('Logging in...')
     if cfg.session is None:

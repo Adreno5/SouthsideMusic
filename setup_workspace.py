@@ -30,6 +30,7 @@ class SetupError(Exception):
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PYTHON_ZIP = os.path.join(SCRIPT_DIR, 'python.zip')
 EMBED_DIR = os.path.join(SCRIPT_DIR, 'embed_python')
+BUILD_VENV = os.path.join(SCRIPT_DIR, 'build_venv')
 GET_PIP = os.path.join(SCRIPT_DIR, 'get-pip.py')
 REQUIREMENTS = os.path.join(SCRIPT_DIR, 'requirements.txt')
 REQUIREMENTS_HASH = os.path.join(SCRIPT_DIR, '.requirements_sha256')
@@ -42,7 +43,7 @@ DOWNLOAD_CHUNK_SIZE = 8192
 MIN_FREE_DISK_MB = 500
 
 EMBED_ZIP_SHA256: dict[str, str] = {
-    'amd64': 'de5240a73197c1047013080fab5c852c031f3846f8c2a24098debd3ff37e16f0',
+    'amd64': '0d57bb6cb078b74d23dbfe91f77d6780d45bed328911609f1f7ee2ba1606bf44',
     'win32': 'c2f7e103a1cb73e90b3cd4fa72f9b12891116ec2d8feaefc4b8e76be1fdc0d98',
 }
 
@@ -365,13 +366,16 @@ def main() -> None:
     # 7. Set up embedded Python
     _setup_embed_python(tqdm, requests, zipfile)
 
-    # 8. Install requirements into embedded Python
+    # 8. Set up build venv (clean venv with Nuitka only)
+    _setup_build_venv()
+
+    # 9. Install requirements into embedded Python
     _install_embed_requirements()
 
-    # 9. Quick validation
+    # 10. Quick validation
     _validate_embed_python()
 
-    # 10. Inno Setup
+    # 11. Inno Setup
     _ensure_innosetup(tqdm, requests)
 
     print('\nSetup complete!')
@@ -535,6 +539,82 @@ def _patch_embed_pth() -> None:
 # ---------------------------------------------------------------------------
 # Step: pip + requirements for embedded Python
 # ---------------------------------------------------------------------------
+# Step: build venv (clean venv with Nuitka only)
+# ---------------------------------------------------------------------------
+def _setup_build_venv() -> None:
+    """Create a clean venv with only Nuitka, used for building launcher.py.
+
+    Uses venv (not embedded Python) so Nuitka's ReExecute mechanism works.
+    Has no extra packages, so standalone builds stay lean.
+    """
+    print('\n[3/5] Setting up build venv (Nuitka only)...')
+
+    build_python = os.path.join(BUILD_VENV, 'Scripts', 'python.exe')
+    if os.path.isfile(build_python):
+        try:
+            run([build_python, '-m', 'nuitka', '--version'], capture_output=True)
+            print(f'  Build venv with Nuitka already exists at {BUILD_VENV}, skipping.')
+            return
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print('  Existing build venv is broken, re-creating...')
+            _safe_remove(BUILD_VENV)
+
+    _safe_remove(BUILD_VENV)
+
+    print('  Creating venv...')
+    try:
+        run([sys.executable, '-m', 'venv', BUILD_VENV, '--clear'])
+    except subprocess.CalledProcessError:
+        raise SetupError('Failed to create build venv.')
+
+    _register_cleanup(BUILD_VENV)
+
+    try:
+        print('  Installing Nuitka...')
+        for attempt in range(1, 4):
+            try:
+                run(
+                    [
+                        build_python,
+                        '-m',
+                        'pip',
+                        'install',
+                        '--no-input',
+                        '--no-cache-dir',
+                        'nuitka',
+                    ]
+                )
+                break
+            except subprocess.CalledProcessError:
+                if attempt < 3:
+                    wait = 2**attempt
+                    print(
+                        f'  Nuitka install failed (attempt {attempt}/3). '
+                        f'Retrying in {wait}s...'
+                    )
+                    time.sleep(wait)
+                else:
+                    raise SetupError('Failed to install Nuitka after 3 attempts.')
+
+        try:
+            result = run(
+                [build_python, '-m', 'nuitka', '--version'],
+                capture_output=True,
+                text=True,
+            )
+            print(f'  Nuitka installed: {result.stdout.strip().split(chr(10))[0]}')
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            raise SetupError('Nuitka installed but not importable.')
+    except Exception:
+        _safe_remove(BUILD_VENV)
+        raise
+    finally:
+        _unregister_cleanup(BUILD_VENV)
+
+
+# ---------------------------------------------------------------------------
+# Step: pip + requirements for embedded Python
+# ---------------------------------------------------------------------------
 def _install_embed_requirements() -> None:
     embed_exe = os.path.join(EMBED_DIR, 'python.exe')
 
@@ -542,7 +622,7 @@ def _install_embed_requirements() -> None:
         raise SetupError(f'Embedded Python not found at {embed_exe}.')
 
     # Install pip if not present
-    print('\n[3/5] Ensuring pip in embedded Python...')
+    print('[4/5] Ensuring pip in embedded Python...')
     try:
         run([embed_exe, '-m', 'pip', '--version'], capture_output=True)
     except (subprocess.CalledProcessError, FileNotFoundError):

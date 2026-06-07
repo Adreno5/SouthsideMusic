@@ -4,9 +4,8 @@ title Building
 RD /S /Q build.result 2>nul
 RD /S /Q *.dist 2>nul
 
-call .venv\Scripts\activate
 title Building - Nuitka
-call nuitka launcher.py --windows-console-mode=hide --output-filename=Launch --standalone --windows-icon-from-ico=icons\app.ico
+call build_venv\Scripts\python.exe -m nuitka launcher.py --windows-console-mode=hide --output-filename=Launch --standalone --windows-icon-from-ico=icons\app.ico
 
 mkdir build.result 2>nul
 title Building - Copy launcher.dist

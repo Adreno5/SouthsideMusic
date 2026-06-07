@@ -28,6 +28,7 @@ Launch.cmd
 Launch.exe
 python-venv
 embed_python/
+build_venv/
 config.pkl
 cache/
 data/

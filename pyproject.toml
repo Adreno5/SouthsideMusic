@@ -1,6 +1,6 @@
 [project]
 name = "SouthsideMusic"
-version = "v31"
+version = "v32"
 description = "Advanced music player"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -8,9 +8,7 @@ dependencies = [
     "colorama>=0.4.6",
     "darkdetect>=0.8.0",
     "hpyt>=1.4.0",
-    "inquirer>=3.4.1",
     "mutagen>=1.47.0",
-    "nuitka>=4.0.8",
     "numpy>=2.4.2",
     "pillow>=12.2.0",
     "pydub>=0.25.1",

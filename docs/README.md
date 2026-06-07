@@ -1,4 +1,8 @@
+[中文版本](README_zh.md)
+
 # Southside Music
+
+> In an age drowning in things that merely work, what's worth using is what earns the name of a real work. True craft lives in the hours no one sees.
 
 v30 — A third-party NetEase CloudMusic desktop client. High-quality streaming, word-by-word lyrics, loudness normalization, and desktop lyrics overlay.
 
@@ -24,8 +28,6 @@ v30 — A third-party NetEase CloudMusic desktop client. High-quality streaming,
 Southside Music is a Windows desktop music player for NetEase CloudMusic. Log in with your account to search, browse, and play from the full catalog. It has its own audio engine with loudness normalization, speed control, and spectrum visualization, plus word-by-word lyrics and a desktop overlay.
 
 In short: it plays your NetEase music in a cleaner, more focused way.
-
-[中文版本](README_zh.md)
 
 ---
 

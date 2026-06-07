@@ -7,7 +7,7 @@ import sys as _sys
 from threading import Thread
 from typing import TYPE_CHECKING
 
-import darkdetect
+
 import hPyT
 import requests
 import shiboken6
@@ -15,6 +15,7 @@ import shiboken6
 from core.audio_player import getAudioDevices
 from core.downloader import doWithMultiThreading, downloadWithMultiThreading
 from core.dialogs import get_value_bylist
+from core import theme
 from imports import (
     ProgressBar,
     PushButton,
@@ -58,7 +59,7 @@ class DependencesWindow(QWidget):
             Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint
         )
         self.setStyleSheet(
-            f'background-color: {"black" if darkdetect.isDark() else "white"};'
+            f'background-color: {"black" if theme.isDark() else "white"};'
         )
 
         layout = QVBoxLayout()

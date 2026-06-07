@@ -60,6 +60,8 @@ class Config:
 
     play_speed: float = 1
 
+    show_translation: bool = True
+
 
 cfg = Config()
 

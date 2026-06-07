@@ -1,10 +1,11 @@
-import darkdetect
 
+from core import theme
 from core.color import mixColor
 from core.config import cfg
 from core.icons import SouthsideIcon, bindIcon
 from core.models import SongStorable
 from core.smooth import EaseOutTimer, SmoothTimer
+from core.theme import isLight
 from imports import (
     BACKGROUND_RATIO_CHANGED,
     POST_THEME_CHANGED,
@@ -60,6 +61,7 @@ class SearchLineEdit(QLineEdit):
         self._repaintTick()
         self._applyTextColor()
         self._updateIconLayout()
+        self._onThemeChanged()
 
         event_bus.subscribe(POST_THEME_CHANGED, self._onThemeChanged)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._onThemeChanged)
@@ -68,7 +70,7 @@ class SearchLineEdit(QLineEdit):
     def _onThemeChanged(self, song=None):
         song_theme = self._mwindow.song_theme if self._mwindow else None
         self.bg_color = mixColor(
-            QColor(85, 85, 85) if darkdetect.isDark() else QColor(195, 195, 195),
+            QColor(85, 85, 85) if theme.isDark() else QColor(195, 195, 195),
             song_theme if song_theme else QColor(0, 0, 0),
             1 - cfg.background_ratio * 0.5,
         )
@@ -80,7 +82,7 @@ class SearchLineEdit(QLineEdit):
         self._updateIconLayout()
 
     def _applyTextColor(self):
-        color = '#ffffff' if darkdetect.isDark() else '#000000'
+        color = '#ffffff' if theme.isDark() else '#000000'
         self.setStyleSheet(
             f'QLineEdit {{ color: {color}; background: transparent; border: none; padding: 0px; }}'
         )

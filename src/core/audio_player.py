@@ -649,7 +649,7 @@ class AudioPlayer(QObject):
     def _stop_producer(self) -> None:
         self._producer_running = False
         if self._producer_thread is not None and self._producer_thread.is_alive():
-            self._producer_thread.join(timeout=0.5)
+            self._producer_thread.join(timeout=0.1)
         self._producer_thread = None
 
     def _producer_loop(self) -> None:

@@ -9,6 +9,7 @@ from core.icons import SouthsideIcon, getQIcon
 from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable
 from imports import (
     CLOUD_REMOVE_FOLDER,
+    IMAGE_ASSET_PERSISTED,
     LOCAL_REMOVE_FOLDER,
     LOCAL_RENAME_FOLDER,
     FlowLayout,
@@ -56,6 +57,15 @@ class LocalFolderCard(QWidget):
         title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         layout.addWidget(title_label)
 
+        self._loadFirstSongImage()
+        event_bus.subscribe(IMAGE_ASSET_PERSISTED, self._onImageAssetPersisted)
+
+    def _onImageAssetPersisted(self, storable: SongStorable):
+        songs = self.folder['songs']
+        if not songs:
+            return
+        if storable is not songs[0]:
+            return
         self._loadFirstSongImage()
 
     def _loadFirstSongImage(self):

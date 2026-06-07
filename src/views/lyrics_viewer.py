@@ -35,7 +35,8 @@ from imports import QWidget
 from core.qt_utils import toQtInt
 from core.time_format import float2time
 from core.color import mixColor
-from core import theme as darkdetect
+from core import theme
+from core.smooth import EaseOutTimer
 from core.lyrics import LyricInfo, YRCLyricInfo
 
 
@@ -99,6 +100,15 @@ class LyricsViewer(QWidget):
 
         self.hovering = False
 
+        self.translation_timer = EaseOutTimer(0.4, 4)
+
+        self._shown_lines: list[int] = []
+        self._visible_margin = 100
+
+        self._visibility_timer = QTimer(self)
+        self._visibility_timer.timeout.connect(self._updateShownLines)
+        self._visibility_timer.start(50)
+
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(REPAINT, self._onRepaintTick)
 
@@ -137,7 +147,7 @@ class LyricsViewer(QWidget):
         self.delta = 1 / self.refresh_rate
 
     def _hasTranslation(self) -> bool:
-        return bool(self._transmgr.parsed)
+        return bool(self._transmgr.parsed) if self.ctx.cfg.show_translation else False
 
     def _timeKey(self, value: float) -> int:
         return round(value * 1000)
@@ -256,19 +266,34 @@ class LyricsViewer(QWidget):
         return bool(self._transmgr.parsed)
 
     def _lineStep(self) -> float:
-        if self._hasTranslation():
-            return self.font_height + self.theight + self.font_height * 0.75
-        return self.font_height * 1.85
-
+        cur = self.translation_timer.current_value
+        return self.font_height * (1 + 0.85 * (1 - cur)) + (self.theight + self.font_height * 0.75) * cur
+    
     def _currentLineBaseline(self) -> float:
-        block_height = self.font_height
-        if self._hasTranslation():
-            block_height += 2 + self.theight
+        block_height = self.font_height + ((2 + self.theight) * self.translation_timer.current_value)
         return (self.height() - block_height) * 0.5 + self.metri.ascent()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         self.mouse_pos = event.position()
         return super().mouseMoveEvent(event)
+
+    def _updateShownLines(self):
+        if not self._mgr.parsed or not self._lyrics_ready:
+            return
+        use_yrc = bool(self._ymgr.parsed)
+        lines = self._ymgr.parsed if use_yrc else self._mgr.parsed
+        line_step = self._lineStep()
+        current_baseline = self._currentLineBaseline()
+        view_top = -self._visible_margin
+        view_bottom = self.height() + self._visible_margin
+        top_offset = self.draw_offset + current_baseline
+        shown: list[int] = []
+        for i in range(len(lines)):
+            y = top_offset + i * line_step
+            line_bottom = y + self.font_height
+            if line_bottom >= view_top and y - self.font_height <= view_bottom:
+                shown.append(i)
+        self._shown_lines = shown
 
     def paintEvent(self, event: QPaintEvent) -> None:
         now = time.perf_counter_ns()
@@ -338,23 +363,23 @@ class LyricsViewer(QWidget):
         )
         painter.setFont(self.ft)
 
-        y = self.draw_offset + current_baseline
-        for i, line in enumerate(lines):
+        top_offset = self.draw_offset + current_baseline
+        for i in (idx for idx in self._shown_lines if idx < len(lines)):
+            line = lines[i]
             is_current_line = i == idx
+            y = top_offset + i * line_step
             if is_current_line:
                 if line.get('isMetadata'):
                     tar_color = QColor(255, 255, 255)
                     y += 5
                 else:
                     tar_color = (
-                        QColor(255, 255, 255)
-                        if darkdetect.isDark()
-                        else QColor(0, 0, 0)
+                        QColor(255, 255, 255) if theme.isDark() else QColor(0, 0, 0)
                     )
             else:
                 tar_color = (
                     QColor(240, 240, 240, 120)
-                    if darkdetect.isDark()
+                    if theme.isDark()
                     else QColor(55, 55, 55, 120)
                 )
             color = (
@@ -412,11 +437,14 @@ class LyricsViewer(QWidget):
                 else ''
             )
             if translation_text:
+                self.translation_timer.target_value = 1.0 if self.ctx.cfg.show_translation else 0.0
+            cur = self.translation_timer.current_value
+            if translation_text and cur > 0.0:
                 painter.setFont(self.tft)
                 painter.setPen(
-                    QColor(255, 255, 255, 120)
-                    if darkdetect.isDark()
-                    else QColor(0, 0, 0, 120)
+                    QColor(255, 255, 255, int(120 * cur))
+                    if theme.isDark()
+                    else QColor(0, 0, 0, int(120 * cur))
                 )
                 painter.drawText(
                     toQtInt(self.draw_x_offset),
@@ -434,7 +462,7 @@ class LyricsViewer(QWidget):
                 if self.selecting:
                     painter.setBrush(
                         QColor(255, 255, 255, 100)
-                        if darkdetect.isDark()
+                        if theme.isDark()
                         else QColor(0, 0, 0, 100)
                     )
                     painter.setPen(Qt.PenStyle.NoPen)
@@ -457,8 +485,6 @@ class LyricsViewer(QWidget):
                         toQtInt(y),
                         timetxt,
                     )
-
-            y += line_step
 
         painter.end()
 

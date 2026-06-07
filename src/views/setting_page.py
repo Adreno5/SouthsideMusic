@@ -45,7 +45,7 @@ from qfluentwidgets import (
 
 from core.models import SongStorable
 from core.icons import bindIcon
-from core import theme as darkdetect
+from core import theme
 from core.downloader import doWithMultiThreading
 from core.loudness import getAdjustedGainFactor
 from core.audio_player import AudioSegment, AudioPlayer, getAudioDevices
@@ -120,7 +120,7 @@ class SettingPage(QWidget):
 
     def updateTheme(self) -> None:
         self.setStyleSheet(
-            f'background: #{"000000" if darkdetect.isDark() else "FFFFFF"}'
+            f'background: #{"000000" if theme.isDark() else "FFFFFF"}'
         )
 
     def _initOptions(self) -> None:
@@ -387,7 +387,7 @@ class SettingPage(QWidget):
         desc_l = QLabel(description)
         desc_l.setWordWrap(True)
         desc_l.setStyleSheet(
-            f'color: {"#A8A8A8" if darkdetect.isDark() else "#666666"};'
+            f'color: {"#A8A8A8" if theme.isDark() else "#666666"};'
         )
         self.options_layout.addWidget(title_l)
         self.options_layout.addWidget(desc_l)
@@ -417,7 +417,7 @@ class SettingPage(QWidget):
         desc_l = QLabel(description)
         desc_l.setWordWrap(True)
         desc_l.setStyleSheet(
-            f'color: {"#A8A8A8" if darkdetect.isDark() else "#666666"};'
+            f'color: {"#A8A8A8" if theme.isDark() else "#666666"};'
         )
         text_layout.addWidget(name_l)
         text_layout.addWidget(desc_l)
@@ -435,7 +435,7 @@ class SettingPage(QWidget):
         body_l = QLabel(text)
         body_l.setWordWrap(True)
         body_l.setStyleSheet(
-            f'color: {"#A8A8A8" if darkdetect.isDark() else "#666666"};'
+            f'color: {"#A8A8A8" if theme.isDark() else "#666666"};'
         )
         layout.addWidget(title_l)
         layout.addWidget(body_l)
@@ -473,7 +473,7 @@ class SettingPage(QWidget):
         r = card.getBorderRadius()
         d = 2 * r
 
-        isDark = darkdetect.isDark()
+        isDark = theme.isDark()
 
         path = QPainterPath()
         path.arcMoveTo(1, h - d - 1, d, d, 240)

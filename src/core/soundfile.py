@@ -12,7 +12,16 @@ from mutagen.oggvorbis import OggVorbis
 from mutagen.wave import WAVE
 from mutagen.id3._util import ID3NoHeaderError
 from mutagen.id3._frames import (
-    APIC, TIT2, TPE1, TALB, TPE2, TDRC, TRCK, TCON, TCOM, USLT
+    APIC,
+    TIT2,
+    TPE1,
+    TALB,
+    TPE2,
+    TDRC,
+    TRCK,
+    TCON,
+    TCOM,
+    USLT,
 )
 
 from core.lyrics import LRCLyricParser
@@ -26,6 +35,7 @@ _EXT_MAP: dict[type, str] = {
     WAVE: '.wav',
 }
 
+
 def _clean_lrc(raw_lyric: str) -> str:
     mgr = LRCLyricParser()
     mgr.cur = raw_lyric
@@ -35,8 +45,9 @@ def _clean_lrc(raw_lyric: str) -> str:
         minutes = int(info['time'] // 60)
         seconds = info['time'] % 60
         timestamp = f'[{minutes:02d}:{seconds:05.2f}]'
-        lines.append(f'{timestamp}{info['content']}')
+        lines.append(f'{timestamp}{info["content"]}')
     return '\n'.join(lines)
+
 
 def _detect_format(song_bytes: bytes):
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -45,11 +56,14 @@ def _detect_format(song_bytes: bytes):
     try:
         audio = mutagen.File(tmp_path)  # type: ignore
         if audio is None:
-            raise ValueError(f'Invalid audio file format (magic bytes: {song_bytes[:8].hex()})')
+            raise ValueError(
+                f'Invalid audio file format (magic bytes: {song_bytes[:8].hex()})'
+            )
         return tmp_path, type(audio)
     except Exception:
         os.unlink(tmp_path)
         raise
+
 
 def _set_id3_tags(
     audio: MP3 | WAVE,
@@ -66,11 +80,12 @@ def _set_id3_tags(
 ) -> None:
     # Ensure tags exist
     if isinstance(audio, MP3):
+        if audio.tags is not None:
+            audio.tags.delete(audio.filename)
         try:
             audio.add_tags()
-        except ID3NoHeaderError:
-            audio = MP3(audio.filename)
-            audio.add_tags()
+        except Exception:
+            pass
     else:  # WAVE
         if audio.tags is None:
             audio.add_tags()
@@ -135,6 +150,7 @@ def _set_id3_tags(
             )
         )
 
+
 def _set_tags_vorbis(
     audio: FLAC | OggOpus | OggVorbis,
     song_name: str,
@@ -184,6 +200,7 @@ def _set_tags_vorbis(
         else:
             audio['METADATA_BLOCK_PICTURE'] = [pic.write()]
 
+
 def _set_tags_mp4(
     audio: MP4,
     song_name: str,
@@ -226,6 +243,7 @@ def _set_tags_mp4(
     if song_image:
         audio['covr'] = [MP4Cover(song_image, imageformat=MP4Cover.FORMAT_JPEG)]
 
+
 def saveSongWithInformations(
     song_bytes: bytes,
     song_image: bytes,
@@ -249,23 +267,59 @@ def saveSongWithInformations(
 
         if isinstance(audio, MP3):
             _set_id3_tags(
-                audio, song_name, song_artists, song_image,
-                _clean_lrc(lyrics), album, album_artist, year, track_number, genre, composer
+                audio,
+                song_name,
+                song_artists,
+                song_image,
+                _clean_lrc(lyrics),
+                album,
+                album_artist,
+                year,
+                track_number,
+                genre,
+                composer,
             )
         elif isinstance(audio, WAVE):
             _set_id3_tags(
-                audio, song_name, song_artists, song_image,
-                _clean_lrc(lyrics), album, album_artist, year, track_number, genre, composer
+                audio,
+                song_name,
+                song_artists,
+                song_image,
+                _clean_lrc(lyrics),
+                album,
+                album_artist,
+                year,
+                track_number,
+                genre,
+                composer,
             )
         elif isinstance(audio, (FLAC, OggOpus, OggVorbis)):
             _set_tags_vorbis(
-                audio, song_name, song_artists, song_image,
-                _clean_lrc(lyrics), album, album_artist, year, track_number, genre, composer
+                audio,
+                song_name,
+                song_artists,
+                song_image,
+                _clean_lrc(lyrics),
+                album,
+                album_artist,
+                year,
+                track_number,
+                genre,
+                composer,
             )
         elif isinstance(audio, MP4):
             _set_tags_mp4(
-                audio, song_name, song_artists, song_image,
-                _clean_lrc(lyrics), album, album_artist, year, track_number, genre, composer
+                audio,
+                song_name,
+                song_artists,
+                song_image,
+                _clean_lrc(lyrics),
+                album,
+                album_artist,
+                year,
+                track_number,
+                genre,
+                composer,
             )
         else:
             raise ValueError(f'Unsupported audio format: {fmt.__name__}')

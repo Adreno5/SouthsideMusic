@@ -5,7 +5,7 @@ from imports import QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import TitleLabel
 import hPyT
 
-from core import theme as darkdetect
+from core import theme
 import time
 
 from core.dialogs import SubtitleLabel
@@ -43,7 +43,7 @@ class LaunchWindow(QWidget):
         self.setLayout(launchlayout)
 
         self.setStyleSheet(
-            f'QWidget {{ background-color: {"#FFFFFF" if darkdetect.isLight() else "#000000"} }} QLabel {{ color: {"white" if darkdetect.isDark() else "black"}; }}'
+            f'QWidget {{ background-color: {"#FFFFFF" if theme.isLight() else "#000000"} }} QLabel {{ color: {"white" if theme.isDark() else "black"}; }}'
         )
 
         self.show()

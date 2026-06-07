@@ -30,7 +30,7 @@ from imports import QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import CheckBox, FlowLayout, PushButton, FluentIcon, TitleLabel
 from core.color import mixColor
 from core.config import Config, cfg
-from core import theme as darkdetect
+from core import theme
 from core.lyrics import LyricInfo, YRCLyricInfo
 from views.lyrics_viewer import LyricsViewer
 
@@ -219,7 +219,7 @@ class DesktopLyricsViewer(LyricsViewer):
             painter.setBrush(
                 mixColor(
                     song_theme,
-                    QColor(255, 255, 255) if darkdetect.isLight() else QColor(0, 0, 0),
+                    QColor(255, 255, 255) if theme.isLight() else QColor(0, 0, 0),
                     cfg.background_ratio * 0.2,
                 )
             )
@@ -233,7 +233,7 @@ class DesktopLyricsViewer(LyricsViewer):
                         mixColor(
                             song_theme,
                             QColor(125, 125, 125)
-                            if darkdetect.isDark()
+                            if theme.isDark()
                             else QColor(80, 80, 80),
                             cfg.background_ratio * 0.5,
                         )
@@ -287,7 +287,7 @@ class DesktopLyricsViewer(LyricsViewer):
                         mixColor(
                             song_theme,
                             QColor(125, 125, 125)
-                            if darkdetect.isDark()
+                            if theme.isDark()
                             else QColor(80, 80, 80),
                             cfg.background_ratio * 0.5,
                         )

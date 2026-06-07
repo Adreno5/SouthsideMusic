@@ -34,7 +34,7 @@ from core.audio_player import AudioPlayer
 from core.backend import init_backend
 from core.netease_backend import NeteaseCloudMusicBackend
 from core.playing_manager import PlayingManager
-from core import theme as darkdetect
+from core import theme as themeModule
 import pyncm as ncm
 from pyncm import apis
 from core.ws_server import ws_server, ws_handler
@@ -203,10 +203,10 @@ if __name__ == '__main__':
     def _themeChanged(theme: str):
         def _updateTheme():
             global mwindow
-            darkdetect._is_dark = darkdetect.getDarkdetect().isDark()
+            themeModule._is_dark = themeModule.getDarkdetect().isDark()
             setTheme(Theme.LIGHT if theme == 'Light' else Theme.DARK)
             app.setStyleSheet(
-                f'QLabel {{ color: {"white" if darkdetect.isDark() else "black"}; }}'
+                f'color: {"white" if themeModule.isDark() else "black"};'
             )
             refreshBoundIcons()
             _ims.event_bus.emit(_ims.POST_THEME_CHANGED)
@@ -243,9 +243,9 @@ if __name__ == '__main__':
     threading.Thread(target=_cleanCaches, daemon=True).start()
 
     app.setStyleSheet(
-        f'QLabel {{ color: {"white" if darkdetect.isDark() else "black"}; }}'
+        f'color: {"white" if themeModule.isDark() else "black"};'
     )
-    setTheme(Theme.LIGHT if darkdetect.isLight() else Theme.DARK)
+    setTheme(Theme.LIGHT if themeModule.isLight() else Theme.DARK)
 
     app.processEvents()
 

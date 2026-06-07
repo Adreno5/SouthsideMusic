@@ -3,7 +3,7 @@ import logging
 from enum import Enum
 from typing import Any, Literal, cast
 
-import darkdetect
+from core import theme as themeModule
 from imports import QIcon
 from qfluentwidgets import FluentIconBase, Theme, isDarkTheme
 import tempfile
@@ -39,12 +39,13 @@ class SouthsideIcon(FluentIconBase, Enum):
     SETTINGS = 'settings'
     SEARCH = 'search'
     RENAME = 'rename'
+    TRANSLATION = 'translation'
 
     @lru_cache
     def path(self, theme=Theme.AUTO) -> str:
         with open(f'icons/{self.value}.svg', 'r', encoding='utf-8') as f:
             svg = f.read()
-        target = '#ffffff' if darkdetect.isDark() else '#000000'
+        target = '#ffffff' if themeModule.isDark() else '#000000'
         if theme == Theme.DARK:
             target = '#ffffff'
         elif theme == Theme.LIGHT:

@@ -5,7 +5,6 @@ import logging
 
 import os
 import threading
-import time
 from typing import Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -16,6 +15,7 @@ if TYPE_CHECKING:
 from imports import (
     FAVORITES_CHANGED,
     IMAGE_ASSET_PERSISTED,
+    MWINDOW_REFRESH_FOLDERS,
     PLAYLIST_CHANGED,
     PLAY_SONG_AT_INDEX,
     QAbstractAnimation,
@@ -25,11 +25,12 @@ from imports import (
     Signal,
     event_bus,
 )
-from imports import QImage, QMouseEvent, QPixmap
+from imports import QImage, QMouseEvent, QPixmap, QTimer
 from imports import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QListWidget,
     QListWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -41,9 +42,11 @@ from qfluentwidgets import (
     IndeterminateProgressRing,
     InfoBar,
     MenuAnimationType,
+    MessageBoxBase,
     PrimaryToolButton,
     RoundMenu,
     SubtitleLabel,
+    TransparentPushButton,
     TransparentToolButton,
     ToolButton,
 )
@@ -51,23 +54,25 @@ from qfluentwidgets import (
 from core.models import (
     IMAGE_DATA_DIR,
     MUSIC_DATA_DIR,
+    CloudFolderInfo,
     SearchSongInfo,
     SongDetail,
     SongInfo,
     SongStorable,
 )
 from core.icons import bindIcon, getQIcon
-from core import theme as darkdetect
 from core.downloader import (
     doWithMultiThreading,
     downloadWithMultiThreading,
     DownloadingManager,
 )
 from core.soundfile import getSongFormat, saveSongWithInformations
-from core import http_utils as requests
+import requests
 from core.favorites import favorites_manager
 from core.models import LocalFolderInfo
 from core.backend import get_backend
+from views.list_widget import SListWidget
+from views.folder_card import CloudFolderCard, LocalFolderCard
 
 
 _image_download_locks: dict[str, threading.Lock] = {}
@@ -90,6 +95,95 @@ class DummyCard:
         )
         self.detail: SongDetail = SongDetail(image_url='')
         self.storable: SongStorable = storable
+
+
+class FolderSelectDialog(MessageBoxBase):
+    def __init__(self, parent, mwindow, song_id: str):
+        super().__init__(parent)
+        self._mwindow = mwindow
+        self._cloud_playlists: list[CloudFolderInfo] = []
+
+        self.title_label = SubtitleLabel('Add to Folder')
+        self.viewLayout.addWidget(self.title_label)
+
+        self.list_widget = SListWidget()
+        self.list_widget.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self.list_widget.setFixedWidth(int(parent.width() * 0.6))
+        self.viewLayout.addWidget(self.list_widget)
+
+        local_folders = [
+            f
+            for f in favorites_manager.folders
+            if not any(s.id == song_id for s in f['songs'])
+        ]
+
+        if local_folders:
+            self.list_widget.addItem(QListWidgetItem('Local'))
+            for folder in local_folders:
+                card = LocalFolderCard(folder, self.list_widget.width())
+                card.clicked.connect(
+                    lambda f=folder: self._select('local', f['folder_name'], None)
+                )
+                item = QListWidgetItem()
+                item.setData(Qt.ItemDataRole.UserRole, folder)
+                item.setSizeHint(card.sizeHint())
+                self.list_widget.addItem(item)
+                self.list_widget.setItemWidget(item, card)
+
+        create_item = QListWidgetItem()
+        create_btn = TransparentPushButton(FluentIcon.ADD_TO, 'Create New Folder...')
+        create_btn.clicked.connect(self._selectCreateNew)
+        create_item.setSizeHint(create_btn.sizeHint())
+        self.list_widget.addItem(create_item)
+        self.list_widget.setItemWidget(create_item, create_btn)
+
+        anonymous = get_backend().user_anonymous()
+        if not anonymous:
+            self.list_widget.addItem(QListWidgetItem('Cloud'))
+            self._cloud_section_idx = self.list_widget.count()
+            loading_item = QListWidgetItem('Loading...')
+            self.list_widget.addItem(loading_item)
+            threading.Thread(target=self._loadCloudPlaylists, daemon=True).start()
+
+        self.yesButton.hide()
+        self._selected: tuple[str, str, str | None] | None = None
+
+    def _select(self, sel_type, name, cloud_id):
+        self._selected = (sel_type, name, cloud_id)
+        self.accept()
+
+    def _selectCreateNew(self):
+        self._selected = ('local', '+ Create New Folder...', None)
+        self.accept()
+
+    def _loadCloudPlaylists(self):
+        try:
+            playlists = get_backend().get_user_playlists()
+            self._mwindow.addScheduledTask(lambda: self._onCloudLoaded(playlists))
+        except Exception:
+            self._mwindow.addScheduledTask(
+                lambda: self.list_widget.addItem(QListWidgetItem('Failed to load'))
+            )
+
+    def _onCloudLoaded(self, playlists: list[CloudFolderInfo]):
+        self._cloud_playlists = playlists
+        for _ in range(self.list_widget.count() - self._cloud_section_idx):
+            self.list_widget.takeItem(self._cloud_section_idx)
+        width = self.list_widget.width()
+        ctx = self._mwindow.ctx
+        for pl in playlists:
+            card = CloudFolderCard(pl, width, ctx)
+            card.clicked.connect(
+                lambda f=pl: self._select('cloud', f['folder_name'], str(f['id']))
+            )
+            item = QListWidgetItem()
+            item.setSizeHint(card.sizeHint())
+            item.setData(Qt.ItemDataRole.UserRole, pl)
+            self.list_widget.addItem(item)
+            self.list_widget.setItemWidget(item, card)
+
+    def getSelectedFolderInfo(self) -> tuple[str, str, str | None] | None:
+        return self._selected
 
 
 class SongCard(QWidget):
@@ -146,93 +240,121 @@ class SongCard(QWidget):
         self._play_callback(self)
 
     def addToFavorites(self):
-        from core.dialogs import get_value_bylist, get_text_lineedit
-
-        folder_names = [f['folder_name'] for f in favorites_manager.folders]
-        folder_names.append('Create New Folder...')
-        chosen = get_value_bylist(
-            self._mwindow,
-            'Choose Folder',
-            'Which folder to save this song?',
-            folder_names,
+        song_id = str(self.info['id'])
+        anonymous = get_backend().user_anonymous()
+        all_local_have = bool(favorites_manager.folders) and all(
+            any(s.id == song_id for s in f['songs']) for f in favorites_manager.folders
         )
-        if chosen is None:
-            return
-
-        if chosen == 'Create New Folder...':
-            chosen = get_text_lineedit(
-                self._mwindow, 'Create New Folder', 'My first folder', self._mwindow
-            )
-            if chosen:
-                favorites_manager.addFolder(chosen)
-
-            target_folder = LocalFolderInfo(folder_name=chosen, songs=[])
-        else:
-            target_folder = next(
-                f for f in favorites_manager.folders if f['folder_name'] == chosen
-            )
-
-        result_container = []
-        _finished = False
-        _manager: DownloadingManager | None = None
-
-        image_bytes = None
-
-        def _downloaded(music_bytes: bytes):
-            nonlocal _finished, image_bytes
-            result_container.append((image_bytes, music_bytes))
-            _finished = True
-
-        def _download():
-            nonlocal _manager, image_bytes
-            backend = get_backend()
-            detail = backend.get_track_detail(str(self.info['id']))
-            image_url = detail['cover_url']
-            image_bytes = requests.get(image_url).content
-
-            audio = backend.get_track_audio(
-                str(self.info['id']), bitrate=self.info['privilege']['max_br']
-            )
-            music_url = audio['url']
-
-            _manager = downloadWithMultiThreading(music_url, {}, {}, None, _downloaded)
-
-        def _finish():
-            while not _finished:
-                time.sleep(0.2)
-
-            image_bytes, music_bytes = result_container[0]
-
-            storable = SongStorable(
-                info={
-                    'name': self.info['name'],
-                    'artists': '、'.join(a['name'] for a in self.info['artists']),
-                    'id': str(self.info['id']),
-                    'privilege': -1,
-                },
-                image=image_bytes,
-                music_bin=music_bytes,
-                lyric='',
-            )
-            if not favorites_manager.addSong(chosen, storable):
-                InfoBar.warning(
-                    'Folder not found',
-                    f"Folder '{chosen}' may have been removed",
-                    parent=self._mwindow,
-                    duration=3000,
-                )
-                return
-
-            event_bus.emit(FAVORITES_CHANGED, chosen)
-
-            InfoBar.success(
-                'Favorited',
-                f"Added {self.info['name']} to '{chosen}'",
+        if all_local_have and anonymous:
+            InfoBar.info(
+                'Already saved',
+                'This song is already in all folders',
                 parent=self._mwindow,
                 duration=3000,
             )
+            return
 
-        doWithMultiThreading(_download, (), self._mwindow, _finish)
+        dialog = FolderSelectDialog(self._mwindow, self._mwindow, song_id)
+        reply = dialog.exec()
+        if not reply:
+            return
+        selection = dialog.getSelectedFolderInfo()
+        if selection is None:
+            return
+
+        folder_type, folder_name, cloud_id = selection
+
+        if folder_type == 'cloud' and cloud_id:
+            if not get_backend().edit_playlist('add', str(self.info['id']), cloud_id):
+                InfoBar.warning(
+                    'Session expired',
+                    'Please re-login to perform this action',
+                    parent=self._mwindow,
+                    duration=5000,
+                )
+                return
+            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+            InfoBar.success(
+                'Favorited',
+                f"Added {self.info['name']} to cloud playlist '{folder_name}'",
+                parent=self._mwindow,
+                duration=3000,
+            )
+            return
+
+        if folder_name == '+ Create New Folder...':
+            from core.dialogs import get_text_lineedit
+
+            folder_name = get_text_lineedit(
+                self._mwindow, 'Create New Folder', 'My first folder', self._mwindow
+            )
+            if not folder_name:
+                return
+            favorites_manager.addFolder(folder_name)
+
+        result: dict = {}
+
+        def _on_prepared():
+            if not result.get('done'):
+                return
+            self._mwindow.addScheduledTask(
+                lambda: self._finishAddToFavorites(
+                    folder_name, result['image'], result['music']
+                )
+            )
+
+        def _prepare():
+            try:
+                backend = get_backend()
+                detail = backend.get_track_detail(str(self.info['id']))
+                image_url = detail['cover_url']
+                image_bytes = requests.get(image_url).content
+                result['image'] = image_bytes
+
+                audio = backend.get_track_audio(
+                    str(self.info['id']), bitrate=self.info['privilege']['max_br']
+                )
+                music_url = audio['url']
+                result['music'] = requests.get(music_url).content
+                result['done'] = True
+            except Exception:
+                result['done'] = False
+
+        doWithMultiThreading(_prepare, (), self._mwindow, _on_prepared)
+
+    def _finishAddToFavorites(
+        self, folder_name: str, image_bytes: bytes | None, music_bytes: bytes
+    ):
+        if image_bytes is None:
+            return
+        storable = SongStorable(
+            info={
+                'name': self.info['name'],
+                'artists': '、'.join(a['name'] for a in self.info['artists']),
+                'id': str(self.info['id']),
+                'privilege': -1,
+            },
+            image=image_bytes,
+            music_bin=music_bytes,
+            lyric='',
+        )
+        if not favorites_manager.addSong(folder_name, storable):
+            InfoBar.warning(
+                'Folder not found',
+                f"Folder '{folder_name}' may have been removed",
+                parent=self._mwindow,
+                duration=3000,
+            )
+            return
+
+        event_bus.emit(FAVORITES_CHANGED, folder_name)
+
+        InfoBar.success(
+            'Favorited',
+            f"Added {self.info['name']} to '{folder_name}'",
+            parent=self._mwindow,
+            duration=3000,
+        )
 
     def loadDetailAndImage(self):
         self.load = True
@@ -265,6 +387,7 @@ class SongCard(QWidget):
 
 class _SongCardItem(QWidget):
     clicked = Signal(object)
+    queued = Signal(object)
 
     def __init__(
         self,
@@ -307,6 +430,7 @@ class _SongCardItem(QWidget):
 
         self.img_label = QLabel()
         self.img_label.setFixedSize(50, 50)
+        self.img_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         layout.addWidget(self.img_label)
 
         text_layout = QVBoxLayout()
@@ -435,7 +559,11 @@ class _SongCardItem(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self.storable)
+            cover_rect = self.img_label.geometry()
+            if cover_rect.contains(event.pos()):
+                self.queued.emit(self.storable)
+            else:
+                self.clicked.emit(self.storable)
         return super().mousePressEvent(event)
 
 
@@ -533,7 +661,6 @@ class PlaylistSongCard(_SongCardItem):
         playlist.insert(insert_index, self.storable)
         if self._dp.playing_manager.current_index >= insert_index:
             self._dp.playing_manager.current_index += 1
-        self._dp.playing_manager.refreshRandom()
         event_bus.emit(PLAYLIST_CHANGED)
         self._plp.lst.setCurrentRow(insert_index)
 
@@ -668,7 +795,6 @@ class CloudFavoriteSongCard(_SongCardItem):
         )
         self._remove_callback = remove_callback
 
-
     def _addToLocalFolder(self):
         from core.dialogs import get_value_bylist, get_text_lineedit
 
@@ -733,8 +859,6 @@ class CloudFavoriteSongCard(_SongCardItem):
             downloadWithMultiThreading(music_url, {}, {}, None, _on_music_done)
 
         threading.Thread(target=_do_download, daemon=True).start()
-
-
 
     def contextMenuEvent(self, event):
         menu = RoundMenu(parent=self)

@@ -141,9 +141,16 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
 
     def edit_playlist(
         self, option: Literal['add'] | Literal['del'], song_id: str, folder_id: str
-    ) -> None:
+    ) -> bool:
         with pyncm.GetCurrentSession():
-            apis.playlist.SetManipulatePlaylistTracks(song_id, folder_id, op=option)
+            result = apis.playlist.SetManipulatePlaylistTracks(
+                [song_id], folder_id, op=option
+            )
+            assert isinstance(result, dict), 'Invalid Response'
+            if result.get('code') != 200:
+                _logger.warning('edit_playlist(%s) failed: %s', option, result)
+                return False
+            return True
 
     def get_playlist_tracks(self, playlist_id: str) -> list[SongStorable]:
         with pyncm.GetCurrentSession():

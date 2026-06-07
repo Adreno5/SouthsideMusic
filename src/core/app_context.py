@@ -52,7 +52,6 @@ class AppContext:
         self.playing_manager: PlayingManager = cast('PlayingManager', None)
         self.dependences_available: bool = True
 
-        # main.py injects these after AppContext construction while building pages.
         self.launch_window: LaunchWindow = cast('LaunchWindow', None)
         self.main_window: MainWindow = cast('MainWindow', None)
         self.playing_page: PlayingPage = cast('PlayingPage', None)

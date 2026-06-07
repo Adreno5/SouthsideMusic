@@ -11,6 +11,9 @@ from imports import (
     PLAYLIST_CHANGED,
     PLAY_STORABLE,
     PushButton,
+    QLabel,
+    QPixmap,
+    QPoint,
     QSize,
     Qt,
     QTimer,
@@ -22,6 +25,9 @@ from imports import (
     QMessageBox,
     QVBoxLayout,
     QWidget,
+    QGraphicsOpacityEffect,
+    QPropertyAnimation,
+    QEasingCurve,
 )
 from qfluentwidgets import (
     FluentIcon,
@@ -176,6 +182,11 @@ class FavoritesPage(QWidget):
             self.title_label.setText(self.curr_cloud_folder['folder_name'])
             songs = self.curr_cloud_songs
         elif self.curr_folder:
+            folder_name = self.curr_folder['folder_name']
+            for f in favorites_manager.folders:
+                if f['folder_name'] == folder_name:
+                    self.curr_folder = f
+                    break
             self.title_label.setText(self.curr_folder['folder_name'])
             songs = self.curr_folder['songs']
         else:
@@ -205,10 +216,100 @@ class FavoritesPage(QWidget):
                     move_callback=self.moveSong,
                     lazy=True,
                 )
-            card.clicked.connect(lambda s, it=item: self._onSongClicked(s, it))
+            card.clicked.connect(lambda s: self._repliceAndPlay(s))
+            card.queued.connect(lambda s: self._queueAfterCurrent(s))
             self.song_viewer.addItem(item)
             self.song_viewer.setItemWidget(item, card)
             self._song_cards.append(card)
+
+    def _repliceAndPlay(self, song: SongStorable):
+        self.replacePlaylist(False)
+        event_bus.emit(PLAYLIST_CHANGED)
+        event_bus.emit(PLAY_STORABLE, song)
+
+    def _queueAfterCurrent(self, song: SongStorable):
+        playlist = self._pm.playlist
+        insert_index = self._pm.current_index + 2
+        playlist.insert(insert_index, song)
+        event_bus.emit(PLAYLIST_CHANGED)
+        self._animateCoverFly(song)
+
+    def _animateCoverFly(self, song: SongStorable):
+        for card in list(self._song_cards):
+            try:
+                card.objectName()
+            except RuntimeError:
+                continue
+            if card.storable is song:
+                break
+        else:
+            return
+
+        pixmap = card.img_label.pixmap()
+        if not pixmap or pixmap.isNull():
+            try:
+                image_bytes = song.get_image_bytes()
+                pixmap = QPixmap()
+                pixmap.loadFromData(image_bytes)
+                if pixmap.isNull():
+                    return
+            except Exception:
+                return
+            scaled = pixmap.scaled(
+                50,
+                50,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        else:
+            scaled = pixmap
+
+        fly_label = QLabel(self._mwindow)
+        fly_label.setPixmap(scaled)
+        fly_label.setFixedSize(50, 50)
+
+        card_global = card.img_label.mapToGlobal(QPoint(0, 0))
+        mwindow_global = self._mwindow.mapToGlobal(QPoint(0, 0))
+        start_x = card_global.x() - mwindow_global.x()
+        start_y = card_global.y() - mwindow_global.y()
+        fly_label.move(start_x, start_y)
+        fly_label.show()
+        fly_label.raise_()
+
+        end_x = self._mwindow.width() - 55
+        end_y = self._mwindow.height() - 55
+
+        mid_x = (start_x + end_x) / 2
+        arc_height = 120 + abs(start_y - end_y) * 0.3
+        mid_y = min(start_y, end_y) - arc_height
+
+        pos_anim = QPropertyAnimation(fly_label, b'pos', self._mwindow)
+        pos_anim.setDuration(500)
+        pos_anim.setStartValue(QPoint(start_x, start_y))
+        pos_anim.setEndValue(QPoint(end_x, end_y))
+        pos_anim.setEasingCurve(QEasingCurve.Type.OutSine)
+
+        keyframe_count = int(self.ctx.app.primaryScreen().refreshRate() * 0.5)
+        for i in range(1, keyframe_count):
+            t = i / keyframe_count
+            x = (1 - t) ** 2 * start_x + 2 * (1 - t) * t * mid_x + t**2 * end_x
+            y = (1 - t) ** 2 * start_y + 2 * (1 - t) * t * mid_y + t**2 * end_y
+            pos_anim.setKeyValueAt(t, QPoint(int(x), int(y)))
+
+        opacity_effect = QGraphicsOpacityEffect(fly_label)
+        fly_label.setGraphicsEffect(opacity_effect)
+        opacity_anim = QPropertyAnimation(opacity_effect, b'opacity', self._mwindow)
+        opacity_anim.setDuration(500)
+        opacity_anim.setStartValue(1.0)
+        opacity_anim.setEndValue(0.0)
+        opacity_anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
+
+        def _cleanup():
+            fly_label.deleteLater()
+
+        pos_anim.finished.connect(_cleanup)
+        pos_anim.start()
+        opacity_anim.start()
 
     def moveSong(self, song: SongStorable, delta: int):
         if self.is_cloud:
@@ -238,7 +339,7 @@ class FavoritesPage(QWidget):
                 self._pm.current_index = songs.index(current_song)
             except ValueError:
                 pass
-        self._pm.refreshRandom()
+
         self.refresh()
 
     def deleteSong(self, song_storable: SongStorable):
@@ -274,44 +375,6 @@ class FavoritesPage(QWidget):
             'Song deleted', f'Song {song_name} deleted', parent=self._mwindow
         )
 
-        reply = QMessageBox.question(
-            self._mwindow,
-            'Confirm Delete',
-            f'Are you sure you want to delete song {song_name} from favorites?',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        _logger.info(
-            'deleteSong: reply=%r, Yes=%r', reply, QMessageBox.StandardButton.Yes
-        )
-
-        if reply != QMessageBox.StandardButton.Yes:
-            _logger.info('deleteSong: cancelled (reply=%r)', reply)
-            return
-
-        _logger.info('deleteSong: removing from favorites_manager')
-        for f in favorites_manager.folders:
-            before = len(f['songs'])
-            f['songs'] = [s for s in f['songs'] if s.name != song_name]
-            after = len(f['songs'])
-            if before != after:
-                _logger.info(
-                    "Removed %d song(s) from folder '%s'",
-                    before - after,
-                    f['folder_name'],
-                )
-        favorites_manager._save()
-
-        _logger.info(
-            'deleteSong: refreshing, curr_folder songs count=%d',
-            len(self.curr_folder['songs']) if self.curr_folder else -1,
-        )
-        self.refresh()
-
-        InfoBar.success(
-            'Song deleted', f'Song {song_name} deleted', parent=self._mwindow
-        )
-
     def deleteCloudSong(self, song_storable: SongStorable):
         if not self.curr_cloud_folder:
             return
@@ -325,9 +388,16 @@ class FavoritesPage(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
-            get_backend().edit_playlist(
+            if not get_backend().edit_playlist(
                 'del', song_storable.id, self.curr_cloud_folder['id']
-            )
+            ):
+                InfoBar.warning(
+                    'Session expired',
+                    'Please re-login to perform this action',
+                    parent=self._mwindow,
+                    duration=5000,
+                )
+                return
             self.curr_cloud_songs = [
                 s for s in self.curr_cloud_songs if s.id != song_storable.id
             ]
@@ -338,11 +408,10 @@ class FavoritesPage(QWidget):
                 parent=self._mwindow,
             )
 
-    def replacePlaylist(self):
+    def replacePlaylist(self, tip=True):
         self._pm.playlist.clear()
         for song in self._songs():
             self._pm.playlist.append(song)
-        self._pm.refreshRandom()
         event_bus.emit(PLAYLIST_CHANGED)
         folder_name = (
             self.curr_cloud_folder['folder_name']
@@ -351,11 +420,12 @@ class FavoritesPage(QWidget):
             if self.curr_folder
             else ''
         )
-        InfoBar.success(
-            'Playlist replaced',
-            f'Playlist replaced with {folder_name}',
-            parent=self._mwindow,
-        )
+        if tip:
+            InfoBar.success(
+                'Playlist replaced',
+                f'Playlist replaced with {folder_name}',
+                parent=self._mwindow,
+            )
 
     def addFolderToPlaylist(self):
         added_count = 0
@@ -372,8 +442,4 @@ class FavoritesPage(QWidget):
                 parent=self._mwindow,
             )
 
-        self._pm.refreshRandom()
-
-    def _onSongClicked(self, storable: SongStorable, item: QListWidgetItem):
-        self.song_viewer.setCurrentItem(item)
-        event_bus.emit(PLAY_STORABLE, storable)
+        event_bus.emit(PLAYLIST_CHANGED)

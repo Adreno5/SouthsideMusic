@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import numpy as np
 
-from core import http_utils as requests
+import requests
 from core.audio_player import (
     PatchedAudioSegment as AudioSegment_,
     cache_decoded_audio,
@@ -92,6 +92,9 @@ class PlayingManager:
         self._gain_cache: dict[str, float] = {}
         self._play_seq = 0
         self._pending_search_id: str | None = None
+        self._preload_download_seq = 0
+        self._preload_download_song_id: str | None = None
+        self._pending_play_selection: PlaySelection | None = None
 
         if ctx is not None:
             self._bindEvents()
@@ -139,6 +142,12 @@ class PlayingManager:
         event_bus.subscribe(PLAY_SONG_AT_INDEX, self.playSongAtIndex)
         event_bus.subscribe(PLAY_START_PLAYLIST, self.startPlaylist)
         event_bus.subscribe(PLAY_CONTINUE_LAST_SONG, self.continueLastSong)
+        event_bus.subscribe(PLAYLIST_CHANGED, self.playlistChanged)
+
+    def playlistChanged(self):
+        self.refreshRandom()
+        self.clearReservedNext()
+        self.clearPreload()
 
     def _emitError(self, title: str, message: str) -> None:
         event_bus.emit(PLAYBACK_ERROR, title, message)
@@ -171,6 +180,9 @@ class PlayingManager:
         self.next_song_audio = None
         self.next_song_gain = None
         self.next_song_selection = None
+        self._preload_download_seq += 1
+        self._preload_download_song_id = None
+        self._pending_play_selection = None
 
     def isSelectionCurrent(self, selection: PlaySelection | None) -> bool:
         if selection is None:
@@ -513,12 +525,24 @@ class PlayingManager:
                 self.next_song_gain = None
                 self.next_song_selection = None
 
+                self._preload_download_seq += 1
+                download_seq = self._preload_download_seq
+                self._preload_download_song_id = str(next_song.id)
+
                 def _after_download(success: bool) -> None:
+                    if download_seq != self._preload_download_seq:
+                        self._logger.info('discarding stale preload download')
+                        return
+                    self._preload_download_song_id = None
                     if not success:
                         self._logger.warning('failed to download next song for preload')
-                        return
-                    if not _is_preload_current():
-                        self._logger.info('discarding stale preload download')
+                        if self._pending_play_selection:
+                            sel = self._pending_play_selection
+                            self._pending_play_selection = None
+                            self._emitError(
+                                'Playback failed',
+                                'Failed to download song assets.',
+                            )
                         return
                     _start_preload(False)
 
@@ -584,6 +608,13 @@ class PlayingManager:
                 self.next_song_selection = selection
                 self.preloaded = True
 
+                if self._pending_play_selection:
+                    sel = self._pending_play_selection
+                    self._pending_play_selection = None
+                    self.current_index = sel.index
+                    self.clearReservedNext()
+                    self._schedule(self.playPreloadedSong, sel)
+
             image_missing, music_missing = self._storable_asset_missing(next_song)
             if image_missing or music_missing:
                 _download_then_preload(image_missing, music_missing)
@@ -603,6 +634,16 @@ class PlayingManager:
             player = self._player
             if player is not None:
                 player.setPosition(0)
+            return
+
+        if (
+            self._preload_download_song_id is not None
+            and str(selection.song.id) == self._preload_download_song_id
+            and byuser
+        ):
+            self._logger.info('deferring next to preload download completion')
+            self._pending_play_selection = selection
+            event_bus.emit(PLAYBACK_SONG_LOADING, selection.song)
             return
 
         if (
@@ -800,6 +841,23 @@ class PlayingManager:
     ) -> bool:
         image_missing, music_missing = self._storable_asset_missing(song_storable)
         if image_missing or music_missing:
+            if (
+                self._preload_download_song_id is not None
+                and str(song_storable.id) == self._preload_download_song_id
+            ):
+                self._logger.info(
+                    'ensureAssets: reusing in-progress preload download for %s',
+                    song_storable.id,
+                )
+                self._pending_play_selection = PlaySelection(
+                    index=self.current_index,
+                    song=song_storable,
+                    mode=self.play_mode,
+                    by_user=True,
+                    base_index=self.current_index,
+                )
+                event_bus.emit(PLAYBACK_SONG_LOADING, song_storable)
+                return False
             self._downloadMissingStorableAssets(
                 song_storable,
                 image_missing,
@@ -915,7 +973,7 @@ class PlayingManager:
             self._show_original_lyrics(song_storable)
 
             # Start async gain computation
-            self._compute_gain_async(song_storable, result.get('audio'))
+            self._compute_gain_async(song_storable, result.get('audio')) # type: ignore
 
             # Start async translation fetch
             self._download_update_lyrics(song_storable)

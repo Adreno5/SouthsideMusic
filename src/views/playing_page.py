@@ -4,11 +4,13 @@ import base64
 import json
 import logging
 
-import darkdetect
+from core import theme
 from core.app_context import AppContext
 from core.color import mixColor
 from core.config import cfg
+from core.icons import SouthsideIcon, bindIcon
 from core.models import SearchSongInfo, SongStorable
+from core.theme import isLight
 from core.playing_manager import PlayMode
 from imports import (
     BACKGROUND_RATIO_CHANGED,
@@ -41,7 +43,7 @@ from imports import (
     event_bus,
 )
 from imports import QColor, QImage, QPixmap
-from qfluentwidgets import CardWidget, IndeterminateProgressRing, InfoBar, SubtitleLabel
+from qfluentwidgets import CardWidget, IndeterminateProgressRing, InfoBar, SubtitleLabel, PillToolButton
 from views.lyrics_viewer import LyricsViewer
 from views.song_card import DummyCard
 
@@ -118,7 +120,14 @@ class PlayingPage(QWidget):
 
         self.setLayout(global_layout)
 
-        self.bg_color = QColor(0, 0, 0)
+        self.bg_color = QColor(0, 0, 0) if isLight() else QColor(255, 255, 255)
+
+        self.translation_button = PillToolButton(self)
+        self.translation_button.hide()
+        self.translation_button.toggled.connect(self.translationToggled)
+        self.translation_button.setChecked(cfg.show_translation)
+        self.translation_button.setFixedSize(32, 32)
+        bindIcon(self.translation_button, 'translation')
 
         event_bus.subscribe(PLAYBACK_SONG_LOADING, self._onPlaybackSongLoading)
         event_bus.subscribe(PLAYBACK_IMAGE_LOADED, self._onPlaybackImageLoaded)
@@ -168,14 +177,18 @@ class PlayingPage(QWidget):
     def _preload_triggered(self, value: bool) -> None:
         self.playing_manager._preload_triggered = value
 
+    def translationToggled(self, state: bool):
+        self.ctx.cfg.show_translation = state
+
     def _updateDatas(self, song: SongStorable | None = None) -> None:
         self.bg_color = mixColor(
-            QColor(40, 40, 40) if darkdetect.isDark() else QColor(230, 230, 230),
+            QColor(40, 40, 40) if theme.isDark() else QColor(230, 230, 230),
             self._mwindow_obj.song_theme
             if self._mwindow_obj.song_theme
             else QColor(0, 0, 0),
             1 - cfg.background_ratio * 0.5,
         )
+        self.translation_button.setVisible(bool(song and song.translated_lyric))
 
         self.update()
 
@@ -358,6 +371,7 @@ class PlayingPage(QWidget):
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         self.update()
+        self.translation_button.move(15, self.height() - 15 - self.translation_button.height())
         return super().resizeEvent(event)
 
     def paintEvent(self, event: QPaintEvent) -> None:

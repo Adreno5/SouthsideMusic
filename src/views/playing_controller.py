@@ -61,7 +61,7 @@ from qfluentwidgets import (
 )
 
 from core.icons import bindIcon
-from core import theme as darkdetect
+from core import theme
 from core.time_format import float2time
 from core.lyrics import LyricInfo, LRCLyricParser, YRCLyricInfo, YRCLyricParser
 from core.audio_player import AudioPlayer
@@ -187,7 +187,7 @@ class PlayingControllerLyricsViewer(QWidget):
             tar_color = QColor(255, 255, 255)
         else:
             tar_color = (
-                QColor(255, 255, 255) if darkdetect.isDark() else QColor(0, 0, 0)
+                QColor(255, 255, 255) if theme.isDark() else QColor(0, 0, 0)
             )
 
         color = (
@@ -339,7 +339,7 @@ class PlayingController(QWidget):
 
         if self._mwindow:
             self.bg_color = mixColor(
-                QColor(40, 40, 40) if darkdetect.isDark() else QColor(230, 230, 230),
+                QColor(40, 40, 40) if theme.isDark() else QColor(230, 230, 230),
                 self._mwindow.song_theme
                 if self._mwindow.song_theme
                 else QColor(0, 0, 0),
@@ -347,7 +347,7 @@ class PlayingController(QWidget):
             )
         else:
             self.bg_color = (
-                QColor(40, 40, 40) if darkdetect.isDark() else QColor(230, 230, 230)
+                QColor(40, 40, 40) if theme.isDark() else QColor(230, 230, 230)
             )
 
     def onTogglePlaylist(self):
@@ -366,7 +366,7 @@ class PlayingController(QWidget):
 
     def _updateDatas(self, song: SongStorable | None = None):
         self.bg_color = mixColor(
-            QColor(40, 40, 40) if darkdetect.isDark() else QColor(230, 230, 230),
+            QColor(40, 40, 40) if theme.isDark() else QColor(230, 230, 230),
             self._mwindow.song_theme
             if self._mwindow and self._mwindow.song_theme
             else QColor(0, 0, 0),
@@ -546,7 +546,7 @@ class PlayingController(QWidget):
         painter.setBrush(self.bg_color)
         painter.drawRoundedRect(self.rect(), 10, 10)
 
-        isDark = darkdetect.isDark()
+        isDark = theme.isDark()
 
         if (
             self._stp.enableFFT_box.isChecked()

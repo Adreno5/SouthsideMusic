@@ -6,7 +6,7 @@
 
 v30 — A third-party NetEase CloudMusic desktop client. High-quality streaming, word-by-word lyrics, loudness normalization, and desktop lyrics overlay.
 
-> For the project's history from the first line of code to v30, see [SouthsideMusic Story](SouthsideMusic_Story.md).
+> For the project's history, see [SouthsideMusic Story](SouthsideMusic_Story.md).
 
 ---
 
@@ -34,6 +34,7 @@ In short: it plays your NetEase music in a cleaner, more focused way.
 ## Features
 
 **Playback**
+
 - Full-catalog search and streaming from NetEase CloudMusic
 - Loudness normalization — all songs play at the same perceived volume, no more sudden jumps
 - Speed control from 0.1× to 3.0×
@@ -42,17 +43,20 @@ In short: it plays your NetEase music in a cleaner, more focused way.
 - Preloading of the next track for near-instant switching
 
 **Visuals**
+
 - Real-time spectrum visualization
 - Word-by-word lyric highlighting
 - Desktop lyrics — an always-on-top overlay that shows real-time lyrics
 - Dark and light theme, auto-switching with your system
 
 **Organization**
+
 - Browse and play your NetEase cloud playlists
 - Download cloud songs into local folders for offline listening
 - Export songs as audio files with embedded cover art and metadata
 
 **Auto-Update**
+
 - Checks GitHub releases and applies updates automatically
 
 ---
@@ -113,17 +117,17 @@ The left sidebar combines local folders and cloud playlists. Click "Add Folder" 
 
 Click **Setting** in the bottom-left corner. Adjustable options include:
 
-| Setting | Description |
-|---|---|
-| Target LUFS | Volume normalization baseline. Lower = louder. Keep at -16 |
-| Playback Speed | 0.1× to 3.0× |
-| Play Mode | Repeat all / Repeat one / Shuffle / Sequential |
-| Stereo Widening | Broaden the stereo soundstage |
-| Skip Silent Endings | Auto-skip trailing silence |
-| Silence Threshold | Volume level considered "silent" |
-| FFT Spectrum | Toggle frequency visualization |
-| Desktop Lyrics | Toggle always-on-top lyrics overlay |
-| Output Device | Select audio output device |
+| Setting             | Description                                                |
+| ------------------- | ---------------------------------------------------------- |
+| Target LUFS         | Volume normalization baseline. Lower = louder. Keep at -16 |
+| Playback Speed      | 0.1× to 3.0×                                             |
+| Play Mode           | Repeat all / Repeat one / Shuffle / Sequential             |
+| Stereo Widening     | Broaden the stereo soundstage                              |
+| Skip Silent Endings | Auto-skip trailing silence                                 |
+| Silence Threshold   | Volume level considered "silent"                           |
+| FFT Spectrum        | Toggle frequency visualization                             |
+| Desktop Lyrics      | Toggle always-on-top lyrics overlay                        |
+| Output Device       | Select audio output device                                 |
 
 ---
 
@@ -197,16 +201,16 @@ build.result\
 
 ### Tech Stack
 
-| Layer | Technology |
-|---|---|
-| GUI | PySide6 + PySide6-Fluent-Widgets |
-| Audio | pydub + sounddevice |
-| Math | NumPy + SciPy (FFT, signal processing) |
-| Metadata | mutagen (ID3, Vorbis, MP4 tags) |
-| API | pyncm (NetEase CloudMusic) |
-| Networking | Tornado |
-| Packaging | Nuitka + Inno Setup |
-| Font | HarmonyOS Sans SC |
+| Layer      | Technology                             |
+| ---------- | -------------------------------------- |
+| GUI        | PySide6 + PySide6-Fluent-Widgets       |
+| Audio      | pydub + sounddevice                    |
+| Math       | NumPy + SciPy (FFT, signal processing) |
+| Metadata   | mutagen (ID3, Vorbis, MP4 tags)        |
+| API        | pyncm (NetEase CloudMusic)             |
+| Networking | Tornado                                |
+| Packaging  | Nuitka + Inno Setup                    |
+| Font       | HarmonyOS Sans SC                      |
 
 ### Configuration
 

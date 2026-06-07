@@ -102,7 +102,7 @@ class DesktopLyricsViewer(LyricsViewer):
     def _hasTranslation(self) -> bool:
         return self._hasCurrentLineTranslation()
 
-    def _lineStep(self) -> float:
+    def _lineStep(self, has_translation: bool = False) -> float:
         if self._transmgr.parsed:
             return self.font_height + self.theight + self.font_height * 0.75
         return self.font_height * 1.85

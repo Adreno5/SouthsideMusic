@@ -263,14 +263,19 @@ class LyricsViewer(QWidget):
         use_yrc: bool,
         is_current_line: bool,
     ) -> bool:
-        return bool(self._transmgr.parsed)
+        return bool(self._translationTextForLine(line, use_yrc))
 
-    def _lineStep(self) -> float:
+    def _lineStep(self, has_translation: bool = False) -> float:
         cur = self.translation_timer.current_value
-        return self.font_height * (1 + 0.85 * (1 - cur)) + (self.theight + self.font_height * 0.75) * cur
-    
-    def _currentLineBaseline(self) -> float:
-        block_height = self.font_height + ((2 + self.theight) * self.translation_timer.current_value)
+        if has_translation:
+            return self.font_height * (1.85 - (0.1 * cur)) + (self.theight * cur)
+        return self.font_height * 1.85
+
+    def _currentLineBaseline(self, has_translation: bool = False) -> float:
+        cur = self.translation_timer.current_value
+        block_height = self.font_height + (
+            (2 + self.theight) * cur if has_translation else 0
+        )
         return (self.height() - block_height) * 0.5 + self.metri.ascent()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
@@ -282,16 +287,35 @@ class LyricsViewer(QWidget):
             return
         use_yrc = bool(self._ymgr.parsed)
         lines = self._ymgr.parsed if use_yrc else self._mgr.parsed
-        line_step = self._lineStep()
-        current_baseline = self._currentLineBaseline()
+
+        y_offsets: list[float] = []
+        y = 0.0
+        for line in lines:
+            y_offsets.append(y)
+            has_trans = bool(self._translationTextForLine(line, use_yrc))
+            y += self._lineStep(has_trans)
+
+        position = self._player.getPosition()
+        current_idx = (
+            self._ymgr.getCurrentIndex(position)
+            if use_yrc
+            else self._mgr.getCurrentIndex(position)
+        )
+        current_has_trans = (
+            bool(self._translationTextForLine(lines[current_idx], use_yrc))
+            if 0 <= current_idx < len(lines)
+            else False
+        )
+        current_baseline = self._currentLineBaseline(current_has_trans)
+
         view_top = -self._visible_margin
         view_bottom = self.height() + self._visible_margin
         top_offset = self.draw_offset + current_baseline
         shown: list[int] = []
         for i in range(len(lines)):
-            y = top_offset + i * line_step
-            line_bottom = y + self.font_height
-            if line_bottom >= view_top and y - self.font_height <= view_bottom:
+            y_pos = top_offset + y_offsets[i]
+            line_bottom = y_pos + self.font_height
+            if line_bottom >= view_top and y_pos - self.font_height <= view_bottom:
                 shown.append(i)
         self._shown_lines = shown
 
@@ -334,8 +358,20 @@ class LyricsViewer(QWidget):
             else self._mgr.getCurrentIndex(position)
         )
 
-        line_step = self._lineStep()
-        current_baseline = self._currentLineBaseline()
+        y_offsets: list[float] = []
+        y = 0.0
+        for line in lines:
+            y_offsets.append(y)
+            has_trans = bool(self._translationTextForLine(line, use_yrc))
+            y += self._lineStep(has_trans)
+        total_height = y
+
+        current_has_trans = (
+            bool(self._translationTextForLine(lines[idx], use_yrc))
+            if 0 <= idx < len(lines)
+            else False
+        )
+        current_baseline = self._currentLineBaseline(current_has_trans)
 
         if not all(
             math.isfinite(value)
@@ -346,16 +382,18 @@ class LyricsViewer(QWidget):
             self.acc = 0
 
         if not self.selecting:
-            self.target_draw_offset = -idx * line_step
+            self.target_draw_offset = (
+                -y_offsets[idx] if 0 <= idx < len(y_offsets) else 0
+            )
         else:
             if time.time() - self.last_wheel > 3:
                 self.selecting = False
 
         if self.draw_offset > 0:
             self.target_draw_offset = 0
-        if self.draw_offset < -len(lines) * line_step:
-            self.target_draw_offset = -len(lines) * line_step
-        self.draw_offset = max(-len(lines) * line_step, min(0, self.draw_offset))
+        if self.draw_offset < -total_height:
+            self.target_draw_offset = -total_height
+        self.draw_offset = max(-total_height, min(0, self.draw_offset))
 
         painter = QPainter(self)
         painter.setRenderHints(
@@ -367,7 +405,7 @@ class LyricsViewer(QWidget):
         for i in (idx for idx in self._shown_lines if idx < len(lines)):
             line = lines[i]
             is_current_line = i == idx
-            y = top_offset + i * line_step
+            y = top_offset + y_offsets[i]
             if is_current_line:
                 if line.get('isMetadata'):
                     tar_color = QColor(255, 255, 255)
@@ -437,7 +475,9 @@ class LyricsViewer(QWidget):
                 else ''
             )
             if translation_text:
-                self.translation_timer.target_value = 1.0 if self.ctx.cfg.show_translation else 0.0
+                self.translation_timer.target_value = (
+                    1.0 if self.ctx.cfg.show_translation else 0.0
+                )
             cur = self.translation_timer.current_value
             if translation_text and cur > 0.0:
                 painter.setFont(self.tft)

@@ -835,7 +835,9 @@ class CloudFavoriteSongCard(_SongCardItem):
                     duration=3000,
                 )
 
-        if storable.image_cached() and storable.audio_cached():
+        backend = get_backend()
+
+        if storable.image_cached() and storable.audio_cached(not backend.user_anonymous(), int(backend.get_user_vip_type())):
             _add(chosen)
             return
 
@@ -851,7 +853,7 @@ class CloudFavoriteSongCard(_SongCardItem):
             music_url = audio['url']
 
             def _on_music_done(music_bytes: bytes) -> None:
-                if not storable.audio_cached():
+                if not storable.audio_cached(not backend.user_anonymous(), int(backend.get_user_vip_type())):
                     storable.cache_audio(music_bytes)
                 if self._mwindow is not None:
                     self._mwindow.addScheduledTask(lambda c=chosen: _add(c))

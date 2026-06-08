@@ -37,6 +37,7 @@ data/
 ffmpeg/
 update_check_time.json
 nul
+update.json
 
 # 个人
 index.js

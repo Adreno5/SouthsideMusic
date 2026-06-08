@@ -718,7 +718,8 @@ class PlayingManager:
         self.playStorable(storable)
 
     def _storable_asset_missing(self, song_storable: SongStorable) -> tuple[bool, bool]:
-        return not song_storable.image_cached(), not song_storable.audio_cached()
+        backend = get_backend()
+        return not song_storable.image_cached(), not song_storable.audio_cached(not backend.user_anonymous(), int(backend.get_user_vip_type()))
 
     def _downloadStorableMissingAssets(
         self,

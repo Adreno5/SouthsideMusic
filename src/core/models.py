@@ -9,8 +9,6 @@ import logging
 import os
 import shutil
 
-from core.backend import get_backend
-
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 DATA_DIR = os.path.join(_PROJECT_ROOT, 'data')
 MUSIC_DATA_DIR = os.path.join(DATA_DIR, 'music')
@@ -200,14 +198,13 @@ class SongStorable:
             self._get_cache_path(IMAGE_DATA_DIR, self.image_cache_hash)
         )
 
-    def audio_cached(self) -> bool:
+    def audio_cached(self, logged_in: bool, vip_type: int) -> bool:
         self._ensure_cache_fields()
-        logged_in = get_backend().user_anonymous()
-        vip_type = int(get_backend().get_user_vip_type())
         if logged_in != self.loggedin_when_download or vip_type != self.viptype_when_download:
             # Re-download when login status changes: anonymous users only get 30s,
             # while VIP users can download the full audio, etc.
             self.loggedin_when_download = logged_in
+            self.viptype_when_download = vip_type
             return False
         return bool(self.content_cache_hash) and os.path.exists(
             self._get_cache_path(MUSIC_DATA_DIR, self.content_cache_hash)
@@ -352,9 +349,9 @@ class SongStorable:
             return True
         return not data.get('has_yrc_lyric')
 
-    def ensure_cached_assets(self) -> bool:
+    def ensure_cached_assets(self, logged_in: bool, vip_type: int) -> bool:
         self._ensure_cache_fields()
-        return not (self.image_cached() and self.audio_cached())
+        return not (self.image_cached() and self.audio_cached(logged_in, vip_type))
 
     def toObject(self) -> SongStorableDict:
         return {

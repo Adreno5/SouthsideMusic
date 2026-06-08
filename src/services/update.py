@@ -28,8 +28,6 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
-excludes = ['ffmpeg']
-_CHECK_INTERVAL_SECONDS = 24 * 3600
 _FILE = Path('update.json')
 _USER_AGENT = (
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
@@ -50,27 +48,6 @@ class UpdateInfo:
     def __eq__(self, another: UpdateInfo):
         return self.tag_name == another.tag_name and self.published_at == another.published_at
 
-
-def _should_check_updates() -> bool:
-    now = time.time()
-    try:
-        data = json.loads(_FILE.read_text(encoding='utf-8'))
-        last_check = data.get('last_check', 0.0)
-    except (FileNotFoundError, json.JSONDecodeError, ValueError):
-        return True
-    if now - last_check > _CHECK_INTERVAL_SECONDS:
-        return True
-    return False
-
-
-def _record_check_time() -> None:
-    try:
-        data = json.loads(_FILE.read_text(encoding='utf-8'))
-        data['last_check'] = time.time()
-        _FILE.write_text(json.dumps(data), encoding='utf-8')
-    except OSError:
-        pass
-
 def _read_installed_published_at() -> str | None:
     try:
         data = json.loads(_FILE.read_text(encoding='utf-8'))
@@ -81,9 +58,7 @@ def _read_installed_published_at() -> str | None:
 
 def _write_installed_release(published_at: str, tag_name: str) -> None:
     try:
-        data = json.loads(_FILE.read_text(encoding='utf-8'))
-        data['installed'] = {'published_at': published_at, 'tag_name': tag_name}
-        _FILE.write_text(json.dumps(data), encoding='utf-8')
+        _FILE.write_text(json.dumps({'published_at': published_at, 'tag_name': tag_name}), encoding='utf-8')
     except OSError:
         pass
 
@@ -124,10 +99,6 @@ def _fetch_latest_release() -> dict | None:
 
 
 def checkForUpdates() -> UpdateInfo | None:
-    return UpdateInfo(tag_name='v0.0.1', published_at='2025-01-01T00:00:00Z')
-    if not _should_check_updates():
-        return None
-
     latest = _fetch_latest_release()
     if latest is None:
         return None
@@ -143,15 +114,12 @@ def checkForUpdates() -> UpdateInfo | None:
     installed_ts = _read_installed_published_at()
     if installed_ts is None:
         _write_installed_release(published_at, tag_name)
-        _record_check_time()
         return None
 
     installed_dt = _parse_iso_timestamp(installed_ts)
     if installed_dt is not None and latest_dt <= installed_dt:
-        _record_check_time()
         return None
 
-    _record_check_time()
     return UpdateInfo(tag_name=tag_name, published_at=published_at)
 
 
@@ -163,7 +131,7 @@ def _build_codeload_url(tag_name: str) -> str:
     )
 
 def init_file():
-    _FILE.write_text(json.dumps({'last_check': 0.0, 'installed': None}), encoding='utf-8')
+    _FILE.write_text(json.dumps({}), encoding='utf-8')
 
 def applyUpdate(update_info: UpdateInfo) -> bool:
     try:
@@ -207,9 +175,6 @@ def applyUpdate(update_info: UpdateInfo) -> bool:
 
             for i, name in enumerate(file_names):
                 relative = name[len(root_prefix) :]
-                parts = Path(relative).parts
-                if parts and parts[0] in excludes:
-                    continue
                 target = Path(relative)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(zf.read(name))
@@ -218,7 +183,6 @@ def applyUpdate(update_info: UpdateInfo) -> bool:
                 )
 
         _write_installed_release(update_info.published_at, update_info.tag_name)
-        _record_check_time()
         event_bus.emit(UPDATE_LOADING_PROGRESS, 1.0)
         event_bus.emit(STOP_PROGRESS_LOADING)
         return True
@@ -251,13 +215,7 @@ def startUpdateCheck(mwindow: MainWindow) -> None:
         if dialog.exec():
             applyUpdateImmediately(update_result, mwindow)
         else:
-            data = json.loads(_FILE.read_text(encoding='utf-8'))
-            data['last_check'] = time.time()
-            data['installed'] = {
-                'tag_name': update_result.tag_name,
-                'published_at': update_result.published_at
-            }
-            _FILE.write_text(json.dumps(data), encoding='utf-8')
+            _write_installed_release(update_result.published_at, update_result.tag_name)
 
     _logger.info('starting update check')
     threading.Thread(target=_check, daemon=True).start()

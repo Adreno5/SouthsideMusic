@@ -175,3 +175,6 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
                 )
                 result.append(storable)
             return result
+        
+    def get_user_vip_type(self) -> int | str:
+        return pyncm.GetCurrentSession().vipType

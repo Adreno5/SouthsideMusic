@@ -9,6 +9,8 @@ import logging
 import os
 import shutil
 
+from core.backend import get_backend
+
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 DATA_DIR = os.path.join(_PROJECT_ROOT, 'data')
 MUSIC_DATA_DIR = os.path.join(DATA_DIR, 'music')
@@ -84,6 +86,8 @@ class SongStorable:
         lyric_cache_hash: str
         gain: float
         target_lufs: int
+        loggedin_when_download: bool
+        viptype_when_download: int
 
     name: str
     artists: str
@@ -93,6 +97,8 @@ class SongStorable:
     image_cache_hash: str = ''
     content_cache_hash: str = ''
     lyric_cache_hash: str = ''
+    loggedin_when_download: bool = False
+    viptype_when_download: int = 0
 
     def __init__(
         self,
@@ -107,6 +113,8 @@ class SongStorable:
         image_cache_hash: str = '',
         content_cache_hash: str = '',
         lyric_cache_hash: str = '',
+        loggedin_when_download: bool = False,
+        viptype_when_download: int = 0
     ) -> None:
         self.name = info['name']
         self.artists = info['artists']
@@ -127,6 +135,8 @@ class SongStorable:
             self.write_lyrics(lyric, translated_lyric, yrc_lyric)
         self.loudness_gain = gain
         self.target_lufs = target_lufs
+        self.loggedin_when_download = loggedin_when_download
+        self.viptype_when_download = viptype_when_download
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, SongStorable):
@@ -192,6 +202,13 @@ class SongStorable:
 
     def audio_cached(self) -> bool:
         self._ensure_cache_fields()
+        logged_in = get_backend().user_anonymous()
+        vip_type = int(get_backend().get_user_vip_type())
+        if logged_in != self.loggedin_when_download or vip_type != self.viptype_when_download:
+            # Re-download when login status changes: anonymous users only get 30s,
+            # while VIP users can download the full audio, etc.
+            self.loggedin_when_download = logged_in
+            return False
         return bool(self.content_cache_hash) and os.path.exists(
             self._get_cache_path(MUSIC_DATA_DIR, self.content_cache_hash)
         )
@@ -349,6 +366,8 @@ class SongStorable:
             'lyric_cache_hash': self.lyric_cache_hash,
             'gain': self.loudness_gain,
             'target_lufs': self.target_lufs,
+            'loggedin_when_download': self.loggedin_when_download,
+            'viptype_when_download': self.viptype_when_download
         }
 
     @staticmethod
@@ -388,6 +407,8 @@ class SongStorable:
             lyric_cache_hash=lyric_cache_hash,
             gain=obj.get('gain', 1.0),
             target_lufs=obj.get('target_lufs', -16),
+            loggedin_when_download=obj.get('loggedin_when_download', False),
+            viptype_when_download=obj.get('viptype_when_download', 0)
         )
 
 
@@ -487,3 +508,6 @@ class MusicServiceBackend(ABC):
 
     @abstractmethod
     def get_playlist_tracks(self, playlist_id: str) -> list[SongStorable]: ...
+
+    @abstractmethod
+    def get_user_vip_type(self) -> int | str: ...

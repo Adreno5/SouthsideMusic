@@ -18,6 +18,7 @@ from core.models import (
     TrackAudioInfo,
     TrackDetailInfo,
     TrackLyricsInfo,
+    SearchCloudFolderInfo,
     get_cached_hashes,
 )
 
@@ -25,7 +26,7 @@ _logger = logging.getLogger(__name__)
 
 
 class NeteaseCloudMusicBackend(MusicServiceBackend):
-    def search(
+    def search_song(
         self, keywords: str, offset: int = 0, limit: int = 30
     ) -> list[SearchSongInfo]:
         resp = apis.cloudsearch.GetSearchResult(
@@ -66,6 +67,24 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
                 )
             )
         return songs
+
+    def search_playlist(self, keywords: str, offset: int = 0, limit: int = 30) -> list[SearchCloudFolderInfo]:
+        resp = apis.cloudsearch.GetSearchResult(
+            keywords, stype=1000, limit=limit, offset=offset
+        )
+        assert isinstance(resp, dict), 'Invalid search response'
+
+        playlists: list[SearchCloudFolderInfo] = []
+        for playlist_dict in resp.get('result', {}).get('playlists', []):
+            playlists.append(
+                SearchCloudFolderInfo(
+                    folder_name=playlist_dict['name'],
+                    image_url=playlist_dict['coverImgUrl'],
+                    id=str(playlist_dict['id']),
+                    author=playlist_dict['creator']['nickname']
+                )
+            )
+        return playlists
 
     def get_track_detail(self, track_id: int | str) -> TrackDetailInfo:
         response = apis.track.GetTrackDetail(song_ids=[track_id])
@@ -131,9 +150,9 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
                 for p in data
             ]
 
-    def create_playlist(self, name: str, privacy: bool) -> str:
+    def create_playlist(self, name: str) -> str:
         with pyncm.GetCurrentSession():
-            response = apis.playlist.SetCreatePlaylist(name, privacy)
+            response = apis.playlist.SetCreatePlaylist(name, False)
             assert isinstance(response, dict), 'Invalid Response'
             return str(response['id']) # type: ignore
 

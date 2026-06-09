@@ -419,6 +419,12 @@ class CloudFolderInfo(TypedDict):
     image_url: str
     id: str
 
+class SearchCloudFolderInfo(TypedDict):
+    folder_name: str
+    image_url: str
+    id: str
+    author: str
+
 
 class ArtistInfo(TypedDict):
     id: int
@@ -468,9 +474,14 @@ class TrackLyricsInfo(TypedDict):
 
 class MusicServiceBackend(ABC):
     @abstractmethod
-    def search(
+    def search_song(
         self, keywords: str, offset: int = 0, limit: int = 30
     ) -> list[SearchSongInfo]: ...
+
+    @abstractmethod
+    def search_playlist(
+        self, keywords: str, offset: int = 0, limit: int = 30
+    ) -> list[SearchCloudFolderInfo]: ...
 
     @abstractmethod
     def get_track_detail(self, track_id: int | str) -> TrackDetailInfo: ...
@@ -493,7 +504,7 @@ class MusicServiceBackend(ABC):
     def user_anonymous(self) -> bool: ...
 
     @abstractmethod
-    def create_playlist(self, name: str, privacy: bool) -> str: ...
+    def create_playlist(self, name: str) -> str: ...
 
     @abstractmethod
     def remove_playlist(self, id: str) -> None: ...

@@ -48,11 +48,12 @@ UPDATE_FM = 'update_fm'
 
 # folders
 VIEW_FOLDER = 'view_folder'
-LOCAL_REMOVE_FOLDER = 'local_remove_folder'
 MWINDOW_REFRESH_FOLDERS = 'mwindow_refresh_folders'
+LOCAL_REMOVE_FOLDER = 'local_remove_folder'
 LOCAL_RENAME_FOLDER = 'local_rename_folder'
 LOCAL_ADD_TO_CLOUD = 'local_add_to_cloud'
 CLOUD_REMOVE_FOLDER = 'cloud_remove_folder'
+CLOUD_RENAME_FOLDER = 'cloud_rename_folder'
 CLOUD_ADD_TO_LOCAL = 'cloud_add_to_local'
 
 # loading

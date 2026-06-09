@@ -6,14 +6,16 @@ import requests
 from core.app_context import AppContext
 from core.downloader import doWithMultiThreading
 from core.icons import SouthsideIcon, getQIcon
-from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable
+from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable, SearchCloudFolderInfo
 from imports import (
     CLOUD_ADD_TO_LOCAL,
     CLOUD_REMOVE_FOLDER,
+    CLOUD_RENAME_FOLDER,
     IMAGE_ASSET_PERSISTED,
     LOCAL_ADD_TO_CLOUD,
     LOCAL_REMOVE_FOLDER,
     LOCAL_RENAME_FOLDER,
+    VIEW_FOLDER,
     FlowLayout,
     FluentIcon,
     QAction,
@@ -22,6 +24,8 @@ from imports import (
     QLabel,
     QMouseEvent,
     QPixmap,
+    QSizePolicy,
+    QSpacerItem,
     Qt,
     QVBoxLayout,
     QWidget,
@@ -187,7 +191,110 @@ class CloudFolderCard(QWidget):
         menu = RoundMenu()
         rm_ac = QAction(SouthsideIcon.REMOVE.icon(), 'Remove')
         rm_ac.triggered.connect(lambda: event_bus.emit(CLOUD_REMOVE_FOLDER, self))
+        rn_ac = QAction(SouthsideIcon.RENAME.icon(), 'Rename')
+        rn_ac.triggered.connect(lambda: event_bus.emit(CLOUD_RENAME_FOLDER, self))
         add_local = QAction(SouthsideIcon.ADD.icon(), 'Add to Local')
         add_local.triggered.connect(lambda: event_bus.emit(CLOUD_ADD_TO_LOCAL, self))
-        menu.addActions([rm_ac, add_local])
+        menu.addActions([rm_ac, rn_ac, add_local])
+        menu.exec(event.globalPos())
+
+class SearchCloudFolderCard(QWidget):
+    load: bool = False
+    clicked = Signal()
+
+    def __init__(self, folder: SearchCloudFolderInfo, width, ctx: AppContext):
+        super().__init__()
+        self.setFixedHeight(102)
+        self.folder = folder
+        self._ctx = ctx
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        self.img_label = QLabel()
+        self.img_label.setFixedSize(100, 100)
+        self.img_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.img_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        layout.addWidget(self.img_label)
+
+        right_layout = QVBoxLayout()
+
+        right_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding))
+
+        title_label = SubtitleLabel(folder['folder_name'])
+        title_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        title_label.setWordWrap(True)
+        title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        right_layout.addWidget(title_label)
+
+        author_label = QLabel(folder['author'])
+        title_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        author_label.setWordWrap(True)
+        author_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        right_layout.addWidget(author_label)
+        
+        right_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding))
+
+        layout.addLayout(right_layout)
+
+
+    def loadDetailAndImage(self):
+        if not self.folder['image_url']:
+            return
+        os.makedirs(os.path.join('data', 'cover'), exist_ok=True)
+        hashed = hashlib.sha256(self.folder['image_url'].encode()).hexdigest()
+        file = os.path.join('data', 'cover', hashed)
+
+        if not os.path.isfile(file):
+
+            def _download():
+                image_bytes = requests.get(self.folder['image_url']).content
+
+                def applyPixmap():
+                    pixmap = QPixmap()
+                    pixmap.loadFromData(image_bytes)
+                    if not pixmap.isNull():
+                        scaled = pixmap.scaled(
+                            self.img_label.size(),
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                        self.img_label.setPixmap(scaled)
+
+                    with open(file, 'wb') as f:
+                        f.write(image_bytes)
+
+                self._ctx.main_window.addScheduledTask(applyPixmap)
+
+            doWithMultiThreading(_download, (), self._ctx.main_window)
+        else:
+            with open(file, 'rb') as f:
+                image_bytes = f.read()
+                pixmap = QPixmap()
+                pixmap.loadFromData(image_bytes)
+                if not pixmap.isNull():
+                    scaled = pixmap.scaled(
+                        self.img_label.size(),
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    self.img_label.setPixmap(scaled)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            event_bus.emit(VIEW_FOLDER, CloudFolderInfo(
+                folder_name=self.folder['folder_name'], image_url=self.folder['image_url'], id=self.folder['id']
+            ))
+        return super().mousePressEvent(event)
+
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        menu = RoundMenu()
+        rm_ac = QAction(SouthsideIcon.REMOVE.icon(), 'Remove')
+        rm_ac.triggered.connect(lambda: event_bus.emit(CLOUD_REMOVE_FOLDER, self))
+        rn_ac = QAction(SouthsideIcon.RENAME.icon(), 'Rename')
+        rn_ac.triggered.connect(lambda: event_bus.emit(CLOUD_RENAME_FOLDER, self))
+        add_local = QAction(SouthsideIcon.ADD.icon(), 'Add to Local')
+        add_local.triggered.connect(lambda: event_bus.emit(CLOUD_ADD_TO_LOCAL, self))
+        menu.addActions([rm_ac, rn_ac, add_local])
         menu.exec(event.globalPos())

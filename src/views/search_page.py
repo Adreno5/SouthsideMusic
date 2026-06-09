@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+from typing import Literal
 
 from core.app_context import AppContext
-from imports import QSize, Qt, QTimer, Signal
+from imports import ComboBox, QSize, Qt, QTimer, Signal
 from imports import QPixmap
 from imports import (
     QAbstractItemView,
@@ -20,18 +21,20 @@ from qfluentwidgets import (
     PrimaryPushButton,
     SubtitleLabel,
 )
+from views.folder_card import CloudFolderCard, SearchCloudFolderCard
 from views.list_widget import SListWidget
 
 from core.downloader import doWithMultiThreading
-from core.models import SearchSongInfo
+from core.models import CloudFolderInfo, SearchCloudFolderInfo, SearchSongInfo
 from core.backend import get_backend
 
 from views.main_window import MainWindow
-from views.song_card import SongCard
+from views.song_card import SearchSongCard
 
 
 class SearchPage(QWidget):
-    resultGot = Signal(list)
+    fetchedSongs = Signal(list)
+    fetchedPlaylists = Signal(list)
 
     def __init__(self, ctx: AppContext) -> None:
         super().__init__()
@@ -41,14 +44,22 @@ class SearchPage(QWidget):
         if lw:
             lw.top('Initializing search page...')
         self.setObjectName('search_page')
-        self.img_card_map: dict[str, SongCard] = {}
+        self.img_card_map: dict[str, SearchSongCard] = {}
 
         self.searching = False
         self.curr_offset = 0
+        self.last_search = ''
+
+        global_layout = QVBoxLayout()
+
+        self.search_type = ComboBox()
+        self.search_type.addItems(['Songs', 'Playlists'])
+        self.search_type.setCurrentText(self.ctx.cfg.search_type)
+        self.search_type.currentTextChanged.connect(self.searchTypeChanged)
+        global_layout.addWidget(self.search_type)
 
         if lw:
             lw.top('  creating search input')
-        global_layout = QVBoxLayout()
 
         if lw:
             lw.top('  creating results list')
@@ -59,7 +70,8 @@ class SearchPage(QWidget):
         self.lst.setSelectionMode(QListWidget.SelectionMode.NoSelection)
         global_layout.addWidget(self.lst)
         self.setLayout(global_layout)
-        self.resultGot.connect(self.addSongs)
+        self.fetchedSongs.connect(self.addSongs)
+        self.fetchedPlaylists.connect(self.addPlaylists)
 
         if lw:
             lw.top('  starting scroll monitor')
@@ -67,13 +79,16 @@ class SearchPage(QWidget):
         self.check_timer.timeout.connect(self.checkRect)
         self.check_timer.start(50)
 
-        self.cards: list[SongCard] = []
+        self.cards: list[SearchSongCard | SearchCloudFolderCard] = []
 
     @property
     def _mwindow(self):
         return self.ctx.main_window
 
     def checkRect(self) -> None:
+        if not self.cards:
+            return
+
         for i, card in enumerate(self.cards):
             item = self.lst.item(i)
             if item is None:
@@ -83,7 +98,6 @@ class SearchPage(QWidget):
             viewport_rect = self.lst.viewport().rect()
 
             if viewport_rect.intersects(item_rect) and not card.load:
-                self._logger.debug(f'loading {card.info["name"]}')
                 card.loadDetailAndImage()
 
         bar = self.lst.verticalScrollBar()
@@ -96,10 +110,16 @@ class SearchPage(QWidget):
             self._logger.info(f'load more')
             self.search(self.ctx.main_window.search_input.text(), self.curr_offset)
 
-    def setImage_(self, byte: bytes, ca: SongCard):
+    def setImage_(self, byte: bytes, ca: SearchSongCard):
         ca.img_label.setPixmap(QPixmap(byte))
 
+    def searchTypeChanged(self, text: Literal['Songs', 'Playlists']) -> None:
+        self.ctx.cfg.search_type = text
+        if self.last_search:
+            self.search(self.last_search)
+
     def search(self, keywords: str, offset: int = 0) -> None:
+        self.last_search = keywords
         self.searching = True
 
         if offset == 0:
@@ -107,25 +127,41 @@ class SearchPage(QWidget):
             self.cards.clear()
             self.img_card_map.clear()
 
-        result: list[SearchSongInfo] = []
+        result: list[SearchSongInfo] | list[SearchCloudFolderInfo] = []
 
         def _do():
             nonlocal result
-            result = get_backend().search(keywords, offset=offset)
+            if self.ctx.cfg.search_type == 'Songs':
+                result = get_backend().search_song(keywords, offset=offset)
+                self.fetchedSongs.emit(result)
+            else:
+                result = get_backend().search_playlist(keywords, offset=offset)
+                self.fetchedPlaylists.emit(result)
 
-        def _finish():
-            nonlocal result
+            self.curr_offset += len(result)
+            self.searching = False
 
-            self.resultGot.emit(result)
+        doWithMultiThreading(_do, (), self._mwindow)
 
-        doWithMultiThreading(_do, (), self._mwindow, _finish)
+    def addPlaylists(self, result: list[SearchCloudFolderInfo]) -> None:
+        for i, playlist in enumerate(result):
+            item = QListWidgetItem()
+            item.setSizeHint(QSize(0, 150))
+            self.lst.addItem(item)
+            content_widget = SearchCloudFolderCard(
+                playlist,
+                self.lst.width(),
+                self.ctx
+            )
+            self.lst.setItemWidget(item, content_widget)
+            self.cards.append(content_widget)
 
     def addSongs(self, result: list[SearchSongInfo]) -> None:
         for i, song in enumerate(result):
             item = QListWidgetItem()
             item.setSizeHint(QSize(0, 150))
             self.lst.addItem(item)
-            content_widget = SongCard(
+            content_widget = SearchSongCard(
                 song,
                 lambda c: self._mwindow.play(c),
                 self._mwindow,  # type: ignore
@@ -133,7 +169,3 @@ class SearchPage(QWidget):
             self.lst.setItemWidget(item, content_widget)
             self.cards.append(content_widget)
             content_widget.load = False
-
-        self.curr_offset += len(result)
-
-        self.searching = False

@@ -14,6 +14,8 @@ cfg_cache: dict[str, Any] = {}
 
 @dataclass
 class Config:
+    search_type: Literal['Songs', 'Playlists'] = 'Songs'
+
     play_method: Literal['Repeat one', 'Repeat list', 'Shuffle', 'Play in order'] = (
         'Repeat list'
     )

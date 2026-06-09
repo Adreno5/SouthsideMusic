@@ -393,7 +393,6 @@ class LyricsViewer(QWidget):
             self.target_draw_offset = 0
         if self.draw_offset < -total_height:
             self.target_draw_offset = -total_height
-        self.draw_offset = max(-total_height, min(0, self.draw_offset))
 
         painter = QPainter(self)
         painter.setRenderHints(

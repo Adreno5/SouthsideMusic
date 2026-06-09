@@ -10,7 +10,7 @@ from core.color import mixColor
 from core.config import cfg
 from core.icons import SouthsideIcon, bindIcon
 from core.models import SearchSongInfo, SongStorable
-from core.theme import isLight
+from core.theme import isDark
 from core.playing_manager import PlayMode
 from imports import (
     BACKGROUND_RATIO_CHANGED,
@@ -120,7 +120,7 @@ class PlayingPage(QWidget):
 
         self.setLayout(global_layout)
 
-        self.bg_color = QColor(0, 0, 0) if isLight() else QColor(255, 255, 255)
+        self.bg_color = QColor(0, 0, 0) if isDark() else QColor(255, 255, 255)
 
         self.translation_button = PillToolButton(self)
         self.translation_button.hide()

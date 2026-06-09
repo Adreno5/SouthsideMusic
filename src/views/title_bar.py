@@ -8,7 +8,7 @@ from qfluentwidgets import CaptionLabel, FluentStyleSheet
 from qframelesswindow import TitleBar
 
 if TYPE_CHECKING:
-    from views.song_card import SongCard
+    from views.song_card import SearchSongCard
 
 
 class SouthsideMusicTitleBar(TitleBar):

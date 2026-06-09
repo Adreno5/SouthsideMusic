@@ -5,7 +5,7 @@ import logging
 
 import os
 import threading
-from typing import Callable, TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from views.main_window import MainWindow
@@ -21,6 +21,8 @@ from imports import (
     QAbstractAnimation,
     QPropertyAnimation,
     QSize,
+    QSizePolicy,
+    QSpacerItem,
     Qt,
     Signal,
     event_bus,
@@ -146,9 +148,9 @@ class FolderSelectDialog(MessageBoxBase):
             threading.Thread(target=self._loadCloudPlaylists, daemon=True).start()
 
         self.yesButton.hide()
-        self._selected: tuple[str, str, str | None] | None = None
+        self._selected: tuple[Literal['local', 'cloud'], str, str | None] | None = None
 
-    def _select(self, sel_type, name, cloud_id):
+    def _select(self, sel_type: Literal['local', 'cloud'], name, cloud_id):
         self._selected = (sel_type, name, cloud_id)
         self.accept()
 
@@ -182,11 +184,11 @@ class FolderSelectDialog(MessageBoxBase):
             self.list_widget.addItem(item)
             self.list_widget.setItemWidget(item, card)
 
-    def getSelectedFolderInfo(self) -> tuple[str, str, str | None] | None:
+    def getSelectedFolderInfo(self) -> tuple[Literal['local', 'cloud'], str, str | None] | None:
         return self._selected
 
 
-class SongCard(QWidget):
+class SearchSongCard(QWidget):
     imageLoaded = Signal(bytes)
 
     def __init__(self, info: SearchSongInfo, play_callback: Callable, mwindow) -> None:
@@ -198,9 +200,8 @@ class SongCard(QWidget):
         self.detail = SongDetail(image_url='')
 
         global_layout = QVBoxLayout()
-        top_layout = FlowLayout()
+        top_layout = QHBoxLayout()
 
-        ali = Qt.AlignmentFlag
         self.img_label = QLabel()
         self.img_label.setFixedSize(100, 100)
         top_layout.addWidget(self.img_label)
@@ -210,12 +211,18 @@ class SongCard(QWidget):
         top_layout.addWidget(self.ring)
         artists_text = '、'.join(a['name'] for a in info['artists'])
         title_label = SubtitleLabel(info['name'])
-        top_layout.addWidget(title_label)
+
+        topright_layout = QVBoxLayout()
+        topright_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding))
+        topright_layout.addWidget(title_label)
         artists_label = QLabel(artists_text)
         artists_label.setWordWrap(True)
-        top_layout.addWidget(artists_label)
+        topright_layout.addWidget(artists_label)
+        topright_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding))
 
-        bottom_layout = FlowLayout()
+        top_layout.addLayout(topright_layout)
+
+        bottom_layout = QHBoxLayout()
 
         self.playbtn = PrimaryToolButton(FluentIcon.SEND)
         self.playbtn.setEnabled(False)
@@ -227,6 +234,8 @@ class SongCard(QWidget):
         self.favbtn.setEnabled(True)
         bottom_layout.addWidget(self.favbtn)
         self.favbtn.clicked.connect(self.addToFavorites)
+
+        bottom_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding))
 
         global_layout.addLayout(top_layout)
         global_layout.addLayout(bottom_layout)
@@ -565,7 +574,43 @@ class _SongCardItem(QWidget):
             else:
                 self.clicked.emit(self.storable)
         return super().mousePressEvent(event)
+    
+    def _addTo(self):
+        song_id = str(self.storable.id)
+        anonymous = get_backend().user_anonymous()
+        all_local_have = bool(favorites_manager.folders) and all(
+            any(s.id == song_id for s in f['songs']) for f in favorites_manager.folders
+        )
+        if all_local_have and anonymous:
+            InfoBar.info(
+                'Already saved',
+                'This song is already in all folders',
+                parent=self._mwindow,
+                duration=3000,
+            )
+            return
 
+        dialog = FolderSelectDialog(self._mwindow, self._mwindow, song_id)
+        reply = dialog.exec()
+        if not reply:
+            return
+        selection = dialog.getSelectedFolderInfo()
+        if selection is None:
+            return
+
+        folder_type, folder_name, cloud_id = selection
+
+        if folder_type == 'local':
+            favorites_manager.addSong(folder_name, self.storable)
+        elif folder_type == 'cloud':
+            get_backend().edit_playlist('add', [song_id], str(cloud_id))
+        InfoBar.info(
+            'Added',
+            f'Song {self.storable.name} has been added to {folder_name}',
+            parent=self._mwindow,
+            duration=3000,
+        )
+        event_bus.emit(MWINDOW_REFRESH_FOLDERS)
 
 class PlaylistSongCard(_SongCardItem):
     def moveRequested(self, delta: int):
@@ -709,7 +754,11 @@ class FavoriteSongCard(_SongCardItem):
         remove.setIcon(getQIcon('remove'))
         remove.triggered.connect(self._removeSong)
 
-        menu.addActions([export, remove])
+        addto = Action('Add to ...', menu)
+        addto.setIcon(getQIcon('add'))
+        addto.triggered.connect(lambda: self._addTo())
+
+        menu.addActions([export, addto, remove])
 
         menu.exec(event.globalPos(), aniType=MenuAnimationType.DROP_DOWN)
 
@@ -795,73 +844,6 @@ class CloudFavoriteSongCard(_SongCardItem):
         )
         self._remove_callback = remove_callback
 
-    def _addToLocalFolder(self):
-        from core.dialogs import get_value_bylist, get_text_lineedit
-
-        folder_names = [f['folder_name'] for f in favorites_manager.folders]
-        if not folder_names:
-            folder_names.append('Create New Folder...')
-            chosen = get_text_lineedit(
-                '', 'Create New Folder', 'My first folder', self._mwindow
-            )
-        else:
-            folder_names.append('Create New Folder...')
-            chosen = get_value_bylist(
-                self._mwindow,
-                'Choose Folder',
-                'Which folder to save this song?',
-                folder_names,
-            )
-        if chosen is None:
-            return
-
-        if chosen == 'Create New Folder...':
-            chosen = get_text_lineedit(
-                '', 'Create New Folder', 'My first folder', self._mwindow
-            )
-            if not chosen:
-                return
-            favorites_manager.addFolder(chosen)
-
-        storable = self.storable
-
-        def _add(folder_name: str) -> None:
-            if favorites_manager.addSong(folder_name, storable):
-                event_bus.emit(FAVORITES_CHANGED, folder_name)
-                InfoBar.success(
-                    'Added',
-                    f"Added {storable.name} to '{folder_name}'",
-                    parent=self._mwindow,
-                    duration=3000,
-                )
-
-        backend = get_backend()
-
-        if storable.image_cached() and storable.audio_cached(not backend.user_anonymous(), int(backend.get_user_vip_type())):
-            _add(chosen)
-            return
-
-        def _do_download() -> None:
-            backend = get_backend()
-            detail = backend.get_track_detail(str(storable.id))
-            image_url = detail['cover_url']
-            image_bytes = requests.get(image_url).content
-            if not storable.image_cached():
-                storable.cache_image(image_bytes)
-
-            audio = backend.get_track_audio(str(storable.id), bitrate=3200 * 1000)
-            music_url = audio['url']
-
-            def _on_music_done(music_bytes: bytes) -> None:
-                if not storable.audio_cached(not backend.user_anonymous(), int(backend.get_user_vip_type())):
-                    storable.cache_audio(music_bytes)
-                if self._mwindow is not None:
-                    self._mwindow.addScheduledTask(lambda c=chosen: _add(c))
-
-            downloadWithMultiThreading(music_url, {}, {}, None, _on_music_done)
-
-        threading.Thread(target=_do_download, daemon=True).start()
-
     def contextMenuEvent(self, event):
         menu = RoundMenu(parent=self)
 
@@ -869,15 +851,15 @@ class CloudFavoriteSongCard(_SongCardItem):
         export.setIcon(getQIcon('export'))
         export.triggered.connect(lambda: self._exportSong())
 
-        add = Action('Add to Local Folder', menu)
-        add.setIcon(getQIcon('add'))
-        add.triggered.connect(self._addToLocalFolder)
-
         remove = Action('Remove', menu)
         remove.setIcon(getQIcon('remove'))
         remove.triggered.connect(self._removeSong)
 
-        menu.addActions([export, add, remove])
+        addto = Action('Add to ...', menu)
+        addto.setIcon(getQIcon('add'))
+        addto.triggered.connect(lambda: self._addTo())
+
+        menu.addActions([export, addto, remove])
 
         menu.exec(event.globalPos(), aniType=MenuAnimationType.DROP_DOWN)
 

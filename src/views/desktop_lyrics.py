@@ -117,9 +117,9 @@ class DesktopLyricsViewer(LyricsViewer):
         meta = cur_line.get('isMetadata') if cur_line else False
 
         has_translation = self._hasCurrentLineTranslation(cur_line)
-        tar_height = 65 if has_translation else 46
+        tar_height = 65 if has_translation and self.ctx.cfg.show_translation else 46
         if meta:
-            tar_height = self.font_height + 2
+            tar_height = self.font_height + 10
         self.cheight += (tar_height - self.cheight) * 0.12
         self.setFixedHeight(int(self.cheight))
 

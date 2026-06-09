@@ -111,7 +111,7 @@ def SetCreatePlaylist(name: str, privacy=False):
     """
     return "/eapi/playlist/create", {
         "name": str(name),
-        "privacy": str(privacy * 1),
+        "privacy": str(1 if privacy else 0),
     }
 
 

@@ -8,6 +8,7 @@ _logger = logging.getLogger(__name__)
 from core.app_context import AppContext
 from imports import (
     FAVORITES_CHANGED,
+    MWINDOW_REFRESH_FOLDERS,
     PLAYLIST_CHANGED,
     PLAY_STORABLE,
     PushButton,
@@ -119,6 +120,10 @@ class FavoritesPage(QWidget):
         elif self.curr_folder:
             return self.curr_folder['songs']
         return []
+    
+    def displayEmpty(self):
+        self.title_label.setText('None')
+        self.song_viewer.clear()
 
     def setDisplayFolder(self, folder: LocalFolderInfo | CloudFolderInfo):
         if 'id' in folder and 'image_url' in folder and 'songs' not in folder:
@@ -375,6 +380,8 @@ class FavoritesPage(QWidget):
             'Song deleted', f'Song {song_name} deleted', parent=self._mwindow
         )
 
+        event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+
     def deleteCloudSong(self, song_storable: SongStorable):
         if not self.curr_cloud_folder:
             return
@@ -407,6 +414,8 @@ class FavoritesPage(QWidget):
                 f'Song {song_name} removed from cloud folder',
                 parent=self._mwindow,
             )
+
+            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
 
     def replacePlaylist(self, tip=True):
         self._pm.playlist.clear()

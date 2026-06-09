@@ -93,7 +93,7 @@ class FavoritesManager:
         with self._lock:
             for f in self.folders:
                 if f['folder_name'] == folder_name:
-                    f['songs'].append(song)
+                    f['songs'].insert(0, song)
                     self._save()
                     return True
         return False

@@ -11,5 +11,4 @@ pyncm.SetCurrentSession(pyncm.LoadSessionFromString(data['session']))
 
 with pyncm.GetCurrentSession():
     with open('res.json', 'w') as f:
-        # f.write(json.dumps(pyncm.apis.playlist., indent=4))
-        ...
+        f.write(json.dumps(pyncm.apis.playlist.SetCreatePlaylist('test', False), indent=4))

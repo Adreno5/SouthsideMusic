@@ -11,6 +11,7 @@ from imports import (
     CLOUD_ADD_TO_LOCAL,
     CLOUD_REMOVE_FOLDER,
     IMAGE_ASSET_PERSISTED,
+    LOCAL_ADD_TO_CLOUD,
     LOCAL_REMOVE_FOLDER,
     LOCAL_RENAME_FOLDER,
     FlowLayout,
@@ -95,12 +96,13 @@ class LocalFolderCard(QWidget):
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         menu = RoundMenu()
-        rm_ac = QAction(FluentIcon.REMOVE.icon(), 'Remove')
+        rm_ac = QAction(SouthsideIcon.REMOVE.icon(), 'Remove')
         rm_ac.triggered.connect(lambda: event_bus.emit(LOCAL_REMOVE_FOLDER, self))
         rn_ac = QAction(SouthsideIcon.RENAME.icon(), 'Rename')
         rn_ac.triggered.connect(lambda: event_bus.emit(LOCAL_RENAME_FOLDER, self))
-        menu.addAction(rm_ac)
-        menu.addAction(rn_ac)
+        addto_cloud = QAction(SouthsideIcon.ADD.icon(), 'Add to Cloud')
+        addto_cloud.triggered.connect(lambda: event_bus.emit(LOCAL_ADD_TO_CLOUD, self))
+        menu.addActions([rm_ac, rn_ac, addto_cloud])
         menu.exec(event.globalPos())
 
 

@@ -131,20 +131,22 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
                 for p in data
             ]
 
-    def create_playlist(self, name: str, privacy: bool) -> None:
+    def create_playlist(self, name: str, privacy: bool) -> str:
         with pyncm.GetCurrentSession():
-            apis.playlist.SetCreatePlaylist(name, privacy)
+            response = apis.playlist.SetCreatePlaylist(name, privacy)
+            assert isinstance(response, dict), 'Invalid Response'
+            return str(response['id']) # type: ignore
 
     def remove_playlist(self, id: str) -> None:
         with pyncm.GetCurrentSession():
             apis.playlist.SetRemovePlaylist(id)  # type: ignore
 
     def edit_playlist(
-        self, option: Literal['add'] | Literal['del'], song_id: str, folder_id: str
+        self, option: Literal['add'] | Literal['del'], song_ids: list[str], folder_id: str
     ) -> bool:
         with pyncm.GetCurrentSession():
             result = apis.playlist.SetManipulatePlaylistTracks(
-                [song_id], folder_id, op=option
+                song_ids, folder_id, op=option
             )
             assert isinstance(result, dict), 'Invalid Response'
             if result.get('code') != 200:

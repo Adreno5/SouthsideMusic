@@ -493,14 +493,14 @@ class MusicServiceBackend(ABC):
     def user_anonymous(self) -> bool: ...
 
     @abstractmethod
-    def create_playlist(self, name: str, privacy: bool) -> None: ...
+    def create_playlist(self, name: str, privacy: bool) -> str: ...
 
     @abstractmethod
     def remove_playlist(self, id: str) -> None: ...
 
     @abstractmethod
     def edit_playlist(
-        self, option: Literal['add', 'del'], song_id: str, folder_id: str
+        self, option: Literal['add', 'del'], song_ids: list[str], folder_id: str
     ) -> bool: ...
 
     @abstractmethod

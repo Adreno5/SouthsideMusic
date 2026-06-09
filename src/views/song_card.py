@@ -265,7 +265,7 @@ class SongCard(QWidget):
         folder_type, folder_name, cloud_id = selection
 
         if folder_type == 'cloud' and cloud_id:
-            if not get_backend().edit_playlist('add', str(self.info['id']), cloud_id):
+            if not get_backend().edit_playlist('add', [str(self.info['id'])], cloud_id):
                 InfoBar.warning(
                     'Session expired',
                     'Please re-login to perform this action',

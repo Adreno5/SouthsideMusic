@@ -9,6 +9,7 @@ from imports import (
     BACKGROUND_RATIO_CHANGED,
     CLOUD_ADD_TO_LOCAL,
     CLOUD_REMOVE_FOLDER,
+    LOCAL_ADD_TO_CLOUD,
     MWINDOW_REFRESH_FOLDERS,
     PRE_THEME_CHANGED,
     REFRESH_RATE_CHANGED,
@@ -17,6 +18,7 @@ from imports import (
     REPAINT,
     SONG_CHANGED,
     InfoBar,
+    MessageBox,
     QApplication,
     QDialog,
     QMessageBox,
@@ -57,6 +59,7 @@ class EventsServices(QObject):
         )
         event_bus.subscribe(LOCAL_REMOVE_FOLDER, self.removeFolder)
         event_bus.subscribe(LOCAL_RENAME_FOLDER, self.renameFolder)
+        event_bus.subscribe(LOCAL_ADD_TO_CLOUD, self.localAddToCloud)
         event_bus.subscribe(CLOUD_REMOVE_FOLDER, self.cloudRemoveFolder)
         event_bus.subscribe(CLOUD_ADD_TO_LOCAL, self.cloudAddtoLocal)
 
@@ -71,6 +74,24 @@ class EventsServices(QObject):
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)
             self._ctx.main_window.addScheduledTask(lambda: InfoBar.success(
                 'Imported successfully', f'Folder {folder_name} was added to local',
+                duration=5000,
+                parent=self._ctx.main_window
+            ))
+        doWithMultiThreading(_add, (), self, _finished)
+
+    def localAddToCloud(self, card: LocalFolderCard):
+        folder_name = card.folder['folder_name']
+        dialog = MessageBox('Create Folder', 'set the new folder public?', self._ctx.main_window)
+        dialog.yesButton.setText('Public')
+        dialog.cancelButton.setText('Private')
+        privacy = not bool(dialog.exec())
+        def _add():
+            id_ = get_backend().create_playlist(folder_name, privacy)
+            get_backend().edit_playlist('add', [song.id for song in card.folder['songs']], id_)
+        def _finished():
+            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+            self._ctx.main_window.addScheduledTask(lambda: InfoBar.success(
+                'Imported successfully', f'Folder {folder_name} was added to cloud',
                 duration=5000,
                 parent=self._ctx.main_window
             ))

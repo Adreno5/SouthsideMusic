@@ -389,7 +389,7 @@ class FavoritesPage(QWidget):
         )
         if reply == QMessageBox.StandardButton.Yes:
             if not get_backend().edit_playlist(
-                'del', song_storable.id, self.curr_cloud_folder['id']
+                'del', [song_storable.id], self.curr_cloud_folder['id']
             ):
                 InfoBar.warning(
                     'Session expired',

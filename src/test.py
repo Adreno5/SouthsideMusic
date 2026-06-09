@@ -11,4 +11,6 @@ pyncm.SetCurrentSession(pyncm.LoadSessionFromString(data['session']))
 
 with pyncm.GetCurrentSession():
     with open('res.json', 'w') as f:
-        f.write(json.dumps(pyncm.apis.cloudsearch.GetSearchResult('funk', stype=pyncm.apis.cloudsearch.PLAYLIST), indent=4))
+        f.write(json.dumps(pyncm.apis.track.GetTrackLyrics(song_id='2632426028'), indent=4))
+    with open('res2.json', 'w') as f:
+        f.write(json.dumps(pyncm.apis.track.GetTrackLyricsNew(song_id='2632426028'), indent=4))

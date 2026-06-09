@@ -52,6 +52,7 @@ LOCAL_REMOVE_FOLDER = 'local_remove_folder'
 MWINDOW_REFRESH_FOLDERS = 'mwindow_refresh_folders'
 LOCAL_RENAME_FOLDER = 'local_rename_folder'
 CLOUD_REMOVE_FOLDER = 'cloud_remove_folder'
+CLOUD_ADD_TO_LOCAL = 'cloud_add_to_local'
 
 # loading
 START_INTER_LOADING = 'start_inter_loading'

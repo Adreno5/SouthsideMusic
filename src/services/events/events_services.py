@@ -4,8 +4,10 @@ from typing import TYPE_CHECKING
 from core.app_context import AppContext
 from core.backend import get_backend
 from core.dialogs import get_text_lineedit
+from core.downloader import doWithMultiThreading
 from imports import (
     BACKGROUND_RATIO_CHANGED,
+    CLOUD_ADD_TO_LOCAL,
     CLOUD_REMOVE_FOLDER,
     MWINDOW_REFRESH_FOLDERS,
     PRE_THEME_CHANGED,
@@ -14,6 +16,7 @@ from imports import (
     LOCAL_RENAME_FOLDER,
     REPAINT,
     SONG_CHANGED,
+    InfoBar,
     QApplication,
     QDialog,
     QMessageBox,
@@ -55,6 +58,23 @@ class EventsServices(QObject):
         event_bus.subscribe(LOCAL_REMOVE_FOLDER, self.removeFolder)
         event_bus.subscribe(LOCAL_RENAME_FOLDER, self.renameFolder)
         event_bus.subscribe(CLOUD_REMOVE_FOLDER, self.cloudRemoveFolder)
+        event_bus.subscribe(CLOUD_ADD_TO_LOCAL, self.cloudAddtoLocal)
+
+    def cloudAddtoLocal(self, card: CloudFolderCard):
+        folder_name = card.folder['folder_name']
+        favorites_manager.addFolder(folder_name)
+        def _add():
+            response = get_backend().get_playlist_tracks(str(card.folder['id']))
+            for song in response:
+                favorites_manager.addSong(folder_name, song)
+        def _finished():
+            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+            self._ctx.main_window.addScheduledTask(lambda: InfoBar.success(
+                'Imported successfully', f'Folder {folder_name} was added to local',
+                duration=5000,
+                parent=self._ctx.main_window
+            ))
+        doWithMultiThreading(_add, (), self, _finished)
 
     def cloudRemoveFolder(self, card: CloudFolderCard):
         confirmed: bool = (

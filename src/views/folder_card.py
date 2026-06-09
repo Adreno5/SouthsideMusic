@@ -8,6 +8,7 @@ from core.downloader import doWithMultiThreading
 from core.icons import SouthsideIcon, getQIcon
 from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable
 from imports import (
+    CLOUD_ADD_TO_LOCAL,
     CLOUD_REMOVE_FOLDER,
     IMAGE_ASSET_PERSISTED,
     LOCAL_REMOVE_FOLDER,
@@ -88,7 +89,8 @@ class LocalFolderCard(QWidget):
             pass
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        self.clicked.emit()
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
         return super().mousePressEvent(event)
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
@@ -175,12 +177,15 @@ class CloudFolderCard(QWidget):
                     self.img_label.setPixmap(scaled)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        self.clicked.emit()
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
         return super().mousePressEvent(event)
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         menu = RoundMenu()
-        rm_ac = QAction(FluentIcon.REMOVE.icon(), 'Remove')
+        rm_ac = QAction(SouthsideIcon.REMOVE.icon(), 'Remove')
         rm_ac.triggered.connect(lambda: event_bus.emit(CLOUD_REMOVE_FOLDER, self))
-        menu.addAction(rm_ac)
+        add_local = QAction(SouthsideIcon.ADD.icon(), 'Add to Local')
+        add_local.triggered.connect(lambda: event_bus.emit(CLOUD_ADD_TO_LOCAL, self))
+        menu.addActions([rm_ac, add_local])
         menu.exec(event.globalPos())

@@ -106,7 +106,7 @@ class PlayingControllerLyricsViewer(QWidget):
                 content = line.content.strip()
                 if content:
                     all_texts.add(content)
-                if hasattr(line, 'chars'):
+                if isinstance(line, YRCLyricInfo):
                     for ch in line.chars:
                         c = ch.char.strip()
                         if c:
@@ -578,23 +578,6 @@ class PlayingController(QWidget):
         painter.setPen(QPen(QColor(120, 120, 120), 8))
         painter.drawLine(0, 0, self.width(), 0)
         if self._dp.total_length > 0:
-            buffer_ratio = self._player.bufferRatio()
-            if buffer_ratio < 1.0:
-                bar_left = 52 if self.fm_label.isVisible() else 0
-                bar_width = self.width() - bar_left
-                painter.setPen(
-                    QPen(
-                        QColor(255, 255, 255, 80) if isDark else QColor(0, 0, 0, 80),
-                        8,
-                    )
-                )
-                painter.drawLine(
-                    bar_left,
-                    0,
-                    bar_left + int(bar_width * buffer_ratio),
-                    0,
-                )
-
             painter.setPen(
                 QPen(QColor(255, 255, 255) if isDark else QColor(0, 0, 0), 8)
             )

@@ -106,7 +106,6 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
         self, track_id: int | str, bitrate: int = 999000
     ) -> TrackAudioInfo:
         resp = apis.track.getTrackAudio([str(track_id)], bitrate=bitrate)
-        _logger.info(resp)
         if isinstance(resp, bytes):
             resp = json.loads(resp.decode())
         assert isinstance(resp, dict), 'Invalid track audio response'

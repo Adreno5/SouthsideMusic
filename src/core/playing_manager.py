@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import io
 import logging
-import os
 import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Literal
@@ -18,7 +17,7 @@ from core.audio_player import (
 )
 from core.backend import getBackend
 from core.config import cfg
-from core.downloader import asyncDownload, asyncTask
+from core.downloader import asyncTask, asyncDownload
 from core.favorites import saveFavorites
 from core.image import getAverageColorFromBytes
 from core.loudness import getAdjustedGainFactor
@@ -30,8 +29,6 @@ from core.models import (
     SongStorable,
     TrackLyricsInfo,
 )
-from core.stream_decoder import M4ANotStreamable, StreamDecoder
-from imports import QTimer
 from core.weighted_random import AdvancedRandom
 from services.events.event_bus import event_bus
 from services.events.events import (
@@ -60,6 +57,11 @@ if TYPE_CHECKING:
 
 
 PlayMode = Literal['Repeat one', 'Repeat list', 'Shuffle', 'Play in order']
+
+_AUDIO_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+}
 
 
 @dataclass(frozen=True)
@@ -93,12 +95,6 @@ class PlayingManager:
         self._preload_download_seq = 0
         self._preload_download_song_id: str | None = None
         self._pending_play_selection: PlaySelection | None = None
-        self._stream_state: tuple[StreamDecoder, SongStorable] | None = None
-        self._stream_song_id = ''
-        self._stream_bitrate = 0
-        self._stream_duration_ms = 0
-        self._seek_generation = 0
-        self._pending_seek_seconds = 0.0
 
         if ctx is not None:
             self._bindEvents()
@@ -147,10 +143,6 @@ class PlayingManager:
         event_bus.subscribe(PLAY_START_PLAYLIST, self.startPlaylist)
         event_bus.subscribe(PLAY_CONTINUE_LAST_SONG, self.continueLastSong)
         event_bus.subscribe(PLAYLIST_CHANGED, self.playlistChanged)
-
-        player = self._player
-        if player is not None:
-            player.seekRequested.connect(self._handle_stream_seek)
 
     def playlistChanged(self):
         self.refreshRandom()
@@ -365,7 +357,7 @@ class PlayingManager:
         song_id = str(song_storable.id)
 
         for folder in self._favs_ref:
-            for favorite in folder.songs:
+            for favorite in folder['songs']:
                 if str(favorite.id) != song_id:
                     continue
                 if (
@@ -408,34 +400,33 @@ class PlayingManager:
             music = prepared.get('music')
             if (
                 not isinstance(image, bytes)
-                or not isinstance(lyrics_data, TrackLyricsInfo)
-                or not isinstance(music, str)
+                or not isinstance(lyrics_data, dict)
+                or not isinstance(music, bytes)
             ):
                 return
-            if prepared.get('_playing'):
+            if len(music) == 0 or prepared.get('_playing'):
                 return
             prepared['_playing'] = True
 
+            song_info = SongInfo(
+                name=info.name,
+                artists=', '.join(a.name for a in info.artists),
+                id=str(info.id),
+                privilege=info.privilege.fee,
+            )
             storable = SongStorable(
-                info=SongInfo(
-                    name=info.name,
-                    artists='、'.join(a.name for a in info.artists),
-                    id=str(info.id),
-                    privilege=info.privilege.fee,
-                ),
+                info=song_info,
                 image=image,
-                music_bin=None,
-                lyric=lyrics_data.lyric or '',
-                translated_lyric=lyrics_data.translated_lyric or '',
-                yrc_lyric=lyrics_data.yrc_lyric or '',
+                music_bin=music,
+                lyric=lyrics_data.get('lyric', ''),
+                translated_lyric=lyrics_data.get('translated_lyric', ''),
+                yrc_lyric=lyrics_data.get('yrc_lyric', ''),
             )
 
             self.playlist.insert(self.current_index + 1, storable)
             self.refreshRandom()
             event_bus.emit(PLAYLIST_CHANGED)
-            self.playStreamingSong(
-                storable, music, image, info.privilege.max_br, info.duration
-            )
+            self.playStorable(storable)
 
         def _prepare() -> None:
             try:
@@ -483,11 +474,25 @@ class PlayingManager:
             music_url = prepared.get('music_url')
             if not isinstance(music_url, str) or not music_url:
                 return
-            prepared['music'] = music_url
-            _try_play()
+
+            def _on_downloaded(data: bytes) -> None:
+                if not _is_current_search():
+                    return
+                prepared['music'] = data
+                _try_play()
+
+            asyncDownload(
+                music_url,
+                _AUDIO_HEADERS,
+                None,
+                self._mwindow_obj,
+                _on_downloaded,
+            )
 
         asyncTask(_prepare, (), self._mwindow_obj, _on_prepared)
-        asyncTask(_process_audio, (), self._mwindow_obj, _on_audio_prepare_done)
+        asyncTask(
+            _process_audio, (), self._mwindow_obj, _on_audio_prepare_done
+        )
 
     def preloadNextSong(self) -> None:
         if len(self.playlist) <= 1:
@@ -741,7 +746,7 @@ class PlayingManager:
                         bitrate=3200 * 1000,
                     )
                     self._logger.debug(f'{audio.url=}')
-                prepared['music_url'] = audio.url
+                    prepared['music_url'] = audio.url
 
             except Exception as e:
                 prepared['error'] = str(e)
@@ -791,7 +796,7 @@ class PlayingManager:
                     return
                 asyncDownload(
                     music_url,
-                    {},
+                    _AUDIO_HEADERS,
                     None,
                     self._mwindow_obj,
                     _play_after_persist,
@@ -968,10 +973,13 @@ class PlayingManager:
 
             event_bus.emit(PLAYLIST_CHANGED)
 
+            # Show original lyrics immediately (no translation)
             self._show_original_lyrics(song_storable)
 
+            # Start async gain computation
             self._compute_gain_async(song_storable, result.get('audio'))  # type: ignore
 
+            # Start async translation fetch
             self._download_update_lyrics(song_storable)
 
             image_bytes = result.get('image')
@@ -1000,174 +1008,6 @@ class PlayingManager:
         self.ctx.transmgr.parse()
         self.ctx.ymgr.parse()
         event_bus.emit(PLAYBACK_LYRICS_UPDATED, song_storable)
-
-    def playStreamingSong(
-        self,
-        song_storable: SongStorable,
-        url: str,
-        image: bytes,
-        bitrate: int,
-        duration_ms: int,
-    ) -> None:
-        player = self._player
-        if player is None:
-            return
-
-        player.stop()
-        self.current_song = song_storable
-        event_bus.emit(PLAYBACK_SONG_LOADING, song_storable)
-        app = self._app
-        if app is not None:
-            app.processEvents()
-
-        try:
-            decoder = StreamDecoder(url)
-            decoder.start()
-        except M4ANotStreamable:
-            self._logger.info('M4A not streamable, falling back to full download')
-            self._fallback_full_download(song_storable, url, image)
-            return
-
-        player.startStreaming(decoder, 44100, 2)
-        player.play()
-
-        self._stream_state = (decoder, song_storable)
-        self._stream_song_id = song_storable.id
-        self._stream_bitrate = bitrate
-        self._stream_duration_ms = duration_ms
-
-        try:
-            avg_color = getAverageColorFromBytes(image)
-            event_bus.emit(PLAYBACK_IMAGE_LOADED, song_storable, image, avg_color)
-        except Exception:
-            self._logger.exception('failed to load image for streaming playback')
-
-        self._show_original_lyrics(song_storable)
-        self._download_update_lyrics(song_storable)
-        event_bus.emit(SONG_CHANGED, song_storable)
-        event_bus.emit(PLAY_STATE_CHANGED, True)
-
-        def _on_finished() -> None:
-            self._save_stream_cache()
-            try:
-                player.onFullFinished.disconnect(_on_finished)
-            except TypeError:
-                pass
-
-        player.onFullFinished.connect(_on_finished)
-
-    def _fallback_full_download(
-        self, song_storable: SongStorable, url: str, image: bytes
-    ) -> None:
-        def _on_downloaded(data: bytes) -> None:
-            song_storable._write_cache(data, MUSIC_DATA_DIR, 'content_cache_hash')
-            self._logger.info('full download fallback completed, playing')
-            self.playStorable(song_storable)
-
-        asyncDownload(url, {}, None, self._mwindow_obj, _on_downloaded)
-
-    def _handle_stream_seek(self, seconds: float) -> None:
-        self._pending_seek_seconds = seconds
-        self._seek_generation += 1
-        gen = self._seek_generation
-
-        def _delayed() -> None:
-            if self._seek_generation != gen:
-                return
-            self._do_stream_seek(self._pending_seek_seconds)
-
-        QTimer.singleShot(500, _delayed)
-
-    def _do_stream_seek(self, seconds: float) -> None:
-        state = self._stream_state
-        if state is None:
-            return
-        decoder, storable = state
-        song_id = self._stream_song_id
-        bitrate = self._stream_bitrate
-        duration_ms = self._stream_duration_ms
-
-        if not song_id or duration_ms <= 0:
-            return
-
-        player = self._player
-        if player is None:
-            return
-
-        player.stop()
-        decoder.stop()
-
-        try:
-            audio = getBackend().getTrackAudio(song_id, bitrate)
-        except Exception:
-            self._logger.exception('failed to get fresh audio URL for seek')
-            return
-
-        try:
-            probe = requests.head(audio.url, allow_redirects=True, timeout=10)
-            probe.raise_for_status()
-            total_size = int(probe.headers.get('content-length', 0))
-        except Exception:
-            self._logger.exception('failed to probe file size for seek')
-            total_size = 0
-
-        if total_size > 0:
-            duration_sec = duration_ms / 1000.0
-            bytes_per_sec = total_size / duration_sec
-            start_byte = int(seconds * bytes_per_sec)
-        else:
-            start_byte = 0
-
-        self._logger.info(
-            'stream seek to %.1fs -> byte offset %d (size=%d)',
-            seconds,
-            start_byte,
-            total_size,
-        )
-
-        new_decoder = StreamDecoder(audio.url, duration_sec=duration_ms / 1000.0)
-        new_decoder.reset_for_seek(start_byte)
-        new_decoder.start(block=False)
-
-        player.resetStream(new_decoder)
-        player.play()
-
-        self._stream_state = (new_decoder, storable)
-        self._stream_song_id = song_id
-
-    def _save_stream_cache(self) -> None:
-        state = self._stream_state
-        self._stream_state = None
-        if state is None:
-            return
-
-        decoder, storable = state
-        temp_path = decoder.temp_path
-
-        if not temp_path or not os.path.exists(temp_path):
-            try:
-                decoder.stop()
-            except Exception:
-                pass
-            return
-
-        try:
-            with open(temp_path, 'rb') as f:
-                music_bytes = f.read()
-        except Exception:
-            self._logger.exception('failed to read stream temp file')
-            return
-
-        decoder.stop()
-        player = self._player
-        if player is not None:
-            player.endStream()
-
-        try:
-            storable._write_cache(music_bytes, MUSIC_DATA_DIR, 'content_cache_hash')
-            self._logger.info('stream cache saved for %s', storable.id)
-        except Exception:
-            self._logger.exception('failed to save stream cache')
 
     def _compute_gain_async(
         self,
@@ -1236,7 +1076,9 @@ class PlayingManager:
                 if ymgr.cur and ytlrc:
                     transmgr.cur = ytlrc
                 else:
-                    transmgr.cur = lyric_result.translated_lyric or '[00:00.000]'
+                    transmgr.cur = (
+                        lyric_result.translated_lyric or '[00:00.000]'
+                    )
                 lyric_target.write_lyrics(
                     mgr.cur,
                     transmgr.cur if transmgr.cur != '[00:00.000]' else '',

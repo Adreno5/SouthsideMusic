@@ -27,14 +27,19 @@ def _parse_response(rsp):
             payload = {'result': json.loads(real_payload)}
             payload['abroad'] = True
         return payload
-    except json.JSONDecodeError as e:
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        try:
+            content = rsp.content if isinstance(rsp, Response) else rsp
+            return json.loads(content.decode())
+        except Exception:
+            pass
         logger.error('response is not valid json: %s', e)
         logger.error('response: %s', rsp)
         return rsp
 
 
 def weapi(url, data, session=None, method='POST') -> Any:
-    '''weapi request (web/miniprogram/mobile APIs).'''
+    """weapi request (web/miniprogram/mobile APIs)."""
     session = session or getCurrentSession()
     payload = json.dumps({**data, 'csrf_token': session.csrf_token})
     encrypted = _weapi_encrypt(payload)
@@ -50,7 +55,7 @@ def weapi(url, data, session=None, method='POST') -> Any:
 
 
 def eapi(url, data, session=None, method='POST') -> Any:
-    '''eapi request (desktop client APIs).'''
+    """eapi request (desktop client APIs)."""
     session = session or getCurrentSession()
     payload = {
         **data,
@@ -75,6 +80,10 @@ def eapi(url, data, session=None, method='POST') -> Any:
         decrypted = bytes(_eapi_decrypt(content)).decode()
         return json.loads(decrypted.strip('\x10'))
     except Exception:
+        try:
+            return json.loads(content.decode())
+        except Exception:
+            pass
         return content
 
 

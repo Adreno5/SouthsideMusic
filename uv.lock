@@ -3157,7 +3157,7 @@ wheels = [
 
 [[package]]
 name = "southsidemusic"
-version = "33"
+version = "34"
 source = { virtual = "." }
 dependencies = [
     { name = "audioop-lts" },

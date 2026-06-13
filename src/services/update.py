@@ -6,12 +6,11 @@ import logging
 import os
 import subprocess
 import sys
-import time
 import zipfile
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING
 from urllib.parse import quote as _url_quote
 
 import requests
@@ -23,6 +22,7 @@ from imports import (
     STOP_PROGRESS_LOADING,
     UPDATE_LOADING_PROGRESS,
 )
+
 if TYPE_CHECKING:
     from views.main_window import MainWindow
 
@@ -44,9 +44,13 @@ class UpdateInfo:
     def __init__(self, tag_name: str, published_at: str) -> None:
         self.tag_name = tag_name
         self.published_at = published_at
-    
+
     def __eq__(self, another: UpdateInfo):
-        return self.tag_name == another.tag_name and self.published_at == another.published_at
+        return (
+            self.tag_name == another.tag_name
+            and self.published_at == another.published_at
+        )
+
 
 def _read_installed_published_at() -> str | None:
     try:
@@ -58,7 +62,10 @@ def _read_installed_published_at() -> str | None:
 
 def _write_installed_release(published_at: str, tag_name: str) -> None:
     try:
-        _FILE.write_text(json.dumps({'published_at': published_at, 'tag_name': tag_name}), encoding='utf-8')
+        _FILE.write_text(
+            json.dumps({'published_at': published_at, 'tag_name': tag_name}),
+            encoding='utf-8',
+        )
     except OSError:
         pass
 
@@ -130,8 +137,10 @@ def _build_codeload_url(tag_name: str) -> str:
         f'/zip/refs/tags/{encoded}'
     )
 
+
 def init_file():
     _FILE.write_text(json.dumps({}), encoding='utf-8')
+
 
 def applyUpdate(update_info: UpdateInfo) -> bool:
     try:
@@ -205,11 +214,15 @@ def startUpdateCheck(mwindow: MainWindow) -> None:
             return
         if update_result is None:
             return
-        
+
         mwindow.addScheduledTask(lambda: _checked(update_result))
-        
+
     def _checked(update_result: UpdateInfo):
-        dialog = MessageBox('Update Available', f'{update_result.tag_name} is available! Do you want to update now?', mwindow)
+        dialog = MessageBox(
+            'Update Available',
+            f'{update_result.tag_name} is available! Do you want to update now?',
+            mwindow,
+        )
         dialog.cancelButton.setText('Skip')
         dialog.yesButton.setText('Update')
         if dialog.exec():

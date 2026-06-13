@@ -5,11 +5,11 @@ from core.models import MusicServiceBackend
 _backend: MusicServiceBackend | None = None
 
 
-def get_backend() -> MusicServiceBackend:
+def getBackend() -> MusicServiceBackend:
     assert _backend is not None, 'Backend not initialized'
     return _backend
 
 
-def init_backend(backend: MusicServiceBackend) -> None:
+def initBackend(backend: MusicServiceBackend) -> None:
     global _backend
     _backend = backend

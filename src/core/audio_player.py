@@ -17,11 +17,15 @@ from imports import (
     event_bus,
     Property,
 )
-from typing import Optional, TypedDict, override
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Optional, override
 import threading
 from scipy.fft import rfft, rfftfreq
 from imports import QMessageBox
 from core.config import cfg
+
+if TYPE_CHECKING:
+    from core.stream_decoder import StreamDecoder
 
 from pydub.utils import fsdecode, audioop, mediainfo_json
 from pydub.exceptions import CouldntDecodeError
@@ -53,15 +57,13 @@ WavSubChunk = namedtuple('WavSubChunk', ['id', 'position', 'size'])
 
 
 def extract_wav_headers(data):
-    # def search_subchunk(data, subchunk_id):
-    pos = 12  # The size of the RIFF chunk descriptor
+    pos = 12
     subchunks = []
     while pos + 8 <= len(data) and len(subchunks) < 10:
         subchunk_id = data[pos : pos + 4]
         subchunk_size = struct.unpack_from('<I', data[pos + 4 : pos + 8])[0]
         subchunks.append(WavSubChunk(subchunk_id, pos, subchunk_size))
         if subchunk_id == b'data':
-            # 'data' is the last subchunk
             break
         pos += subchunk_size + 8
 
@@ -85,7 +87,8 @@ def fix_wav_headers(data):
     data[pos + 4 : pos + 8] = struct.pack('<I', len(data) - pos - 8)
 
 
-class DevicesInfo(TypedDict):
+@dataclass
+class DevicesInfo:
     display_name: str
     index: int
 
@@ -137,8 +140,6 @@ class PatchedAudioSegment(AudioSegment):
         info = mediainfo_json(orig_file, read_ahead_limit=-1)
         if info:
             audio_streams = [x for x in info['streams'] if x['codec_type'] == 'audio']
-            # This is a workaround for some ffprobe versions that always say
-            # that mp3/mp4/aac/webm/ogg files contain fltp samples
             audio_codec = audio_streams[0].get('codec_name')
             if audio_streams[0].get('sample_fmt') == 'fltp' and audio_codec in [
                 'mp3',
@@ -158,7 +159,7 @@ class PatchedAudioSegment(AudioSegment):
             conversion_command += ['-acodec', acodec]
 
         conversion_command += [
-            '-vn',  # Drop any video streams if there are any
+            '-vn',
             '-f',
             'wav',
         ]
@@ -231,6 +232,7 @@ class AudioPlayer(QObject):
     onEndingNoSound = Signal()
     positionChanged = Signal(float)
     fftDataReady = Signal(np.ndarray, np.ndarray)  # (freqs, magnitudes)
+    seekRequested = Signal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -275,11 +277,14 @@ class AudioPlayer(QObject):
                 QMessageBox.StandardButton.Ok,
             )
             sys.exit(1)
-        self._device_id: int = devices[0]['index']
+        self._device_id: int = devices[0].index
         self.fft_queue = Queue(maxsize=8)
         self.fft_thread_running = True
         self.fft_thread = threading.Thread(target=self._fft_worker, daemon=True)
         self.fft_thread.start()
+
+        self._streaming = False
+        self._decoder: StreamDecoder | None = None
 
     def _prepare_samples(self, audio: PatchedAudioSegment) -> np.ndarray:
         samples_raw = np.array(audio.get_array_of_samples(), dtype=np.float32)
@@ -291,7 +296,6 @@ class AudioPlayer(QObject):
 
         frame_count = len(samples_raw) // audio.channels
         multi = normalized.reshape(frame_count, audio.channels)
-        # Always force stereo: mix >2ch down to stereo, pass stereo through
         if audio.channels == 2:
             return multi
         left = multi[:, ::2].mean(axis=1)
@@ -366,9 +370,50 @@ class AudioPlayer(QObject):
         audio = PatchedAudioSegment.from_file(io.BytesIO(data))
         self.load(audio)
 
+    def startStreaming(
+        self, decoder: StreamDecoder, sample_rate: int, channels: int
+    ) -> None:
+        with self._lock:
+            self._stop_producer()
+            self.stop()
+            if self.stream:
+                self.stream.close()
+                self.stream = None
+            self._streaming = True
+            self._decoder = decoder
+            self.sample_rate = sample_rate
+            self.channels = channels
+            self.output_channels = 2
+            self.samples = np.zeros((0, channels), dtype=np.float32)
+            self.current_index = 0
+            self._producer_index = 0
+            self._playback_time = 0.0
+            self.is_playing = False
+            self.is_paused = False
+
+    def endStream(self) -> None:
+        self._streaming = False
+        self._decoder = None
+
+    def isStreaming(self) -> bool:
+        return self._streaming
+
+    def bufferRatio(self) -> float:
+        if self._streaming and self._decoder is not None:
+            return self._decoder.buffer_ratio
+        return 1.0
+
+    def resetStream(self, decoder: StreamDecoder) -> None:
+        self._decoder = decoder
+        self._producer_index = 0
+        self.current_index = 0
+        self._playback_time = 0.0
+        self._clear_queue()
+
     def play(self) -> None:
         with self._lock:
-            if len(self.samples) == 0:
+            if len(self.samples) == 0 and not self._streaming:
+                return
                 return
             if self.is_paused:
                 self._clear_queue()
@@ -411,6 +456,9 @@ class AudioPlayer(QObject):
             self.is_paused = False
 
     def setPosition(self, seconds: float) -> None:
+        if self._streaming:
+            self.seekRequested.emit(seconds)
+            return
         with self._lock:
             if len(self.samples) == 0:
                 return
@@ -426,6 +474,10 @@ class AudioPlayer(QObject):
         return round(self._playback_time, 2)
 
     def getLength(self) -> float:
+        if self._streaming and self._decoder:
+            total = self._decoder.total_frames
+            if total > 0:
+                return total / self.sample_rate
         return len(self.samples) / self.sample_rate if self.sample_rate > 0 else 0.0
 
     def setVolume(self, volume: float) -> None:
@@ -524,7 +576,7 @@ class AudioPlayer(QObject):
 
             self.fftDataReady.emit(fft_freqs, fft_vals)
 
-    def stop_fft_thread(self):
+    def stopFftThread(self):
         self.fft_thread_running = False
         self.fft_queue.put(None)
         if self.fft_thread.is_alive():
@@ -652,8 +704,50 @@ class AudioPlayer(QObject):
             self._producer_thread.join(timeout=0.1)
         self._producer_thread = None
 
+    def _process_chunk(self, chunk: np.ndarray, idx: int) -> np.ndarray:
+        if self.channels == 1:
+            out = self._apply_stereo_effect(chunk[:, 0], idx)
+        else:
+            if not cfg.stereo:
+                mono = chunk.mean(axis=1, keepdims=True)
+                out = np.repeat(mono, 2, axis=1)
+            else:
+                out = chunk[:, :2].copy()
+        out = out.astype(np.float32, copy=False)
+        out *= self.volume_gain * self.loudness_gain
+        np.clip(out, -1.0, (61.0 + cfg.target_lufs) * 3.0, out=out)
+        return out
+
     def _producer_loop(self) -> None:
         while self._producer_running:
+            if self._streaming and self._decoder is not None:
+                decoder = self._decoder
+                chunk = decoder.next_chunk()
+                if chunk is None:
+                    break
+
+                pos = 0
+                while pos < len(chunk) and self._producer_running:
+                    end = min(pos + self._BLOCK_SIZE, len(chunk))
+                    piece = chunk[pos:end]
+                    if len(piece) < self._BLOCK_SIZE:
+                        pad = np.zeros(
+                            (self._BLOCK_SIZE - len(piece), self.channels),
+                            dtype=np.float32,
+                        )
+                        piece = np.vstack([piece, pad])
+
+                    out = self._process_chunk(piece, int(self._producer_index))
+                    src_frames = int(round(self._BLOCK_SIZE * self.play_speed))
+                    self._producer_index += src_frames
+
+                    try:
+                        self._audio_queue.put(out, timeout=0.1)
+                    except Full:
+                        pass
+                    pos += self._BLOCK_SIZE
+                continue
+
             with self._lock:
                 if (
                     not self._producer_running
@@ -666,21 +760,7 @@ class AudioPlayer(QObject):
                 if len(chunk) == 0:
                     break
 
-                if self.channels == 1:
-                    out = self._apply_stereo_effect(
-                        chunk[:, 0], int(self._producer_index)
-                    )
-                else:
-                    if not cfg.stereo:
-                        mono = chunk.mean(axis=1, keepdims=True)
-                        out = np.repeat(mono, 2, axis=1)
-                    else:
-                        out = chunk[:, :2].copy()
-
-                out = out.astype(np.float32, copy=False)
-                out *= self.volume_gain * self.loudness_gain
-                np.clip(out, -1.0, (61.0 + cfg.target_lufs) * 3.0, out=out)
-
+                out = self._process_chunk(chunk, int(self._producer_index))
                 src_frames = int(round(self._BLOCK_SIZE * self.play_speed))
                 self._producer_index = min(
                     self._producer_index + src_frames, len(self.samples)
@@ -710,7 +790,7 @@ class AudioPlayer(QObject):
                     pass
                 self.stream = None
 
-            self._device_id = device['index']
+            self._device_id = device.index
 
             if was_playing:
                 self._start_producer()
@@ -719,6 +799,6 @@ class AudioPlayer(QObject):
     def getCurrentOutputDevice(self) -> Optional[DevicesInfo]:
         devices = getAudioDevices()
         for dev in devices:
-            if dev['index'] == self._device_id:
+            if dev.index == self._device_id:
                 return dev
         return devices[0] if devices else None

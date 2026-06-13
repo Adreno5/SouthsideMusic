@@ -1,19 +1,22 @@
-# -*- coding: utf-8 -*-
-"""Helper utilites to aid operations w/ API responses"""
+from __future__ import annotations
+
 from threading import Lock
 from functools import wraps
 from os import listdir, path
-import datetime, logging
+import datetime
+import logging
+
+'''helper utilities for working with api responses.'''
 
 truncate_length = 64
-logger = logging.getLogger("pyncm.helper")
+logger = logging.getLogger('pyncm.helper')
 
 
-def SubstituteWithFullwidth(string, sub=set('\x00\\/:<>|?*".')):
-    return "".join([c if not c in sub else chr(ord(c) + 0xFEE0) for c in string])
+def _substitute_with_fullwidth(string, sub=set('\x00\\/:<>|?*".')):
+    return ''.join([c if c not in sub else chr(ord(c) + 0xFEE0) for c in string])
 
 
-def Default(default=None):
+def _default(default=None):
     def preWrapper(func):
         @property
         @wraps(func)
@@ -21,7 +24,7 @@ def Default(default=None):
             try:
                 return func(*a, **k)
             except Exception as e:
-                logger.warn("Failed to get attribute %s : %s" % (func.__name__, e))
+                logger.warn('failed to get attribute %s : %s' % (func.__name__, e))
                 return default
 
         return wrapper
@@ -30,27 +33,24 @@ def Default(default=None):
 
 
 class IDCahceHelper:
-    """Generic cache for pesudo-static ID-based dicts"""
+    '''generic cache for id-based dicts.'''
 
-    _cache = dict()
+    _cache: dict = {}
 
     def __new__(cls, item_id, *args):
-        if not item_id in IDCahceHelper._cache:
+        if item_id not in IDCahceHelper._cache:
             IDCahceHelper._cache[item_id] = super().__new__(cls)
         return IDCahceHelper._cache[item_id]
 
     def __init__(self, item_id, factory_func=None) -> None:
-        # __init__ is always called after __new__
-        if hasattr(self, "_lock"):
-            with self._lock:  # Ensure update's finished
+        if hasattr(self, '_lock'):
+            with self._lock:
                 return
-        # We only want to initialze once
+        self._lock: Lock
         self._item_id = item_id
         if factory_func:
             self._factory_func = factory_func
-        # Automatically update the dict once we finished loading
         self._lock = Lock()
-        # In case of race conditions when our info is still updating...
         return self.refresh()
 
     def refresh(self):
@@ -60,216 +60,188 @@ class IDCahceHelper:
 
 class AlbumHelper(IDCahceHelper):
     def __init__(self, item_id):
-        from pyncm.apis.album import GetAlbumInfo
+        from pyncm.apis.album import getAlbumInfo
 
-        super().__init__(item_id, GetAlbumInfo)
+        super().__init__(item_id, getAlbumInfo)
 
     def refresh(self):
-        logger.debug("Caching album info %s" % self._item_id)
+        logger.debug('caching album info %s' % self._item_id)
         return super().refresh()
 
-    @Default()
-    def AlbumName(self):
-        """专辑名"""
-        return self.data["album"]["name"]
+    @_default()
+    def albumName(self):
+        return self.data['album']['name']
 
-    @Default()
-    def AlbumAliases(self):
-        """专辑别名"""
-        return self.data["album"]["alias"]
+    @_default()
+    def albumAliases(self):
+        return self.data['album']['alias']
 
-    @Default()
-    def AlbumCompany(self):
-        """专辑发行"""
-        return self.data["album"]["company"]
+    @_default()
+    def albumCompany(self):
+        return self.data['album']['company']
 
-    @Default()
-    def AlbumBreifDescription(self):
-        """专辑概述"""
-        return self.data["album"]["breifDesc"]
+    @_default()
+    def albumBriefDescription(self):
+        return self.data['album']['breifDesc']
 
-    @Default()
-    def AlbumDescription(self):
-        """专辑说明"""
-        return self.data["album"]["description"]
+    @_default()
+    def albumDescription(self):
+        return self.data['album']['description']
 
-    @Default()
-    def AlbumPublishTime(self):
-        """专辑发布年份"""
+    @_default()
+    def albumPublishTime(self):
         return (
             datetime.datetime(1970, 1, 1)
-            + datetime.timedelta(milliseconds=self.data["album"]["publishTime"])
+            + datetime.timedelta(milliseconds=self.data['album']['publishTime'])
         ).year
 
-    @Default()
-    def AlbumSongCount(self):
-        """专辑歌曲数"""
-        return self.data["album"]["size"]
+    @_default()
+    def albumSongCount(self):
+        return self.data['album']['size']
 
-    @Default()
-    def AlbumArtists(self):
-        """专辑艺术家"""
-        return [_ar["name"] for _ar in self.data["album"]["artists"]]
+    @_default()
+    def albumArtists(self):
+        return [_ar['name'] for _ar in self.data['album']['artists']]
 
 
 class ArtistHelper(IDCahceHelper):
     def __init__(self, item_id):
-        from pyncm.apis.artist import GetArtistDetails
+        from pyncm.apis.artist import getArtistDetails
 
-        super().__init__(item_id, GetArtistDetails)
+        super().__init__(item_id, getArtistDetails)
 
     def refresh(self):
-        logger.debug("Caching artist info %s" % self._item_id)
+        logger.debug('caching artist info %s' % self._item_id)
         return super().refresh()
 
-    @Default()
+    @_default()
     def ID(self):
-        """艺术家 ID"""
-        return self.data["data"]["artist"]["id"]
+        return self.data['data']['artist']['id']
 
-    @Default()
-    def ArtistName(self):
-        """艺术家名"""
-        return self.data["data"]["artist"]["name"]
+    @_default()
+    def artistName(self):
+        return self.data['data']['artist']['name']
 
-    @Default()
-    def ArtistTranslatedName(self):
-        """艺术家翻译名"""
-        return self.data["data"]["artist"]["transNames"]
+    @_default()
+    def artistTranslatedName(self):
+        return self.data['data']['artist']['transNames']
 
-    @Default()
-    def ArtistBrief(self):
-        """艺术家简述"""
-        return self.data["data"]["artist"]["briefDesc"]
+    @_default()
+    def artistBrief(self):
+        return self.data['data']['artist']['briefDesc']
 
 
 class UserHelper(IDCahceHelper):
     def __init__(self, item_id):
-        from pyncm.apis.user import GetUserDetail
+        from pyncm.apis.user import getUserDetail
 
-        super().__init__(item_id, GetUserDetail)
+        super().__init__(item_id, getUserDetail)
 
     def refresh(self):
-        logger.debug("Caching user info %s" % self._item_id)
+        logger.debug('caching user info %s' % self._item_id)
         return super().refresh()
 
-    @Default()
+    @_default()
     def ID(self):
-        """UID"""
-        return self.data["userPoint"]["userId"]
+        return self.data['userPoint']['userId']
 
-    @Default()
-    def UserName(self):
-        """用户名"""
-        return self.data["profile"]["nickname"]
+    @_default()
+    def userName(self):
+        return self.data['profile']['nickname']
 
-    @Default()
-    def Avatar(self):
-        """头像"""
-        return self.data["profile"]["avatarUrl"]
+    @_default()
+    def avatar(self):
+        return self.data['profile']['avatarUrl']
 
-    @Default()
-    def AvatarBackground(self):
-        """主页背景"""
-        return self.data["profile"]["backgroundUrl"]
+    @_default()
+    def avatarBackground(self):
+        return self.data['profile']['backgroundUrl']
 
 
 class TrackHelper:
-    """Helper class for handling generic track objects"""
+    '''helper for handling generic track objects.'''
 
     def __init__(self, track_dict) -> None:
-        self.__dict__.update({"data": track_dict})
+        self.data: dict = track_dict
 
     @property
-    def Duration(self) -> int:
-        """歌曲时长 （毫秒）"""
-        return int(self.data["dt"])
+    def duration(self) -> int:
+        '''track duration in milliseconds.'''
+        return int(self.data['dt'])
 
     @property
-    def Album(self) -> AlbumHelper:
-        """专辑对象，会有更多歌曲元数据"""
-        return AlbumHelper(self.data["al"]["id"])
+    def album(self) -> AlbumHelper:
+        '''album object with more metadata.'''
+        return AlbumHelper(self.data['al']['id'])
 
-    @Default()
+    @_default()
     def ID(self):
-        """网易云音乐 ID"""
-        return self.data["id"]
+        return self.data['id']
 
-    @Default()
-    def TrackPublishTime(self):
-        """歌曲发布年份"""
+    @_default()
+    def trackPublishTime(self):
         return (
             datetime.datetime(1970, 1, 1)
-            + datetime.timedelta(milliseconds=self.data["publishTime"])
+            + datetime.timedelta(milliseconds=self.data['publishTime'])
         ).year
 
-    @Default()
-    def TrackNumber(self):
-        """歌曲编号 （于专辑）"""
-        return self.data["no"]
+    @_default()
+    def trackNumber(self):
+        return self.data['no']
 
-    @Default(default="Unknown")
-    def TrackName(self):
-        """歌曲名"""
-        assert self.data["name"] != None
-        return self.data["name"]
+    @_default(default='Unknown')
+    def trackName(self):
+        assert self.data['name'] is not None
+        return self.data['name']
 
-    @Default(default=[])
-    def TrackAliases(self):
-        """歌曲别名"""
-        return self.data["alia"]
+    @_default(default=[])
+    def trackAliases(self):
+        return self.data['alia']
 
-    @Default(default="Unknown")
-    def AlbumName(self):
-        """专辑名"""
-        if self.data["al"]["id"]:
-            return self.data["al"]["name"]
+    @_default(default='Unknown')
+    def albumName(self):
+        if self.data['al']['id']:
+            return self.data['al']['name']
         else:
-            return self.data["pc"]["alb"]
+            return self.data['pc']['alb']
 
-    @Default(
-        default="https://p1.music.126.net/UeTuwE7pvjBpypWLudqukA==/3132508627578625.jpg"
+    @_default(
+        default='https://p1.music.126.net/UeTuwE7pvjBpypWLudqukA==/3132508627578625.jpg'
     )
-    def AlbumCover(self):
-        """专辑封面"""
-        al = self.data["al"] if "al" in self.data else self.data["album"]
-        if al["id"]:
-            return al["picUrl"]
+    def albumCover(self):
+        al = self.data['al'] if 'al' in self.data else self.data['album']
+        if al['id']:
+            return al['picUrl']
         else:
-            return "https://music.163.com/api/img/blur/" + self.data["pc"]["cid"]
-            # source:PC version's core.js
+            return 'https://music.163.com/api/img/blur/' + self.data['pc']['cid']
 
-    @Default(default=["Various Artists"])
-    def Artists(self):
-        """艺术家名 List"""
-        ar = self.data["ar"] if "ar" in self.data else self.data["artists"]
-        ret = [_ar["name"] for _ar in ar]
+    @_default(default=['Various artists'])
+    def artists(self):
+        ar = self.data['ar'] if 'ar' in self.data else self.data['artists']
+        ret = [_ar['name'] for _ar in ar]
         if not ret.count(None):
             return ret
         else:
-            return [self.data["pc"]["ar"]]  # for NCM cloud-drive stored audio
+            return [self.data['pc']['ar']]
 
-    @Default(default="null")
-    def CD(self):
-        """专辑 CD"""
-        return self.data["cd"]
+    @_default(default='null')
+    def cd(self):
+        return self.data['cd']
 
-    @Default()
-    def Title(self):
-        """保存名 [曲名] - [艺术家名 1,2...,n]"""
-        return f'{self.TrackName} - {",".join(self.Artists)}'
+    @_default()
+    def title(self):
+        return f'{self.trackName} - {",".join(self.artists)}' # type: ignore
 
     @property
     def template(self):
-        """保存模板参数"""
         return {
-            "id": str(self.ID),
-            "year": str(self.TrackPublishTime),
-            "no": str(self.TrackNumber),
-            "track": self.TrackName,
-            "album": self.AlbumName,
-            "title": self.Title,
-            "artists": " / ".join(self.Artists),
+            'id': str(self.ID),
+            'year': str(self.trackPublishTime),
+            'no': str(self.trackNumber),
+            'track': self.trackName,
+            'album': self.albumName,
+            'title': self.title,
+            'artists': ' / '.join(self.artists), # type: ignore
         }
 
 
@@ -281,20 +253,20 @@ class FuzzyPathHelper(IDCahceHelper):
     def base_path(self):
         return self._item_id
 
-    def __init__(self, basepath, limit_exts={".flac", ".mp3", ".m4a"}) -> None:
+    def __init__(self, basepath, limit_exts={'.flac', '.mp3', '.m4a'}) -> None:
         self.limit_exts = limit_exts
         super().__init__(basepath)
 
     def _factory_func(self, _item_id):
-        # Make some hashtables w/ directory's file listing
         files = filter(
             lambda file: path.isfile(path.join(self.base_path, file)),
             listdir(self.base_path) if path.exists(self.base_path) else [],
         )
-        # 1. Table of basename
         self.tbl_basenames = {path.basename(file): file for file in files}
-        # 2. Table of basename w/o extension, but with the premise that the files themselves contain the extensions we want
-        split = lambda file: path.splitext(path.basename(file))
+
+        def split(file):
+            return path.splitext(path.basename(file))
+
         self.tbl_basenames_noext = {
             (
                 split(file)[0] if (split(file)[1].lower() in self.limit_exts) else None
@@ -303,16 +275,15 @@ class FuzzyPathHelper(IDCahceHelper):
         }
 
     def exists(self, name, partial_extension_check=True):
-        """Chcek if a file exists in O(1) time
+        '''check if a file exists in O(1) time.
 
         Args:
-            name : File basename inside the FuzzyPathHelper's basepath
-            partial_extension_check (bool, optional): Only check if the basename (w/o exts) matches.  Defaults to True.
+            name: file basename inside basepath.
+            partial_extension_check: only check basename w/o extension.
 
-        Notes:
-            If limit_exts in the class constructor is set, this will limit the basename matching canidates to
-            those with the selected exts only.
-        """
+        Returns:
+            bool
+        '''
         if partial_extension_check:
             return name in self.tbl_basenames_noext
         else:
@@ -320,10 +291,10 @@ class FuzzyPathHelper(IDCahceHelper):
 
     def fullpath(self, name):
         if name in self.tbl_basenames:
-            return path.join(self.base_path, self.tbl_basenames[name])
+            return path.join(self.base_path, self.tbl_basenames[name]) # type: ignore
         if name in self.tbl_basenames_noext:
-            return path.join(self.base_path, self.tbl_basenames_noext[name])
+            return path.join(self.base_path, self.tbl_basenames_noext[name]) # type: ignore
 
     def get_extension(self, name):
         p = self.fullpath(name)
-        return path.splitext(p)[1][1:]
+        return path.splitext(p)[1][1:] # type: ignore

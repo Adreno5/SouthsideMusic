@@ -31,19 +31,16 @@ from imports import (
     QEasingCurve,
 )
 from qfluentwidgets import (
-    FluentIcon,
     FlowLayout,
     InfoBar,
-    PrimaryPushButton,
     TitleLabel,
 )
 from views.list_widget import SListWidget
 
 from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable
 from core.favorites import favorites_manager
-from core.backend import get_backend
+from core.backend import getBackend
 
-from views.playing_page import PlayingPage
 from views.song_card import CloudFavoriteSongCard, FavoriteSongCard, _SongCardItem
 
 
@@ -93,7 +90,7 @@ class FavoritesPage(QWidget):
         if (
             folder_name
             and self.curr_folder
-            and folder_name != self.curr_folder['folder_name']
+            and folder_name != self.curr_folder.folder_name
         ):
             return
         self.refresh()
@@ -118,15 +115,15 @@ class FavoritesPage(QWidget):
         if self.is_cloud:
             return self.curr_cloud_songs
         elif self.curr_folder:
-            return self.curr_folder['songs']
+            return self.curr_folder.songs
         return []
-    
+
     def displayEmpty(self):
         self.title_label.setText('None')
         self.song_viewer.clear()
 
     def setDisplayFolder(self, folder: LocalFolderInfo | CloudFolderInfo):
-        if 'id' in folder and 'image_url' in folder and 'songs' not in folder:
+        if isinstance(folder, CloudFolderInfo):
             self.is_cloud = True
             self.curr_cloud_folder = folder
             self.curr_folder = None
@@ -143,12 +140,12 @@ class FavoritesPage(QWidget):
             return
         self._cloud_loading = True
         result: list[SongStorable] = []
-        folder_id = folder['id']
+        folder_id = folder.id
         mwindow = self._mwindow
 
         def _fetch():
             nonlocal result
-            result = get_backend().get_playlist_tracks(folder_id)
+            result = getBackend().getPlaylistTracks(folder_id)
             mwindow.addScheduledTask(_apply)
 
         def _apply():
@@ -156,7 +153,7 @@ class FavoritesPage(QWidget):
             if (
                 self.is_cloud
                 and self.curr_cloud_folder
-                and self.curr_cloud_folder['id'] == folder_id
+                and self.curr_cloud_folder.id == folder_id
             ):
                 self.curr_cloud_songs = result
                 self.refresh()
@@ -184,16 +181,16 @@ class FavoritesPage(QWidget):
         self.song_viewer.clear()
 
         if self.is_cloud and self.curr_cloud_folder:
-            self.title_label.setText(self.curr_cloud_folder['folder_name'])
+            self.title_label.setText(self.curr_cloud_folder.folder_name)
             songs = self.curr_cloud_songs
         elif self.curr_folder:
-            folder_name = self.curr_folder['folder_name']
+            folder_name = self.curr_folder.folder_name
             for f in favorites_manager.folders:
-                if f['folder_name'] == folder_name:
+                if f.folder_name == folder_name:
                     self.curr_folder = f
                     break
-            self.title_label.setText(self.curr_folder['folder_name'])
-            songs = self.curr_folder['songs']
+            self.title_label.setText(self.curr_folder.folder_name)
+            songs = self.curr_folder.songs
         else:
             return
 
@@ -221,13 +218,13 @@ class FavoritesPage(QWidget):
                     move_callback=self.moveSong,
                     lazy=True,
                 )
-            card.clicked.connect(lambda s: self._repliceAndPlay(s))
+            card.clicked.connect(lambda s: self._replaceAndPlay(s))
             card.queued.connect(lambda s: self._queueAfterCurrent(s))
             self.song_viewer.addItem(item)
             self.song_viewer.setItemWidget(item, card)
             self._song_cards.append(card)
 
-    def _repliceAndPlay(self, song: SongStorable):
+    def _replaceAndPlay(self, song: SongStorable):
         self.replacePlaylist(False)
         event_bus.emit(PLAYLIST_CHANGED)
         event_bus.emit(PLAY_STORABLE, song)
@@ -321,7 +318,7 @@ class FavoritesPage(QWidget):
             return
         if not self.curr_folder:
             return
-        songs = self.curr_folder['songs']
+        songs = self.curr_folder.songs
         try:
             old_index = songs.index(song)
         except ValueError:
@@ -337,7 +334,7 @@ class FavoritesPage(QWidget):
             else None
         )
 
-        favorites_manager.moveSong(self.curr_folder['folder_name'], song, delta)
+        favorites_manager.moveSong(self.curr_folder.folder_name, song, delta)
 
         if current_song is not None:
             try:
@@ -353,8 +350,8 @@ class FavoritesPage(QWidget):
         if self.curr_folder:
             _logger.info(
                 'curr_folder=%r, songs_count=%d',
-                self.curr_folder['folder_name'],
-                len(self.curr_folder['songs']),
+                self.curr_folder.folder_name,
+                len(self.curr_folder.songs),
             )
 
         reply = QMessageBox.question(
@@ -373,7 +370,7 @@ class FavoritesPage(QWidget):
         favorites_manager.removeSong(song_name)
 
         if self.curr_folder:
-            _logger.info('after remove: songs_count=%d', len(self.curr_folder['songs']))
+            _logger.info('after remove: songs_count=%d', len(self.curr_folder.songs))
         self.refresh()
 
         InfoBar.success(
@@ -386,17 +383,17 @@ class FavoritesPage(QWidget):
         if not self.curr_cloud_folder:
             return
         song_name = song_storable.name
-        folder_name = self.curr_cloud_folder['folder_name']
+        folder_name = self.curr_cloud_folder.folder_name
 
         reply = QMessageBox.question(
             self._mwindow,
             'Confirm Delete',
-            f"Are you sure you want to delete song {song_name} from cloud folder '{folder_name}'?",
+            f'Are you sure you want to delete song {song_name} from cloud folder \'{folder_name}\'?',
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
-            if not get_backend().edit_playlist(
-                'del', [song_storable.id], self.curr_cloud_folder['id']
+            if not getBackend().editPlaylist(
+                'del', [song_storable.id], self.curr_cloud_folder.id
             ):
                 InfoBar.warning(
                     'Session expired',
@@ -423,9 +420,9 @@ class FavoritesPage(QWidget):
             self._pm.playlist.append(song)
         event_bus.emit(PLAYLIST_CHANGED)
         folder_name = (
-            self.curr_cloud_folder['folder_name']
+            self.curr_cloud_folder.folder_name
             if self.is_cloud and self.curr_cloud_folder
-            else self.curr_folder['folder_name']
+            else self.curr_folder.folder_name
             if self.curr_folder
             else ''
         )

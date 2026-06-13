@@ -6,15 +6,15 @@ import sys
 def main() -> int:
     cwd = Path(__file__).resolve().parent
     python = cwd / 'python' / 'python.exe'
-    main = cwd / 'src' / 'main.py'
+    bootstrap = cwd / 'bootstrap.py'
 
     if not python.exists():
         return 1
-    if not main.exists():
+    if not bootstrap.exists():
         return 1
 
     process = subprocess.Popen(
-        [str(python), str(main)],
+        [str(python), str(bootstrap)],
         cwd=str(cwd),
         stdin=sys.stdin,
         stdout=sys.stdout,

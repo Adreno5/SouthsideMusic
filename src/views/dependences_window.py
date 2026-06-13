@@ -13,14 +13,12 @@ import requests
 import shiboken6
 
 from core.audio_player import getAudioDevices
-from core.downloader import doWithMultiThreading, downloadWithMultiThreading
-from core.dialogs import get_value_bylist
+from core.downloader import asyncDownload
+from core.dialogs import getValueBylist
 from core import theme
 from imports import (
     ProgressBar,
     PushButton,
-    QCloseEvent,
-    QResizeEvent,
     QSizePolicy,
     QSpacerItem,
     QTimer,
@@ -29,7 +27,6 @@ from imports import (
     QWidget,
     Signal,
     SubtitleLabel,
-    TransparentPushButton,
 )
 
 if TYPE_CHECKING:
@@ -59,7 +56,7 @@ class DependencesWindow(QWidget):
             Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint
         )
         self.setStyleSheet(
-            f'background-color: {"black" if theme.isDark() else "white"};'
+            f'background-color: {'black' if theme.isDark() else 'white'};'
         )
 
         layout = QVBoxLayout()
@@ -105,7 +102,7 @@ class DependencesWindow(QWidget):
         self.ffmpeg_btn.setEnabled(False)
         self.resize(self.ctx.app.primaryScreen().size() * 0.5)
         hPyT.window_frame.center(self)
-        source = get_value_bylist(
+        source = getValueBylist(
             self,
             'select a source to download',
             'choose by your network',
@@ -189,7 +186,7 @@ class DependencesWindow(QWidget):
             self.ffmpeg_btn.hide()
             self.checkFFmpeg()
 
-        manager = downloadWithMultiThreading(url, parent=self, finished=_finished)
+        manager = asyncDownload(url, parent=self, finished=_finished)
         manager.receiveProgress.connect(_progress)
 
     def _set_pydub_config(self, ffmpeg_exe: str, ffprobe_exe: str) -> None:
@@ -257,7 +254,7 @@ class DependencesWindow(QWidget):
         label = getattr(self, f'{key}_label')
         status = 'OK' if ok else 'Failed'
         label.setText(f'{name}: {status} ({detail})')
-        label.setStyleSheet(f'color: {"green" if ok else "red"}')
+        label.setStyleSheet(f'color: {'green' if ok else 'red'}')
         self._results[name] = ok
         if not all(self._results.values()):
             self.ctx.dependences_available = False

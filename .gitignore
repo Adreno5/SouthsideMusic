@@ -39,6 +39,8 @@ update_check_time.json
 nul
 update.json
 
+.opencode/
+
 # 个人
 index.js
 .codex/

@@ -8,7 +8,7 @@ from core import theme
 from core.app_context import AppContext
 from core.color import mixColor
 from core.config import cfg
-from core.icons import SouthsideIcon, bindIcon
+from core.icons import bindIcon
 from core.models import SearchSongInfo, SongStorable
 from core.theme import isDark
 from core.playing_manager import PlayMode
@@ -30,11 +30,8 @@ from imports import (
     QMouseEvent,
     QPaintEvent,
     QPainter,
-    QPainterPath,
-    QPen,
     QRect,
     QResizeEvent,
-    QSize,
     QSizePolicy,
     QSpacerItem,
     Qt,
@@ -43,7 +40,13 @@ from imports import (
     event_bus,
 )
 from imports import QColor, QImage, QPixmap
-from qfluentwidgets import CardWidget, IndeterminateProgressRing, InfoBar, SubtitleLabel, PillToolButton
+from qfluentwidgets import (
+    CardWidget,
+    IndeterminateProgressRing,
+    InfoBar,
+    SubtitleLabel,
+    PillToolButton,
+)
 from views.lyrics_viewer import LyricsViewer
 from views.song_card import DummyCard
 
@@ -199,7 +202,7 @@ class PlayingPage(QWidget):
         event_bus.emit(
             UPDATE_FM,
             self.img_label.pixmap(),
-            self.cur.info['name'] if self.cur else '',
+            self.cur.info.name if self.cur else '',
         )
 
     def onNosoundSkipChanged(self, state: Qt.CheckState) -> None:
@@ -210,7 +213,7 @@ class PlayingPage(QWidget):
             return
         detail = getattr(self.cur, 'detail', None)
         info = getattr(self.cur, 'info', None)
-        if not isinstance(detail, dict) or not isinstance(info, dict):
+        if detail is None or info is None:
             return
         event_bus.emit(PLAY_SEARCH_SONG, info, detail.get('image_url', ''))
 
@@ -220,7 +223,7 @@ class PlayingPage(QWidget):
 
     @staticmethod
     def patchedPaintEvent(card: CardWidget, e) -> None:
-        from PySide6.QtGui import QPainter, QPainterPath, QPen
+        from PySide6.QtGui import QPainter, QPainterPath
         from qfluentwidgets import isDarkTheme
 
         painter = QPainter(card)
@@ -281,8 +284,8 @@ class PlayingPage(QWidget):
             self.artists_label.setText(song.artists)
         else:
             self.cur = None
-            self.title_label.setText(song['name'])
-            self.artists_label.setText('、'.join(a['name'] for a in song['artists']))
+            self.title_label.setText(song.name)
+            self.artists_label.setText('、'.join(a.name for a in song.artists))
 
         self._mgr.cur = ''
         self._transmgr.cur = ''
@@ -371,7 +374,9 @@ class PlayingPage(QWidget):
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         self.update()
-        self.translation_button.move(15, self.height() - 15 - self.translation_button.height())
+        self.translation_button.move(
+            15, self.height() - 15 - self.translation_button.height()
+        )
         return super().resizeEvent(event)
 
     def paintEvent(self, event: QPaintEvent) -> None:

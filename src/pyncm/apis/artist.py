@@ -1,57 +1,64 @@
-# -*- coding: utf-8 -*-
-"""艺术家 - Artist APIs"""
-from . import WeapiCryptoRequest
+from __future__ import annotations
+
+from . import weapi
 
 
-@WeapiCryptoRequest
-def GetArtistAlbums(artist_id: str, offset=0, total=True, limit=1000):
-    """网页端 - 获取艺术家所有专辑
+def getArtistAlbums(artist_id: str, offset=0, total=True, limit=1000) -> dict:
+    '''get artist's albums (web api).
 
     Args:
-        artist_id (str): 艺术家ID
-        offset (int, optional): 获取偏移数. Defaults to 0.
-        total (bool, optional): 是否获取全部内容. Defaults to True.
-        limit (int, optional): 单次获取量. Defaults to 30.
+        artist_id: artist id.
+        offset: offset. defaults to 0.
+        total: fetch all. defaults to true.
+        limit: page size. defaults to 1000.
 
     Returns:
         dict
-    """
-    return "/weapi/artist/albums/%s" % artist_id, {
-        "offset": str(offset),
-        "total": str(total).lower(),
-        "limit": str(limit),
-    }
+    '''
+    return weapi(
+        '/weapi/artist/albums/%s' % artist_id,
+        {
+            'offset': str(offset),
+            'total': str(total).lower(),
+            'limit': str(limit),
+        },
+    )
 
 
-@WeapiCryptoRequest
-def GetArtistTracks(artist_id: str, offset=0, total=True, limit=1000, order="hot"):
-    """网页端 - 以某排序方式获取艺术家所有歌曲
-
-    Args:
-        artist_id (str): 艺术家ID
-        offset (int, optional): 获取偏移数. Defaults to 0.
-        total (bool, optional): 是否获取全部内容. Defaults to True.
-        limit (int, optional): 单次获取量. Defaults to 30.
-        order (str, optional): 歌曲排序方式 (hot：热度最高在前/time：时间最新在前). Defaults to 'hot'.
-    Returns:
-        dict
-    """
-    return "/weapi/v1/artist/songs", {
-        "id": str(artist_id),
-        "offset": str(offset),
-        "total": str(total).lower(),
-        "limit": str(limit),
-        "order": str(order),
-    }
-
-
-@WeapiCryptoRequest
-def GetArtistDetails(artist_id: str):
-    """网页端 - 获取艺术家详情
+def getArtistTracks(
+    artist_id: str, offset=0, total=True, limit=1000, order='hot'
+) -> dict:
+    '''get artist's tracks sorted by order (web api).
 
     Args:
-        artist_id (str): 艺术家ID
+        artist_id: artist id.
+        offset: offset. defaults to 0.
+        total: fetch all. defaults to true.
+        limit: page size. defaults to 1000.
+        order: 'hot' (popularity) or 'time' (newest). defaults to 'hot'.
+
     Returns:
         dict
-    """
-    return "/weapi/artist/head/info/get", {"id": str(artist_id)}
+    '''
+    return weapi(
+        '/weapi/v1/artist/songs',
+        {
+            'id': str(artist_id),
+            'offset': str(offset),
+            'total': str(total).lower(),
+            'limit': str(limit),
+            'order': str(order),
+        },
+    )
+
+
+def getArtistDetails(artist_id: str) -> dict:
+    '''get artist detail (web api).
+
+    Args:
+        artist_id: artist id.
+
+    Returns:
+        dict
+    '''
+    return weapi('/weapi/artist/head/info/get', {'id': str(artist_id)})

@@ -4,7 +4,6 @@ import os
 import shutil
 import stat
 import threading
-from typing import Optional
 
 from core.models import (
     DATA_DIR,
@@ -44,7 +43,7 @@ class FavoritesManager:
                     storable = SongStorable.fromObject(song_obj)
                 except Exception:
                     _logger.exception(
-                        "Failed to restore song in folder '%s'", folder['folder_name']
+                        'Failed to restore song in folder \'%s\'', folder['folder_name']
                     )
                     continue
                 songs.append(storable)
@@ -60,8 +59,8 @@ class FavoritesManager:
         with self._lock:
             data: list[dict] = []
             for folder in self.folders:
-                songs = [song.toObject() for song in folder['songs']]
-                data.append({'folder_name': folder['folder_name'], 'songs': songs})
+                songs = [song.toObject() for song in folder.songs]
+                data.append({'folder_name': folder.folder_name, 'songs': songs})
             _write_raw(data)
 
     def addFolder(self, folder_name: str) -> LocalFolderInfo:
@@ -74,7 +73,7 @@ class FavoritesManager:
     def removeFolder(self, folder_name: str) -> bool:
         with self._lock:
             for i, f in enumerate(self.folders):
-                if f['folder_name'] == folder_name:
+                if f.folder_name == folder_name:
                     self.folders.pop(i)
                     self._save()
                     return True
@@ -83,8 +82,8 @@ class FavoritesManager:
     def renameFolder(self, old_name: str, new_name: str) -> bool:
         with self._lock:
             for f in self.folders:
-                if f['folder_name'] == old_name:
-                    f['folder_name'] = new_name
+                if f.folder_name == old_name:
+                    f.folder_name = new_name
                     self._save()
                     return True
         return False
@@ -92,8 +91,8 @@ class FavoritesManager:
     def addSong(self, folder_name: str, song: SongStorable) -> bool:
         with self._lock:
             for f in self.folders:
-                if f['folder_name'] == folder_name:
-                    f['songs'].insert(0, song)
+                if f.folder_name == folder_name:
+                    f.songs.insert(0, song)
                     self._save()
                     return True
         return False
@@ -102,9 +101,9 @@ class FavoritesManager:
         with self._lock:
             changed = False
             for f in self.folders:
-                before = len(f['songs'])
-                f['songs'] = [s for s in f['songs'] if s.name != song_name]
-                if len(f['songs']) < before:
+                before = len(f.songs)
+                f.songs = [s for s in f.songs if s.name != song_name]
+                if len(f.songs) < before:
                     changed = True
             if changed:
                 self._save()
@@ -112,17 +111,17 @@ class FavoritesManager:
     def moveSong(self, folder_name: str, song: SongStorable, delta: int) -> bool:
         with self._lock:
             for f in self.folders:
-                if f['folder_name'] != folder_name:
+                if f.folder_name != folder_name:
                     continue
                 try:
-                    idx = f['songs'].index(song)
+                    idx = f.songs.index(song)
                 except ValueError:
                     return False
                 new_idx = idx + delta
-                if 0 <= new_idx < len(f['songs']):
-                    f['songs'][idx], f['songs'][new_idx] = (
-                        f['songs'][new_idx],
-                        f['songs'][idx],
+                if 0 <= new_idx < len(f.songs):
+                    f.songs[idx], f.songs[new_idx] = (
+                        f.songs[new_idx],
+                        f.songs[idx],
                     )
                     self._save()
                     return True
@@ -139,30 +138,35 @@ class FavoritesManager:
     ) -> bool:
         with self._lock:
             for f in self.folders:
-                if f['folder_name'] != folder_name:
+                if f.folder_name != folder_name:
                     continue
-                for s in f['songs']:
+                for s in f.songs:
                     if str(s.id) == song_id:
                         s.target_lufs = target_lufs
                         self._save()
                         return True
         return False
 
+
 favorites_manager = FavoritesManager()
+
 
 def loadFavorites() -> list[LocalFolderInfo]:
     favorites_manager.load()
     return favorites_manager.folders
 
+
 def saveFavorites() -> None:
     if favorites_manager.folders:
         favorites_manager._save()
+
 
 def _ensure_dirs() -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(MUSIC_DATA_DIR, exist_ok=True)
     os.makedirs(IMAGE_DATA_DIR, exist_ok=True)
     os.makedirs(LYRIC_DATA_DIR, exist_ok=True)
+
 
 def _restore_old_format() -> list[dict]:
     if os.path.exists(LEGACY_MUSIC_CACHE_DIR):
@@ -208,7 +212,7 @@ def _restore_old_format() -> list[dict]:
             had_embedded = bool(
                 song_obj.get('image_base64') or song_obj.get('content_base64')
             )
-            songs.append(storable.toObject()) # type: ignore
+            songs.append(storable.toObject())  # type: ignore
             data_dirty = data_dirty or had_embedded
         normalized.append({'folder_name': folder['folder_name'], 'songs': songs})
 
@@ -223,6 +227,7 @@ def _write_raw(data: list[dict]) -> None:
         os.chmod(_FAVORITES_PATH, stat.S_IWRITE)
     with open(_FAVORITES_PATH, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+
 
 class FavoriteSelectionDialog(MessageBoxBase):
     def __init__(self, parent, favs):
@@ -255,14 +260,14 @@ class FavoriteSelectionDialog(MessageBoxBase):
         self.folder_list.clear()
         self.song_list.clear()
         for folder in favs:
-            self.folder_list.addItem(folder['folder_name'])
+            self.folder_list.addItem(folder.folder_name)
 
     def onFolderSelected(self, item, favs):
         self.song_list.clear()
         folder_name = item.text()
         for folder in favs:
-            if folder['folder_name'] == folder_name:
-                for song in folder['songs']:
+            if folder.folder_name == folder_name:
+                for song in folder.songs:
                     self.song_list.addItem(song.name)
                 break
 
@@ -277,8 +282,8 @@ class FavoriteSelectionDialog(MessageBoxBase):
         song_name = song_item.text()
 
         for folder in favs:
-            if folder['folder_name'] == folder_name:
-                for song in folder['songs']:
+            if folder.folder_name == folder_name:
+                for song in folder.songs:
                     if song.name == song_name:
                         return song
 

@@ -1,346 +1,324 @@
-# -*- coding: utf-8 -*-
-"""登录、CSRF 有关 APIs"""
+from __future__ import annotations
 
 from base64 import b64encode
 
+from . import eapi, weapi
 from .exception import LoginFailedException
-
-from .. import WriteLoginInfo, GetCurrentSession
-from . import EapiCryptoRequest, WeapiCryptoRequest
-from ..utils import GenerateSDeviceId, GenerateChainId
-from ..utils.crypto import HashHexDigest
+from .. import writeLoginInfo, getCurrentSession
+from ..utils import _generate_s_device_id, _generate_chain_id
+from ..utils.crypto import _hash_hex_digest
 from ..utils.security import cloudmusic_dll_encode_id
 
 
-@WeapiCryptoRequest
-def LoginLogout():
-    """网页端 - 登出账号
-
-    Returns:
-        dict
-    """
-    return "/weapi/logout", {}
+def loginLogout() -> dict:
+    '''log out current session.'''
+    return weapi('/weapi/logout', {})
 
 
-@EapiCryptoRequest
-def LoginRefreshToken():
-    """网页端 - 刷新登录令牌
-
-    Returns:
-        dict
-    """
-    return "/eapi/login/token/refresh", {}
+def loginRefreshToken() -> dict:
+    '''refresh login token.'''
+    return eapi('/eapi/login/token/refresh', {})
 
 
-@WeapiCryptoRequest
-def LoginQrcodeUnikey(dtype=1):
-    """网页端 - 获取二维码登录令牌
+def loginQrcodeUnikey(dtype=1) -> dict:
+    '''get qrcode login unikey.
 
-    - 该令牌UUID适用于以下 URL：
-     - music.163.com/login?codekey={UUID}
-    - 若需要使用该URL，应由网易云音乐移动客户端扫描其二维码 - 链接不会触发入口
-    - 登录态将在 `LoginQrcodeCheck` 中更新，需周期性检测
+    - uuid applies to: music.163.com/login?codekey={uuid}
+    - requires netease cloud music mobile app to scan.
+    - login status must be polled via loginQrcodeCheck.
 
     Args:
-        type (int, optional): 未知. Defaults to 1.
-        noCheckToken (bool): 不检查token. Defaults to True
+        dtype: unknown. defaults to 1.
+        noCheckToken: skip token check. defaults to true.
 
     Returns:
         dict
-    """
-    return "/weapi/login/qrcode/unikey", {"type": str(dtype), "noCheckToken": True}
+    '''
+    return weapi(
+        '/weapi/login/qrcode/unikey',
+        {
+            'type': str(dtype),
+            'noCheckToken': True,
+        },
+    )
 
 
-@WeapiCryptoRequest
-def LoginQrcodeCheck(unikey, type=1):
-    """网页端 - 二维码登录状态检测
+def loginQrcodeCheck(unikey, type=1) -> dict:
+    '''check qrcode login status.
 
     Args:
-        key (str): 二维码 unikey
-        type (int, optional): 未知. Defaults to 1.
-        noCheckToken (bool): 不检查token. Defaults to True
+        unikey: qrcode unikey.
+        type: unknown. defaults to 1.
+        noCheckToken: skip token check. defaults to true.
 
     Returns:
         dict
-    """
-    return "/weapi/login/qrcode/client/login", {
-        "type": type,
-        "noCheckToken": True,
-        "key": str(unikey),
-    }
+    '''
+    return weapi(
+        '/weapi/login/qrcode/client/login',
+        {
+            'type': type,
+            'noCheckToken': True,
+            'key': str(unikey),
+        },
+    )
 
 
-@WeapiCryptoRequest
-def LoginTypeSwitch():
-    """网页端 - 用户登出
-
-    Returns:
-        dict
-    """
-    return "/weapi/logout", {}
+def loginTypeSwitch() -> dict:
+    '''switch login type.'''
+    return weapi('/weapi/logout', {})
 
 
-@WeapiCryptoRequest
-def GetCurrentLoginStatus():
-    """网页端 - 获取当前登录态
-
-    Returns:
-        dict
-    """
-    return "/weapi/w/nuser/account/get", {}
+def getCurrentLoginStatus() -> dict:
+    '''get current login status (web api).'''
+    return weapi('/weapi/w/nuser/account/get', {})
 
 
-def LoginViaCookie(MUSIC_U="", **kwargs):
-    """通过 Cookie 登陆
+def loginViaCookie(MUSIC_U='', **kwargs) -> dict:
+    '''login via cookie.
 
     Args:
-        MUSIC_U (str, optional): Cookie 中的 MUSIC_U. Defaults to ''.
+        MUSIC_U: cookie value. defaults to ''.
 
     Returns:
         dict
-    """
-    session = GetCurrentSession()
-    session.cookies.update({"MUSIC_U": MUSIC_U, **kwargs})
-    resp = GetCurrentLoginStatus()
-    WriteLoginInfo(resp)
-    return {"code": 200, "result": session.login_info}
+    '''
+    session = getCurrentSession()
+    session.cookies.update({'MUSIC_U': MUSIC_U, **kwargs})
+    resp = getCurrentLoginStatus()
+    writeLoginInfo(resp)
+    return {'code': 200, 'result': session.login_info}
 
 
-def LoginViaCellphone(
-    phone="",
-    password="",
-    passwordHash="",
-    captcha="",
+def loginViaCellphone(
+    phone='',
+    password='',
+    passwordHash='',
+    captcha='',
     ctcode=86,
     remeberLogin=True,
     session=None,
 ) -> dict:
-    """PC 端 - 手机号登陆
+    '''login via phone number (pc client api).
 
-    * 若同时指定 password 和 passwordHash, 优先使用 password
-    * 若同时指定 captcha 与 password, 优先使用 captcha
+    if both password and passwordHash provided, password takes precedence.
+    if both captcha and password provided, captcha takes precedence.
 
     Args:
-        phone (str, optional): 手机号. Defaults to ''.
-        countrycode (int, optional): 国家代码. Defaults to 86.
-        remeberLogin (bool, optional): 是否‘自动登录’，设置 `False` 可能导致权限问题. Defaults to True.
-        * 以下验证方式有 1 个含参即可
-        password (str, optional): 明文密码. Defaults to ''.
-        passwordHash (str, optional): 密码md5哈希. Defaults to ''.
-        captcha (str, optional): 手机验证码. 需要已在同一 Session 中发送过 SetSendRegisterVerifcationCodeViaCellphone. Defaults to ''.
+        phone: phone number.
+        ctcode: country code. defaults to 86.
+        remeberLogin: auto-login flag. false may cause permission issues.
+        password: plaintext password.
+        passwordHash: md5 password hash.
+        captcha: sms code. requires prior setSendRegisterVerificationCodeViaCellphone.
 
     Raises:
-        LoginFailedException: 登陆失败时发生
+        LoginFailedException: on login failure.
 
     Returns:
         dict
-    """
-    path = "/eapi/w/login/cellphone"
-    session = session or GetCurrentSession()
+    '''
+    path = '/eapi/w/login/cellphone'
+    session = session or getCurrentSession()
     if password:
-        passwordHash = HashHexDigest(password)
+        passwordHash = _hash_hex_digest(password)
 
     if not (passwordHash or captcha):
-        raise LoginFailedException("未提供密码或验证码")
+        raise LoginFailedException('no password or captcha provided')
 
     auth_token = (
-        {"password": str(passwordHash)} if not captcha else {"captcha": str(captcha)}
+        {'password': str(passwordHash)} if not captcha else {'captcha': str(captcha)}
     )
 
-    login_status = EapiCryptoRequest(
-        lambda: (
-            path,
-            {
-                "type": "1",
-                "phone": str(phone),
-                "remember": str(remeberLogin).lower(),
-                "countrycode": str(ctcode),
-                "checkToken": "",
-                **auth_token,
-            },
-        )
-    )(session=session)
+    login_status = eapi(
+        path,
+        {
+            'type': '1',
+            'phone': str(phone),
+            'remember': str(remeberLogin).lower(),
+            'countrycode': str(ctcode),
+            'checkToken': '',
+            **auth_token,
+        },
+        session=session,
+    )
 
-    WriteLoginInfo(login_status)
-    return {"code": 200, "result": session.login_info}
+    writeLoginInfo(login_status)
+    return {'code': 200, 'result': session.login_info}
 
 
-def LoginViaEmail(
-    email="", password="", passwordHash="", remeberLogin=True, session=None
+def loginViaEmail(
+    email='', password='', passwordHash='', remeberLogin=True, session=None
 ) -> dict:
-    """网页端 - 邮箱登陆
+    '''login via email (web api).
 
-    * 若同时指定 password 和 passwordHash, 优先使用 password
+    if both password and passwordHash provided, password takes precedence.
 
     Args:
-        email (str, optional): 邮箱地址. Defaults to ''.
-        remeberLogin (bool, optional): 是否‘自动登录’，设置 `False` 可能导致权限问题. Defaults to True.
-        * 以下验证方式有 1 个含参即可
-        password (str, optional): 明文密码. Defaults to ''.
-        passwordHash (str, optional): 密码md5哈希. Defaults to ''.
+        email: email address.
+        remeberLogin: auto-login flag.
+        password: plaintext password.
+        passwordHash: md5 password hash.
 
     Raises:
-        LoginFailedException: 登陆失败时发生
+        LoginFailedException: on login failure.
 
     Returns:
         dict
-    """
-    path = "/eapi/login"
-    session = session or GetCurrentSession()
+    '''
+    path = '/eapi/login'
+    session = session or getCurrentSession()
     if password:
-        passwordHash = HashHexDigest(password)
+        passwordHash = _hash_hex_digest(password)
 
     if not passwordHash:
-        raise LoginFailedException("未提供密码")
+        raise LoginFailedException('no password provided')
 
-    auth_token = {"password": str(passwordHash)}
+    login_status = eapi(
+        path,
+        {
+            'type': '1',
+            'username': str(email),
+            'remember': str(remeberLogin).lower(),
+            'password': str(passwordHash),
+        },
+        session=session,
+    )
 
-    login_status = EapiCryptoRequest(
-        lambda: (
-            path,
-            {
-                "type": "1",
-                "username": str(email),
-                "remember": str(remeberLogin).lower(),
-                **auth_token,
-            },
-        )
-    )(session=session)
-
-    WriteLoginInfo(login_status)
-    return {"code": 200, "result": session.login_info}
+    writeLoginInfo(login_status)
+    return {'code': 200, 'result': session.login_info}
 
 
-def GetLoginQRCodeUrl(unikey: str) -> str:
-    """获取登录二维码的链接
-
-    此链接可直接用于生成二维码
+def getLoginQRCodeUrl(unikey: str) -> str:
+    '''build qrcode login url from unikey.
 
     Args:
-        unikey (str): 调用LoginQrcodeUnikey接口得到的令牌
+        unikey: from loginQrcodeUnikey.
 
     Returns:
-        str: 拼接的二维码链接
-    """
-
-    # 从session中获取sDeviceId字段，若没有则生成一个新的
-    s_device_id = GetCurrentSession().cookies.get("sDeviceId")
+        str: qrcode url
+    '''
+    s_device_id = getCurrentSession().cookies.get('sDeviceId')
     if not s_device_id:
-        s_device_id = GenerateSDeviceId()
-    # 生成chainId, chainId是网易云音乐新版本新增的参数
-    # 如果不加chainId参数，将会因登录风控问题而登录失败
-    chain_id = GenerateChainId(s_device_id)
-    # 正确拼接二维码链接
-    return f"http://music.163.com/login?codekey={unikey}&chainId={chain_id}"
+        s_device_id = _generate_s_device_id()
+    chain_id = _generate_chain_id(s_device_id)
+    return f'http://music.163.com/login?codekey={unikey}&chainId={chain_id}'
 
 
-@WeapiCryptoRequest
-def SetSendRegisterVerifcationCodeViaCellphone(cell: str, ctcode=86):
-    """网页端 - 发送验证码
-
-    - 验证码 24h 内最多发送五次
+def setSendRegisterVerificationCodeViaCellphone(cell: str, ctcode=86) -> dict:
+    '''send sms verification code (web api). max 5 times per 24h.
 
     Args:
-        cell (str): 手机号
-        ctcode (int, optional): 国家代码. Defaults to 86.
+        cell: phone number.
+        ctcode: country code. defaults to 86.
 
     Returns:
         dict
-    """
-    return "/weapi/sms/captcha/sent", {"cellphone": str(cell), "ctcode": ctcode}
+    '''
+    return weapi(
+        '/weapi/sms/captcha/sent',
+        {
+            'cellphone': str(cell),
+            'ctcode': ctcode,
+        },
+    )
 
 
-@WeapiCryptoRequest
-def GetRegisterVerifcationStatusViaCellphone(cell: str, captcha: str, ctcode=86):
-    """网页端 - 检查验证码是否正确
+def getRegisterVerificationStatusViaCellphone(
+    cell: str, captcha: str, ctcode=86
+) -> dict:
+    '''check sms code correctness (web api).
 
     Args:
-        cell (str): 手机号
-        captcha (str): 验证码
-        ctcode (int, optional): 国家代码. Defaults to 86.
+        cell: phone number.
+        captcha: verification code.
+        ctcode: country code. defaults to 86.
 
     Returns:
         dict
-    """
-    return "/weapi/sms/captcha/verify", {
-        "cellphone": str(cell),
-        "captcha": str(captcha),
-        "ctcode": ctcode,
-    }
+    '''
+    return weapi(
+        '/weapi/sms/captcha/verify',
+        {
+            'cellphone': str(cell),
+            'captcha': str(captcha),
+            'ctcode': ctcode,
+        },
+    )
 
 
-@WeapiCryptoRequest
-def SetRegisterAccountViaCellphone(
+def setRegisterAccountViaCellphone(
     cell: str, captcha: str, nickname: str, password: str
-):
-    """网页端 - 手机号注册
+) -> dict:
+    '''register via phone number (web api).
 
-    - 需要已通过 `SetSendRegisterVerifcationCodeViaCellphone` 发送验证码
-    - `忘记密码` 同样使用该 API
-    - 成功后，现`Session`将登陆进入该账号
+    requires prior setSendRegisterVerificationCodeViaCellphone.
+    also used for password reset.
+    current session logs into the new account on success.
 
     Args:
-        cell (str): 手机号
-        captcha (str): 验证码
-        nickname (str): 昵称
-        password (str): 密码
+        cell: phone number.
+        captcha: verification code.
+        nickname: display name.
+        password: password.
 
     Returns:
         dict
-    """
-    return "/weapi/w/register/cellphone", {
-        "captcha": str(captcha),
-        "nickname": str(nickname),
-        "password": HashHexDigest(password),
-        "phone": str(cell),
-    }
+    '''
+    return weapi(
+        '/weapi/w/register/cellphone',
+        {
+            'captcha': str(captcha),
+            'nickname': str(nickname),
+            'password': _hash_hex_digest(password),
+            'phone': str(cell),
+        },
+    )
 
 
-def LoginViaAnonymousAccount(deviceId=None, session=None):
-    """PC 端 - 游客登陆
+def loginViaAnonymousAccount(deviceId=None, session=None) -> dict:
+    '''anonymous login (pc client api).
 
     Args:
-        deviceId (str optional): 设备 ID. 设置非 None 将同时改变 Session 的设备 ID. Defaults to None.
-
-    Notes:
-        Session 默认使用 `pyncm!` 作为设备 ID
+        deviceId: device id. defaults to session device id.
 
     Returns:
         dict
-    """
-    session = session or GetCurrentSession()
+    '''
+    session = session or getCurrentSession()
     if not deviceId:
         deviceId = session.deviceId
-    login_status = WeapiCryptoRequest(
-        lambda: (
-            "/api/register/anonimous",
-            {
-                "username": b64encode(
-                    ("%s %s" % (deviceId, cloudmusic_dll_encode_id(deviceId))).encode()
-                ).decode()
-            },
-        )
-    )(session=session)
-    assert login_status["code"] == 200, "匿名登陆失败"
-    WriteLoginInfo(
+    username = b64encode(
+        ('%s %s' % (deviceId, cloudmusic_dll_encode_id(deviceId))).encode()
+    ).decode()
+    login_status = weapi(
+        '/api/register/anonimous', {'username': username}, session=session
+    )
+    assert login_status['code'] == 200, 'anonymous login failed'
+    writeLoginInfo(
         {
             **login_status,
-            "profile": {"nickname": "", **login_status},
-            "account": {"id": login_status["userId"], **login_status},
-        },
+            'profile': {'nickname': '', **login_status},
+            'account': {'id': login_status['userId'], **login_status},
+        }
     )
     return session.login_info
 
 
-@EapiCryptoRequest
-def CheckIsCellphoneRegistered(cell: str, prefix=86):
-    """移动端 - 检查某手机号是否已注册
+def checkIsCellphoneRegistered(cell: str, prefix=86) -> dict:
+    '''check if a phone number is registered (mobile api).
 
     Args:
-        cell (str): 手机号
-        prefix (int): 区号 . Defaults to 86
+        cell: phone number.
+        prefix: country code. defaults to 86.
 
     Returns:
         dict
-    """
-    return "/eapi/cellphone/existence/check", {"cellphone": cell, "countrycode": prefix}
+    '''
+    return eapi(
+        '/eapi/cellphone/existence/check',
+        {
+            'cellphone': cell,
+            'countrycode': prefix,
+        },
+    )

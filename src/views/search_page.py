@@ -4,31 +4,22 @@ import logging
 from typing import Literal
 
 from core.app_context import AppContext
-from imports import ComboBox, QSize, Qt, QTimer, Signal
+from imports import ComboBox, QSize, QTimer, Signal
 from imports import QPixmap
 from imports import (
     QAbstractItemView,
-    QHBoxLayout,
     QListWidget,
     QListWidgetItem,
     QVBoxLayout,
     QWidget,
 )
-from qfluentwidgets import (
-    FluentIcon,
-    InfoBar,
-    LineEdit,
-    PrimaryPushButton,
-    SubtitleLabel,
-)
-from views.folder_card import CloudFolderCard, SearchCloudFolderCard
+from views.folder_card import SearchCloudFolderCard
 from views.list_widget import SListWidget
 
-from core.downloader import doWithMultiThreading
-from core.models import CloudFolderInfo, SearchCloudFolderInfo, SearchSongInfo
-from core.backend import get_backend
+from core.downloader import asyncTask
+from core.models import SearchCloudFolderInfo, SearchSongInfo
+from core.backend import getBackend
 
-from views.main_window import MainWindow
 from views.song_card import SearchSongCard
 
 
@@ -107,7 +98,7 @@ class SearchPage(QWidget):
             and not self.searching
             and self.ctx.main_window.contents_widget.currentWidget() == self
         ):
-            self._logger.info(f'load more')
+            self._logger.info('load more')
             self.search(self.ctx.main_window.search_input.text(), self.curr_offset)
 
     def setImage_(self, byte: bytes, ca: SearchSongCard):
@@ -132,27 +123,23 @@ class SearchPage(QWidget):
         def _do():
             nonlocal result
             if self.ctx.cfg.search_type == 'Songs':
-                result = get_backend().search_song(keywords, offset=offset)
+                result = getBackend().searchSong(keywords, offset=offset)
                 self.fetchedSongs.emit(result)
             else:
-                result = get_backend().search_playlist(keywords, offset=offset)
+                result = getBackend().searchPlaylist(keywords, offset=offset)
                 self.fetchedPlaylists.emit(result)
 
             self.curr_offset += len(result)
             self.searching = False
 
-        doWithMultiThreading(_do, (), self._mwindow)
+        asyncTask(_do, (), self._mwindow)
 
     def addPlaylists(self, result: list[SearchCloudFolderInfo]) -> None:
         for i, playlist in enumerate(result):
             item = QListWidgetItem()
             item.setSizeHint(QSize(0, 150))
             self.lst.addItem(item)
-            content_widget = SearchCloudFolderCard(
-                playlist,
-                self.lst.width(),
-                self.ctx
-            )
+            content_widget = SearchCloudFolderCard(playlist, self.lst.width(), self.ctx)
             self.lst.setItemWidget(item, content_widget)
             self.cards.append(content_widget)
 

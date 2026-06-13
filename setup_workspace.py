@@ -16,12 +16,12 @@ from typing import Any
 # Custom exception
 # ---------------------------------------------------------------------------
 class SetupError(Exception):
-    """Non-recoverable error raised by helper functions.
+    '''Non-recoverable error raised by helper functions.
 
     Caught by main() and translated to sys.exit(1) so that helpers remain
     composable — callers other than main() can handle the error instead of
     having the process killed unconditionally.
-    """
+    '''
 
 
 # ---------------------------------------------------------------------------
@@ -32,20 +32,17 @@ PYTHON_ZIP = os.path.join(SCRIPT_DIR, 'python.zip')
 EMBED_DIR = os.path.join(SCRIPT_DIR, 'embed_python')
 BUILD_VENV = os.path.join(SCRIPT_DIR, 'build_venv')
 GET_PIP = os.path.join(SCRIPT_DIR, 'get-pip.py')
-REQUIREMENTS = os.path.join(SCRIPT_DIR, 'requirements.txt')
+REQUIREMENTS = os.path.join(SCRIPT_DIR, 'embed_python_requirements.txt')
 REQUIREMENTS_HASH = os.path.join(SCRIPT_DIR, '.requirements_sha256')
 
-PYTHON_VERSION = '3.12.7'
-DOWNLOAD_BASE = 'https://www.python.org/ftp/python/3.12.7'
+PYTHON_VERSION = '3.14.2'
+DOWNLOAD_BASE = 'https://www.python.org/ftp/python/3.14.2'
 
 DEFAULT_TIMEOUT = 600  # seconds for subprocess calls
 DOWNLOAD_CHUNK_SIZE = 8192
 MIN_FREE_DISK_MB = 500
 
-EMBED_ZIP_SHA256: dict[str, str] = {
-    'amd64': '0d57bb6cb078b74d23dbfe91f77d6780d45bed328911609f1f7ee2ba1606bf44',
-    'win32': 'c2f7e103a1cb73e90b3cd4fa72f9b12891116ec2d8feaefc4b8e76be1fdc0d98',
-}
+EMBED_ZIP_SHA256: dict[str, str] = {}
 
 USER_AGENT = (
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
@@ -68,7 +65,7 @@ def _register_cleanup(path: str) -> None:
 
 
 def _unregister_cleanup(path: str) -> None:
-    """Safely remove *path* from the cleanup list if present."""
+    '''Safely remove *path* from the cleanup list if present.'''
     try:
         _temp_files.remove(path)
     except ValueError:
@@ -116,17 +113,17 @@ def run(
     timeout: int = DEFAULT_TIMEOUT,
     **kwargs,
 ) -> subprocess.CompletedProcess[str]:
-    """Wrapper around subprocess.run with consistent error reporting and timeout.
+    '''Wrapper around subprocess.run with consistent error reporting and timeout.
 
     stderr is always captured (piped) so it can be surfaced on failure.
-    """
-    print(f'  > {" ".join(cmd)}')
+    '''
+    print(f'  > {' '.join(cmd)}')
     if 'capture_output' not in kwargs and 'stderr' not in kwargs:
         kwargs['stderr'] = subprocess.PIPE
     try:
         return subprocess.run(cmd, check=check, timeout=timeout, **kwargs)
     except subprocess.TimeoutExpired:
-        print(f'  [ERROR] Command timed out after {timeout}s: {" ".join(cmd)}')
+        print(f'  [ERROR] Command timed out after {timeout}s: {' '.join(cmd)}')
         raise
     except subprocess.CalledProcessError as e:
         if hasattr(e, 'stderr') and e.stderr:
@@ -141,7 +138,7 @@ def run(
 
 
 def pip_install(package: str, *, retries: int = 3) -> bool:
-    """Attempt to pip-install *package* with retry. Returns True on success."""
+    '''Attempt to pip-install *package* with retry. Returns True on success.'''
     for attempt in range(1, retries + 1):
         try:
             run(
@@ -170,7 +167,7 @@ def pip_install(package: str, *, retries: int = 3) -> bool:
 
 
 def ensure_module(name: str, *, retries: int = 3) -> None:
-    """Make sure *name* is importable; pip-install it if not."""
+    '''Make sure *name* is importable; pip-install it if not.'''
     try:
         importlib.import_module(name)
     except ImportError:
@@ -184,7 +181,7 @@ def ensure_module(name: str, *, retries: int = 3) -> None:
 
 
 def is_in_virtualenv() -> bool:
-    """Detect virtualenv / venv / conda environments safely."""
+    '''Detect virtualenv / venv / conda environments safely.'''
     try:
         if hasattr(sys, 'real_prefix'):
             return True
@@ -200,7 +197,7 @@ def is_in_virtualenv() -> bool:
 
 
 def _check_disk_space(path: str, required_mb: int = MIN_FREE_DISK_MB) -> None:
-    """Ensure at least *required_mb* MB free on the drive containing *path*."""
+    '''Ensure at least *required_mb* MB free on the drive containing *path*.'''
     try:
         usage = shutil.disk_usage(os.path.dirname(os.path.abspath(path)) or '.')
         free_mb = usage.free // (1024 * 1024)
@@ -216,7 +213,7 @@ def _check_disk_space(path: str, required_mb: int = MIN_FREE_DISK_MB) -> None:
 
 
 def _check_network(url: str = 'https://www.python.org', timeout: int = 10) -> bool:
-    """Quick connectivity check. Returns True if reachable."""
+    '''Quick connectivity check. Returns True if reachable.'''
     import socket
 
     try:
@@ -228,7 +225,7 @@ def _check_network(url: str = 'https://www.python.org', timeout: int = 10) -> bo
 
 
 def _detect_architecture() -> tuple[str, str]:
-    """Detect CPU arch. Returns (label, tag). Supports x86, x64, ARM64."""
+    '''Detect CPU arch. Returns (label, tag). Supports x86, x64, ARM64.'''
     machine = os.environ.get('PROCESSOR_ARCHITECTURE', '').upper()
     # On 32-bit Py on 64-bit OS, PROCESSOR_ARCHITEW6432 holds the real arch
     wow64 = os.environ.get('PROCESSOR_ARCHITEW6432', '').upper()
@@ -250,7 +247,7 @@ def _detect_architecture() -> tuple[str, str]:
 
 
 def _safe_remove(path: str) -> None:
-    """Remove a file or directory quietly, logging failures."""
+    '''Remove a file or directory quietly, logging failures.'''
     try:
         if os.path.isdir(path):
             shutil.rmtree(path, ignore_errors=False)
@@ -261,7 +258,7 @@ def _safe_remove(path: str) -> None:
 
 
 def _atomic_write(path: str, data: str, encoding: str = 'utf-8') -> None:
-    """Write *data* to *path* atomically via a temp file."""
+    '''Write *data* to *path* atomically via a temp file.'''
     dirname = os.path.dirname(path) or '.'
     fd, tmp = tempfile.mkstemp(dir=dirname, suffix='.tmp')
     _register_cleanup(tmp)
@@ -281,7 +278,7 @@ def _atomic_write(path: str, data: str, encoding: str = 'utf-8') -> None:
 
 
 def _precheck_required_files() -> None:
-    """Verify that local files the script depends on exist before starting."""
+    '''Verify that local files the script depends on exist before starting.'''
     missing: list[str] = []
     for p in [GET_PIP, REQUIREMENTS]:
         if not os.path.isfile(p):
@@ -416,7 +413,7 @@ def _ensure_uv(inquirer_mod: Any | None = None) -> None:
         print(f'  uv installed: {result.stdout.strip()}')
     except (subprocess.CalledProcessError, FileNotFoundError):
         raise SetupError(
-            'uv was installed but "--version" still fails. Check the docs above.'
+            'uv was installed but '--version' still fails. Check the docs above.'
         )
 
 
@@ -496,7 +493,7 @@ def _setup_embed_python(tqdm, requests, zipfile) -> None:
 
 
 def _patch_embed_pth() -> None:
-    """Enable site-packages in the embedded Python ._pth file."""
+    '''Enable site-packages in the embedded Python ._pth file.'''
     print('  Enabling site-packages...')
     pth_file = os.path.join(EMBED_DIR, f'python{PYTHON_VERSION[:3]}._pth')
     if not os.path.isfile(pth_file):
@@ -542,11 +539,11 @@ def _patch_embed_pth() -> None:
 # Step: build venv (clean venv with Nuitka only)
 # ---------------------------------------------------------------------------
 def _setup_build_venv() -> None:
-    """Create a clean venv with only Nuitka, used for building launcher.py.
+    '''Create a clean venv with only Nuitka, used for building launcher.py.
 
     Uses venv (not embedded Python) so Nuitka's ReExecute mechanism works.
     Has no extra packages, so standalone builds stay lean.
-    """
+    '''
     print('\n[3/5] Setting up build venv (Nuitka only)...')
 
     build_python = os.path.join(BUILD_VENV, 'Scripts', 'python.exe')
@@ -669,7 +666,7 @@ def _install_embed_requirements() -> None:
 
 
 def _detect_file_encoding(path: str) -> str:
-    """Detect the encoding of a text file via BOM / trial reads."""
+    '''Detect the encoding of a text file via BOM / trial reads.'''
     with open(path, 'rb') as f:
         head = f.read(4)
     if head.startswith(b'\xff\xfe'):
@@ -690,7 +687,7 @@ def _detect_file_encoding(path: str) -> str:
 
 
 def _validate_requirements_file(path: str) -> None:
-    """Check that requirements.txt has actual content."""
+    '''Check that requirements.txt has actual content.'''
     enc = _detect_file_encoding(path)
     try:
         with open(path, 'r', encoding=enc) as f:
@@ -708,7 +705,7 @@ def _validate_requirements_file(path: str) -> None:
 
 
 def _compute_file_hash(path: str) -> str:
-    """Compute SHA256 hex digest of a file."""
+    '''Compute SHA256 hex digest of a file.'''
     sha256 = hashlib.sha256()
     with open(path, 'rb') as f:
         for chunk in iter(lambda: f.read(65536), b''):
@@ -717,7 +714,7 @@ def _compute_file_hash(path: str) -> str:
 
 
 def _requirements_changed() -> bool:
-    """Check if requirements.txt has changed since last successful install."""
+    '''Check if requirements.txt has changed since last successful install.'''
     try:
         current = _compute_file_hash(REQUIREMENTS)
     except OSError:
@@ -731,7 +728,7 @@ def _requirements_changed() -> bool:
 
 
 def _save_requirements_hash() -> None:
-    """Persist current requirements.txt hash."""
+    '''Persist current requirements.txt hash.'''
     try:
         h = _compute_file_hash(REQUIREMENTS)
         _atomic_write(REQUIREMENTS_HASH, h)
@@ -743,7 +740,7 @@ def _save_requirements_hash() -> None:
 # Validation
 # ---------------------------------------------------------------------------
 def _validate_embed_python() -> None:
-    """Quick smoke-test for embedded Python."""
+    '''Quick smoke-test for embedded Python.'''
     embed_exe = os.path.join(EMBED_DIR, 'python.exe')
     if not os.path.isfile(embed_exe):
         raise SetupError(
@@ -762,7 +759,7 @@ def _validate_embed_python() -> None:
 # Inno Setup
 # ---------------------------------------------------------------------------
 def _is_innosetup_installed() -> bool:
-    """Check whether Inno Setup is installed (PATH or registry)."""
+    '''Check whether Inno Setup is installed (PATH or registry).'''
     import shutil as _shutil
 
     if _shutil.which('iscc') is not None:
@@ -883,23 +880,23 @@ def _ensure_innosetup(tqdm, requests) -> None:
 
 
 def _pick_innosetup_asset(assets: list[dict], inquirer_mod: Any | None) -> dict | None:
-    """Pick the right Inno Setup .exe from the list of release assets.
+    '''Pick the right Inno Setup .exe from the list of release assets.
 
     Returns the selected asset dict, or None if the user cancels.
     When there is exactly one asset it is returned immediately;
     otherwise inquirer is used to let the user choose.
-    """
+    '''
     if len(assets) == 1:
-        print(f'  Found installer: {assets[0]["name"]}')
+        print(f'  Found installer: {assets[0]['name']}')
         return assets[0]
 
     # Multiple .exe found — need user input
     if inquirer_mod is None:
         print('  Multiple Inno Setup .exe files found:')
         for a in assets:
-            print(f'    - {a["name"]}')
+            print(f'    - {a['name']}')
         print(
-            '  Install "inquirer" (pip install inquirer) to enable interactive selection.'
+            '  Install 'inquirer' (pip install inquirer) to enable interactive selection.'
         )
         print('  Defaulting to the first asset.')
         return assets[0]
@@ -921,7 +918,7 @@ def _pick_innosetup_asset(assets: list[dict], inquirer_mod: Any | None) -> dict 
 # Download helper
 # ---------------------------------------------------------------------------
 def _verify_hash(filepath: str, url: str) -> None:
-    """Verify the SHA256 of *filepath* against EMBED_ZIP_SHA256 if the URL matches."""
+    '''Verify the SHA256 of *filepath* against EMBED_ZIP_SHA256 if the URL matches.'''
 
     expected = None
     for arch_tag, sha in EMBED_ZIP_SHA256.items():

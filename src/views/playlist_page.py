@@ -4,29 +4,20 @@ import logging
 
 from core import theme
 from core.app_context import AppContext
-from core import theme
 
 from core.config import cfg
 
 from core.color import mixColor
 from imports import (
     BACKGROUND_RATIO_CHANGED,
-    PLAY_PLAYLIST_STORABLE,
-    PLAY_SONG_AT_INDEX,
     PLAY_STORABLE,
     PLAYLIST_CHANGED,
     POST_THEME_CHANGED,
     SONG_CHANGED,
     QColor,
-    QEasingCurve,
-    QGraphicsOpacityEffect,
-    QLabel,
     QPaintEvent,
     QPainter,
     QPen,
-    QPixmap,
-    QPoint,
-    QPropertyAnimation,
     QSize,
     Qt,
     QTimer,
@@ -38,15 +29,12 @@ from imports import (
     QVBoxLayout,
     QHBoxLayout,
     QWidget,
-    QStackedWidget,
 )
-from qfluentwidgets import Pivot, SmoothScrollArea
 from views.list_widget import SListWidget
 from qfluentwidgets import InfoBar, TransparentPushButton
 from core.models import SongStorable
 from core.icons import bindIcon
 from views.song_card import DummyCard, PlaylistSongCard
-from views.setting_page import SettingPage
 
 WHITE = QColor(255, 255, 255, 100)
 BLACK = QColor(0, 0, 0, 100)
@@ -180,7 +168,7 @@ class PlaylistPage(QWidget):
         self.lst.setItemWidget(item, card)
         self._song_cards.append(card)
         return item
-    
+
     def _onSongClicked(self, storable: SongStorable):
         event_bus.emit(PLAY_STORABLE, storable)
 

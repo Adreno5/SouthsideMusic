@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import io
 import logging
 
-from typing import Callable, cast
+from typing import Callable
 
 from core.app_context import AppContext
 
-import numpy as np
 from imports import (
     BACKGROUND_RATIO_CHANGED,
     DB_CHANGED,
@@ -18,7 +16,6 @@ from imports import (
     InfoBar,
     QEasingCurve,
     Qt,
-    QTimer,
     SmoothScrollArea,
     event_bus,
 )
@@ -43,14 +40,10 @@ from qfluentwidgets import (
     TransparentPushButton,
 )
 
-from core.models import SongStorable
 from core.icons import bindIcon
 from core import theme
-from core.downloader import doWithMultiThreading
-from core.loudness import getAdjustedGainFactor
-from core.audio_player import AudioSegment, AudioPlayer, getAudioDevices
+from core.audio_player import getAudioDevices
 from core.config import cfg
-from views.song_card import DummyCard
 from core.ws_server import (
     WebSocketServer,
     QObjectHandler,
@@ -100,7 +93,10 @@ class SettingPage(QWidget):
         event_bus.subscribe(WEBSOCKET_CONNECTED, self._onWsConnected)
         event_bus.subscribe(WEBSOCKET_DISCONNECTED, self._onWsDisconnected)
         event_bus.subscribe(POST_THEME_CHANGED, self.updateTheme)
-        event_bus.subscribe(DB_CHANGED, lambda v: self.now_volume.setText(f'Current volume(db): {int(v)}'))
+        event_bus.subscribe(
+            DB_CHANGED,
+            lambda v: self.now_volume.setText(f'Current volume(db): {int(v)}'),
+        )
 
     @property
     def _dp(self):
@@ -119,16 +115,16 @@ class SettingPage(QWidget):
         return self.ctx.desktop_lyrics_page
 
     def updateTheme(self) -> None:
-        self.setStyleSheet(
-            f'background: #{"000000" if theme.isDark() else "FFFFFF"}'
-        )
+        self.setStyleSheet(f'background: #{'000000' if theme.isDark() else 'FFFFFF'}')
 
     def _initOptions(self) -> None:
         lw = self._launchwindow
         if lw:
             lw.push('Setting up sidebar options...')
 
-        self.addSection('Playing', 'Playback order, stereo output, speed and skip behavior.')
+        self.addSection(
+            'Playing', 'Playback order, stereo output, speed and skip behavior.'
+        )
 
         self.play_method_box = ComboBox()
         self.play_method_box.addItems(
@@ -165,13 +161,15 @@ class SettingPage(QWidget):
         )
 
         self.device_selector = ComboBox()
-        self.device_selector.addItems([
-            f'{obj['index'] + 1}. {obj['display_name']}' for obj in getAudioDevices()
-        ])
+        self.device_selector.addItems(
+            [f'{obj.index + 1}. {obj.display_name}' for obj in getAudioDevices()]
+        )
         self.device_selector.setCurrentIndex(self._player._device_id)
         self.device_selector.currentIndexChanged.connect(self.deviceChanged)
         self.device_selector.setCurrentIndex(cfg.output_device_index)
-        self.addSetting('Output Device', 'the device to output audio', self.device_selector)
+        self.addSetting(
+            'Output Device', 'the device to output audio', self.device_selector
+        )
 
         if lw:
             lw.top('Setting up window options...')
@@ -211,7 +209,9 @@ class SettingPage(QWidget):
 
         self.addSection('Desktop Lyrics', 'Floating lyrics window controls.')
         dsp = self._dsp
-        assert dsp is not None, 'Desktop lyrics page must be initialized before settings'
+        assert dsp is not None, (
+            'Desktop lyrics page must be initialized before settings'
+        )
         self.desktop_lyrics_box = CheckBox('Enable Desktop Lyrics')
         self.desktop_lyrics_box.checkStateChanged.connect(
             lambda: self._onDesktopLyricsEnableChanged()
@@ -232,7 +232,9 @@ class SettingPage(QWidget):
 
         if lw:
             lw.top('Setting up FFT options...')
-        self.addSection('FFT', 'Frequency visualization tuning for local and client output.')
+        self.addSection(
+            'FFT', 'Frequency visualization tuning for local and client output.'
+        )
         self.enableFFT_box = CheckBox('Enable Frequency Graphics')
         self.enableFFT_box.setChecked(cfg.enable_fft)
         self.addSetting(
@@ -284,7 +286,9 @@ class SettingPage(QWidget):
         self.target_lufs.setSingleStep(1)
         self.target_lufs.setValue(cfg.target_lufs)
         self.target_lufs_label = SubtitleLabel(f'Target LUFS: {cfg.target_lufs}')
-        self.addSetting('Target LUFS', 'restart to apply loudness changes', self.target_lufs)
+        self.addSetting(
+            'Target LUFS', 'restart to apply loudness changes', self.target_lufs
+        )
         self.addSeparateWidget(self.target_lufs_label)
         self.addInfoBlock(
             'Reference',
@@ -301,7 +305,7 @@ class SettingPage(QWidget):
             lw.top('Setting up connection options...')
         self.addSection('Connection', 'SouthsideClient websocket status and controls.')
         self.southsideclient_status_label = SubtitleLabel(
-            "Connection Status: <span style='color: red;'>Disconnected</span>"
+            'Connection Status: <span style=\'color: red;\'>Disconnected</span>'
         )
         self.addSeparateWidget(self.southsideclient_status_label)
         self.disconnect_btn = TransparentPushButton('Disconnect')
@@ -330,7 +334,10 @@ class SettingPage(QWidget):
             self._player.setOutputDevice(device)
             if self._mwindow:
                 InfoBar.success(
-                    'Device changed', f'changed output deivce to {device['display_name']}', duration=3000, parent=self._mwindow
+                    'Device changed',
+                    f'changed output deivce to {device.display_name}',
+                    duration=3000,
+                    parent=self._mwindow,
                 )
             cfg.output_device_index = idx
         except:
@@ -386,9 +393,7 @@ class SettingPage(QWidget):
         title_l = TitleLabel(title)
         desc_l = QLabel(description)
         desc_l.setWordWrap(True)
-        desc_l.setStyleSheet(
-            f'color: {"#A8A8A8" if theme.isDark() else "#666666"};'
-        )
+        desc_l.setStyleSheet(f'color: {'#A8A8A8' if theme.isDark() else '#666666'};')
         self.options_layout.addWidget(title_l)
         self.options_layout.addWidget(desc_l)
         self._section_count += 1
@@ -416,9 +421,7 @@ class SettingPage(QWidget):
         name_l.setWordWrap(True)
         desc_l = QLabel(description)
         desc_l.setWordWrap(True)
-        desc_l.setStyleSheet(
-            f'color: {"#A8A8A8" if theme.isDark() else "#666666"};'
-        )
+        desc_l.setStyleSheet(f'color: {'#A8A8A8' if theme.isDark() else '#666666'};')
         text_layout.addWidget(name_l)
         text_layout.addWidget(desc_l)
         global_layout.addLayout(text_layout, 1)
@@ -434,9 +437,7 @@ class SettingPage(QWidget):
         title_l.setStyleSheet('font-weight: bold;')
         body_l = QLabel(text)
         body_l.setWordWrap(True)
-        body_l.setStyleSheet(
-            f'color: {"#A8A8A8" if theme.isDark() else "#666666"};'
-        )
+        body_l.setStyleSheet(f'color: {'#A8A8A8' if theme.isDark() else '#666666'};')
         layout.addWidget(title_l)
         layout.addWidget(body_l)
         card.setLayout(layout)
@@ -447,17 +448,17 @@ class SettingPage(QWidget):
 
     def _onWsConnected(self):
         self.southsideclient_status_label.setText(
-            "Connection Status: <span style='color: green;'>Connected</span>"
+            'Connection Status: <span style=\'color: green;\'>Connected</span>'
         )
 
     def _onWsDisconnected(self):
         self.southsideclient_status_label.setText(
-            "Connection Status: <span style='color: red;'>Disconnected</span>"
+            'Connection Status: <span style=\'color: red;\'>Disconnected</span>'
         )
 
     def _onVolumeChanged(self, volume: float):
         self.now_volume.setText(
-            f'Current volume(db): {(round(volume * 10) / 10) if volume != float("-inf") else "-inf"}'
+            f'Current volume(db): {(round(volume * 10) / 10) if volume != float('-inf') else '-inf'}'
         )
 
     def _onDesktopLyricsEnableChanged(self) -> None:

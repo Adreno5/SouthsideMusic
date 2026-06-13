@@ -1,14 +1,13 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
-from imports import UPDATE_FM, QPaintEvent, Qt, event_bus
-from imports import QPixmap
-from imports import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from imports import QPaintEvent, Qt
+from imports import QHBoxLayout, QVBoxLayout
 from qfluentwidgets import CaptionLabel, FluentStyleSheet
 from qframelesswindow import TitleBar
 
 if TYPE_CHECKING:
-    from views.song_card import SearchSongCard
+    pass
 
 
 class SouthsideMusicTitleBar(TitleBar):
@@ -53,6 +52,6 @@ class SouthsideMusicTitleBar(TitleBar):
             if search_input.geometry().contains(window_pos):
                 return False
         return super().canDrag(pos)
-    
+
     def paintEvent(self, event: QPaintEvent) -> None:
         pass

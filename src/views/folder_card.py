@@ -4,9 +4,14 @@ import os
 import requests
 
 from core.app_context import AppContext
-from core.downloader import doWithMultiThreading
-from core.icons import SouthsideIcon, getQIcon
-from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable, SearchCloudFolderInfo
+from core.downloader import asyncTask
+from core.icons import SouthsideIcon
+from core.models import (
+    CloudFolderInfo,
+    LocalFolderInfo,
+    SongStorable,
+    SearchCloudFolderInfo,
+)
 from imports import (
     CLOUD_ADD_TO_LOCAL,
     CLOUD_REMOVE_FOLDER,
@@ -16,8 +21,6 @@ from imports import (
     LOCAL_REMOVE_FOLDER,
     LOCAL_RENAME_FOLDER,
     VIEW_FOLDER,
-    FlowLayout,
-    FluentIcon,
     QAction,
     QContextMenuEvent,
     QHBoxLayout,
@@ -54,7 +57,7 @@ class LocalFolderCard(QWidget):
         self.img_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         layout.addWidget(self.img_label)
 
-        title_label = QLabel(folder['folder_name'])
+        title_label = QLabel(folder.folder_name)
         title_label.setAlignment(
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
         )
@@ -67,7 +70,7 @@ class LocalFolderCard(QWidget):
         event_bus.subscribe(IMAGE_ASSET_PERSISTED, self._onImageAssetPersisted)
 
     def _onImageAssetPersisted(self, storable: SongStorable):
-        songs = self.folder['songs']
+        songs = self.folder.songs
         if not songs:
             return
         if storable is not songs[0]:
@@ -75,7 +78,7 @@ class LocalFolderCard(QWidget):
         self._loadFirstSongImage()
 
     def _loadFirstSongImage(self):
-        songs = self.folder['songs']
+        songs = self.folder.songs
         if not songs:
             return
         first = songs[0]
@@ -129,7 +132,7 @@ class CloudFolderCard(QWidget):
         self.img_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         layout.addWidget(self.img_label)
 
-        title_label = QLabel(folder['folder_name'])
+        title_label = QLabel(folder.folder_name)
         title_label.setAlignment(
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
         )
@@ -141,16 +144,16 @@ class CloudFolderCard(QWidget):
         self._loadCoverImage()
 
     def _loadCoverImage(self):
-        if not self.folder['image_url']:
+        if not self.folder.image_url:
             return
         os.makedirs(os.path.join('data', 'cover'), exist_ok=True)
-        hashed = hashlib.sha256(self.folder['image_url'].encode()).hexdigest()
+        hashed = hashlib.sha256(self.folder.image_url.encode()).hexdigest()
         file = os.path.join('data', 'cover', hashed)
 
         if not os.path.isfile(file):
 
             def _download():
-                image_bytes = requests.get(self.folder['image_url']).content
+                image_bytes = requests.get(self.folder.image_url).content
 
                 def applyPixmap():
                     pixmap = QPixmap()
@@ -168,7 +171,7 @@ class CloudFolderCard(QWidget):
 
                 self._ctx.main_window.addScheduledTask(applyPixmap)
 
-            doWithMultiThreading(_download, (), self._ctx.main_window)
+            asyncTask(_download, (), self._ctx.main_window)
         else:
             with open(file, 'rb') as f:
                 image_bytes = f.read()
@@ -198,6 +201,7 @@ class CloudFolderCard(QWidget):
         menu.addActions([rm_ac, rn_ac, add_local])
         menu.exec(event.globalPos())
 
+
 class SearchCloudFolderCard(QWidget):
     load: bool = False
     clicked = Signal()
@@ -220,36 +224,43 @@ class SearchCloudFolderCard(QWidget):
 
         right_layout = QVBoxLayout()
 
-        right_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding))
+        right_layout.addSpacerItem(
+            QSpacerItem(
+                0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
+        )
 
-        title_label = SubtitleLabel(folder['folder_name'])
+        title_label = SubtitleLabel(folder.folder_name)
         title_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
         title_label.setWordWrap(True)
         title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         right_layout.addWidget(title_label)
 
-        author_label = QLabel(folder['author'])
+        author_label = QLabel(folder.author)
         title_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
         author_label.setWordWrap(True)
         author_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         right_layout.addWidget(author_label)
-        
-        right_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding))
+
+        right_layout.addSpacerItem(
+            QSpacerItem(
+                0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
+        )
 
         layout.addLayout(right_layout)
 
-
     def loadDetailAndImage(self):
-        if not self.folder['image_url']:
+        if not self.folder.image_url:
             return
         os.makedirs(os.path.join('data', 'cover'), exist_ok=True)
-        hashed = hashlib.sha256(self.folder['image_url'].encode()).hexdigest()
+        hashed = hashlib.sha256(self.folder.image_url.encode()).hexdigest()
         file = os.path.join('data', 'cover', hashed)
 
         if not os.path.isfile(file):
 
             def _download():
-                image_bytes = requests.get(self.folder['image_url']).content
+                image_bytes = requests.get(self.folder.image_url).content
 
                 def applyPixmap():
                     pixmap = QPixmap()
@@ -267,7 +278,7 @@ class SearchCloudFolderCard(QWidget):
 
                 self._ctx.main_window.addScheduledTask(applyPixmap)
 
-            doWithMultiThreading(_download, (), self._ctx.main_window)
+            asyncTask(_download, (), self._ctx.main_window)
         else:
             with open(file, 'rb') as f:
                 image_bytes = f.read()
@@ -283,9 +294,14 @@ class SearchCloudFolderCard(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
-            event_bus.emit(VIEW_FOLDER, CloudFolderInfo(
-                folder_name=self.folder['folder_name'], image_url=self.folder['image_url'], id=self.folder['id']
-            ))
+            event_bus.emit(
+                VIEW_FOLDER,
+                CloudFolderInfo(
+                    folder_name=self.folder.folder_name,
+                    image_url=self.folder.image_url,
+                    id=self.folder.id,
+                ),
+            )
         return super().mousePressEvent(event)
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:

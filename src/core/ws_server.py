@@ -5,7 +5,7 @@ import tornado.websocket
 import tornado.httpserver
 import tornado.ioloop
 import tornado.web
-from imports import QObject, Signal, QTimer
+from imports import QObject, Signal
 
 
 class WebSocketHandler(tornado.websocket.WebSocketHandler):

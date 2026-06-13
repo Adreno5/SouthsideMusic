@@ -10,7 +10,6 @@ from imports import (
     QApplication,
 )
 from core.dialogs import SubtitleLabel
-from core.icons import SouthsideIcon
 
 
 class ErrorPopupWindow(QDialog):
@@ -19,9 +18,15 @@ class ErrorPopupWindow(QDialog):
         self.detail_text = detail_text
 
     def report(self):
-        QMessageBox.information(self, 'tip', 'Describe the error you encountered in the title, and paste the details into the description')
+        QMessageBox.information(
+            self,
+            'tip',
+            'Describe the error you encountered in the title, and paste the details into the description',
+        )
         QDesktopServices.openUrl(
-            QUrl('https://github.com/Adreno5/SouthsideMusic/issues/new?title=describe%20the%20error')
+            QUrl(
+                'https://github.com/Adreno5/SouthsideMusic/issues/new?title=describe%20the%20error'
+            )
         )
 
     def exec(self) -> int:

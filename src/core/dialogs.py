@@ -1,7 +1,6 @@
 import io
 
-from imports import QHBoxLayout, QLabel, QListWidget, QVBoxLayout, QWidget
-from imports import Qt, QTimer
+from imports import QLabel, QListWidget, QWidget
 from imports import QImage, QPixmap
 from pyncm import apis
 import qrcode
@@ -14,12 +13,9 @@ from qfluentwidgets import (
     TitleLabel,
 )
 from views.list_widget import SListWidget
-import requests
 
 
-
-
-class LineinputDialog(MessageBoxBase):
+class LineInputDialog(MessageBoxBase):
     def __init__(self, parent, title: str, desc: str, place: str):
         super().__init__(parent)
 
@@ -36,14 +32,14 @@ class LineinputDialog(MessageBoxBase):
         self.viewLayout.addWidget(self.inputer)
 
 
-def get_text_lineedit(title: str, desc: str, place: str, parent: QWidget | None):
-    dialog = LineinputDialog(parent, title, desc, place)
+def getTextLineedit(title: str, desc: str, place: str, parent: QWidget | None):
+    dialog = LineInputDialog(parent, title, desc, place)
     response = dialog.exec()
 
     return dialog.inputer.text() if response else ''
 
 
-class TexteditDialog(MessageBoxBase):
+class TextEditDialog(MessageBoxBase):
     def __init__(self, parent, title: str, desc: str, place: str):
         super().__init__(parent)
 
@@ -61,8 +57,8 @@ class TexteditDialog(MessageBoxBase):
         self.cancelButton.hide()
 
 
-def get_text_textedit(title: str, desc: str, place: str, parent: QWidget):
-    dialog = TexteditDialog(parent, title, desc, place)
+def getTextTextedit(title: str, desc: str, place: str, parent: QWidget):
+    dialog = TextEditDialog(parent, title, desc, place)
     dialog.exec()
 
     return dialog.inputer.toPlainText()
@@ -85,7 +81,7 @@ class ListDialog(MessageBoxBase):
         self.viewLayout.addWidget(self.inputer)
 
 
-def get_value_bylist(
+def getValueBylist(
     parent: QWidget, title: str, desc: str, texts: list[str]
 ) -> str | None:
     dialog = ListDialog(parent, title, desc, texts)
@@ -149,11 +145,11 @@ class QRCodeLoginDialog(MessageBoxBase):
     def login(self):
         self.errlabel.hide()
 
-        rsp: dict = apis.login.LoginQrcodeCheck(self.key)  # type: ignore
+        rsp: dict = apis.login.loginQrcodeCheck(self.key)  # type: ignore
         if rsp['code'] == 803:
             self.logger.info('Logined in successfully')
-            apis.login.WriteLoginInfo(
-                apis.login.GetCurrentLoginStatus(),  # type: ignore
+            apis.login.writeLoginInfo(
+                apis.login.getCurrentLoginStatus(),  # type: ignore
             )
 
             self.accept()

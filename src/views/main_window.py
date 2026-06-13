@@ -10,19 +10,16 @@ from typing import Any, Callable
 
 from core.app_context import AppContext
 
-from core.backend import get_backend
-from core.dialogs import get_text_lineedit
+from core.backend import getBackend
+from core.dialogs import getTextLineedit
 from imports import (
     BACKGROUND_RATIO_CHANGED,
     ENDING_NO_SOUND,
-    LYRIC_LINE_CHANGED,
     MWINDOW_REFRESH_FOLDERS,
     PLAY_CONTINUE_LAST_SONG,
     PLAY_SEARCH_SONG,
-    POST_THEME_CHANGED,
     REFRESH_RATE_CHANGED,
     REPAINT,
-    SONG_CHANGED,
     SONG_FINISH,
     START_INTER_LOADING,
     START_PROGRESS_LOADING,
@@ -33,9 +30,7 @@ from imports import (
     WEBSOCKET_CONNECTED,
     WEBSOCKET_DISCONNECTED,
     FluentIcon,
-    LineEdit,
     QAbstractAnimation,
-    QApplication,
     QEasingCurve,
     QFont,
     QListWidget,
@@ -47,21 +42,14 @@ from imports import (
     Qt,
     QTimer,
     Signal,
-    QMutex,
     TransparentPushButton,
     event_bus,
 )
-from imports import QCloseEvent, QColor, QIcon, QKeyEvent, QPainter
+from imports import QCloseEvent, QColor, QKeyEvent, QPainter
 from views.list_widget import SListWidget
 from imports import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
-    FluentIconBase,
     InfoBar,
-    InfoBarPosition,
-    NavigationInterface,
-    NavigationItemPosition,
-    NavigationTreeWidget,
-    qrouter,
 )
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 
@@ -70,13 +58,12 @@ from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable
 from core.color import mixColor
 from core.config import saveConfig, cfg
 from core.favorites import favorites_manager, saveFavorites
-from core.icons import bindIcon, getQIcon
-from core.downloader import doWithMultiThreading
+from core.icons import bindIcon
+from core.downloader import asyncTask
 from views.folder_card import CloudFolderCard, LocalFolderCard
 from views.line_edit import SearchLineEdit
 from views.playing_controller import PlayingController
-from views.playing_page import PlayingPage
-from views.song_card import DummyCard, SearchSongCard
+from views.song_card import SearchSongCard
 from views.title_bar import SouthsideMusicTitleBar
 
 
@@ -126,7 +113,7 @@ class MainWindow(FluentWindowBase):
         contents_widget.setLayout(contents_layout)
         contents_layout.addWidget(self.contents_widget)
 
-        contents_widget.setContentsMargins(0, 0, 0, 52)  # for playing controller
+        contents_widget.setContentsMargins(0, 0, 0, 52)
 
         self.loading_tasks: int = 0
         self.loading_inter: bool = False
@@ -438,8 +425,8 @@ class MainWindow(FluentWindowBase):
                 raise e
 
     def play(self, card: SearchSongCard):
-        self._logger.debug(card.info['id'])
-        event_bus.emit(PLAY_SEARCH_SONG, card.info, card.detail['image_url'])
+        self._logger.debug(card.info.id)
+        event_bus.emit(PLAY_SEARCH_SONG, card.info, card.detail.image_url)
 
     def init(self) -> None:
         self._launchwindow.clear()
@@ -482,7 +469,7 @@ class MainWindow(FluentWindowBase):
 
             self.addScheduledTask(_show)
 
-        doWithMultiThreading(_init, (), self, finished=_finish_init)
+        asyncTask(_init, (), self, finished=_finish_init)
 
     def refreshFolders(self):
         self._fp.displayEmpty()
@@ -502,7 +489,11 @@ class MainWindow(FluentWindowBase):
             self.folders_list.addItem(item)
             self.folders_list.setItemWidget(item, card)
 
-        if open_folder and not open_folder.get('id') and open_folder in favorites_manager.folders:
+        if (
+            open_folder
+            and not open_folder.get('id')
+            and open_folder in favorites_manager.folders
+        ):
             self._fp.setDisplayFolder(open_folder)
 
         item = QListWidgetItem()
@@ -516,7 +507,7 @@ class MainWindow(FluentWindowBase):
             self.addScheduledTask(
                 lambda: self.folders_list.addItem(QListWidgetItem('Cloud'))
             )
-            playlists = get_backend().get_user_playlists()
+            playlists = getBackend().getUserPlaylists()
 
             def add():
                 nonlocal playlists
@@ -543,8 +534,8 @@ class MainWindow(FluentWindowBase):
 
             self.addScheduledTask(add)
 
-        if not get_backend().user_anonymous():
-            doWithMultiThreading(_cloud, (), self)
+        if not getBackend().userAnonymous():
+            asyncTask(_cloud, (), self)
 
         saveFavorites()
 
@@ -554,15 +545,15 @@ class MainWindow(FluentWindowBase):
         self._fp.setDisplayFolder(folder)
 
     def onAddCloudFolder(self):
-        name = get_text_lineedit(
+        name = getTextLineedit(
             'Add New Folder', 'enter name of your new folder', 'my folder', self
         )
         if name:
-            get_backend().create_playlist(name)
+            getBackend().createPlaylist(name)
             self.refreshFolders()
 
     def onAddLocalFolder(self):
-        name = get_text_lineedit(
+        name = getTextLineedit(
             'Add New Folder', 'enter name of your new folder', 'my folder', self
         )
         if name:
@@ -644,7 +635,7 @@ class MainWindow(FluentWindowBase):
             lambda: self._ws_handler.send(
                 json.dumps(
                     {
-                        'option': f'{"disable" if not self._stp.enableFFT_box.isChecked() else "enable"}_fft'
+                        'option': f'{'disable' if not self._stp.enableFFT_box.isChecked() else 'enable'}_fft'
                     }
                 )
             ),
@@ -720,7 +711,7 @@ class MainWindow(FluentWindowBase):
             painter.drawText(
                 4,
                 int(self.bar_height + 18),
-                f'Loading... ({f"{round(self.loading_progress * 100, 2)}%" if self.loading_progressing else self.loading_tasks})',
+                f'Loading... ({f'{round(self.loading_progress * 100, 2)}%' if self.loading_progressing else self.loading_tasks})',
             )
 
         painter.end()

@@ -10,7 +10,6 @@ from mutagen.mp4 import MP4, MP4Cover
 from mutagen.oggopus import OggOpus
 from mutagen.oggvorbis import OggVorbis
 from mutagen.wave import WAVE
-from mutagen.id3._util import ID3NoHeaderError
 from mutagen.id3._frames import (
     APIC,
     TIT2,
@@ -42,10 +41,10 @@ def _clean_lrc(raw_lyric: str) -> str:
     mgr.parse()
     lines = []
     for info in mgr.parsed:
-        minutes = int(info['time'] // 60)
-        seconds = info['time'] % 60
+        minutes = int(info.time // 60)
+        seconds = info.time % 60
         timestamp = f'[{minutes:02d}:{seconds:05.2f}]'
-        lines.append(f'{timestamp}{info["content"]}')
+        lines.append(f'{timestamp}{info.content}')
     return '\n'.join(lines)
 
 
@@ -78,7 +77,6 @@ def _set_id3_tags(
     genre: str,
     composer: str,
 ) -> None:
-    # Ensure tags exist
     if isinstance(audio, MP3):
         if audio.tags is not None:
             audio.tags.delete(audio.filename)
@@ -86,58 +84,48 @@ def _set_id3_tags(
             audio.add_tags()
         except Exception:
             pass
-    else:  # WAVE
+    else:
         if audio.tags is None:
             audio.add_tags()
 
     tags: mutagen.id3.ID3 = audio.tags  # type: ignore
     if tags is None:
-        # fallback
         audio.add_tags()
         tags = audio.tags
 
-    # Basic fields
     tags.delall('TIT2')
     tags.delall('TPE1')
     tags.add(TIT2(encoding=3, text=song_name))
     tags.add(TPE1(encoding=3, text=song_artists))
 
-    # Lyrics
     if lyrics:
         tags.delall('USLT')
         tags.add(USLT(encoding=3, lang='eng', desc='', text=lyrics))
 
-    # Album
     if album:
         tags.delall('TALB')
         tags.add(TALB(encoding=3, text=album))
 
-    # Album artist
     if album_artist:
         tags.delall('TPE2')
         tags.add(TPE2(encoding=3, text=album_artist))
 
-    # Year / Date
     if year:
         tags.delall('TDRC')
         tags.add(TDRC(encoding=3, text=year))
 
-    # Track number ('1' or '1/10')
     if track_number:
         tags.delall('TRCK')
         tags.add(TRCK(encoding=3, text=track_number))
 
-    # Genre
     if genre:
         tags.delall('TCON')
         tags.add(TCON(encoding=3, text=genre))
 
-    # Composer
     if composer:
         tags.delall('TCOM')
         tags.add(TCOM(encoding=3, text=composer))
 
-    # Cover image
     if song_image:
         tags.delall('APIC')
         tags.add(
@@ -182,7 +170,6 @@ def _set_tags_vorbis(
     if composer:
         audio['composer'] = composer
 
-    # Cover image
     if song_image:
         if isinstance(audio, FLAC):
             audio.clear_pictures()
@@ -226,14 +213,12 @@ def _set_tags_mp4(
     if year:
         audio['\xa9day'] = year
     if track_number:
-        # 'trkn' expects a tuple (track, total)
         parts = track_number.split('/')
         try:
             tr = int(parts[0])
             total = int(parts[1]) if len(parts) > 1 else 0
             audio['trkn'] = [(tr, total)]
         except (ValueError, IndexError):
-            # fallback
             pass
     if genre:
         audio['\xa9gen'] = genre
@@ -244,7 +229,7 @@ def _set_tags_mp4(
         audio['covr'] = [MP4Cover(song_image, imageformat=MP4Cover.FORMAT_JPEG)]
 
 
-def saveSongWithInformations(
+def saveSongWithInformation(
     song_bytes: bytes,
     song_image: bytes,
     song_name: str,

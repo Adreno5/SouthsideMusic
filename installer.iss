@@ -18,6 +18,7 @@ SetupIconFile=icons\app.ico
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+LicenseFile=LICENSE
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExeName}
 PrivilegesRequired=admin
@@ -43,6 +44,9 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename:
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent runasoriginaluser; Tasks: launchafter
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}"
 
 [Registry]
 Root: HKLM; Subkey: "Software\{#AppName}"; Flags: uninsdeletekey

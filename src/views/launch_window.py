@@ -43,7 +43,7 @@ class LaunchWindow(QWidget):
         self.setLayout(launchlayout)
 
         self.setStyleSheet(
-            f'QWidget {{ background-color: {"#FFFFFF" if theme.isLight() else "#000000"} }} QLabel {{ color: {"white" if theme.isDark() else "black"}; }}'
+            f'QWidget {{ background-color: {'#FFFFFF' if theme.isLight() else '#000000'} }} QLabel {{ color: {'white' if theme.isDark() else 'black'}; }}'
         )
 
         self.show()
@@ -78,4 +78,3 @@ class LaunchWindow(QWidget):
             text = '...\n' + text
         self.sublabel.setText(text)
         self._app.processEvents()
-        # time.sleep(0.01)

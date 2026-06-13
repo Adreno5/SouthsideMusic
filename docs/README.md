@@ -220,4 +220,4 @@ All settings are stored in `config.json`. The file checks for changes every seco
 
 PolyForm Noncommercial License 1.0.0 — see [LICENSE](../LICENSE).
 
-Commercial use is prohibited. The developer assumes no liability for any misuse, including but not limited to illegal redistribution of exported music. Users are solely responsible for their own actions.
+This software is for personal learning, research, and private entertainment only. No commercial use. Users are solely responsible for all music exported through this software — do not redistribute or resell exported audio files. The developer assumes no liability for any misuse.

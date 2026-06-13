@@ -60,7 +60,11 @@ class _BaseSmoothTimer:
 
     @property
     def is_animating(self) -> bool:
-        return self._elapsed_time < self._anim_cycle and self._anim_cycle > 0 and self._difference != 0.0
+        return (
+            self._elapsed_time < self._anim_cycle
+            and self._anim_cycle > 0
+            and self._difference != 0.0
+        )
 
     @property
     def animation_progress(self) -> float:
@@ -94,10 +98,7 @@ class _BaseSmoothTimer:
 
 class SmoothTimer(_BaseSmoothTimer):
     def _ease_progress(self, progress: float) -> float:
-        return (
-            (1.0 - pow(1.0 - progress, self._power_number)) * 1.5
-            - progress * 0.5
-        )
+        return (1.0 - pow(1.0 - progress, self._power_number)) * 1.5 - progress * 0.5
 
 
 class EaseOutTimer(_BaseSmoothTimer):

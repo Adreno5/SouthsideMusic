@@ -36,7 +36,8 @@ def add_round_key(s, k):
             s[i][j] ^= k[i][j]
 
 
-xtime = lambda a: (((a << 1) ^ 0x1B) & 0xFF) if (a & 0x80) else (a << 1)
+def xtime(a):
+    return (((a << 1) ^ 0x1B) & 0xFF) if (a & 0x80) else (a << 1)
 
 
 def mix_single_column(a):
@@ -63,23 +64,24 @@ def inv_mix_columns(s):
         s[i][3] ^= v
     mix_columns(s)
 
+
 def bytes2matrix(text):
-    """Converts a 16-byte array into a 4x4 matrix."""
+    '''Converts a 16-byte array into a 4x4 matrix.'''
     return [list(text[i : i + 4]) for i in range(0, len(text), 4)]
 
 
 def matrix2bytes(matrix):
-    """Converts a 4x4 matrix into a 16-byte array."""
+    '''Converts a 4x4 matrix into a 16-byte array.'''
     return bytes(sum(matrix, []))
 
 
 def xor_bytes(a, b):
-    """Returns a new byte array with the elements xor'ed."""
+    '''Returns a new byte array with the elements xor'ed.'''
     return bytes(i ^ j for i, j in zip(a, b))
 
 
 def inc_bytes(a):
-    """Returns a new byte array with the value increment by 1"""
+    '''Returns a new byte array with the value increment by 1'''
     out = list(a)
     for i in reversed(range(len(out))):
         if out[i] == 0xFF:
@@ -107,7 +109,7 @@ class AES:
         self._key_matrices = self._expand_key(master_key)
 
     def _expand_key(self, master_key):
-        """Expands and returns a list of key matrices for the given master_key."""
+        '''Expands and returns a list of key matrices for the given master_key.'''
         # Initialize round keys with raw key material.
         key_columns = bytes2matrix(master_key)
         iteration_size = len(master_key) // 4
@@ -115,7 +117,7 @@ class AES:
         while len(key_columns) < (self.n_rounds + 1) * 4:
             # Copy previous word.
             word = list(key_columns[-1])
-            # Perform schedule_core once every "row".
+            # Perform schedule_core once every 'row'.
             if len(key_columns) % iteration_size == 0:
                 # Circular shift.
                 word.append(word.pop(0))
@@ -135,7 +137,7 @@ class AES:
         return [key_columns[4 * i : 4 * (i + 1)] for i in range(len(key_columns) // 4)]
 
     def encrypt_block(self, plaintext):
-        """Encrypts a single block of 16 byte long plaintext."""
+        '''Encrypts a single block of 16 byte long plaintext.'''
         assert len(plaintext) == 16
 
         plain_state = bytes2matrix(plaintext)
@@ -155,7 +157,7 @@ class AES:
         return matrix2bytes(plain_state)
 
     def decrypt_block(self, ciphertext):
-        """Decrypts a single block of 16 byte long ciphertext."""
+        '''Decrypts a single block of 16 byte long ciphertext.'''
         assert len(ciphertext) == 16
 
         cipher_state = bytes2matrix(ciphertext)
@@ -175,12 +177,12 @@ class AES:
         return matrix2bytes(cipher_state)
 
     def encrypt_ecb_nopadding(self, plaintext):
-        """
+        '''
         Decrypts `plaintext` using ECB mode
         Assumes data is already padded.
-        """
+        '''
         return bytearray(
-            b"".join(
+            b''.join(
                 [
                     self.encrypt_block(plaintext_block)
                     for plaintext_block in split_blocks(plaintext)
@@ -189,12 +191,12 @@ class AES:
         )
 
     def decrypt_ecb_nopadding(self, ciphertext):
-        """
+        '''
         Decrypts `plaintext` using ECB mode
         Assumes data is already padded.
-        """
+        '''
         return bytearray(
-            b"".join(
+            b''.join(
                 [
                     self.decrypt_block(plaintext_block)
                     for plaintext_block in split_blocks(ciphertext)
@@ -203,10 +205,10 @@ class AES:
         )
 
     def encrypt_cbc_nopadding(self, plaintext, iv):
-        """
+        '''
         Encrypts `plaintext` using CBC mode and with the given initialization vector (iv).
         Assumes data is already padded.
-        """
+        '''
         assert len(iv) == 16
 
         blocks = []
@@ -217,13 +219,13 @@ class AES:
             blocks.append(block)
             previous = block
 
-        return bytearray(b"".join(blocks))
+        return bytearray(b''.join(blocks))
 
     def decrypt_cbc_nopadding(self, ciphertext, iv):
-        """
+        '''
         Decrypts `ciphertext` using CBC mode with the given initialization vector (iv).
         Assumes data is already padded.
-        """
+        '''
         assert len(iv) == 16
         blocks = []
         previous = iv
@@ -231,4 +233,4 @@ class AES:
             # CBC mode decrypt: previous XOR decrypt(ciphertext)
             blocks.append(xor_bytes(previous, self.decrypt_block(ciphertext_block)))
             previous = ciphertext_block
-        return bytearray(b"".join(blocks))
+        return bytearray(b''.join(blocks))

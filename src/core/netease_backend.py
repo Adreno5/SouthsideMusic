@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Literal
 
@@ -10,26 +11,26 @@ from core.models import (
     AlbumInfo,
     ArtistInfo,
     CloudFolderInfo,
-    LocalFolderInfo,
     MusicServiceBackend,
     PrivilegeInfo,
     SearchSongInfo,
+    SongInfo,
     SongStorable,
     TrackAudioInfo,
     TrackDetailInfo,
     TrackLyricsInfo,
     SearchCloudFolderInfo,
-    get_cached_hashes,
+    getCachedHashes,
 )
 
 _logger = logging.getLogger(__name__)
 
 
 class NeteaseCloudMusicBackend(MusicServiceBackend):
-    def search_song(
+    def searchSong(
         self, keywords: str, offset: int = 0, limit: int = 30
     ) -> list[SearchSongInfo]:
-        resp = apis.cloudsearch.GetSearchResult(
+        resp = apis.cloudsearch.getSearchResult(
             keywords, stype=1, limit=limit, offset=offset
         )
         assert isinstance(resp, dict), 'Invalid search response'
@@ -68,8 +69,10 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             )
         return songs
 
-    def search_playlist(self, keywords: str, offset: int = 0, limit: int = 30) -> list[SearchCloudFolderInfo]:
-        resp = apis.cloudsearch.GetSearchResult(
+    def searchPlaylist(
+        self, keywords: str, offset: int = 0, limit: int = 30
+    ) -> list[SearchCloudFolderInfo]:
+        resp = apis.cloudsearch.getSearchResult(
             keywords, stype=1000, limit=limit, offset=offset
         )
         assert isinstance(resp, dict), 'Invalid search response'
@@ -81,13 +84,13 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
                     folder_name=playlist_dict['name'],
                     image_url=playlist_dict['coverImgUrl'],
                     id=str(playlist_dict['id']),
-                    author=playlist_dict['creator']['nickname']
+                    author=playlist_dict['creator']['nickname'],
                 )
             )
         return playlists
 
-    def get_track_detail(self, track_id: int | str) -> TrackDetailInfo:
-        response = apis.track.GetTrackDetail(song_ids=[track_id])
+    def getTrackDetail(self, track_id: int | str) -> TrackDetailInfo:
+        response = apis.track.getTrackDetail(song_ids=[track_id])
         assert isinstance(response, dict), 'Invalid track detail response'
         detail = response['songs'][0]  # type: ignore
         al = detail.get('al', {})
@@ -99,16 +102,19 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             publish_time=detail.get('publishTime', 0),
         )
 
-    def get_track_audio(
+    def getTrackAudio(
         self, track_id: int | str, bitrate: int = 999000
     ) -> TrackAudioInfo:
-        resp = apis.track.GetTrackAudio([str(track_id)], bitrate=bitrate)
+        resp = apis.track.getTrackAudio([str(track_id)], bitrate=bitrate)
+        _logger.info(resp)
+        if isinstance(resp, bytes):
+            resp = json.loads(resp.decode())
         assert isinstance(resp, dict), 'Invalid track audio response'
         url = resp['data'][0]['url']  # type: ignore
         return TrackAudioInfo(url=url)
 
-    def get_track_lyrics(self, track_id: int | str) -> TrackLyricsInfo:
-        data = apis.track.GetTrackLyricsNew(str(track_id))
+    def getTrackLyrics(self, track_id: int | str) -> TrackLyricsInfo:
+        data = apis.track.getTrackLyricsNew(str(track_id))
         assert isinstance(data, dict), 'Invalid track lyrics response'
 
         lyric = data.get('lrc', {}).get('lyric', '')
@@ -129,15 +135,15 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             ytlrc_lyric=ytlrc_lyric,
         )
 
-    def user_privilege_level(self) -> int:
-        return pyncm.GetCurrentSession().vipType
+    def userPrivilegeLevel(self) -> int:
+        return pyncm.getCurrentSession().vipType
 
-    def user_anonymous(self) -> bool:
-        return bool(pyncm.GetCurrentSession().is_anonymous)
+    def userAnonymous(self) -> bool:
+        return bool(pyncm.getCurrentSession().is_anonymous)
 
-    def get_user_playlists(self) -> list[CloudFolderInfo]:
-        with pyncm.GetCurrentSession() as session:
-            response = apis.user.GetUserPlaylists(session.uid)
+    def getUserPlaylists(self) -> list[CloudFolderInfo]:
+        with pyncm.getCurrentSession() as session:
+            response = apis.user.getUserPlaylists(session.uid)
             assert isinstance(response, dict), 'Invaild Response'
             assert not session.is_anonymous, 'Anonymous Account'
 
@@ -150,21 +156,24 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
                 for p in data
             ]
 
-    def create_playlist(self, name: str) -> str:
-        with pyncm.GetCurrentSession():
-            response = apis.playlist.SetCreatePlaylist(name, False)
+    def createPlaylist(self, name: str) -> str:
+        with pyncm.getCurrentSession():
+            response = apis.playlist.setCreatePlaylist(name, False)
             assert isinstance(response, dict), 'Invalid Response'
-            return str(response['id']) # type: ignore
+            return str(response['id'])  # type: ignore
 
-    def remove_playlist(self, id: str) -> None:
-        with pyncm.GetCurrentSession():
-            apis.playlist.SetRemovePlaylist(id)  # type: ignore
+    def removePlaylist(self, id: str) -> None:
+        with pyncm.getCurrentSession():
+            apis.playlist.setRemovePlaylist(id)  # type: ignore
 
-    def edit_playlist(
-        self, option: Literal['add'] | Literal['del'], song_ids: list[str], folder_id: str
+    def editPlaylist(
+        self,
+        option: Literal['add'] | Literal['del'],
+        song_ids: list[str],
+        folder_id: str,
     ) -> bool:
-        with pyncm.GetCurrentSession():
-            result = apis.playlist.SetManipulatePlaylistTracks(
+        with pyncm.getCurrentSession():
+            result = apis.playlist.setManipulatePlaylistTracks(
                 song_ids, folder_id, op=option
             )
             assert isinstance(result, dict), 'Invalid Response'
@@ -173,29 +182,29 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
                 return False
             return True
 
-    def get_playlist_tracks(self, playlist_id: str) -> list[SongStorable]:
-        with pyncm.GetCurrentSession():
-            response = apis.playlist.GetPlaylistAllTracks(int(playlist_id))
+    def getPlaylistTracks(self, playlist_id: str) -> list[SongStorable]:
+        with pyncm.getCurrentSession():
+            response = apis.playlist.getPlaylistAllTracks(int(playlist_id))
             assert isinstance(response, dict), 'Invalid Response'
             assert response.get('code') == 200, f'API Error: {response}'
             songs = response['songs']  # type: ignore
             result: list[SongStorable] = []
             for s in songs:
                 artist_names = [a['name'] for a in (s.get('ar') or [])]
-                cached = get_cached_hashes(str(s['id']))
+                cached = getCachedHashes(str(s['id']))
                 storable = SongStorable(
-                    info={
-                        'name': s['name'],
-                        'artists': '/'.join(artist_names),
-                        'id': str(s['id']),
-                        'privilege': -1,
-                    },
+                    info=SongInfo(
+                        name=s['name'],
+                        artists='/'.join(artist_names),
+                        id=str(s['id']),
+                        privilege=-1,
+                    ),
                     image=None,
                     image_cache_hash=cached.get('image_cache_hash', ''),
                     content_cache_hash=cached.get('content_cache_hash', ''),
                 )
                 result.append(storable)
             return result
-        
-    def get_user_vip_type(self) -> int | str:
-        return pyncm.GetCurrentSession().vipType
+
+    def getUserVipType(self) -> int | str:
+        return pyncm.getCurrentSession().vipType

@@ -1,12 +1,8 @@
 from __future__ import annotations
-import logging
-import time
 
 from core.app_context import AppContext
 
 from imports import (
-    QApplication,
-    QEnterEvent,
     QSize,
     Qt,
     QTimer,
@@ -17,19 +13,17 @@ from imports import (
 )
 from imports import (
     QColor,
-    QFontMetricsF,
     QMouseEvent,
     QMoveEvent,
     QPainter,
     QPainterPath,
     QPaintEvent,
-    QPen,
     QWheelEvent,
 )
-from imports import QLabel, QVBoxLayout, QWidget
+from imports import QVBoxLayout, QWidget
 from qfluentwidgets import CheckBox, FlowLayout, PushButton, FluentIcon, TitleLabel
 from core.color import mixColor
-from core.config import Config, cfg
+from core.config import cfg
 from core import theme
 from core.lyrics import LyricInfo, YRCLyricInfo
 from views.lyrics_viewer import LyricsViewer
@@ -114,7 +108,7 @@ class DesktopLyricsViewer(LyricsViewer):
 
         position = self._player.getPosition()
         cur_line = self._currentLyricLine(position)
-        meta = cur_line.get('isMetadata') if cur_line else False
+        meta = cur_line.isMetadata if cur_line else False
 
         has_translation = self._hasCurrentLineTranslation(cur_line)
         tar_height = 65 if has_translation and self.ctx.cfg.show_translation else 46
@@ -133,7 +127,7 @@ class DesktopLyricsViewer(LyricsViewer):
             )
             tar_width = max(
                 10,
-                int(self.metri.horizontalAdvance(y_line['content'])),
+                int(self.metri.horizontalAdvance(y_line.content)),
             )
         elif self._mgr.parsed:
             lidx = self._mgr.getCurrentIndex(position)
@@ -142,7 +136,7 @@ class DesktopLyricsViewer(LyricsViewer):
             )
             tar_width = max(
                 10,
-                int(self.metri.horizontalAdvance(l_line['content'])),
+                int(self.metri.horizontalAdvance(l_line.content)),
             )
         tar_width += self.draw_x_offset + self.height() * 0.5 + 10
 

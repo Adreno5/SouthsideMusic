@@ -16,13 +16,11 @@ from views.setting_page import SettingPage
 import threading
 import time
 import uuid
-from types import FrameType, TracebackType
-from typing import Any, TextIO
+from types import TracebackType
 import glob
 
 from services.events.events_services import EventsServices
 
-import pydub
 import imports as _ims
 from qfluentwidgets import setTheme, Theme
 import shiboken6
@@ -31,7 +29,7 @@ from core.config import loadConfig, saveConfig, cfg
 from core.favorites import favorites_manager
 from core.icons import refreshBoundIcons
 from core.audio_player import AudioPlayer
-from core.backend import init_backend
+from core.backend import initBackend
 from core.netease_backend import NeteaseCloudMusicBackend
 from core.playing_manager import PlayingManager
 from core import theme as themeModule
@@ -193,21 +191,19 @@ if __name__ == '__main__':
     launchwindow.subtitle('Phase 1 (start core...)')
 
     launchwindow.push('Writting login information...')
-    if cfg.login_status and not ncm.GetCurrentSession().is_anonymous:
-        apis.login.WriteLoginInfo(cfg.login_status)
+    if cfg.login_status and not ncm.getCurrentSession().is_anonymous:
+        apis.login.writeLoginInfo(cfg.login_status)
     else:
-        cfg.login_status = apis.login.GetCurrentLoginStatus()  # type: ignore
+        cfg.login_status = apis.login.getCurrentLoginStatus()  # type: ignore
 
-    init_backend(NeteaseCloudMusicBackend())
+    initBackend(NeteaseCloudMusicBackend())
 
     def _themeChanged(theme: str):
         def _updateTheme():
             global mwindow
             themeModule._is_dark = themeModule.getDarkdetect().isDark()
             setTheme(Theme.LIGHT if theme == 'Light' else Theme.DARK)
-            app.setStyleSheet(
-                f'color: {"white" if themeModule.isDark() else "black"};'
-            )
+            app.setStyleSheet(f'color: {"white" if themeModule.isDark() else "black"};')
             refreshBoundIcons()
             _ims.event_bus.emit(_ims.POST_THEME_CHANGED)
 
@@ -242,9 +238,7 @@ if __name__ == '__main__':
 
     threading.Thread(target=_cleanCaches, daemon=True).start()
 
-    app.setStyleSheet(
-        f'color: {"white" if themeModule.isDark() else "black"};'
-    )
+    app.setStyleSheet(f'color: {"white" if themeModule.isDark() else "black"};')
     setTheme(Theme.LIGHT if themeModule.isLight() else Theme.DARK)
 
     app.processEvents()
@@ -272,24 +266,24 @@ if __name__ == '__main__':
 
     launchwindow.push('Logging in...')
     if cfg.session is None:
-        apis.login.LoginViaAnonymousAccount()
-        sstr = ncm.DumpSessionAsString(apis.GetCurrentSession())
+        apis.login.loginViaAnonymousAccount()
+        sstr = ncm.dumpSessionAsString(apis.getCurrentSession())
         cfg.session = sstr
-        cfg.login_status = apis.login.GetCurrentLoginStatus()  # type: ignore
+        cfg.login_status = apis.login.getCurrentLoginStatus()  # type: ignore
         _logger.info('logged into generated anonymous account')
     else:
-        ncm.SetCurrentSession(ncm.LoadSessionFromString(cfg.session))
+        ncm.setCurrentSession(ncm.loadSessionFromString(cfg.session))
         _logger.info('loaded session from config')
 
         if (
             cfg.login_method == 'cell phone' or cfg.login_method == 'QR code'
         ) and cfg.login_status:
-            apis.login.WriteLoginInfo(cfg.login_status)
+            apis.login.writeLoginInfo(cfg.login_status)
             _logger.info('wrote login info')
 
-    csession = ncm.GetCurrentSession()
+    csession = ncm.getCurrentSession()
     csession.deviceId = uuid.uuid4().hex
-    ncm.SetCurrentSession(csession)
+    ncm.setCurrentSession(csession)
 
     launchwindow.clear()
     launchwindow.subtitle('Phase 2 (initialize components...)')
@@ -358,6 +352,8 @@ if __name__ == '__main__':
         mwindow.init()
 
         fp.refresh()
+
+        print(ncm.getCurrentSession().bindings)
 
         _ims.QTimer.singleShot(2000, lambda: startUpdateCheck(mwindow))
 

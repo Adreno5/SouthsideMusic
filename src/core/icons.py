@@ -1,12 +1,9 @@
 from functools import lru_cache
-import logging
 from enum import Enum
 from typing import Any, Literal, cast
 
 from core import theme as themeModule
-from imports import QIcon
-from qfluentwidgets import FluentIconBase, Theme, isDarkTheme
-import tempfile
+from qfluentwidgets import FluentIconBase, Theme
 from os import makedirs
 
 makedirs('data', exist_ok=True)

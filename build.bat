@@ -22,6 +22,8 @@ title Building - Copy images
 xcopy .\images .\build.result\images /E /I /Y
 
 copy .\pyproject.toml .\build.result\pyproject.toml
+copy .\bootstrap.py .\build.result\bootstrap.py
+copy .\full_requirements.txt .\build.result\full_requirements.txt
 
 title Building - Remove unneeded files
 RD /S /Q "build.result\.venv\Lib\site-packages\__pycache__" 2>nul

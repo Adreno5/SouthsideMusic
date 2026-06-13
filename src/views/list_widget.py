@@ -1,4 +1,5 @@
-from typing import TypedDict
+from dataclasses import dataclass
+
 from core.smooth import EaseOutTimer
 from imports import (
     QAbstractItemView,
@@ -22,7 +23,8 @@ from imports import (
 from qfluentwidgets import ListWidget, ScrollBar
 
 
-class AnimatingObject(TypedDict):
+@dataclass
+class AnimatingObject:
     total: float
     elapsed: float
     duration: float
@@ -47,11 +49,11 @@ class SSmoothScrollBar(ScrollBar):
         new: list[AnimatingObject] = []
         total_delta = 0.0
         for obj in self.animating_objs:
-            obj['elapsed'] += 16
-            progress = self._smoothstep(obj['elapsed'] / obj['duration'])
-            total_delta += obj['total'] * (progress - obj['last_progress'])
-            obj['last_progress'] = progress
-            if obj['elapsed'] < obj['duration']:
+            obj.elapsed += 16
+            progress = self._smoothstep(obj.elapsed / obj.duration)
+            total_delta += obj.total * (progress - obj.last_progress)
+            obj.last_progress = progress
+            if obj.elapsed < obj.duration:
                 new.append(obj)
         self.animating_objs = new
         if total_delta != 0:
@@ -59,12 +61,12 @@ class SSmoothScrollBar(ScrollBar):
 
     def scrollValue(self, delta: int):
         self.animating_objs.append(
-            {
-                'total': float(delta),
-                'elapsed': 0.0,
-                'duration': 250.0,
-                'last_progress': 0.0,
-            }
+            AnimatingObject(
+                total=float(delta),
+                elapsed=0.0,
+                duration=250.0,
+                last_progress=0.0,
+            )
         )
 
 
@@ -252,7 +254,7 @@ class SListWidget(ListWidget):
         anim.start()
 
     @Property(float)
-    def topGuide(self) -> float: # type: ignore
+    def topGuide(self) -> float:  # type: ignore
         return self._top_limit
 
     @topGuide.setter
@@ -261,7 +263,7 @@ class SListWidget(ListWidget):
         self.tlmtimer.target_value = value
 
     @Property(float)
-    def botGuide(self) -> float: # type: ignore
+    def botGuide(self) -> float:  # type: ignore
         return self._bot_limit
 
     @botGuide.setter
@@ -270,7 +272,7 @@ class SListWidget(ListWidget):
         self.blmtimer.target_value = value
 
     @Property(float)
-    def leftGuide(self) -> float: # type: ignore
+    def leftGuide(self) -> float:  # type: ignore
         return self._left_limit
 
     @leftGuide.setter
@@ -279,7 +281,7 @@ class SListWidget(ListWidget):
         self.llmtimer.target_value = value
 
     @Property(float)
-    def rightGuide(self) -> float: # type: ignore
+    def rightGuide(self) -> float:  # type: ignore
         return self._right_limit
 
     @rightGuide.setter

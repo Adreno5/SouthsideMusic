@@ -189,7 +189,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
     QWidgetItem,
     QWizard,
-    QWizardPage
+    QWizardPage,
 )
 
 from PySide6.QtCore import (
@@ -388,7 +388,7 @@ from PySide6.QtCore import (
     QtMsgType,
     Signal,
     SignalInstance,
-    Slot
+    Slot,
 )
 
 from PySide6.QtGui import (
@@ -640,7 +640,7 @@ from PySide6.QtGui import (
     QWheelEvent,
     QWindow,
     QWindowStateChangeEvent,
-    Qt
+    Qt,
 )
 
 from typing import (
@@ -703,7 +703,6 @@ from typing import (
     Set,
     FrozenSet,
     NamedTuple,
-    TypedDict,
     Generator,
     BinaryIO,
     IO,
@@ -745,6 +744,6 @@ from typing import (
     Unpack,
 )
 
-from qfluentwidgets import * # type: ignore
+from qfluentwidgets import *  # type: ignore
 
 from services.events import *

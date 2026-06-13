@@ -5,7 +5,6 @@ import threading
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Callable
 
-from services.events.events import REPAINT
 
 if TYPE_CHECKING:
     from views.launch_window import LaunchWindow
@@ -15,7 +14,9 @@ Listener = Callable[..., Any]
 
 
 class EventBus:
-    def __init__(self, thread_safe: bool = True, launchwindow: LaunchWindow | None = None) -> None:
+    def __init__(
+        self, thread_safe: bool = True, launchwindow: LaunchWindow | None = None
+    ) -> None:
         self._listeners: dict[str, list[Listener]] = defaultdict(list)
         self._lock = threading.Lock() if thread_safe else None
         self._lw = launchwindow

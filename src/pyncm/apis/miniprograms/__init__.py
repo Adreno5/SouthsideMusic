@@ -1,2 +1,3 @@
-# -*- coding: utf-8 -*-
-"""小程序 APIs"""
+from __future__ import annotations
+
+'''miniprogram apis'''

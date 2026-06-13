@@ -1,83 +1,92 @@
-# -*- coding: utf-8 -*-
-"""私人FM - Raido APIs"""
+from __future__ import annotations
 
-from .. import EapiCryptoRequest
+from .. import eapi
 
 
-@EapiCryptoRequest
-def GetMoreRaidoContent(limit=3, e_r=True):
-    """PC 端 - 拉取更多FM内容
+def getMoreRadioContent(limit=3, e_r=True) -> dict:
+    '''fetch more fm content (pc client).
 
     Args:
-        limit (int, optional): 获取数目. Defaults to 3.
-        e_r (bool, optional): 暂存. Defaults to True.
+        limit: count. defaults to 3.
+        e_r: unknown. defaults to true.
 
     Returns:
         dict
-    """
-    return "/api/v1/radio/get", {"limit": str(limit), "e_r": str(e_r).lower()}
+    '''
+    return eapi(
+        '/api/v1/radio/get',
+        {
+            'limit': str(limit),
+            'e_r': str(e_r).lower(),
+        },
+    )
 
 
-@EapiCryptoRequest
-def SetSkipRadioContent(songId, time=0, alg="itembased", e_r=True):
-    """PC 端 - 跳过 FM 歌曲
+def setSkipRadioContent(songId, time=0, alg='itembased', e_r=True) -> dict:
+    '''skip fm track (pc client).
 
     Args:
-        songId (str): 歌曲ID
-        time (int, optional): 播放时长. Defaults to 0.
-        alg (str, optional): 暂存. Defaults to "itembased".
-        e_r (bool, optional): 暂存. Defaults to True.
+        songId: track id.
+        time: playback duration. defaults to 0.
+        alg: unknown. defaults to 'itembased'.
 
     Returns:
         dict
-    """
-    return "/api/v1/radio/get", {
-        "e_r": str(e_r).lower(),
-        "songId": str(songId),
-        "alg": str(alg),
-        "time": str(time),
-    }
+    '''
+    return eapi(
+        '/api/v1/radio/get',
+        {
+            'e_r': str(e_r).lower(),
+            'songId': str(songId),
+            'alg': str(alg),
+            'time': str(time),
+        },
+    )
 
 
-@EapiCryptoRequest
-def SetLikeRadioContent(trackId, like=True, time="0", alg="itembased", e_r=True):
-    """PC 端 - `收藏喜欢` FM 歌曲
+def setLikeRadioContent(
+    trackId, like=True, time='0', alg='itembased', e_r=True
+) -> dict:
+    '''like/unlike fm track (pc client).
 
     Args:
-        trackId (str): 歌曲ID
-        like (bool)：是否收藏
-        time (int, optional): 播放时长. Defaults to 0.
-        alg (str, optional): 暂存. Defaults to "itembased".
-        e_r (bool, optional): 暂存. Defaults to True.
+        trackId: track id.
+        like: like or unlike. defaults to true.
+        time: playback duration. defaults to 0.
+        alg: unknown. defaults to 'itembased'.
 
     Returns:
         dict
-    """
-    return "/api/v1/radio/like", {
-        "e_r": str(e_r).lower(),
-        "like": str(like).lower(),
-        "trackId": str(trackId),
-        "alg": str(alg),
-        "time": str(time),
-    }
+    '''
+    return eapi(
+        '/api/v1/radio/like',
+        {
+            'e_r': str(e_r).lower(),
+            'like': str(like).lower(),
+            'trackId': str(trackId),
+            'alg': str(alg),
+            'time': str(time),
+        },
+    )
 
 
-@EapiCryptoRequest
-def SetTrashRadioContent(songId, time="0", alg="itembased", e_r=True):
-    """PC 端 - 删除 FM 歌曲
+def setTrashRadioContent(songId, time='0', alg='itembased', e_r=True) -> dict:
+    '''trash fm track (pc client).
 
     Args:
-        songId (str): 歌曲ID
-        time (int, optional): 播放时长. Defaults to 0.
-        alg (str, optional): 暂存. Defaults to "itembased".
-        e_r (bool, optional): 暂存. Defaults to True.
+        songId: track id.
+        time: playback duration. defaults to 0.
+        alg: unknown. defaults to 'itembased'.
 
     Returns:
         dict
-    """
-    return "/api/v1/radio/trash/add", {
-        "e_r": str(e_r).lower(),
-        "songId": str(songId),
-        "alg": str(alg),
-        "time": str(time),
-    }
+    '''
+    return eapi(
+        '/api/v1/radio/trash/add',
+        {
+            'e_r': str(e_r).lower(),
+            'songId': str(songId),
+            'alg': str(alg),
+            'time': str(time),
+        },
+    )

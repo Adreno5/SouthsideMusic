@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 
 import os
@@ -10,7 +11,7 @@ from imports import QPixmap
 from imports import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import MessageBox, PrimaryPushButton, SubtitleLabel, TitleLabel
 
-from core.dialogs import QRCodeLoginDialog, get_value_bylist, get_text_lineedit
+from core.dialogs import QRCodeLoginDialog, getValueBylist, getTextLineedit
 from core.icons import bindIcon
 import requests
 from core.config import cfg
@@ -81,19 +82,19 @@ class SessionPage(QWidget):
             os.remove('images/avatar.png')
 
         try:
-            session = ncm.GetCurrentSession()
+            session = ncm.getCurrentSession()
         except Exception as e:
             self._logger.warning(f'Failed to get session: {e}')
             session = None
 
         try:
-            login_status = apis.login.GetCurrentLoginStatus()
+            login_status = apis.login.getCurrentLoginStatus()
             if (
                 login_status
                 and 'account' in login_status
                 and 'id' in login_status['account']  # type: ignore
             ):
-                detail = apis.user.GetUserDetail(login_status['account']['id'])  # type: ignore
+                detail = apis.user.getUserDetail(login_status['account']['id'])  # type: ignore
                 self._logger.debug(f'{detail['profile']['avatarUrl']=}')  # type: ignore
                 avatar_url = detail['profile']['avatarUrl']  # type: ignore
                 avatar_data = requests.get(avatar_url).content
@@ -141,7 +142,7 @@ class SessionPage(QWidget):
 
     def login(self):
         parent = self._dialog_parent()
-        method = get_value_bylist(
+        method = getValueBylist(
             parent,
             'Login',
             'choose method to log into an account',
@@ -151,34 +152,34 @@ class SessionPage(QWidget):
             return
 
         if method == 'Anonymous':
-            apis.login.LoginViaAnonymousAccount()
-            cfg.session = ncm.DumpSessionAsString(ncm.GetCurrentSession())
+            apis.login.loginViaAnonymousAccount()
+            cfg.session = ncm.dumpSessionAsString(ncm.getCurrentSession())
         elif method == 'QR Code':
             self._logger.info('start logging in(via QRCode)')
 
-            key: str = apis.login.LoginQrcodeUnikey()['unikey']  # type: ignore
+            key: str = apis.login.loginQrcodeUnikey()['unikey']  # type: ignore
             self._logger.debug(f'{key=}')
 
-            url = apis.login.GetLoginQRCodeUrl(key)
+            url = apis.login.getLoginQRCodeUrl(key)
             self._logger.debug(f'{url=}')
 
             msgbox = QRCodeLoginDialog(parent, url, key, logging)
             if msgbox.exec():
-                cfg.session = ncm.DumpSessionAsString(ncm.GetCurrentSession())
-                cfg.login_status = apis.login.GetCurrentLoginStatus()  # type: ignore
+                cfg.session = ncm.dumpSessionAsString(ncm.getCurrentSession())
+                cfg.login_status = apis.login.getCurrentLoginStatus()  # type: ignore
                 cfg.login_method = 'QR code'
         elif method == 'Cell Phone':
             self._logger.info('start logging in(via cell phone)')
-            phone = get_text_lineedit(
+            phone = getTextLineedit(
                 'Login', 'enter your cell phone number', '1xxxxxxxxxx', parent
             )
             if not phone:
                 return
 
-            result = apis.login.SetSendRegisterVerifcationCodeViaCellphone(phone, 86)
+            result = apis.login.setSendRegisterVerificationCodeViaCellphone(phone, 86)
             assert result.get('code', 0) == 200, 'Invaild response'  # type: ignore
             while True:
-                captcha = get_text_lineedit(
+                captcha = getTextLineedit(
                     'Verification Code Sent',
                     'enter the verification code',
                     'xxxx',
@@ -186,16 +187,17 @@ class SessionPage(QWidget):
                 )
                 if len(captcha) != 4:
                     continue
-                verified = apis.login.GetRegisterVerifcationStatusViaCellphone(
+                verified = apis.login.getRegisterVerificationStatusViaCellphone(
                     phone, captcha, 86
                 )
                 if verified.get('code', 0) == 200:  # type: ignore
                     break
 
-            apis.login.LoginViaCellphone(phone, captcha=captcha, ctcode=86)
+            apis.login.loginViaCellphone(phone, captcha=captcha, ctcode=86)
 
-            cfg.session = ncm.DumpSessionAsString(ncm.GetCurrentSession())
-            cfg.login_status = apis.login.GetCurrentLoginStatus()  # type: ignore
+            csession = ncm.getCurrentSession()
+            cfg.session = ncm.dumpSessionAsString(csession)
+            cfg.login_status = apis.login.getCurrentLoginStatus()
             cfg.login_method = 'cell phone'
 
         from qfluentwidgets import InfoBar
@@ -210,7 +212,7 @@ class SessionPage(QWidget):
         self.refreshInformations()
 
     def showSession(self):
-        s = ncm.DumpSessionAsString(ncm.GetCurrentSession())
+        s = ncm.dumpSessionAsString(ncm.getCurrentSession())
 
         msgbox = MessageBox('Session', s, self._dialog_parent())
         msgbox.exec()

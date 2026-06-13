@@ -1,9 +1,7 @@
 from functools import lru_cache
 
 from imports import QPixmap, QImage
-from imports import Qt
 import numpy as np
-import logging
 
 
 def getAverageColor(pixmap: QPixmap) -> list[float]:

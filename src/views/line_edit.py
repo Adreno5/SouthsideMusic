@@ -1,18 +1,14 @@
-
 from core import theme
 from core.color import mixColor
 from core.config import cfg
 from core.icons import SouthsideIcon, bindIcon
 from core.models import SongStorable
-from core.smooth import EaseOutTimer, SmoothTimer
-from core.theme import isLight
+from core.smooth import EaseOutTimer
 from imports import (
     BACKGROUND_RATIO_CHANGED,
     POST_THEME_CHANGED,
     REPAINT,
     QColor,
-    QEnterEvent,
-    QEvent,
     QFocusEvent,
     QFont,
     QIcon,
@@ -21,7 +17,6 @@ from imports import (
     QPaintEvent,
     QPainter,
     QPoint,
-    QRect,
     Qt,
     event_bus,
 )
@@ -136,16 +131,20 @@ class SearchLineEdit(QLineEdit):
         if hasattr(self, 'draw_pixmap') and self.draw_pixmap:
             icon_size = self.draw_pixmap.width()
             radius = int(min(self.width() / 2, self.height() * 0.5))
-            if should : self.bgwidth_timer.target_value = self.width()
-            else: self.bgwidth_timer.target_value = self.height() * 1.32
+            if should:
+                self.bgwidth_timer.target_value = self.width()
+            else:
+                self.bgwidth_timer.target_value = self.height() * 1.32
             draw_rect = self.rect()
             draw_width = int(self.bgwidth_timer.current_value)
             draw_rect.setX(int((self.width() - draw_width) * 0.5))
             draw_rect.setWidth(draw_width)
             painter.drawRoundedRect(draw_rect, radius, radius)
 
-            if should : self.iconx_timer.target_value = self.width() - icon_size
-            else: self.iconx_timer.target_value = (self.width() - icon_size) * 0.5
+            if should:
+                self.iconx_timer.target_value = self.width() - icon_size
+            else:
+                self.iconx_timer.target_value = (self.width() - icon_size) * 0.5
             painter.drawPixmap(
                 QPoint(
                     int(self.iconx_timer.current_value) + self._icon_gap,

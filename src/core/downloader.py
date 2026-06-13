@@ -5,10 +5,19 @@ import math
 import threading
 from typing import Callable, Dict, Optional
 
-from imports import START_INTER_LOADING, START_PROGRESS_LOADING, STOP_INTER_LOADING, STOP_PROGRESS_LOADING, UPDATE_LOADING_PROGRESS, QObject, QThread, Signal, Slot, event_bus
+from imports import (
+    START_INTER_LOADING,
+    START_PROGRESS_LOADING,
+    STOP_INTER_LOADING,
+    STOP_PROGRESS_LOADING,
+    UPDATE_LOADING_PROGRESS,
+    QObject,
+    QThread,
+    Signal,
+    Slot,
+    event_bus,
+)
 import requests
-
-from core.config import cfg
 
 
 class DownloadingManager(QObject):
@@ -31,6 +40,7 @@ class DownloadingManager(QObject):
         self.headers = headers.copy() if headers else {}
         self.data = data
 
+        # create worker and thread
         self._worker_thread = QThread(self)
         self._worker = _DownloadWorker(
             self.url,
@@ -50,6 +60,7 @@ class DownloadingManager(QObject):
         self.receiveProgress.connect(self.progress)
 
     def start(self):
+        # start download
         self.downloadStarted.emit()
         self._worker_thread.start()
 
@@ -217,6 +228,7 @@ class TaskManager(QObject):
         parent=None,
     ):
         super().__init__(parent)
+
         self._worker_thread = QThread(self)
         self._worker = _TaskWorker(task, args)
         self._worker.moveToThread(self._worker_thread)
@@ -255,13 +267,15 @@ class _TaskWorker(QObject):
             self.finished.emit()
 
 
-def downloadWithMultiThreading(
+def asyncDownload(
     url: str,
     headers: Optional[Dict] = None,
     data: Optional[Dict] = None,
     parent=None,
     finished: Optional[Callable[[bytes], None]] = None,
 ) -> DownloadingManager:
+    """async download with progress tracking via event bus."""
+
     event_bus.emit(UPDATE_LOADING_PROGRESS, 0)
     event_bus.emit(START_PROGRESS_LOADING)
     box = DownloadingManager(parent, url, headers, data)
@@ -275,12 +289,14 @@ def downloadWithMultiThreading(
     return box
 
 
-def doWithMultiThreading(
+def asyncTask(
     task: Callable,
     args: tuple,
     parent,
     finished: Optional[Callable[[], None]] = None,
 ) -> TaskManager:
+    """async task execution via background qthread."""
+
     event_bus.emit(START_INTER_LOADING)
 
     manager = TaskManager(task, args, parent)
@@ -293,3 +309,44 @@ def doWithMultiThreading(
     manager.taskFinished.connect(__finish)
     manager.start()
     return manager
+
+
+_stream_logger = logging.getLogger(__name__)
+
+
+def downloadStream(
+    url: str,
+    dest_path: str,
+    on_progress: Callable[[int, int], None] | None = None,
+    start_byte: int = 0,
+) -> tuple[bool, int]:
+    """sequential streaming download to a temp file.
+    returns (success, total_size_bytes). total_size is 0 if unknown."""
+    headers: dict[str, str] = {}
+    if start_byte > 0:
+        headers['Range'] = f'bytes={start_byte}-'
+
+    downloaded = start_byte
+    total_length = 0
+
+    try:
+        response = requests.get(url, headers=headers, stream=True, timeout=30)
+        response.raise_for_status()
+
+        content_length = response.headers.get('content-length')
+        if content_length:
+            total_length = int(content_length) + start_byte
+
+        mode = 'ab' if start_byte > 0 else 'wb'
+        with open(dest_path, mode) as f:
+            for chunk in response.iter_content(chunk_size=65536):
+                if not chunk:
+                    continue
+                f.write(chunk)
+                downloaded += len(chunk)
+                if on_progress:
+                    on_progress(downloaded, total_length)
+        return True, total_length
+    except Exception:
+        _stream_logger.exception('stream download failed')
+        return False, 0

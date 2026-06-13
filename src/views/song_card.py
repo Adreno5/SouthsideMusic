@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import logging
 
 import os
@@ -18,16 +17,13 @@ from imports import (
     MWINDOW_REFRESH_FOLDERS,
     PLAYLIST_CHANGED,
     PLAY_SONG_AT_INDEX,
-    QAbstractAnimation,
-    QPropertyAnimation,
-    QSize,
     QSizePolicy,
     QSpacerItem,
     Qt,
     Signal,
     event_bus,
 )
-from imports import QImage, QMouseEvent, QPixmap, QTimer
+from imports import QImage, QMouseEvent, QPixmap
 from imports import (
     QFileDialog,
     QHBoxLayout,
@@ -40,7 +36,6 @@ from imports import (
 from qfluentwidgets import (
     Action,
     FluentIcon,
-    FlowLayout,
     IndeterminateProgressRing,
     InfoBar,
     MenuAnimationType,
@@ -50,7 +45,6 @@ from qfluentwidgets import (
     SubtitleLabel,
     TransparentPushButton,
     TransparentToolButton,
-    ToolButton,
 )
 
 from core.models import (
@@ -64,15 +58,12 @@ from core.models import (
 )
 from core.icons import bindIcon, getQIcon
 from core.downloader import (
-    doWithMultiThreading,
-    downloadWithMultiThreading,
-    DownloadingManager,
+    asyncTask,
 )
-from core.soundfile import getSongFormat, saveSongWithInformations
+from core.soundfile import getSongFormat, saveSongWithInformation
 import requests
 from core.favorites import favorites_manager
-from core.models import LocalFolderInfo
-from core.backend import get_backend
+from core.backend import getBackend
 from views.list_widget import SListWidget
 from views.folder_card import CloudFolderCard, LocalFolderCard
 
@@ -116,7 +107,7 @@ class FolderSelectDialog(MessageBoxBase):
         local_folders = [
             f
             for f in favorites_manager.folders
-            if not any(s.id == song_id for s in f['songs'])
+            if not any(s.id == song_id for s in f.songs)
         ]
 
         if local_folders:
@@ -124,7 +115,7 @@ class FolderSelectDialog(MessageBoxBase):
             for folder in local_folders:
                 card = LocalFolderCard(folder, self.list_widget.width())
                 card.clicked.connect(
-                    lambda f=folder: self._select('local', f['folder_name'], None)
+                    lambda f=folder: self._select('local', f.folder_name, None)
                 )
                 item = QListWidgetItem()
                 item.setData(Qt.ItemDataRole.UserRole, folder)
@@ -139,7 +130,7 @@ class FolderSelectDialog(MessageBoxBase):
         self.list_widget.addItem(create_item)
         self.list_widget.setItemWidget(create_item, create_btn)
 
-        anonymous = get_backend().user_anonymous()
+        anonymous = getBackend().userAnonymous()
         if not anonymous:
             self.list_widget.addItem(QListWidgetItem('Cloud'))
             self._cloud_section_idx = self.list_widget.count()
@@ -160,7 +151,7 @@ class FolderSelectDialog(MessageBoxBase):
 
     def _loadCloudPlaylists(self):
         try:
-            playlists = get_backend().get_user_playlists()
+            playlists = getBackend().getUserPlaylists()
             self._mwindow.addScheduledTask(lambda: self._onCloudLoaded(playlists))
         except Exception:
             self._mwindow.addScheduledTask(
@@ -176,7 +167,7 @@ class FolderSelectDialog(MessageBoxBase):
         for pl in playlists:
             card = CloudFolderCard(pl, width, ctx)
             card.clicked.connect(
-                lambda f=pl: self._select('cloud', f['folder_name'], str(f['id']))
+                lambda f=pl: self._select('cloud', f.folder_name, str(f.id))
             )
             item = QListWidgetItem()
             item.setSizeHint(card.sizeHint())
@@ -184,7 +175,9 @@ class FolderSelectDialog(MessageBoxBase):
             self.list_widget.addItem(item)
             self.list_widget.setItemWidget(item, card)
 
-    def getSelectedFolderInfo(self) -> tuple[Literal['local', 'cloud'], str, str | None] | None:
+    def getSelectedFolderInfo(
+        self,
+    ) -> tuple[Literal['local', 'cloud'], str, str | None] | None:
         return self._selected
 
 
@@ -209,16 +202,24 @@ class SearchSongCard(QWidget):
         self.ring = IndeterminateProgressRing()
         self.ring.setFixedSize(100, 100)
         top_layout.addWidget(self.ring)
-        artists_text = '、'.join(a['name'] for a in info['artists'])
-        title_label = SubtitleLabel(info['name'])
+        artists_text = '、'.join(a.name for a in info.artists)
+        title_label = SubtitleLabel(info.name)
 
         topright_layout = QVBoxLayout()
-        topright_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding))
+        topright_layout.addSpacerItem(
+            QSpacerItem(
+                0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
+        )
         topright_layout.addWidget(title_label)
         artists_label = QLabel(artists_text)
         artists_label.setWordWrap(True)
         topright_layout.addWidget(artists_label)
-        topright_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding))
+        topright_layout.addSpacerItem(
+            QSpacerItem(
+                0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
+        )
 
         top_layout.addLayout(topright_layout)
 
@@ -235,7 +236,11 @@ class SearchSongCard(QWidget):
         bottom_layout.addWidget(self.favbtn)
         self.favbtn.clicked.connect(self.addToFavorites)
 
-        bottom_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding))
+        bottom_layout.addSpacerItem(
+            QSpacerItem(
+                0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
+        )
 
         global_layout.addLayout(top_layout)
         global_layout.addLayout(bottom_layout)
@@ -249,10 +254,10 @@ class SearchSongCard(QWidget):
         self._play_callback(self)
 
     def addToFavorites(self):
-        song_id = str(self.info['id'])
-        anonymous = get_backend().user_anonymous()
+        song_id = str(self.info.id)
+        anonymous = getBackend().userAnonymous()
         all_local_have = bool(favorites_manager.folders) and all(
-            any(s.id == song_id for s in f['songs']) for f in favorites_manager.folders
+            any(s.id == song_id for s in f.songs) for f in favorites_manager.folders
         )
         if all_local_have and anonymous:
             InfoBar.info(
@@ -274,7 +279,7 @@ class SearchSongCard(QWidget):
         folder_type, folder_name, cloud_id = selection
 
         if folder_type == 'cloud' and cloud_id:
-            if not get_backend().edit_playlist('add', [str(self.info['id'])], cloud_id):
+            if not getBackend().editPlaylist('add', [str(self.info.id)], cloud_id):
                 InfoBar.warning(
                     'Session expired',
                     'Please re-login to perform this action',
@@ -285,16 +290,16 @@ class SearchSongCard(QWidget):
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)
             InfoBar.success(
                 'Favorited',
-                f"Added {self.info['name']} to cloud playlist '{folder_name}'",
+                f'Added {self.info.name} to cloud playlist \'{folder_name}\'',
                 parent=self._mwindow,
                 duration=3000,
             )
             return
 
         if folder_name == '+ Create New Folder...':
-            from core.dialogs import get_text_lineedit
+            from core.dialogs import getTextLineedit
 
-            folder_name = get_text_lineedit(
+            folder_name = getTextLineedit(
                 self._mwindow, 'Create New Folder', 'My first folder', self._mwindow
             )
             if not folder_name:
@@ -314,22 +319,22 @@ class SearchSongCard(QWidget):
 
         def _prepare():
             try:
-                backend = get_backend()
-                detail = backend.get_track_detail(str(self.info['id']))
-                image_url = detail['cover_url']
+                backend = getBackend()
+                detail = backend.getTrackDetail(str(self.info.id))
+                image_url = detail.cover_url
                 image_bytes = requests.get(image_url).content
                 result['image'] = image_bytes
 
-                audio = backend.get_track_audio(
-                    str(self.info['id']), bitrate=self.info['privilege']['max_br']
+                audio = backend.getTrackAudio(
+                    str(self.info.id), bitrate=self.info.privilege.max_br
                 )
-                music_url = audio['url']
+                music_url = audio.url
                 result['music'] = requests.get(music_url).content
                 result['done'] = True
             except Exception:
                 result['done'] = False
 
-        doWithMultiThreading(_prepare, (), self._mwindow, _on_prepared)
+        asyncTask(_prepare, (), self._mwindow, _on_prepared)
 
     def _finishAddToFavorites(
         self, folder_name: str, image_bytes: bytes | None, music_bytes: bytes
@@ -337,12 +342,12 @@ class SearchSongCard(QWidget):
         if image_bytes is None:
             return
         storable = SongStorable(
-            info={
-                'name': self.info['name'],
-                'artists': '、'.join(a['name'] for a in self.info['artists']),
-                'id': str(self.info['id']),
-                'privilege': -1,
-            },
+            info=SongInfo(
+                name=self.info.name,
+                artists='、'.join(a.name for a in self.info.artists),
+                id=str(self.info.id),
+                privilege=-1,
+            ),
             image=image_bytes,
             music_bin=music_bytes,
             lyric='',
@@ -350,7 +355,7 @@ class SearchSongCard(QWidget):
         if not favorites_manager.addSong(folder_name, storable):
             InfoBar.warning(
                 'Folder not found',
-                f"Folder '{folder_name}' may have been removed",
+                f'Folder \'{folder_name}\' may have been removed',
                 parent=self._mwindow,
                 duration=3000,
             )
@@ -360,7 +365,7 @@ class SearchSongCard(QWidget):
 
         InfoBar.success(
             'Favorited',
-            f"Added {self.info['name']} to '{folder_name}'",
+            f'Added {self.info.name} to \'{folder_name}\'',
             parent=self._mwindow,
             duration=3000,
         )
@@ -369,15 +374,15 @@ class SearchSongCard(QWidget):
         self.load = True
 
         def _do():
-            detail = get_backend().get_track_detail(str(self.info['id']))
-            img_url = detail['cover_url']
-            self.detail['image_url'] = img_url
+            detail = getBackend().getTrackDetail(str(self.info.id))
+            img_url = detail.cover_url
+            self.detail.image_url = img_url
 
             img_bytes = requests.get(img_url).content
 
             self.imageLoaded.emit(img_bytes)
 
-        doWithMultiThreading(_do, (), self._mwindow)
+        asyncTask(_do, (), self._mwindow)
 
     def onImageLoaded(self, bytes):
         self.ring.hide()
@@ -500,8 +505,8 @@ class _SongCardItem(QWidget):
             if storable.image_cached():
                 return
             try:
-                detail = get_backend().get_track_detail(storable.id)
-                image_url = detail['cover_url']
+                detail = getBackend().getTrackDetail(storable.id)
+                image_url = detail.cover_url
                 image_bytes = requests.get(image_url).content
             except Exception as e:
                 self._logger.warning(
@@ -562,7 +567,7 @@ class _SongCardItem(QWidget):
             self._mwindow.addScheduledTask(_apply_pixmap)
 
         try:
-            doWithMultiThreading(_decode, (), self._mwindow, _finish)
+            asyncTask(_decode, (), self._mwindow, _finish)
         except Exception:
             pass
 
@@ -574,12 +579,12 @@ class _SongCardItem(QWidget):
             else:
                 self.clicked.emit(self.storable)
         return super().mousePressEvent(event)
-    
+
     def _addTo(self):
         song_id = str(self.storable.id)
-        anonymous = get_backend().user_anonymous()
+        anonymous = getBackend().userAnonymous()
         all_local_have = bool(favorites_manager.folders) and all(
-            any(s.id == song_id for s in f['songs']) for f in favorites_manager.folders
+            any(s.id == song_id for s in f.songs) for f in favorites_manager.folders
         )
         if all_local_have and anonymous:
             InfoBar.info(
@@ -603,7 +608,7 @@ class _SongCardItem(QWidget):
         if folder_type == 'local':
             favorites_manager.addSong(folder_name, self.storable)
         elif folder_type == 'cloud':
-            get_backend().edit_playlist('add', [song_id], str(cloud_id))
+            getBackend().editPlaylist('add', [song_id], str(cloud_id))
         InfoBar.info(
             'Added',
             f'Song {self.storable.name} has been added to {folder_name}',
@@ -611,6 +616,7 @@ class _SongCardItem(QWidget):
             duration=3000,
         )
         event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+
 
 class PlaylistSongCard(_SongCardItem):
     def moveRequested(self, delta: int):
@@ -650,14 +656,14 @@ class PlaylistSongCard(_SongCardItem):
         if export_path:
 
             def _export():
-                detail = get_backend().get_track_detail(self.storable.id)
-                image_url = detail['cover_url']
+                detail = getBackend().getTrackDetail(self.storable.id)
+                image_url = detail.cover_url
 
                 image_bytes = requests.get(image_url).content
 
-                album = detail['album_name']
-                track_number = f'{detail["cd"]}/{detail["track_no"]}'
-                publish_time = detail.get('publish_time', 0)
+                album = detail.album_name
+                track_number = f'{detail.cd}/{detail.track_no}'
+                publish_time = detail.publish_time
                 year = ''
                 if publish_time:
                     import datetime
@@ -670,7 +676,7 @@ class PlaylistSongCard(_SongCardItem):
                     os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash),
                     'rb',
                 ) as song:
-                    saveSongWithInformations(
+                    saveSongWithInformation(
                         song.read(),
                         image_bytes,
                         self.storable.name,
@@ -693,7 +699,7 @@ class PlaylistSongCard(_SongCardItem):
                     duration=5000,
                 )
 
-            doWithMultiThreading(_export, (), self._mwindow, _final)
+            asyncTask(_export, (), self._mwindow, _final)
 
     def _repeatSong(self):
         playlist = self._dp.playing_manager.playlist
@@ -782,14 +788,14 @@ class FavoriteSongCard(_SongCardItem):
         if export_path:
 
             def _export():
-                detail = get_backend().get_track_detail(self.storable.id)
-                image_url = detail['cover_url']
+                detail = getBackend().getTrackDetail(self.storable.id)
+                image_url = detail.cover_url
 
                 image_bytes = requests.get(image_url).content
 
-                album = detail['album_name']
-                track_number = f'{detail["cd"]}/{detail["track_no"]}'
-                publish_time = detail.get('publish_time', 0)
+                album = detail.album_name
+                track_number = f'{detail.cd}/{detail.track_no}'
+                publish_time = detail.publish_time
                 year = ''
                 if publish_time:
                     import datetime
@@ -802,7 +808,7 @@ class FavoriteSongCard(_SongCardItem):
                     os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash),
                     'rb',
                 ) as song:
-                    saveSongWithInformations(
+                    saveSongWithInformation(
                         song.read(),
                         image_bytes,
                         self.storable.name,
@@ -825,7 +831,7 @@ class FavoriteSongCard(_SongCardItem):
                     duration=5000,
                 )
 
-            doWithMultiThreading(_export, (), self._mwindow, _final)
+            asyncTask(_export, (), self._mwindow, _final)
 
 
 class CloudFavoriteSongCard(_SongCardItem):
@@ -883,14 +889,14 @@ class CloudFavoriteSongCard(_SongCardItem):
         if export_path:
 
             def _export():
-                detail = get_backend().get_track_detail(self.storable.id)
-                image_url = detail['cover_url']
+                detail = getBackend().getTrackDetail(self.storable.id)
+                image_url = detail.cover_url
 
                 image_bytes = requests.get(image_url).content
 
-                album = detail['album_name']
-                track_number = f'{detail["cd"]}/{detail["track_no"]}'
-                publish_time = detail.get('publish_time', 0)
+                album = detail.album_name
+                track_number = f'{detail.cd}/{detail.track_no}'
+                publish_time = detail.publish_time
                 year = ''
                 if publish_time:
                     import datetime
@@ -903,7 +909,7 @@ class CloudFavoriteSongCard(_SongCardItem):
                     os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash),
                     'rb',
                 ) as song:
-                    saveSongWithInformations(
+                    saveSongWithInformation(
                         song.read(),
                         image_bytes,
                         self.storable.name,
@@ -926,4 +932,4 @@ class CloudFavoriteSongCard(_SongCardItem):
                     duration=5000,
                 )
 
-            doWithMultiThreading(_export, (), self._mwindow, _final)
+            asyncTask(_export, (), self._mwindow, _final)

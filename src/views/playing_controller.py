@@ -5,7 +5,7 @@ import logging
 import math
 import numpy as np
 import time
-from typing import Any, cast as _cast
+from typing import cast as _cast
 
 from core.app_context import AppContext
 from core.models import SongStorable
@@ -24,24 +24,16 @@ from imports import (
     REFRESH_RATE_CHANGED,
     REPAINT,
     SONG_CHANGED,
-    UPDATE_FM,
-    QApplication,
-    QEasingCurve,
     QFont,
     QFontMetricsF,
     QImage,
     QPixmap,
     QPointF,
-    QPropertyAnimation,
     QSizePolicy,
     QSpacerItem,
     Qt,
-    QRect,
     QSize,
     QTimer,
-    Signal,
-    SubtitleLabel,
-    TitleLabel,
     event_bus,
 )
 from imports import (
@@ -55,14 +47,11 @@ from imports import (
 )
 from imports import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import (
-    PushButton,
-    Slider,
     TransparentToolButton,
 )
 
 from core.icons import bindIcon
 from core import theme
-from core.time_format import float2time
 from core.lyrics import LyricInfo, LRCLyricParser, YRCLyricInfo, YRCLyricParser
 from core.audio_player import AudioPlayer
 from core.ws_server import QObjectHandler
@@ -114,12 +103,12 @@ class PlayingControllerLyricsViewer(QWidget):
         all_texts: set[str] = set()
         for mgr in (self._mgr, self._ymgr):
             for line in mgr.parsed:
-                content = line.get('content', '').strip()
+                content = line.content.strip()
                 if content:
                     all_texts.add(content)
-                if 'chars' in line:
-                    for ch in line['chars']:
-                        c = ch['char'].strip()
+                if hasattr(line, 'chars'):
+                    for ch in line.chars:
+                        c = ch.char.strip()
                         if c:
                             all_texts.add(c)
         for text in all_texts:
@@ -143,7 +132,7 @@ class PlayingControllerLyricsViewer(QWidget):
 
         target = 0
         if current:
-            text = current.get('content', '').strip()
+            text = current.content.strip()
             if text:
                 target = int(math.ceil(self.metri.horizontalAdvance(text))) + 20
 
@@ -183,12 +172,10 @@ class PlayingControllerLyricsViewer(QWidget):
 
         y = self._currentLineBaseline()
 
-        if current_line.get('isMetadata'):
+        if current_line.isMetadata:
             tar_color = QColor(255, 255, 255)
         else:
-            tar_color = (
-                QColor(255, 255, 255) if theme.isDark() else QColor(0, 0, 0)
-            )
+            tar_color = QColor(255, 255, 255) if theme.isDark() else QColor(0, 0, 0)
 
         color = (
             mixColor(
@@ -198,9 +185,9 @@ class PlayingControllerLyricsViewer(QWidget):
             else tar_color
         )
 
-        if use_yrc and not current_line.get('isMetadata'):
+        if use_yrc and not current_line.isMetadata:
             y_line = _cast(YRCLyricInfo, current_line)
-            content = (y_line['content'] or current_line['content']).strip()
+            content = (y_line.content or current_line.content).strip()
             base_color = QColor(color)
             base_color.setAlpha(120)
             painter.setPen(base_color)
@@ -209,13 +196,13 @@ class PlayingControllerLyricsViewer(QWidget):
             x = 0.0
             clip_y = toQtInt(y - self.metri.ascent())
             clip_h = toQtInt(self.font_height)
-            for ch in y_line['chars']:
-                text_width = self.metri.horizontalAdvance(ch['char'])
-                duration = ch['duration']
+            for ch in y_line.chars:
+                text_width = self.metri.horizontalAdvance(ch.char)
+                duration = ch.duration
                 if duration <= 0:
-                    progress = 1.0 if position >= ch['start'] else 0.0
+                    progress = 1.0 if position >= ch.start else 0.0
                 else:
-                    progress = (position - ch['start']) / duration
+                    progress = (position - ch.start) / duration
                 progress = max(0.0, min(1.0, progress))
                 clip_w = text_width * progress
                 if clip_w > 0:
@@ -232,7 +219,7 @@ class PlayingControllerLyricsViewer(QWidget):
                 x += text_width
         else:
             painter.setPen(color)
-            painter.drawText(0, toQtInt(y), current_line['content'].strip())
+            painter.drawText(0, toQtInt(y), current_line.content.strip())
 
         painter.end()
 
@@ -442,10 +429,10 @@ class PlayingController(QWidget):
                 json.dumps(
                     {
                         'option': 'update_lyric',
-                        'current': cl['content'],
-                        'next': nxt['content'],
-                        'third': trd['content'],
-                        'last': lat['content'],
+                        'current': cl.content,
+                        'next': nxt.content,
+                        'third': trd.content,
+                        'last': lat.content,
                     }
                 )
             )
@@ -453,10 +440,10 @@ class PlayingController(QWidget):
             event_bus.emit(
                 LYRIC_LINE_CHANGED,
                 {
-                    'content': cl['content'],
-                    'next': nxt['content'],
-                    'third': trd['content'],
-                    'last': lat['content'],
+                    'content': cl.content,
+                    'next': nxt.content,
+                    'third': trd.content,
+                    'last': lat.content,
                 },
             )
 
@@ -591,6 +578,23 @@ class PlayingController(QWidget):
         painter.setPen(QPen(QColor(120, 120, 120), 8))
         painter.drawLine(0, 0, self.width(), 0)
         if self._dp.total_length > 0:
+            buffer_ratio = self._player.bufferRatio()
+            if buffer_ratio < 1.0:
+                bar_left = 52 if self.fm_label.isVisible() else 0
+                bar_width = self.width() - bar_left
+                painter.setPen(
+                    QPen(
+                        QColor(255, 255, 255, 80) if isDark else QColor(0, 0, 0, 80),
+                        8,
+                    )
+                )
+                painter.drawLine(
+                    bar_left,
+                    0,
+                    bar_left + int(bar_width * buffer_ratio),
+                    0,
+                )
+
             painter.setPen(
                 QPen(QColor(255, 255, 255) if isDark else QColor(0, 0, 0), 8)
             )

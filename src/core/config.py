@@ -72,6 +72,7 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 CONFIG_PATH = os.path.join(_PROJECT_ROOT, 'config.json')
 LEGACY_PICKLE_CONFIG_PATH = os.path.join(_PROJECT_ROOT, 'config.pkl')
 
+
 def _song_from_object(data: Any) -> SongStorable | None:
     if not isinstance(data, dict):
         return None

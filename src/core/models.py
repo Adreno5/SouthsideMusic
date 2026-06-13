@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Literal, NotRequired, TypedDict
+from dataclasses import dataclass
+from typing import Literal
 import base64
 import hashlib
 import json
-import logging
 import os
 import shutil
 
@@ -59,34 +59,24 @@ def _update_cache_index(
         _save_cache_index()
 
 
-def get_cached_hashes(song_id: str) -> dict[str, str]:
+def getCachedHashes(song_id: str) -> dict[str, str]:
     return _load_cache_index().get(song_id, {})
 
 
-class SongInfo(TypedDict):
+@dataclass
+class SongInfo:
     name: str
     artists: str
     id: str
     privilege: int
 
 
-class SongDetail(TypedDict):
+@dataclass
+class SongDetail:
     image_url: str
 
 
 class SongStorable:
-    class SongStorableDict(TypedDict):
-        name: str
-        artists: str
-        id: str
-        image_cache_hash: str
-        content_cache_hash: str
-        lyric_cache_hash: str
-        gain: float
-        target_lufs: int
-        loggedin_when_download: bool
-        viptype_when_download: int
-
     name: str
     artists: str
     id: str
@@ -112,11 +102,11 @@ class SongStorable:
         content_cache_hash: str = '',
         lyric_cache_hash: str = '',
         loggedin_when_download: bool = False,
-        viptype_when_download: int = 0
+        viptype_when_download: int = 0,
     ) -> None:
-        self.name = info['name']
-        self.artists = info['artists']
-        self.id = info['id']
+        self.name = info.name
+        self.artists = info.artists
+        self.id = info.id
 
         if isinstance(image, bytes):
             self._write_cache(image, IMAGE_DATA_DIR, 'image_cache_hash')
@@ -200,9 +190,10 @@ class SongStorable:
 
     def audio_cached(self, logged_in: bool, vip_type: int) -> bool:
         self._ensure_cache_fields()
-        if logged_in != self.loggedin_when_download or vip_type != self.viptype_when_download:
-            # Re-download when login status changes: anonymous users only get 30s,
-            # while VIP users can download the full audio, etc.
+        if (
+            logged_in != self.loggedin_when_download
+            or vip_type != self.viptype_when_download
+        ):
             self.loggedin_when_download = logged_in
             self.viptype_when_download = vip_type
             return False
@@ -353,7 +344,7 @@ class SongStorable:
         self._ensure_cache_fields()
         return not (self.image_cached() and self.audio_cached(logged_in, vip_type))
 
-    def toObject(self) -> SongStorableDict:
+    def toObject(self) -> dict[str, object]:
         return {
             'name': self.name,
             'artists': self.artists,
@@ -364,19 +355,19 @@ class SongStorable:
             'gain': self.loudness_gain,
             'target_lufs': self.target_lufs,
             'loggedin_when_download': self.loggedin_when_download,
-            'viptype_when_download': self.viptype_when_download
+            'viptype_when_download': self.viptype_when_download,
         }
 
     @staticmethod
-    def fromObject(obj: SongStorableDict) -> 'SongStorable':
+    def fromObject(obj: dict[str, object]) -> 'SongStorable':
         image_bytes = None
         music_bytes = None
-        image_cache_hash = obj.get('image_cache_hash', '')
-        content_cache_hash = obj.get('content_cache_hash', '')
-        lyric_cache_hash = obj.get('lyric_cache_hash', '')  # type: ignore[typeddict-unknown-key]
+        image_cache_hash: str = obj.get('image_cache_hash', '')  # type: ignore[assignment]
+        content_cache_hash: str = obj.get('content_cache_hash', '')  # type: ignore[assignment]
+        lyric_cache_hash: str = obj.get('lyric_cache_hash', '')  # type: ignore[assignment]
 
-        old_image_b64 = obj.get('image_base64')  # type: ignore[typeddict-unknown-key]
-        old_content_b64 = obj.get('content_base64')  # type: ignore[typeddict-unknown-key]
+        old_image_b64 = obj.get('image_base64')
+        old_content_b64 = obj.get('content_base64')
 
         if old_image_b64:
             assert isinstance(old_image_b64, str)
@@ -388,63 +379,71 @@ class SongStorable:
             content_cache_hash = ''
 
         return SongStorable(
-            info={
-                'name': obj['name'],
-                'artists': obj['artists'],
-                'id': obj['id'],
-                'privilege': -1,
-            },
+            info=SongInfo(
+                name=str(obj.get('name', '')),
+                artists=str(obj.get('artists', '')),
+                id=str(obj.get('id', '')),
+                privilege=-1,
+            ),
             image=image_bytes,
             music_bin=music_bytes,
             image_cache_hash=image_cache_hash,
             content_cache_hash=content_cache_hash,
-            lyric=obj.get('lyric', ''),
-            translated_lyric=obj.get('translated_lyric', ''),
-            yrc_lyric=obj.get('yrc_lyric', ''),  # type: ignore[typeddict-unknown-key]
+            lyric=str(obj.get('lyric', '')),
+            translated_lyric=str(obj.get('translated_lyric', '')),
+            yrc_lyric=str(obj.get('yrc_lyric', '')),
             lyric_cache_hash=lyric_cache_hash,
-            gain=obj.get('gain', 1.0),
-            target_lufs=obj.get('target_lufs', -16),
-            loggedin_when_download=obj.get('loggedin_when_download', False),
-            viptype_when_download=obj.get('viptype_when_download', 0)
+            gain=float(obj.get('gain', 1.0)),  # type: ignore[arg-type]
+            target_lufs=int(obj.get('target_lufs', -16)),  # type: ignore[arg-type]
+            loggedin_when_download=bool(obj.get('loggedin_when_download', False)),
+            viptype_when_download=int(obj.get('viptype_when_download', 0)),  # type: ignore[arg-type]
         )
 
 
-class LocalFolderInfo(TypedDict):
+@dataclass
+class LocalFolderInfo:
     folder_name: str
     songs: list[SongStorable]
 
 
-class CloudFolderInfo(TypedDict):
+@dataclass
+class CloudFolderInfo:
     folder_name: str
     image_url: str
     id: str
 
-class SearchCloudFolderInfo(TypedDict):
+
+@dataclass
+class SearchCloudFolderInfo:
     folder_name: str
     image_url: str
     id: str
     author: str
 
 
-class ArtistInfo(TypedDict):
+@dataclass
+class ArtistInfo:
     id: int
     name: str
     avatar_url: str
 
 
-class AlbumInfo(TypedDict):
+@dataclass
+class AlbumInfo:
     id: int
     name: str
     cover_url: str
 
 
-class PrivilegeInfo(TypedDict):
+@dataclass
+class PrivilegeInfo:
     fee: int
     max_br: int
     is_vip_only: bool
 
 
-class SearchSongInfo(TypedDict):
+@dataclass
+class SearchSongInfo:
     id: int | str
     name: str
     artists: list[ArtistInfo]
@@ -453,7 +452,8 @@ class SearchSongInfo(TypedDict):
     duration: int
 
 
-class TrackDetailInfo(TypedDict):
+@dataclass
+class TrackDetailInfo:
     cover_url: str
     album_name: str
     cd: str
@@ -461,11 +461,13 @@ class TrackDetailInfo(TypedDict):
     publish_time: int
 
 
-class TrackAudioInfo(TypedDict):
+@dataclass
+class TrackAudioInfo:
     url: str
 
 
-class TrackLyricsInfo(TypedDict):
+@dataclass
+class TrackLyricsInfo:
     lyric: str
     translated_lyric: str
     yrc_lyric: str
@@ -474,48 +476,48 @@ class TrackLyricsInfo(TypedDict):
 
 class MusicServiceBackend(ABC):
     @abstractmethod
-    def search_song(
+    def searchSong(
         self, keywords: str, offset: int = 0, limit: int = 30
     ) -> list[SearchSongInfo]: ...
 
     @abstractmethod
-    def search_playlist(
+    def searchPlaylist(
         self, keywords: str, offset: int = 0, limit: int = 30
     ) -> list[SearchCloudFolderInfo]: ...
 
     @abstractmethod
-    def get_track_detail(self, track_id: int | str) -> TrackDetailInfo: ...
+    def getTrackDetail(self, track_id: int | str) -> TrackDetailInfo: ...
 
     @abstractmethod
-    def get_track_audio(
+    def getTrackAudio(
         self, track_id: int | str, bitrate: int = 999000
     ) -> TrackAudioInfo: ...
 
     @abstractmethod
-    def get_track_lyrics(self, track_id: int | str) -> TrackLyricsInfo: ...
+    def getTrackLyrics(self, track_id: int | str) -> TrackLyricsInfo: ...
 
     @abstractmethod
-    def user_privilege_level(self) -> int: ...
+    def userPrivilegeLevel(self) -> int: ...
 
     @abstractmethod
-    def get_user_playlists(self) -> list[CloudFolderInfo]: ...
+    def getUserPlaylists(self) -> list[CloudFolderInfo]: ...
 
     @abstractmethod
-    def user_anonymous(self) -> bool: ...
+    def userAnonymous(self) -> bool: ...
 
     @abstractmethod
-    def create_playlist(self, name: str) -> str: ...
+    def createPlaylist(self, name: str) -> str: ...
 
     @abstractmethod
-    def remove_playlist(self, id: str) -> None: ...
+    def removePlaylist(self, id: str) -> None: ...
 
     @abstractmethod
-    def edit_playlist(
+    def editPlaylist(
         self, option: Literal['add', 'del'], song_ids: list[str], folder_id: str
     ) -> bool: ...
 
     @abstractmethod
-    def get_playlist_tracks(self, playlist_id: str) -> list[SongStorable]: ...
+    def getPlaylistTracks(self, playlist_id: str) -> list[SongStorable]: ...
 
     @abstractmethod
-    def get_user_vip_type(self) -> int | str: ...
+    def getUserVipType(self) -> int | str: ...

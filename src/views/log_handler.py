@@ -8,17 +8,18 @@ import re
 import shutil
 import sys
 import threading
+import time
 from typing import TextIO, Optional
 
 from colorama import Fore, Style, init
 
 init(autoreset=True)
 
-_ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+_ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 
 def _visible_len(text: str) -> int:
-    return len(_ANSI_ESCAPE.sub("", text))
+    return len(_ANSI_ESCAPE.sub('', text))
 
 
 class LogHandler(logging.Handler):
@@ -26,17 +27,17 @@ class LogHandler(logging.Handler):
         message = record.getMessage()
 
         color = {
-            "DEBUG": Fore.LIGHTBLACK_EX,
-            "INFO": Fore.LIGHTGREEN_EX,
-            "WARNING": Fore.YELLOW,
-            "ERROR": Fore.RED,
-            "CRITICAL": Fore.RED,
+            'DEBUG': Fore.LIGHTBLACK_EX,
+            'INFO': Fore.LIGHTGREEN_EX,
+            'WARNING': Fore.YELLOW,
+            'ERROR': Fore.RED,
+            'CRITICAL': Fore.RED,
         }.get(record.levelname, Fore.WHITE)
 
-        time_str = datetime.datetime.now().strftime("%H:%M:%S")
-        plain_prefix = f"[{time_str}/{record.levelname}] [{record.name}] - "
+        time_str = datetime.datetime.now().strftime('%H:%M:%S')
+        plain_prefix = f'[{time_str}/{record.levelname}] [{record.name}] - '
         plain_msg = plain_prefix + message
-        plain_suffix = f"[{record.thread}/{record.threadName}]"
+        plain_suffix = f'[{record.thread}/{record.threadName}]'
 
         try:
             term_width = shutil.get_terminal_size().columns
@@ -47,57 +48,57 @@ class LogHandler(logging.Handler):
         spaces = max(term_width - visible_len, 1)
 
         colored_prefix = (
-            f"[{Fore.LIGHTBLACK_EX}{time_str}{Style.RESET_ALL}/"
-            f"{color}{Style.BRIGHT}{record.levelname}{Style.RESET_ALL}] "
-            f"{Fore.LIGHTBLACK_EX}[{record.name}] -{Style.RESET_ALL} "
+            f'[{Fore.LIGHTBLACK_EX}{time_str}{Style.RESET_ALL}/'
+            f'{color}{Style.BRIGHT}{record.levelname}{Style.RESET_ALL}] '
+            f'{Fore.LIGHTBLACK_EX}[{record.name}] -{Style.RESET_ALL} '
         )
         colored_suffix = (
-            f"{Fore.LIGHTGREEN_EX}[{Style.RESET_ALL}"
-            f"{record.thread}/{record.threadName}"
-            f"{Fore.LIGHTGREEN_EX}]{Style.RESET_ALL}"
+            f'{Fore.LIGHTGREEN_EX}[{Style.RESET_ALL}'
+            f'{record.thread}/{record.threadName}'
+            f'{Fore.LIGHTGREEN_EX}]{Style.RESET_ALL}'
         )
 
-        final = f"{colored_prefix}{message}{' ' * spaces}{colored_suffix}"
+        final = f'{colored_prefix}{message}{' ' * spaces}{colored_suffix}'
         assert sys.__stdout__ is not None
-        sys.__stdout__.write(final + "\n")
+        sys.__stdout__.write(final + '\n')
         sys.__stdout__.flush()
 
 
 class LoggingStream:
-    def __init__(self, level: int = logging.DEBUG, source: str = "stderr"):
+    def __init__(self, level: int = logging.DEBUG, source: str = 'stderr'):
         self._logger = logging.getLogger(__name__)
         self.level = level
         self.source = source
-        self.buffer = ""
+        self.buffer = ''
         self.original_stream: Optional[TextIO] = None
 
     def write(self, message: str) -> int:
         if not message:
             return 0
 
-        if getattr(self, "_in_logging", False):
+        if getattr(self, '_in_logging', False):
             if self.original_stream:
                 self.original_stream.write(message)
             return len(message)
 
         self.buffer += message
-        if self.buffer.endswith("\n"):
+        if self.buffer.endswith('\n'):
             self._flush_buffer()
         return len(message)
 
     def _flush_buffer(self):
         lines = self.buffer.splitlines()
-        self.buffer = ""
+        self.buffer = ''
         for line in lines:
             if not line:
                 continue
             self._in_logging = True
 
-            if "QFluentWidgets" in line.strip():
+            if 'QFluentWidgets' in line.strip():
                 continue
 
             try:
-                if self.source == "stderr":
+                if self.source == 'stderr':
                     self._logger.error(line.strip())
                 else:
                     self._logger.info(line.strip())
@@ -124,7 +125,7 @@ class StderrRedirector:
         self.original_stderr_fd = os.dup(2)
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
-        self._buffer = b""
+        self._buffer = b''
 
     def start(self):
         os.dup2(self.pipe_write, 2)
@@ -138,15 +139,15 @@ class StderrRedirector:
                 if not data:
                     break
                 self._buffer += data
-                while b"\n" in self._buffer:
-                    line, self._buffer = self._buffer.split(b"\n", 1)
-                    self._log_line(line.decode("utf-8", errors="replace"))
+                while b'\n' in self._buffer:
+                    line, self._buffer = self._buffer.split(b'\n', 1)
+                    self._log_line(line.decode('utf-8', errors='replace'))
             except (OSError, ValueError):
                 break
 
     def _log_line(self, line: str):
         line = line.strip()
-        if "QPixmap::scaled" in line or "QFont" in line or "QBasicTimer::" in line:
+        if 'QPixmap::scaled' in line or 'QFont' in line or 'QBasicTimer::' in line:
             return
         if line:
             self.logger.error(line)
@@ -167,8 +168,8 @@ def hijackStreams():
     original_stdout = sys.stdout
     original_stderr = sys.stderr
 
-    stdout_stream = LoggingStream(logging.INFO, source="stdout")
-    stderr_stream = LoggingStream(logging.ERROR, source="stderr")
+    stdout_stream = LoggingStream(logging.INFO, source='stdout')
+    stderr_stream = LoggingStream(logging.ERROR, source='stderr')
     stdout_stream.original_stream = original_stdout
     stderr_stream.original_stream = original_stderr
 

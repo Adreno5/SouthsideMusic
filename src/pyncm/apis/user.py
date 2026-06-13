@@ -1,91 +1,92 @@
-# -*- coding: utf-8 -*-
-"""用户 - User APIs"""
-from . import WeapiCryptoRequest
+from __future__ import annotations
+
 from json import dumps
 
+from . import weapi
 
-@WeapiCryptoRequest
-def GetUserDetail(user_id=0):
-    """网页端 - 获取某用户资料详情
+
+def getUserDetail(user_id=0) -> dict:
+    '''get user detail (web api).
 
     Args:
-        user_id (int): 用户 ID. defaults to 0
+        user_id: user id. defaults to 0.
 
     Returns:
         dict
-    """
-    return "/weapi/v1/user/detail/%s" % user_id, {}
+    '''
+    return weapi('/weapi/v1/user/detail/%s' % user_id, {})
 
 
-@WeapiCryptoRequest
-def GetUserPlaylists(user_id, offset=0, limit=1001):
-    """网页端 - 获取某用户创建的歌单
+def getUserPlaylists(user_id, offset=0, limit=1001) -> dict:
+    '''get user's playlists (web api).
 
     Args:
-        user_id (int): 用户 ID. defaults to 0
-        offset (int, optional): 获取偏移数. Defaults to 0.
-        limit (int, optional): 单次获取量. Defaults to 30.
+        user_id: user id. defaults to 0.
+        offset: offset. defaults to 0.
+        limit: page size. defaults to 1001.
 
     Returns:
         dict
-    """
-    return "/weapi/user/playlist", {
-        "offset": str(offset),
-        "limit": str(limit),
-        "uid": str(user_id),
-    }
+    '''
+    return weapi(
+        '/weapi/user/playlist',
+        {
+            'offset': str(offset),
+            'limit': str(limit),
+            'uid': str(user_id),
+        },
+    )
 
 
-@WeapiCryptoRequest
-def GetUserAlbumSubs(limit=30):
-    """网页端 - 获取收藏专辑内容
+def getUserAlbumSubs(limit=30) -> dict:
+    '''get user's subscribed albums (web api).
+
     Args:
-        limit (int, optional): 单次获取量. Defaults to 30.
+        limit: page size. defaults to 30.
 
     Returns:
         dict
-    """
-    return "/weapi/album/sublist", {"limit": str(limit)}
+    '''
+    return weapi('/weapi/album/sublist', {'limit': str(limit)})
 
 
-@WeapiCryptoRequest
-def GetUserArtistSubs(limit=30):
-    """网页端 - 获取收藏歌手内容
+def getUserArtistSubs(limit=30) -> dict:
+    '''get user's subscribed artists (web api).
+
     Args:
-        limit (int, optional): 单次获取量. Defaults to 30.
+        limit: page size. defaults to 30.
 
     Returns:
         dict
-    """
-    return "/weapi/artist/sublist", {"limit": str(limit)}
+    '''
+    return weapi('/weapi/artist/sublist', {'limit': str(limit)})
 
 
 SIGNIN_TYPE_MOBILE = 0
-"""移动端签到 +4 EXP"""
+'''mobile daily check-in, +4 exp'''
 SIGNIN_TYPE_WEB = 1
-"""网页端签到 +1 EXP"""
+'''web daily check-in, +1 exp'''
 
 
-@WeapiCryptoRequest
-def SetSignin(dtype=0):
-    """移动端、PC端 - 每日签到
+def setSignin(dtype=0) -> dict:
+    '''daily check-in (mobile/pc api).
 
     Args:
-        dtype (int, optional): 签到类型，(user.SIGNIN_TYPE_MOBILE/user.SIGNIN_TYPE_WEB). Defaults to SIGNIN_TYPE_MOBILE
+        dtype: SIGNIN_TYPE_MOBILE or SIGNIN_TYPE_WEB. defaults to mobile.
 
     Returns:
         dict
-    """
-    return "/weapi/point/dailyTask", {"type": str(dtype)}
+    '''
+    return weapi('/weapi/point/dailyTask', {'type': str(dtype)})
 
 
-@WeapiCryptoRequest
-def SetWeblog(logs):
-    """移动端、PC端 - 用户足迹
-
-    网易云跟踪用户行为 API，可记录内容繁多。这里暂不描述
+def setWeblog(logs) -> dict:
+    '''send user behavior log (mobile/pc api).
 
     Args:
-        logs (dict): 操作记录
-    """
-    return "/weapi/feedback/weblog", {"logs": dumps(logs)}
+        logs: operation record dict.
+
+    Returns:
+        dict
+    '''
+    return weapi('/weapi/feedback/weblog', {'logs': dumps(logs)})

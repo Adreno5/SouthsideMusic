@@ -4,6 +4,8 @@ import json
 import logging
 import re
 
+from services.events import event_bus, COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
+
 
 @dataclass
 class LyricInfo:
@@ -118,6 +120,17 @@ class YRCLyricParser:
         self._logger = logging.getLogger(__name__)
         self.cur: str = ''
         self.parsed: list[YRCLyricInfo] = []
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'YRCLyricParser',
+            [
+                f'parsed={len(self.parsed)}',
+                f'cur={bool(self.cur)}',
+            ],
+        )
 
     def getCurrentLyric(self, time: float) -> YRCLyricInfo:
         return self._getCurrentLyric(time)
@@ -219,6 +232,19 @@ class LRCLyricParser:
         self.parsed: list[LyricInfo] = []
         self.empty_times: list[float] = []
         self.version: int = 0
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'LRCLyricParser',
+            [
+                f'parsed={len(self.parsed)}',
+                f'empty_times={len(self.empty_times)}',
+                f'version={self.version}',
+                f'cur={bool(self.cur)}',
+            ],
+        )
 
     def getCurrentLyric(self, time: float) -> LyricInfo:
         return self._getCurrentLyric(time)

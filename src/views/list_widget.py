@@ -20,7 +20,7 @@ from imports import (
     QWheelEvent,
     Property,
 )
-from qfluentwidgets import ListWidget, ScrollBar
+from qfluentwidgets import ListWidget, ScrollBar, SmoothScrollArea
 
 
 @dataclass
@@ -71,7 +71,7 @@ class SSmoothScrollBar(ScrollBar):
 
 
 class SSmoothDelegate(QObject):
-    def __init__(self, parent: 'SListWidget'):
+    def __init__(self, parent: 'SListWidget | SScrollArea'):
         super().__init__(parent)
         self.par = parent
         self.vScrollBar = SSmoothScrollBar(Qt.Orientation.Vertical, parent)
@@ -147,7 +147,7 @@ class SSmoothDelegate(QObject):
 
 
 class LimitOverlay(QWidget):
-    def __init__(self, parent: 'SListWidget'):
+    def __init__(self, parent: 'SListWidget | SScrollArea'):
         super().__init__(parent)
         self.par = parent
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -235,6 +235,111 @@ class SListWidget(ListWidget):
         self._sync_overlay()
 
         self.scrollDelegate = SSmoothDelegate(self)
+        self.viewport().installEventFilter(self)
+
+        self.ltimer = QTimer(self)
+        self.ltimer.timeout.connect(self._tick)
+        self.ltimer.start(16)
+
+    def _create_guide_anim(self, prop: bytes) -> QPropertyAnimation:
+        anim = QPropertyAnimation(self, prop)
+        anim.setDuration(800)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        return anim
+
+    def _trigger_limit_anim(self, anim: QPropertyAnimation) -> None:
+        anim.stop()
+        anim.setStartValue(1.0)
+        anim.setEndValue(0.0)
+        anim.start()
+
+    @Property(float)
+    def topGuide(self) -> float:  # type: ignore
+        return self._top_limit
+
+    @topGuide.setter
+    def topGuide(self, value: float) -> None:
+        self._top_limit = value
+        self.tlmtimer.target_value = value
+
+    @Property(float)
+    def botGuide(self) -> float:  # type: ignore
+        return self._bot_limit
+
+    @botGuide.setter
+    def botGuide(self, value: float) -> None:
+        self._bot_limit = value
+        self.blmtimer.target_value = value
+
+    @Property(float)
+    def leftGuide(self) -> float:  # type: ignore
+        return self._left_limit
+
+    @leftGuide.setter
+    def leftGuide(self, value: float) -> None:
+        self._left_limit = value
+        self.llmtimer.target_value = value
+
+    @Property(float)
+    def rightGuide(self) -> float:  # type: ignore
+        return self._right_limit
+
+    @rightGuide.setter
+    def rightGuide(self, value: float) -> None:
+        self._right_limit = value
+        self.rlmtimer.target_value = value
+
+    def eventFilter(self, obj, e: QEvent) -> bool:
+        if obj is self.viewport() and isinstance(e, QResizeEvent):
+            self._sync_overlay()
+        return super().eventFilter(obj, e)
+
+    def _sync_overlay(self) -> None:
+        vp = self.viewport()
+        if vp:
+            self._overlay.setGeometry(vp.geometry())
+            self._overlay.raise_()
+
+    def resizeEvent(self, e: QResizeEvent) -> None:
+        super().resizeEvent(e)
+        self._sync_overlay()
+
+    def _tick(self):
+        if (
+            self.tlmtimer.is_animating
+            or self.blmtimer.is_animating
+            or self.llmtimer.is_animating
+            or self.rlmtimer.is_animating
+        ):
+            self._overlay.update()
+
+class SScrollArea(SmoothScrollArea):
+    def __init__(self):
+        super().__init__()
+        self.delegate = SSmoothDelegate(self)
+
+        self._top_limit = 0.0
+        self._bot_limit = 0.0
+        self._left_limit = 0.0
+        self._right_limit = 0.0
+
+        self.tlmtimer = EaseOutTimer(0.5, 3)
+        self.blmtimer = EaseOutTimer(0.5, 3)
+        self.llmtimer = EaseOutTimer(0.5, 3)
+        self.rlmtimer = EaseOutTimer(0.5, 3)
+        self.tlmtimer.target_value = 0.0
+        self.blmtimer.target_value = 0.0
+        self.llmtimer.target_value = 0.0
+        self.rlmtimer.target_value = 0.0
+
+        self._top_anim = self._create_guide_anim(b'topGuide')
+        self._bot_anim = self._create_guide_anim(b'botGuide')
+        self._left_anim = self._create_guide_anim(b'leftGuide')
+        self._right_anim = self._create_guide_anim(b'rightGuide')
+
+        self._overlay = LimitOverlay(self)
+        self._sync_overlay()
+
         self.viewport().installEventFilter(self)
 
         self.ltimer = QTimer(self)

@@ -6,6 +6,7 @@ import tornado.httpserver
 import tornado.ioloop
 import tornado.web
 from imports import QObject, Signal
+from services.events import event_bus, COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 
 
 class WebSocketHandler(tornado.websocket.WebSocketHandler):
@@ -54,6 +55,17 @@ class QObjectHandler(QObject):
         super().__init__()
         self.onConnected.connect(lambda: self.__setattr__('is_open', True))
         self.onDisconnected.connect(lambda: self.__setattr__('is_open', False))
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'QObjectHandler',
+            [
+                f'is_open={self.is_open}',
+                f'sent={self.sent}',
+            ],
+        )
 
     def send(self, msg: str):
         self.onSend.emit(msg)
@@ -70,6 +82,19 @@ class WebSocketServer(threading.Thread):
         self.handler: WebSocketHandler | None = None
 
         self.tryGetHandler()
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'WebSocketServer',
+            [
+                f'port={self.port}',
+                f'alive={self.is_alive()}',
+                f'handler={self.handler is not None}',
+                f'ioloop={self.ioloop is not None}',
+            ],
+        )
 
     def tryGetHandler(self):
         ws_handler.onHandlerReceived.connect(

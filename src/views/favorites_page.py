@@ -10,7 +10,7 @@ from imports import (
     FAVORITES_CHANGED,
     MWINDOW_REFRESH_FOLDERS,
     PLAYLIST_CHANGED,
-    PLAY_STORABLE,
+    PLAY_PLAYLIST_STORABLE,
     PushButton,
     QLabel,
     QPixmap,
@@ -20,6 +20,7 @@ from imports import (
     QTimer,
     event_bus,
 )
+from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from imports import (
     QListWidget,
     QListWidgetItem,
@@ -83,6 +84,20 @@ class FavoritesPage(QWidget):
         self._cloud_loading = False
 
         event_bus.subscribe(FAVORITES_CHANGED, self._onFavoritesChanged)
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'Favorites Page',
+            [
+                f'is_cloud={self.is_cloud}',
+                f'folder={self.curr_folder.folder_name if self.curr_folder else None}',
+                f'cloud_folder={self.curr_cloud_folder.folder_name if self.curr_cloud_folder else None}',
+                f'song_cards={len(self._song_cards)}',
+                f'cloud_loading={self._cloud_loading}',
+            ],
+        )
 
     def _onFavoritesChanged(self, folder_name=None):
         if self.is_cloud:
@@ -227,7 +242,7 @@ class FavoritesPage(QWidget):
     def _replaceAndPlay(self, song: SongStorable):
         self.replacePlaylist(False)
         event_bus.emit(PLAYLIST_CHANGED)
-        event_bus.emit(PLAY_STORABLE, song)
+        event_bus.emit(PLAY_PLAYLIST_STORABLE, song)
 
     def _queueAfterCurrent(self, song: SongStorable):
         playlist = self._pm.playlist
@@ -388,7 +403,7 @@ class FavoritesPage(QWidget):
         reply = QMessageBox.question(
             self._mwindow,
             'Confirm Delete',
-            f'Are you sure you want to delete song {song_name} from cloud folder \'{folder_name}\'?',
+            f"Are you sure you want to delete song {song_name} from cloud folder '{folder_name}'?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:

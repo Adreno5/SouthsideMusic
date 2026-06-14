@@ -27,7 +27,9 @@ from imports import (
     QWidget,
     Signal,
     SubtitleLabel,
+    event_bus,
 )
+from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 
 if TYPE_CHECKING:
     from core.app_context import AppContext
@@ -51,12 +53,14 @@ class DependencesWindow(QWidget):
             self._set_pydub_config, Qt.ConnectionType.QueuedConnection
         )
 
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
         self.setWindowTitle('Dependences Checking')
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint
         )
         self.setStyleSheet(
-            f'background-color: {'black' if theme.isDark() else 'white'};'
+            f'background-color: {"black" if theme.isDark() else "white"};'
         )
 
         layout = QVBoxLayout()
@@ -189,6 +193,16 @@ class DependencesWindow(QWidget):
         manager = asyncDownload(url, parent=self, finished=_finished)
         manager.receiveProgress.connect(_progress)
 
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'Dependences Window',
+            [
+                f'results={self._results}',
+                f'dependences_available={self.ctx.dependences_available}',
+            ],
+        )
+
     def _set_pydub_config(self, ffmpeg_exe: str, ffprobe_exe: str) -> None:
         import pydub
 
@@ -254,7 +268,7 @@ class DependencesWindow(QWidget):
         label = getattr(self, f'{key}_label')
         status = 'OK' if ok else 'Failed'
         label.setText(f'{name}: {status} ({detail})')
-        label.setStyleSheet(f'color: {'green' if ok else 'red'}')
+        label.setStyleSheet(f'color: {"green" if ok else "red"}')
         self._results[name] = ok
         if not all(self._results.values()):
             self.ctx.dependences_available = False

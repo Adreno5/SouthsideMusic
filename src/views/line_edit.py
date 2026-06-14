@@ -20,6 +20,7 @@ from imports import (
     Qt,
     event_bus,
 )
+from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 
 
 class SearchLineEdit(QLineEdit):
@@ -61,6 +62,19 @@ class SearchLineEdit(QLineEdit):
         event_bus.subscribe(POST_THEME_CHANGED, self._onThemeChanged)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._onThemeChanged)
         event_bus.subscribe(REPAINT, self._repaintTick)
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'Search Line Edit',
+            [
+                f'text={self.text()!r}',
+                f'has_focus={self.hasFocus()}',
+                f'should_expand={self.shouldExpand()}',
+                f'hovering={self.hovering}',
+            ],
+        )
 
     def _onThemeChanged(self, song=None):
         song_theme = self._mwindow.song_theme if self._mwindow else None

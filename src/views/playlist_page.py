@@ -10,7 +10,7 @@ from core.config import cfg
 from core.color import mixColor
 from imports import (
     BACKGROUND_RATIO_CHANGED,
-    PLAY_STORABLE,
+    PLAY_PLAYLIST_STORABLE,
     PLAYLIST_CHANGED,
     POST_THEME_CHANGED,
     SONG_CHANGED,
@@ -23,6 +23,7 @@ from imports import (
     QTimer,
     event_bus,
 )
+from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from imports import (
     QListWidget,
     QListWidgetItem,
@@ -95,6 +96,19 @@ class PlaylistPage(QWidget):
         event_bus.subscribe(PLAYLIST_CHANGED, self.refreshPlaylistWidget)
         event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        pm = self.ctx.playing_manager
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'Playlist Page',
+            [
+                f'song_cards={len(self._song_cards)}',
+                f'playlist_size={len(pm.playlist)}',
+                f'current_index={pm.current_index}',
+            ],
+        )
 
     @property
     def _dp(self):
@@ -170,7 +184,7 @@ class PlaylistPage(QWidget):
         return item
 
     def _onSongClicked(self, storable: SongStorable):
-        event_bus.emit(PLAY_STORABLE, storable)
+        event_bus.emit(PLAY_PLAYLIST_STORABLE, storable)
 
     def _checkVisibleCards(self):
         for card in list(self._song_cards):

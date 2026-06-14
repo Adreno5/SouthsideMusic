@@ -18,6 +18,7 @@ from imports import (
     event_bus,
     Property,
 )
+from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from typing import Optional, override
 import threading
 from scipy.fft import rfft, rfftfreq
@@ -84,6 +85,7 @@ def fix_wav_headers(data):
     # Set the data size in the data subchunk
     pos = headers[-1].position
     data[pos + 4 : pos + 8] = struct.pack('<I', len(data) - pos - 8)
+
 
 @dataclass
 class DevicesInfo:
@@ -281,6 +283,33 @@ class AudioPlayer(QObject):
         self.fft_thread_running = True
         self.fft_thread = threading.Thread(target=self._fft_worker, daemon=True)
         self.fft_thread.start()
+
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'AudioPlayer',
+            [
+                f'is_playing={self.is_playing}',
+                f'is_paused={self.is_paused}',
+                f'current_index={self.current_index}',
+                f'playback_time={self._playback_time:.3f}',
+                f'play_speed={self.play_speed:.2f}',
+                f'volume_gain={self.volume_gain:.3f}',
+                f'loudness_gain={self.loudness_gain:.3f}',
+                f'db={self.db}',
+                f'sample_rate={self.sample_rate}',
+                f'channels={self.channels}',
+                f'output_channels={self.output_channels}',
+                f'fft_enabled={self.fft_enabled}',
+                f'fft_size={self.fft_size}',
+                f'device_id={self._device_id}',
+                f'audio_qsize={self._audio_queue.qsize()}',
+                f'fft_qsize={self.fft_queue.qsize()}',
+                f'producer_running={self._producer_running}',
+            ],
+        )
 
     def _prepare_samples(self, audio: PatchedAudioSegment) -> np.ndarray:
         samples_raw = np.array(audio.get_array_of_samples(), dtype=np.float32)

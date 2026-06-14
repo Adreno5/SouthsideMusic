@@ -3,6 +3,8 @@ from __future__ import annotations
 import threading
 from typing import TYPE_CHECKING, cast
 
+from services.events import event_bus, COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
+from views.debug_window import DebugWindow
 from views.dependences_window import DependencesWindow
 
 if TYPE_CHECKING:
@@ -62,3 +64,24 @@ class AppContext:
         self.setting_page: SettingPage = cast('SettingPage', None)
         self.playlist_page: PlaylistPage = cast('PlaylistPage', None)
         self.dependences_window: DependencesWindow = cast('DependencesWindow', None)
+        self.debug_window: DebugWindow = cast('DebugWindow', None)
+
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'AppContext',
+            [
+                f'dependences_available={self.dependences_available}',
+                f'main_window={self.main_window is not None}',
+                f'playing_page={self.playing_page is not None}',
+                f'search_page={self.search_page is not None}',
+                f'favorites_page={self.favorites_page is not None}',
+                f'session_page={self.session_page is not None}',
+                f'setting_page={self.setting_page is not None}',
+                f'playlist_page={self.playlist_page is not None}',
+                f'desktop_lyrics_page={self.desktop_lyrics_page is not None}',
+                f'favs={len(self.favs)}',
+            ],
+        )

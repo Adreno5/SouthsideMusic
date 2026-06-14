@@ -39,6 +39,7 @@ from imports import (
     QWidget,
     event_bus,
 )
+from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from imports import QColor, QImage, QPixmap
 from qfluentwidgets import (
     CardWidget,
@@ -139,6 +140,21 @@ class PlayingPage(QWidget):
         event_bus.subscribe(SONG_CHANGED, self._updateDatas)
         event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'Playing Page',
+            [
+                f'cur={self.cur.storable.name if self.cur else None}',
+                f'playlist_size={len(self.playlist)}',
+                f'current_index={self.playing_manager.current_index}',
+                f'play_mode={self.playing_manager.play_mode}',
+                f'total_length={self.playing_manager.total_length:.1f}',
+                f'preloaded={self.playing_manager.preloaded}',
+            ],
+        )
 
     @property
     def _mwindow_obj(self):

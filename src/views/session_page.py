@@ -8,7 +8,8 @@ import os
 from core.app_context import AppContext
 from imports import Qt
 from imports import QPixmap
-from imports import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from imports import QHBoxLayout, QLabel, QVBoxLayout, QWidget, event_bus
+from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from qfluentwidgets import MessageBox, PrimaryPushButton, SubtitleLabel, TitleLabel
 
 from core.dialogs import QRCodeLoginDialog, getValueBylist, getTextLineedit
@@ -69,6 +70,17 @@ class SessionPage(QWidget):
         if lw:
             lw.top('  loading user info from server')
         self.refreshInformations()
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'Session Page',
+            [
+                f'nickname={self.nickname.text()!r}',
+                f'vip={self.vip.text()!r}',
+            ],
+        )
 
     @property
     def _mwindow(self):

@@ -32,6 +32,8 @@ from core.models import (
 from core.weighted_random import AdvancedRandom
 from services.events.event_bus import event_bus
 from services.events.events import (
+    COLLECT_DEBUG_INFO,
+    EMIT_DEBUG_INFO,
     ENDING_NO_SOUND,
     IMAGE_ASSET_PERSISTED,
     PLAY_CONTINUE_LAST_SONG,
@@ -143,6 +145,27 @@ class PlayingManager:
         event_bus.subscribe(PLAY_START_PLAYLIST, self.startPlaylist)
         event_bus.subscribe(PLAY_CONTINUE_LAST_SONG, self.continueLastSong)
         event_bus.subscribe(PLAYLIST_CHANGED, self.playlistChanged)
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'PlayingManager',
+            [
+                f'playlist_size={len(self.playlist)}',
+                f'current_index={self.current_index}',
+                f'total_length={self.total_length:.1f}',
+                f'preloaded={self.preloaded}',
+                f'current_song={self.current_song.name if self.current_song else None}',
+                f'gain_cache={len(self._gain_cache)}',
+                f'play_mode={self.play_mode}',
+                f'reserved_next={self._reserved_next is not None}',
+                f'preload_triggered={self._preload_triggered}',
+                f'next_song_audio={self.next_song_audio is not None}',
+                f'pending_search_id={self._pending_search_id}',
+                f'pending_play={self._pending_play_selection is not None}',
+            ],
+        )
 
     def playlistChanged(self):
         self.refreshRandom()
@@ -490,9 +513,7 @@ class PlayingManager:
             )
 
         asyncTask(_prepare, (), self._mwindow_obj, _on_prepared)
-        asyncTask(
-            _process_audio, (), self._mwindow_obj, _on_audio_prepare_done
-        )
+        asyncTask(_process_audio, (), self._mwindow_obj, _on_audio_prepare_done)
 
     def preloadNextSong(self) -> None:
         if len(self.playlist) <= 1:
@@ -537,8 +558,8 @@ class PlayingManager:
                     self._preload_download_song_id = None
                     if not success:
                         self._logger.warning('failed to download next song for preload')
+                        self._preload_triggered = False
                         if self._pending_play_selection:
-                            sel = self._pending_play_selection
                             self._pending_play_selection = None
                             self._emitError(
                                 'Playback failed',
@@ -792,6 +813,11 @@ class PlayingManager:
             if music_missing:
                 music_url = prepared.get('music_url')
                 if not isinstance(music_url, str) or not music_url:
+                    self._logger.warning(
+                        'preload download: backend returned empty music URL '
+                        '(song %s may not support requested bitrate 3200k)',
+                        song_storable.id,
+                    )
                     finished(False)
                     return
                 asyncDownload(
@@ -1076,9 +1102,7 @@ class PlayingManager:
                 if ymgr.cur and ytlrc:
                     transmgr.cur = ytlrc
                 else:
-                    transmgr.cur = (
-                        lyric_result.translated_lyric or '[00:00.000]'
-                    )
+                    transmgr.cur = lyric_result.translated_lyric or '[00:00.000]'
                 lyric_target.write_lyrics(
                     mgr.cur,
                     transmgr.cur if transmgr.cur != '[00:00.000]' else '',

@@ -26,6 +26,7 @@ from core.color import mixColor
 from core.config import cfg
 from core import theme
 from core.lyrics import LyricInfo, YRCLyricInfo
+from services.events.events import EMIT_DEBUG_INFO
 from views.lyrics_viewer import LyricsViewer
 
 
@@ -34,8 +35,20 @@ class DesktopLyricsViewer(LyricsViewer):
         self,
         ctx: AppContext,
     ):
-        super().__init__(ctx)
+        self.indentation_y: float = 0
+        self.indentation: bool = False
+
+        self.cwidth: float = 10
+        self.cheight: float = 65
+
+        self.dragging: bool = False
+        self.dragging_point: QPoint = QPoint(0, 0)
+
         self.scr_size: QSize = ctx.app.primaryScreen().size()
+        super().__init__(ctx)
+        self.indentation_timer = QTimer(self)
+        self.indentation_timer.timeout.connect(self.unindentation)
+        
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -43,18 +56,14 @@ class DesktopLyricsViewer(LyricsViewer):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
-        self.dragging: bool = False
-        self.dragging_point: QPoint = QPoint(0, 0)
-
-        self.cwidth: float = 10
-        self.cheight: float = 65
-
-        self.indentation_timer = QTimer(self)
-        self.indentation_timer.timeout.connect(self.unindentation)
-        self.indentation_y: float = 0
-        self.indentation: bool = False
-
         event_bus.subscribe(REPAINT, self._onRepaintTick)
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'Desktop Lyrics Viewer',
+            [f'{len(self._shown_lines)=}', f'{self.last_lyric=}'],
+        )
 
     def _onRepaintTick(self):
         self.updateDatas()

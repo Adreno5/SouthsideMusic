@@ -19,6 +19,7 @@ from imports import (
     SmoothScrollArea,
     event_bus,
 )
+from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from imports import QColor
 from imports import (
     QHBoxLayout,
@@ -97,6 +98,24 @@ class SettingPage(QWidget):
             DB_CHANGED,
             lambda v: self.now_volume.setText(f'Current volume(db): {int(v)}'),
         )
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'Setting Page',
+            [
+                f'background_ratio={cfg.background_ratio:.2f}',
+                f'play_speed={cfg.play_speed:.2f}',
+                f'stereo={cfg.stereo}',
+                f'skip_nosound={cfg.skip_nosound}',
+                f'enable_fft={cfg.enable_fft}',
+                f'target_lufs={cfg.target_lufs}',
+                f'output_device_index={cfg.output_device_index}',
+                f'enable_desktop_lyrics={cfg.enable_desktop_lyrics}',
+                f'ws_server_running={self._ws_server.is_alive() if self._ws_server else False}',
+            ],
+        )
 
     @property
     def _dp(self):
@@ -115,7 +134,7 @@ class SettingPage(QWidget):
         return self.ctx.desktop_lyrics_page
 
     def updateTheme(self) -> None:
-        self.setStyleSheet(f'background: #{'000000' if theme.isDark() else 'FFFFFF'}')
+        self.setStyleSheet(f'background: #{"000000" if theme.isDark() else "FFFFFF"}')
 
     def _initOptions(self) -> None:
         lw = self._launchwindow
@@ -305,7 +324,7 @@ class SettingPage(QWidget):
             lw.top('Setting up connection options...')
         self.addSection('Connection', 'SouthsideClient websocket status and controls.')
         self.southsideclient_status_label = SubtitleLabel(
-            'Connection Status: <span style=\'color: red;\'>Disconnected</span>'
+            "Connection Status: <span style='color: red;'>Disconnected</span>"
         )
         self.addSeparateWidget(self.southsideclient_status_label)
         self.disconnect_btn = TransparentPushButton('Disconnect')
@@ -393,7 +412,7 @@ class SettingPage(QWidget):
         title_l = TitleLabel(title)
         desc_l = QLabel(description)
         desc_l.setWordWrap(True)
-        desc_l.setStyleSheet(f'color: {'#A8A8A8' if theme.isDark() else '#666666'};')
+        desc_l.setStyleSheet(f'color: {"#A8A8A8" if theme.isDark() else "#666666"};')
         self.options_layout.addWidget(title_l)
         self.options_layout.addWidget(desc_l)
         self._section_count += 1
@@ -421,7 +440,7 @@ class SettingPage(QWidget):
         name_l.setWordWrap(True)
         desc_l = QLabel(description)
         desc_l.setWordWrap(True)
-        desc_l.setStyleSheet(f'color: {'#A8A8A8' if theme.isDark() else '#666666'};')
+        desc_l.setStyleSheet(f'color: {"#A8A8A8" if theme.isDark() else "#666666"};')
         text_layout.addWidget(name_l)
         text_layout.addWidget(desc_l)
         global_layout.addLayout(text_layout, 1)
@@ -437,7 +456,7 @@ class SettingPage(QWidget):
         title_l.setStyleSheet('font-weight: bold;')
         body_l = QLabel(text)
         body_l.setWordWrap(True)
-        body_l.setStyleSheet(f'color: {'#A8A8A8' if theme.isDark() else '#666666'};')
+        body_l.setStyleSheet(f'color: {"#A8A8A8" if theme.isDark() else "#666666"};')
         layout.addWidget(title_l)
         layout.addWidget(body_l)
         card.setLayout(layout)
@@ -448,17 +467,17 @@ class SettingPage(QWidget):
 
     def _onWsConnected(self):
         self.southsideclient_status_label.setText(
-            'Connection Status: <span style=\'color: green;\'>Connected</span>'
+            "Connection Status: <span style='color: green;'>Connected</span>"
         )
 
     def _onWsDisconnected(self):
         self.southsideclient_status_label.setText(
-            'Connection Status: <span style=\'color: red;\'>Disconnected</span>'
+            "Connection Status: <span style='color: red;'>Disconnected</span>"
         )
 
     def _onVolumeChanged(self, volume: float):
         self.now_volume.setText(
-            f'Current volume(db): {(round(volume * 10) / 10) if volume != float('-inf') else '-inf'}'
+            f'Current volume(db): {(round(volume * 10) / 10) if volume != float("-inf") else "-inf"}'
         )
 
     def _onDesktopLyricsEnableChanged(self) -> None:

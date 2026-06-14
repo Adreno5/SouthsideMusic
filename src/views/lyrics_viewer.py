@@ -36,6 +36,7 @@ from core.color import mixColor
 from core import theme
 from core.smooth import EaseOutTimer
 from core.lyrics import LyricInfo, YRCLyricInfo
+from services.events.events import PLAY_STORABLE, COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 
 
 class LyricsViewer(QWidget):
@@ -101,7 +102,9 @@ class LyricsViewer(QWidget):
         self.translation_timer = EaseOutTimer(0.4, 4)
 
         self._shown_lines: list[int] = []
-        self._visible_margin = 100
+        self._line_alphas: dict[int, EaseOutTimer] = {}
+
+        self.last_lyric: YRCLyricInfo | LyricInfo | None = None
 
         self._visibility_timer = QTimer(self)
         self._visibility_timer.timeout.connect(self._updateShownLines)
@@ -109,6 +112,13 @@ class LyricsViewer(QWidget):
 
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(REPAINT, self._onRepaintTick)
+        event_bus.subscribe(PLAY_STORABLE, lambda _: self.prewarmFontMetrics())
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        event_bus.emit(EMIT_DEBUG_INFO, 'Lyrics Viewer', [
+            f'target acc={self.target_acc}', f'actual acc={self.acc}', f'target offset={self.target_draw_offset}', f'actual offset={self.draw_offset}'
+        ])
 
     def prewarmFontMetrics(self):
         self._lyrics_ready = False
@@ -298,16 +308,21 @@ class LyricsViewer(QWidget):
         )
         current_baseline = self._currentLineBaseline(current_has_trans)
 
-        view_top = -self._visible_margin
-        view_bottom = self.height() + self._visible_margin
         top_offset = self.draw_offset + current_baseline
         shown: list[int] = []
         for i in range(len(lines)):
             y_pos = top_offset + y_offsets[i]
             line_bottom = y_pos + self.font_height
-            if line_bottom >= view_top and y_pos - self.font_height <= view_bottom:
+            if (line_bottom >= 0 and y_pos - self.font_height <= self.height()):
                 shown.append(i)
         self._shown_lines = shown
+
+        to_remove = []
+        for key in self._line_alphas:
+            if key not in shown:
+                to_remove.append(key)
+        for item in to_remove:
+            self._line_alphas.pop(item)
 
     def paintEvent(self, event: QPaintEvent) -> None:
         now = time.perf_counter_ns()
@@ -378,9 +393,9 @@ class LyricsViewer(QWidget):
             if time.time() - self.last_wheel > 3:
                 self.selecting = False
 
-        if self.draw_offset > 0:
+        if self.target_draw_offset > 0:
             self.target_draw_offset = 0
-        if self.draw_offset < -total_height:
+        if self.target_draw_offset < -total_height:
             self.target_draw_offset = -total_height
 
         painter = QPainter(self)
@@ -392,12 +407,21 @@ class LyricsViewer(QWidget):
         top_offset = self.draw_offset + current_baseline
         for i in (idx for idx in self._shown_lines if idx < len(lines)):
             line = lines[i]
+            if not self._line_alphas.get(i):
+                self._line_alphas[i] = EaseOutTimer(0.4, 2)
+            timer = self._line_alphas[i]
             is_current_line = i == idx
             y = top_offset + y_offsets[i]
             if is_current_line:
+                timer.target_value = 255
+            else:
+                timer.target_value = 120
+
+            alpha = timer.current_value
+
+            if is_current_line:
                 if line.isMetadata:
                     tar_color = QColor(255, 255, 255)
-                    y += 5
                 else:
                     tar_color = (
                         QColor(255, 255, 255) if theme.isDark() else QColor(0, 0, 0)
@@ -408,6 +432,7 @@ class LyricsViewer(QWidget):
                     if theme.isDark()
                     else QColor(55, 55, 55, 120)
                 )
+            tar_color.setAlpha(int(alpha))
             color = (
                 mixColor(
                     self._mwindow.song_theme, tar_color, self._cfg.background_ratio / 2
@@ -443,7 +468,9 @@ class LyricsViewer(QWidget):
                             toQtInt(math.ceil(clip_w)),
                             clip_h,
                         )
-                        painter.setPen(color)
+                        c = QColor(color)
+                        c.setAlpha(int(alpha))
+                        painter.setPen(c)
                         painter.drawText(
                             toQtInt(self.draw_x_offset), toQtInt(y), content
                         )

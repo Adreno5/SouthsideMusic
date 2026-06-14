@@ -53,3 +53,6 @@ STOP_PROGRESS_LOADING = 'stop_progress_loading'
 UPDATE_LOADING_PROGRESS = 'update_loading_progress'
 
 DB_CHANGED = 'db_changed'
+
+COLLECT_DEBUG_INFO = 'collect_debug_info'
+EMIT_DEBUG_INFO = 'emit_debug_info'

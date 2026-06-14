@@ -22,11 +22,27 @@ from core.models import (
     SearchCloudFolderInfo,
     getCachedHashes,
 )
+from services.events import event_bus, COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 
 _logger = logging.getLogger(__name__)
 
 
 class NeteaseCloudMusicBackend(MusicServiceBackend):
+    def __init__(self) -> None:
+        super().__init__()
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'NeteaseCloudMusicBackend',
+            [
+                f'anonymous={self.userAnonymous()}',
+                f'vip_type={self.getUserVipType()}',
+                f'privilege_level={self.userPrivilegeLevel()}',
+            ],
+        )
+
     def searchSong(
         self, keywords: str, offset: int = 0, limit: int = 30
     ) -> list[SearchSongInfo]:

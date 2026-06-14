@@ -45,6 +45,7 @@ from imports import (
     TransparentPushButton,
     event_bus,
 )
+from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from imports import QCloseEvent, QColor, QKeyEvent, QPainter
 from views.list_widget import SListWidget
 from imports import QHBoxLayout, QVBoxLayout, QWidget
@@ -243,6 +244,24 @@ class MainWindow(FluentWindowBase):
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self.update)
         event_bus.subscribe(VIEW_FOLDER, self.onViewFolder)
         event_bus.subscribe(MWINDOW_REFRESH_FOLDERS, self.refreshFolders)
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'Main Window',
+            [
+                f'connected={self.connected}',
+                f'closing={self.closing}',
+                f'loading_tasks={self.loading_tasks}',
+                f'loading_progress={self.loading_progress:.2f}',
+                f'dp_expanded={self.dp_expanded}',
+                f'pl_expanded={self.pl_expanded}',
+                f'scheduled={len(self._scheduled_tasks)}',
+                f'refresh_rate={self.refresh_rate}',
+                f'song_theme={self.song_theme is not None}',
+            ],
+        )
 
     def onStackedWidgetChanged(self):
         if self.dp_expanded and not self.dp_animating:
@@ -491,7 +510,7 @@ class MainWindow(FluentWindowBase):
 
         if (
             open_folder
-            and not open_folder.get('id')
+            and isinstance(open_folder, LocalFolderInfo)
             and open_folder in favorites_manager.folders
         ):
             self._fp.setDisplayFolder(open_folder)
@@ -520,7 +539,11 @@ class MainWindow(FluentWindowBase):
                     self.folders_list.addItem(item)
                     self.folders_list.setItemWidget(item, card)
 
-                if open_folder and open_folder.get('id') and open_folder in playlists:
+                if (
+                    open_folder
+                    and isinstance(open_folder, CloudFolderInfo)
+                    and open_folder in playlists
+                ):
                     self._fp.setDisplayFolder(open_folder)
 
                 item = QListWidgetItem()
@@ -635,7 +658,7 @@ class MainWindow(FluentWindowBase):
             lambda: self._ws_handler.send(
                 json.dumps(
                     {
-                        'option': f'{'disable' if not self._stp.enableFFT_box.isChecked() else 'enable'}_fft'
+                        'option': f'{"disable" if not self._stp.enableFFT_box.isChecked() else "enable"}_fft'
                     }
                 )
             ),
@@ -668,6 +691,9 @@ class MainWindow(FluentWindowBase):
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Space:
             self.controller.toggle()
+            event.accept()
+        elif event.key() == Qt.Key.Key_F3:
+            self.ctx.debug_window.setVisible(not self.ctx.debug_window.isVisible())
             event.accept()
         else:
             return super().keyPressEvent(event)
@@ -711,7 +737,7 @@ class MainWindow(FluentWindowBase):
             painter.drawText(
                 4,
                 int(self.bar_height + 18),
-                f'Loading... ({f'{round(self.loading_progress * 100, 2)}%' if self.loading_progressing else self.loading_tasks})',
+                f'Loading... ({f"{round(self.loading_progress * 100, 2)}%" if self.loading_progressing else self.loading_tasks})',
             )
 
         painter.end()

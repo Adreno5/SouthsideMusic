@@ -36,6 +36,7 @@ from imports import (
     QTimer,
     event_bus,
 )
+from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from imports import (
     QColor,
     QLinearGradient,
@@ -90,6 +91,18 @@ class PlayingControllerLyricsViewer(QWidget):
 
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(REPAINT, self._onRepaintTick)
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'Controller Lyrics Viewer',
+            [
+                f'lyrics_ready={self._lyrics_ready}',
+                f'prewarm_version={self._prewarm_version}',
+                f'refresh_rate={self.refresh_rate}',
+            ],
+        )
 
     def prewarmFontMetrics(self):
         self._lyrics_ready = False
@@ -323,6 +336,7 @@ class PlayingController(QWidget):
         event_bus.subscribe(SONG_CHANGED, self._updateDatas)
         event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
 
         if self._mwindow:
             self.bg_color = mixColor(
@@ -336,6 +350,19 @@ class PlayingController(QWidget):
             self.bg_color = (
                 QColor(40, 40, 40) if theme.isDark() else QColor(230, 230, 230)
             )
+
+    def emitDebugInfo(self):
+        event_bus.emit(
+            EMIT_DEBUG_INFO,
+            'Playing Controller',
+            [
+                f'dragging={self.dragging}',
+                f'dev_mag={self.dev_mag:.3f}',
+                f'preloaded={self._dp.preloaded}',
+                f'total_length={self._dp.total_length:.1f}',
+                f'is_playing={self._player.is_playing}',
+            ],
+        )
 
     def onTogglePlaylist(self):
         if self._mwindow and not self._mwindow.pl_animating:

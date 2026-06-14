@@ -26,16 +26,16 @@ copy .\bootstrap.py .\build.result\bootstrap.py
 copy .\full_requirements.txt .\build.result\full_requirements.txt
 
 title Building - Remove unneeded files
-RD /S /Q "build.result\.venv\Lib\site-packages\__pycache__" 2>nul
-RD /S /Q "build.result\.venv\Lib\site-packages\*.dist-info" 2>nul
-RD /S /Q "build.result\.venv\Lib\site-packages\*.egg-info" 2>nul
-RD /S /Q "build.result\.venv\Lib\site-packages\tests" 2>nul
-RD /S /Q "build.result\.venv\Lib\site-packages\test" 2>nul
-RD /S /Q "build.result\.venv\Lib\site-packages\docs" 2>nul
-RD /S /Q "build.result\.venv\Lib\site-packages\examples" 2>nul
-RD /S /Q "build.result\.venv\Lib\site-packages\PySide6\*.pdb" 2>nul
-RD /S /Q "build.result\.venv\Lib\__pycache__" 2>nul
-del /S /Q "build.result\.venv\Lib\site-packages\*.pyc" 2>nul
+RD /S /Q "build.result\python\Lib\site-packages\__pycache__" 2>nul
+RD /S /Q "build.result\python\Lib\site-packages\*.dist-info" 2>nul
+RD /S /Q "build.result\python\Lib\site-packages\*.egg-info" 2>nul
+RD /S /Q "build.result\python\Lib\site-packages\tests" 2>nul
+RD /S /Q "build.result\python\Lib\site-packages\test" 2>nul
+RD /S /Q "build.result\python\Lib\site-packages\docs" 2>nul
+RD /S /Q "build.result\python\Lib\site-packages\examples" 2>nul
+RD /S /Q "build.result\python\Lib\site-packages\PySide6\*.pdb" 2>nul
+RD /S /Q "build.result\python\Lib\__pycache__" 2>nul
+del /S /Q "build.result\python\Lib\site-packages\*.pyc" 2>nul
 
 title Building - Reorganize into raw
 mkdir build.result\raw 2>nul

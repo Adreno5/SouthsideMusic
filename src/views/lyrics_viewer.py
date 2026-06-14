@@ -60,6 +60,8 @@ class LyricsViewer(QWidget):
         self._cfg = ctx.cfg
         self._dp = ctx.playing_page
 
+        self.current_index: int = 0
+
         self.draw_offset: float = 0
         self.target_draw_offset: float = 0
 
@@ -117,7 +119,7 @@ class LyricsViewer(QWidget):
 
     def emitDebugInfo(self):
         event_bus.emit(EMIT_DEBUG_INFO, 'Lyrics Viewer', [
-            f'target acc={self.target_acc}', f'actual acc={self.acc}', f'target offset={self.target_draw_offset}', f'actual offset={self.draw_offset}'
+            f'target acc={self.target_acc}', f'actual acc={self.acc}', f'target offset={self.target_draw_offset}', f'actual offset={self.draw_offset}', f'shown lines=({len(self._shown_lines)}) {self._shown_lines}', f'line alphas=({len(self._line_alphas)}) {[int(obj.current_value) for obj in self._line_alphas.values()]}', f'current index={self.current_index}'
         ])
 
     def prewarmFontMetrics(self):
@@ -408,12 +410,13 @@ class LyricsViewer(QWidget):
         for i in (idx for idx in self._shown_lines if idx < len(lines)):
             line = lines[i]
             if not self._line_alphas.get(i):
-                self._line_alphas[i] = EaseOutTimer(0.4, 2)
+                self._line_alphas[i] = EaseOutTimer(0.2, 2)
             timer = self._line_alphas[i]
             is_current_line = i == idx
             y = top_offset + y_offsets[i]
             if is_current_line:
                 timer.target_value = 255
+                self.current_index = i
             else:
                 timer.target_value = 120
 

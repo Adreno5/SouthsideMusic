@@ -17,7 +17,7 @@ from imports import (
     ENDING_NO_SOUND,
     MWINDOW_REFRESH_FOLDERS,
     PLAY_CONTINUE_LAST_SONG,
-    PLAY_SEARCH_SONG,
+    PLAY_STORABLE,
     REFRESH_RATE_CHANGED,
     REPAINT,
     SONG_FINISH,
@@ -55,7 +55,7 @@ from qfluentwidgets import (
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 
 from core import theme
-from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable
+from core.models import CloudFolderInfo, LocalFolderInfo, SongInfo, SongStorable
 from core.color import mixColor
 from core.config import saveConfig, cfg
 from core.favorites import favorites_manager, saveFavorites
@@ -443,9 +443,17 @@ class MainWindow(FluentWindowBase):
                 self._logger.exception('scheduled task failed')
                 raise e
 
-    def play(self, card: SearchSongCard):
+    def play(self, card: SearchSongCard) -> None:
         self._logger.debug(card.info.id)
-        event_bus.emit(PLAY_SEARCH_SONG, card.info, card.detail.image_url)
+        storable = SongStorable(
+            info=SongInfo(
+                name=card.info.name,
+                artists='、'.join(a.name for a in card.info.artists),
+                id=str(card.info.id),
+                privilege=card.info.privilege.fee,
+            )
+        )
+        event_bus.emit(PLAY_STORABLE, storable)
 
     def init(self) -> None:
         self._launchwindow.clear()

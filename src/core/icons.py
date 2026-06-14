@@ -33,6 +33,7 @@ class SouthsideIcon(FluentIconBase, Enum):
     DROP_UP = 'drop_up'
     DROP_DOWN = 'drop_down'
     PLAYLIST = 'playlist'
+    PLAYLIST_MULTIPLE_SELECTION = 'playlist_multiple_selection'
     SETTINGS = 'settings'
     SEARCH = 'search'
     RENAME = 'rename'

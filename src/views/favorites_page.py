@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 
-_logger = logging.getLogger(__name__)
+import shiboken6
 
 from core.app_context import AppContext
 from imports import (
@@ -25,6 +25,7 @@ from imports import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QHBoxLayout,
     QVBoxLayout,
     QWidget,
     QGraphicsOpacityEffect,
@@ -34,6 +35,7 @@ from imports import (
 from qfluentwidgets import (
     FlowLayout,
     InfoBar,
+    PillToolButton,
     TitleLabel,
 )
 from views.list_widget import SListWidget
@@ -41,8 +43,17 @@ from views.list_widget import SListWidget
 from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable
 from core.favorites import favorites_manager
 from core.backend import getBackend
+from core.icons import bindIcon
 
-from views.song_card import CloudFavoriteSongCard, FavoriteSongCard, _SongCardItem
+from views.song_card import (
+    CloudFavoriteSongCard,
+    FavoriteSongCard,
+    FolderSelectDialog,
+    SONG_CARD_HEIGHT,
+    _SongCardItem,
+)
+
+_logger = logging.getLogger(__name__)
 
 
 class FavoritesPage(QWidget):
@@ -64,9 +75,42 @@ class FavoritesPage(QWidget):
         self.addpl_btn = PushButton('Add to Playlist')
         self.addpl_btn.clicked.connect(self.addFolderToPlaylist)
         buttons_layout.addWidget(self.addpl_btn)
+        self.batch_btn = PillToolButton(self)
+        self.batch_btn.setFixedSize(32, 32)
+        self.batch_btn.setToolTip('Multiple selection')
+        bindIcon(self.batch_btn, 'playlist_multiple_selection')
+        self.batch_btn.toggled.connect(self.setBatchMode)
+        buttons_layout.addWidget(self.batch_btn)
 
         global_layout.addWidget(self.title_label)
         global_layout.addLayout(buttons_layout)
+
+        self.batch_widget = QWidget()
+        batch_layout = QHBoxLayout(self.batch_widget)
+        batch_layout.setContentsMargins(0, 0, 0, 0)
+        self.selectall_btn = PushButton('Select All')
+        bindIcon(self.selectall_btn, 'playlist_multiple_selection')
+        self.selectall_btn.clicked.connect(self.selectAllSongs)
+        batch_layout.addWidget(self.selectall_btn)
+        self.clear_selection_btn = PushButton('Clear')
+        bindIcon(self.clear_selection_btn, 'clearall')
+        self.clear_selection_btn.clicked.connect(self.clearSelection)
+        batch_layout.addWidget(self.clear_selection_btn)
+        self.batch_addpl_btn = PushButton('Add to Playlist')
+        bindIcon(self.batch_addpl_btn, 'playlist')
+        self.batch_addpl_btn.clicked.connect(self.addSelectedToPlaylist)
+        batch_layout.addWidget(self.batch_addpl_btn)
+        self.batch_addto_btn = PushButton('Add to Folder')
+        bindIcon(self.batch_addto_btn, 'add')
+        self.batch_addto_btn.clicked.connect(self.addSelectedToFolder)
+        batch_layout.addWidget(self.batch_addto_btn)
+        self.batch_remove_btn = PushButton('Remove')
+        bindIcon(self.batch_remove_btn, 'remove')
+        self.batch_remove_btn.clicked.connect(self.removeSelectedSongs)
+        batch_layout.addWidget(self.batch_remove_btn)
+        batch_layout.addStretch(1)
+        self.batch_widget.hide()
+        global_layout.addWidget(self.batch_widget)
 
         self.song_viewer = SListWidget()
         self.song_viewer.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
@@ -82,6 +126,8 @@ class FavoritesPage(QWidget):
         self.curr_cloud_folder: CloudFolderInfo | None = None
         self.curr_cloud_songs: list[SongStorable] = []
         self._cloud_loading = False
+        self._batch_mode = False
+        self._selected_song_ids: set[str] = set()
 
         event_bus.subscribe(FAVORITES_CHANGED, self._onFavoritesChanged)
         event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
@@ -96,6 +142,8 @@ class FavoritesPage(QWidget):
                 f'cloud_folder={self.curr_cloud_folder.folder_name if self.curr_cloud_folder else None}',
                 f'song_cards={len(self._song_cards)}',
                 f'cloud_loading={self._cloud_loading}',
+                f'batch_mode={self._batch_mode}',
+                f'selected_songs={len(self._selected_song_ids)}',
             ],
         )
 
@@ -133,11 +181,22 @@ class FavoritesPage(QWidget):
             return self.curr_folder.songs
         return []
 
+    def _validSongCards(self) -> list[_SongCardItem]:
+        self._song_cards = [
+            card for card in self._song_cards if shiboken6.isValid(card)
+        ]
+        return self._song_cards
+
     def displayEmpty(self):
         self.title_label.setText('None')
+        self.setBatchMode(False)
+        self.batch_btn.setChecked(False)
+        self._song_cards = []
         self.song_viewer.clear()
 
     def setDisplayFolder(self, folder: LocalFolderInfo | CloudFolderInfo):
+        self.setBatchMode(False)
+        self.batch_btn.setChecked(False)
         if isinstance(folder, CloudFolderInfo):
             self.is_cloud = True
             self.curr_cloud_folder = folder
@@ -179,10 +238,11 @@ class FavoritesPage(QWidget):
         return favorites_manager.folders
 
     def _checkVisibleCards(self):
-        for card in self._song_cards:
+        cards = self._validSongCards()
+        for card in cards:
             if card.load:
                 continue
-            idx = self._song_cards.index(card)
+            idx = cards.index(card)
             item = self.song_viewer.item(idx)
             if item is None:
                 continue
@@ -209,10 +269,11 @@ class FavoritesPage(QWidget):
         else:
             return
 
+        self._selected_song_ids.intersection_update(str(song.id) for song in songs)
         for song in songs:
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, song)
-            item.setSizeHint(QSize(0, 62))
+            item.setSizeHint(QSize(0, SONG_CARD_HEIGHT))
 
             if self.is_cloud:
                 card = CloudFavoriteSongCard(
@@ -235,9 +296,56 @@ class FavoritesPage(QWidget):
                 )
             card.clicked.connect(lambda s: self._replaceAndPlay(s))
             card.queued.connect(lambda s: self._queueAfterCurrent(s))
+            card.selectionChanged.connect(self._onSongSelectionChanged)
+            card.setSelectionMode(self._batch_mode)
+            card.setSelected(str(song.id) in self._selected_song_ids)
             self.song_viewer.addItem(item)
             self.song_viewer.setItemWidget(item, card)
             self._song_cards.append(card)
+        self._syncBatchButtons()
+
+    def setBatchMode(self, state: bool) -> None:
+        self._batch_mode = state
+        self.batch_widget.setVisible(state)
+        if not state:
+            self._selected_song_ids.clear()
+        for card in self._validSongCards():
+            card.setSelectionMode(state)
+        self._syncBatchButtons()
+
+    def _onSongSelectionChanged(self, song: SongStorable, selected: bool) -> None:
+        song_id = str(song.id)
+        if selected:
+            self._selected_song_ids.add(song_id)
+        else:
+            self._selected_song_ids.discard(song_id)
+        self._syncBatchButtons()
+
+    def _selectedSongs(self) -> list[SongStorable]:
+        return [
+            song for song in self._songs() if str(song.id) in self._selected_song_ids
+        ]
+
+    def _syncBatchButtons(self) -> None:
+        selected_count = len(self._selected_song_ids)
+        has_selection = selected_count > 0
+        self.batch_addpl_btn.setEnabled(has_selection)
+        self.batch_addto_btn.setEnabled(has_selection)
+        self.batch_remove_btn.setEnabled(has_selection)
+        self.clear_selection_btn.setEnabled(has_selection)
+        self.selectall_btn.setEnabled(bool(self._songs()))
+
+    def selectAllSongs(self) -> None:
+        self._selected_song_ids = {str(song.id) for song in self._songs()}
+        for card in self._validSongCards():
+            card.setSelected(True)
+        self._syncBatchButtons()
+
+    def clearSelection(self) -> None:
+        self._selected_song_ids.clear()
+        for card in self._validSongCards():
+            card.setSelected(False)
+        self._syncBatchButtons()
 
     def _replaceAndPlay(self, song: SongStorable):
         self.replacePlaylist(False)
@@ -405,6 +513,7 @@ class FavoritesPage(QWidget):
             'Confirm Delete',
             f"Are you sure you want to delete song {song_name} from cloud folder '{folder_name}'?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
             if not getBackend().editPlaylist(
@@ -428,6 +537,158 @@ class FavoritesPage(QWidget):
             )
 
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+
+    def addSelectedToPlaylist(self) -> None:
+        selected = self._selectedSongs()
+        if not selected:
+            return
+
+        added_count = 0
+        for song in selected:
+            if not any(s.name == song.name for s in self._pm.playlist):
+                self._pm.playlist.append(song)
+                added_count += 1
+
+        event_bus.emit(PLAYLIST_CHANGED)
+        if added_count > 0:
+            InfoBar.success(
+                'Songs added',
+                f'Added {added_count} selected songs to playlist',
+                parent=self._mwindow,
+            )
+
+    def addSelectedToFolder(self) -> None:
+        selected = self._selectedSongs()
+        if not selected:
+            return
+
+        dialog = FolderSelectDialog(
+            self._mwindow, self._mwindow, [str(song.id) for song in selected]
+        )
+        reply = dialog.exec()
+        if not reply:
+            return
+        selection = dialog.getSelectedFolderInfo()
+        if selection is None:
+            return
+
+        folder_type, folder_name, cloud_id = selection
+        if folder_type == 'local':
+            if folder_name == '+ Create New Folder...':
+                from core.dialogs import getTextLineedit
+
+                folder_name = getTextLineedit(
+                    'Create New Folder',
+                    'enter name of your new folder',
+                    'my folder',
+                    self._mwindow,
+                )
+                if not folder_name:
+                    return
+                favorites_manager.addFolder(folder_name)
+            added_count = 0
+            for song in selected:
+                target_folder = next(
+                    (
+                        f
+                        for f in favorites_manager.folders
+                        if f.folder_name == folder_name
+                    ),
+                    None,
+                )
+                if target_folder and any(s.id == song.id for s in target_folder.songs):
+                    continue
+                if favorites_manager.addSong(folder_name, song):
+                    added_count += 1
+            event_bus.emit(FAVORITES_CHANGED, folder_name)
+            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+            InfoBar.success(
+                'Songs added',
+                f'Added {added_count} selected songs to {folder_name}',
+                parent=self._mwindow,
+            )
+        elif folder_type == 'cloud' and cloud_id:
+            if not getBackend().editPlaylist(
+                'add', [str(song.id) for song in selected], cloud_id
+            ):
+                InfoBar.warning(
+                    'Session expired',
+                    'Please re-login to perform this action',
+                    parent=self._mwindow,
+                    duration=5000,
+                )
+                return
+            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+            InfoBar.success(
+                'Songs added',
+                f'Added {len(selected)} selected songs to {folder_name}',
+                parent=self._mwindow,
+            )
+
+    def removeSelectedSongs(self) -> None:
+        selected = self._selectedSongs()
+        if not selected:
+            return
+
+        folder_name = (
+            self.curr_cloud_folder.folder_name
+            if self.is_cloud and self.curr_cloud_folder
+            else self.curr_folder.folder_name
+            if self.curr_folder
+            else ''
+        )
+        reply = QMessageBox.question(
+            self._mwindow,
+            'Confirm Delete',
+            f'Are you sure you want to delete {len(selected)} '
+            f"selected songs from '{folder_name}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        selected_ids = {str(song.id) for song in selected}
+        should_refresh = True
+        if self.is_cloud:
+            if not self.curr_cloud_folder:
+                return
+            if not getBackend().editPlaylist(
+                'del', list(selected_ids), self.curr_cloud_folder.id
+            ):
+                InfoBar.warning(
+                    'Session expired',
+                    'Please re-login to perform this action',
+                    parent=self._mwindow,
+                    duration=5000,
+                )
+                return
+            self.curr_cloud_songs = [
+                song
+                for song in self.curr_cloud_songs
+                if str(song.id) not in selected_ids
+            ]
+        elif self.curr_folder:
+            self.curr_folder.songs = [
+                song
+                for song in self.curr_folder.songs
+                if str(song.id) not in selected_ids
+            ]
+            favorites_manager._save()
+            event_bus.emit(FAVORITES_CHANGED, self.curr_folder.folder_name)
+            should_refresh = False
+        else:
+            return
+
+        self._selected_song_ids.clear()
+        if should_refresh:
+            self.refresh()
+        InfoBar.success(
+            'Songs deleted',
+            f'Deleted {len(selected)} selected songs',
+            parent=self._mwindow,
+        )
+        event_bus.emit(MWINDOW_REFRESH_FOLDERS)
 
     def replacePlaylist(self, tip=True):
         self._pm.playlist.clear()

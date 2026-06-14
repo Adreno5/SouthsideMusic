@@ -119,7 +119,7 @@ class EventsServices(QObject):
                 'Remove Folder',
                 f"Are you sure to remove folder '{card.folder.folder_name}'?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes,
+                QMessageBox.StandardButton.No,
             )
             == QMessageBox.StandardButton.Yes
         )
@@ -165,7 +165,7 @@ class EventsServices(QObject):
                 'Remove Folder',
                 f"Are you sure to remove folder '{card.folder.folder_name}'?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes,
+                QMessageBox.StandardButton.No,
             )
             == QMessageBox.StandardButton.Yes
         )

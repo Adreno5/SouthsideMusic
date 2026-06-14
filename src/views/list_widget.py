@@ -1,7 +1,10 @@
 from dataclasses import dataclass
+import logging
+import time
 
 from core.smooth import EaseOutTimer
 from imports import (
+    REFRESH_RATE_CHANGED,
     QAbstractItemView,
     QAbstractScrollArea,
     QColor,
@@ -19,6 +22,7 @@ from imports import (
     Qt,
     QWheelEvent,
     Property,
+    event_bus,
 )
 from qfluentwidgets import ListWidget, ScrollBar, SmoothScrollArea
 
@@ -34,11 +38,28 @@ class AnimatingObject:
 class SSmoothScrollBar(ScrollBar):
     def __init__(self, orientation: Qt.Orientation, parent: QAbstractScrollArea):
         super().__init__(orientation, parent)
+        self._logger = logging.getLogger(__name__)
         self.animating_objs: list[AnimatingObject] = []
+        self.refresh_rate = max(60, parent.window().screen().refreshRate() / 2)
+        self._logger.info(f'{self.refresh_rate=}')
+        self.delta = 1 / self.refresh_rate
+        self.last_draw: int = time.perf_counter_ns()
+        self._scroll_remainder = 0.0
 
         self.anim_timer = QTimer(self)
         self.anim_timer.timeout.connect(self._tick)
-        self.anim_timer.start(16)
+        self.anim_timer.start(max(1, int(1000 / self.refresh_rate)))
+
+        event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
+
+    def _onRefreshRateChanged(self):
+        screen = self.window().screen()
+        if screen is None:
+            return
+        self.refresh_rate = max(60, screen.refreshRate() / 2)
+        self._logger.info(f'{self.refresh_rate=}')
+        self.delta = 1 / self.refresh_rate
+        self.anim_timer.setInterval(max(1, int(1000 / self.refresh_rate)))
 
     @staticmethod
     def _smoothstep(t: float) -> float:
@@ -46,10 +67,15 @@ class SSmoothScrollBar(ScrollBar):
         return t * t * (3.0 - 2.0 * t)
 
     def _tick(self):
+        now = time.perf_counter_ns()
+        elapsed = min((now - self.last_draw) / 1_000_000_000, 0.1)
+        self.last_draw = now
+        multiple_factor = elapsed * self.refresh_rate
+
         new: list[AnimatingObject] = []
         total_delta = 0.0
         for obj in self.animating_objs:
-            obj.elapsed += 16
+            obj.elapsed += self.delta * 1000 * multiple_factor
             progress = self._smoothstep(obj.elapsed / obj.duration)
             total_delta += obj.total * (progress - obj.last_progress)
             obj.last_progress = progress
@@ -57,7 +83,10 @@ class SSmoothScrollBar(ScrollBar):
                 new.append(obj)
         self.animating_objs = new
         if total_delta != 0:
-            self.setValue(int(self.value() + total_delta))
+            next_value = self.value() + total_delta + self._scroll_remainder
+            final_value = int(next_value)
+            self._scroll_remainder = next_value - final_value
+            self.setValue(final_value)
 
     def scrollValue(self, delta: int):
         self.animating_objs.append(
@@ -179,29 +208,29 @@ class LimitOverlay(QWidget):
 
         if tl > 0:
             gra = QLinearGradient(0, 0, 0, top_h)
-            gra.setColorAt(0.0, QColor(255, 60, 60, int(tl * 200)))
-            gra.setColorAt(1.0, QColor(255, 60, 60, 0))
+            gra.setColorAt(0.0, QColor(128, 128, 128, int(tl * 110)))
+            gra.setColorAt(1.0, QColor(128, 128, 128, 0))
             painter.setBrush(gra)
             painter.drawRect(0, 0, w, top_h)
 
         if bl > 0:
             gra = QLinearGradient(0, h, 0, h - bot_h)
-            gra.setColorAt(0.0, QColor(255, 60, 60, int(bl * 200)))
-            gra.setColorAt(1.0, QColor(255, 60, 60, 0))
+            gra.setColorAt(0.0, QColor(128, 128, 128, int(bl * 110)))
+            gra.setColorAt(1.0, QColor(128, 128, 128, 0))
             painter.setBrush(gra)
             painter.drawRect(0, h - bot_h, w, bot_h)
 
         if ll > 0:
             gra = QLinearGradient(0, 0, left_w, 0)
-            gra.setColorAt(0.0, QColor(255, 60, 60, int(ll * 200)))
-            gra.setColorAt(1.0, QColor(255, 60, 60, 0))
+            gra.setColorAt(0.0, QColor(128, 128, 128, int(ll * 110)))
+            gra.setColorAt(1.0, QColor(128, 128, 128, 0))
             painter.setBrush(gra)
             painter.drawRect(0, 0, left_w, h)
 
         if rl > 0:
             gra = QLinearGradient(w, 0, w - right_w, 0)
-            gra.setColorAt(0.0, QColor(255, 60, 60, int(rl * 200)))
-            gra.setColorAt(1.0, QColor(255, 60, 60, 0))
+            gra.setColorAt(0.0, QColor(128, 128, 128, int(rl * 110)))
+            gra.setColorAt(1.0, QColor(128, 128, 128, 0))
             painter.setBrush(gra)
             painter.drawRect(w - right_w, 0, right_w, h)
 
@@ -312,6 +341,7 @@ class SListWidget(ListWidget):
             or self.rlmtimer.is_animating
         ):
             self._overlay.update()
+
 
 class SScrollArea(SmoothScrollArea):
     def __init__(self):

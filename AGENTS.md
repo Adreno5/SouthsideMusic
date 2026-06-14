@@ -1,151 +1,179 @@
-# AGENTS.md — SouthsideMusic
+# AGENTS.md - SouthsideMusic
 
 ## Project Overview
 
-PySide6 desktop music player (Netease Cloud Music client). Windows-only, compiled
-with Nuitka and distributed via Inno Setup. Python 3.13+ required.
+SouthsideMusic is a Windows-only PySide6 desktop client for NetEase CloudMusic:
+streaming playback, word-by-word lyrics, loudness normalization, desktop lyrics,
+local favorites, song export, and auto-update support.
 
-## Build, Run, Lint & Test
+The app is packaged with Nuitka and distributed through Inno Setup. Runtime caches
+live under `data/`; persistent user settings live in `config.json`.
+
+Primary docs are `docs/README.md` and `docs/README_zh.md`. No Cursor rules
+(`.cursor/rules/` or `.cursorrules`) and no Copilot instructions
+(`.github/copilot-instructions.md`) exist at the time this file was written.
+
+## Environment
+
+- Target OS: Windows.
+- Project metadata in `pyproject.toml` says Python `>=3.13`; prefer that over
+  older docs that mention Python 3.12+ / 3.12.7.
+- `uv.lock` is present; prefer `uv run ...` when available.
+- Initial workspace setup is automated by `python setup_workspace.py`.
+- Build output goes to `build.result\raw\` and optionally `build.result\installer\`.
+
+## Commands
 
 ```bash
-python src/main.py                        # run directly
-build.bat                                 # full build (Nuitka + Inno Setup)
-python scripts/create_icon.py             # generate .ico from icon.png
+python setup_workspace.py                 # bootstrap dependencies/tooling
+uv run src/main.py                        # run from source (preferred)
+python src/main.py                        # run if environment is already active
+build.bat                                 # full Windows build/package flow
+python scripts/create_icon.py             # regenerate icons/app.ico
 
-ruff check .                              # lint
-ruff format --check .                     # format check
-ruff format .                             # auto-format
-mypy src/                                 # type check (no config file; runs bare)
+uv run ruff check .                       # lint all files
+uv run ruff format --check .              # check formatting
+uv run ruff format .                      # format files
+uv run mypy src/                          # type check source tree
+python -m py_compile src/main.py          # quick syntax/import smoke check
 ```
 
-Config: `.ruff.toml` (`line-length=88`, `indent-width=4`, `quote-style=single`).
+`build.bat` deletes old outputs, runs Nuitka on `launcher.py`, copies embedded
+Python/resources/source, regenerates the icon, then runs Inno Setup if `ISCC.exe`
+is installed. Without Inno Setup, raw portable files remain in `build.result\raw\`.
 
-No test framework exists yet. `src/test.py` is a manual API exploration script.
-If adding tests:
+## Tests
+
+There is no formal test suite yet. `src/test.py` is a manual API exploration
+script, not pytest. Do not invent a test framework unless explicitly needed.
+
+If tests are added, use these commands:
 
 ```bash
-python -m pytest tests/                   # all tests
-python -m pytest tests/test_foo.py        # single file
-python -m pytest tests/test_foo.py -k "test_name"  # single test
+uv run python -m pytest tests/                     # all tests
+uv run python -m pytest tests/test_foo.py          # one test file
+uv run python -m pytest tests/test_foo.py -k name  # one test by expression
+uv run python -m pytest tests/test_foo.py::test_x  # one exact test
 ```
+
+For small non-test changes, prefer narrow validation first: `python -m py_compile
+<file>`, then `uv run ruff check <file>`, then broader lint/type checks if useful.
 
 ## Project Structure
 
-```
+```text
 src/
-  main.py          # entry point, app init, exception hook, logging setup
-  imports.py       # centralized re-exports (PySide6, typing, qfluentwidgets, events)
-  core/            # domain logic (audio, config, lyrics, models, theme, icons)
-  views/           # PySide6 UI (pages, cards, windows, custom widgets)
-  services/        # event bus, update checking
-  pyncm/           # forked Netease Cloud Music API client
-data/              # runtime caches (music, images, lyrics)
-config.json        # persisted user config (hand-editable JSON)
+  main.py          # app entry, QApplication setup, logging, excepthook
+  imports.py       # centralized imports/re-exports for Qt, typing, events
+  core/            # audio, config, models, lyrics, theme, icons, backends
+  services/        # event bus and update checks
+  views/           # PySide6 UI pages, cards, windows, widgets
+  pyncm/           # forked NetEase CloudMusic API client
+docs/              # English/Chinese user documentation
+data/              # runtime caches for music, images, lyrics, temp data
+icons/, images/    # packaged UI resources
+fonts/             # bundled HarmonyOS Sans SC font assets
+config.json        # hand-editable persisted user config
 ```
 
-## Code Style
+Reference style files: `src/views/search_page.py`, `src/views/error_popup.py`.
 
-### Imports
+## Import Style
 
-- `from __future__ import annotations` in every file (PEP 604 union syntax).
-- Import PySide6/Qt classes **from `imports`**, not directly from PySide6:
-  ```python
-  from imports import QWidget, QVBoxLayout, QTimer, Qt, Signal, event_bus
-  ```
-- `imports.py` re-exports PySide6 widgets, QtCore, QtGui, typing, qfluentwidgets,
-  and all event bus members. qfluentwidgets may also be imported directly.
-- Third-party libraries imported directly (`import numpy as np`).
-- `if TYPE_CHECKING:` block for type-only imports to avoid circular imports.
-- Standard library first, then third-party, then project modules.
+- Use `from __future__ import annotations` when the file already follows it.
+- Import Qt/PySide6 classes from `imports`, not directly from PySide6:
 
-### Naming
+```python
+from imports import QTimer, QVBoxLayout, QWidget, Qt, Signal, event_bus
+```
 
-- **Files**: `snake_case.py`.
-- **Classes / Qt classes**: `PascalCase` (`AudioPlayer`, `SearchPage`).
-- **Public methods**: `camelCase` (`loadConfig`, `addToFolder`).
-- **Private methods**: `_snake_case` (`_write_cache`, `_do`).
-- **Variables**: `snake_case` (`current_index`, `play_speed`).
-- **Constants**: `UPPER_CASE` (`CONFIG_PATH`, `MAX_CHUNK_THREADS`).
-- **Event names**: `UPPER_CASE` strings (`SONG_CHANGED`, `PRE_THEME_CHANGED`).
+- `src/imports.py` re-exports PySide6 classes, typing helpers, qfluentwidgets,
+  and event bus members.
+- Direct third-party imports are fine for non-Qt libraries (`numpy`, `requests`).
+- Use `if TYPE_CHECKING:` for type-only imports that could create circular imports.
+- Keep imports grouped as standard library, third-party, then project imports.
+- qfluentwidgets may be imported directly when existing code does so.
 
-### Types & Comments
+## Formatting
 
-- All function signatures must have type annotations (params and return).
-- Use `| None` (not `Optional`). Exception: pre-existing calls in pyncm/.
-- `@dataclass` for config/data objects, `ABC` + `@abstractmethod` for interfaces.
-- `cast()` for fields populated after construction, `@override` for method overrides.
-- English comments only, lowercase except proper nouns. Sparse and brief.
-- Docstrings use `"""single line."""` for public APIs.
+- Ruff config is `.ruff.toml`: line length 88, indent width 4, single quotes.
+- Keep edits ASCII unless existing content or UI copy requires non-ASCII.
+- Keep QSS color names lowercase (`'white'`, `'black'`).
+- Prefer small, local diffs. Do not reformat unrelated files.
+- Avoid large abstractions; this codebase favors direct PySide code.
+- Add comments only for non-obvious behavior; keep them English and sparse.
 
-### Error Handling & Logging
+## Types
 
-- Log via `_logger.exception(e)` for full tracebacks.
-- Unhandled exceptions caught by global `sys.excepthook` in `main.py` → `ErrorPopupWindow`.
-- Config I/O falls back gracefully — corrupt config → defaults.
-- Cache ops handle `FileNotFoundError` and `PermissionError` explicitly.
-- Every module: `_logger = logging.getLogger(__name__)`.
-- Configured once in `main.py` via `logging.basicConfig(level=DEBUG)` with a custom
-  `LogHandler` that routes messages to the UI.
-- `hijackStreams()` in `main.py` captures `sys.stdout`/`sys.stderr` through logging.
-- Other files must NOT call `logging.basicConfig`.
+- Annotate all parameters and return types in new or changed functions.
+- Use PEP 604 unions (`str | None`) except when preserving existing `pyncm/` style.
+- Use `@dataclass` for config/data containers.
+- Use `ABC` / `@abstractmethod` for explicit backend interfaces only.
+- Use `cast()` for fields populated after construction when needed.
+- Use `@override` where parent methods are intentionally overridden.
+- Keep public docstrings short: `"""single line."""`.
 
-## Architecture & Qt Conventions
+## Naming
 
-- Subclass `QWidget` (or concrete widgets) — NOT `QObject` directly for UI.
-- Connect signals in `__init__` after layout setup.
-- Signals declared as class attributes: `fetchedSongs = Signal(list)`.
-- `shiboken6.isValid()` before accessing potentially deleted Qt objects.
-- `@Property(type)` decorator for Qt property system (animations, style bindings).
-- QSS colors must be lowercase (`'white'`, `'black'`).
+- Files/modules: `snake_case.py`.
+- Classes and Qt widgets: `PascalCase` (`AudioPlayer`, `SearchPage`).
+- Public methods: project-style `camelCase` (`loadConfig`, `addToFolder`).
+- Private helpers: `_snake_case`.
+- Variables and attributes: `snake_case`.
+- Constants: `UPPER_CASE`.
+- Event constants: `UPPER_CASE` strings (`SONG_CHANGED`, `PRE_THEME_CHANGED`).
 
-### Core Architecture
+## Error Handling And Logging
 
-- **Event Bus**: `services/events/` — pub/sub. `event_bus.subscribe(EVENT, listener)`,
-  `event_bus.emit(EVENT, *args)`. Events are string constants re-exported through
-  `imports`. Thread-safe. All inter-component communication uses this.
-- **AppContext**: bag of app-wide dependencies (player, cfg, pages) passed to
-  view/page constructors. `def __init__(self, ctx: AppContext) -> None:`.
-- **Backend**: `MusicServiceBackend` (ABC) → `NeteaseCloudMusicBackend`.
-- **Views**: `QWidget` subclasses that build their own layout in `__init__`.
-  Cards (`song_card`, `folder_card`) are composable QWidgets used within pages.
+- Logging modules should define `_logger = logging.getLogger(__name__)`.
+- Do not call `logging.basicConfig()` outside `src/main.py`.
+- Log exceptions with `_logger.exception(e)` when a traceback matters.
+- Global unhandled exceptions route through `sys.excepthook` to `ErrorPopupWindow`.
+- Config I/O should fall back gracefully; corrupt config should not crash launch.
+- Cache/file operations should handle `FileNotFoundError` and `PermissionError`
+  when user files or generated cache paths are involved.
+- `hijackStreams()` in `main.py` redirects stdout/stderr into logging/UI output.
 
-### Background Work & Lazy Loading
+## Qt And UI Conventions
 
-Three async patterns, depending on complexity:
-| Pattern | When | Example |
-|---|---|---|
-| `asyncTask(fn, args, mwindow)` | Simple fire-and-forget network calls | Search, lyrics fetch |
-| `asyncDownload(mwindow).download(url, path)` | Downloading files with progress | Song/avatar download |
-| `QThread` + `moveToThread()` | Long-lived workers with structured lifecycle | `DownloadingManager`, `TaskManager` |
+- UI classes should subclass `QWidget` or a concrete widget/window, not `QObject`.
+- Build layouts in `__init__`, then connect signals after widget/layout setup.
+- Declare Qt signals as class attributes, e.g. `fetchedSongs = Signal(list)`.
+- Check `shiboken6.isValid()` before accessing widgets Qt may have deleted.
+- Use `@Property(type)` for Qt properties used by animations or style bindings.
+- Preserve existing visual language; do not redesign UI unless asked.
 
-After background work, update UI via: `self._mwindow.addScheduledTask(lambda: ...)` to queue a
-callable on the main thread's event loop.
+## Architecture
 
-Cards defer heavy work until visible. Set `self.load = False`, then `QTimer.singleShot()`
-to poll `parent.viewport().visualItemRect(self)`. On enter, set `self.load = True` and load.
+- `AppContext` is a simple dependency bag passed as `__init__(self, ctx)`.
+- Backend abstraction is `MusicServiceBackend` -> `NeteaseCloudMusicBackend`.
+- Use the event bus in `services/events/` for cross-component communication:
+  `event_bus.subscribe(EVENT, listener)` and `event_bus.emit(EVENT, *args)`.
+- Event constants are re-exported through `imports`.
+- Views build their own layouts; cards like `song_card` are composable widgets.
+- Keep ownership and signal wiring obvious; prefer direct `if/else` over factories.
 
-## KISS: Keep It Stupid Simple
+## Background Work
 
-The most important rule. The author (Adreno) writes simple Qt, not enterprise Java.
-After writing code, ask: *Would Adreno have written this?* If you used a pattern
-that needs a Wikipedia article to explain, delete it and try again. Load the
-`adreno-perspective` skill before writing complex logic. Reference files:
-`src/views/search_page.py`, `src/views/error_popup.py`.
+- Use `asyncTask(fn, args, mwindow)` for simple fire-and-forget work.
+- Use `asyncDownload(mwindow).download(url, path)` for downloads with progress.
+- Use `QThread` + `moveToThread()` for long-lived structured workers.
+- Schedule UI updates on the main thread with `self._mwindow.addScheduledTask(...)`.
+- Lazy cards usually set `self.load = False`, poll visibility, then load once.
 
-### What NOT to Write
+## Repository Hygiene
 
-- No abstract factories — `if/else` on a config string is fine.
-- No singleton metaclasses — module-level globals are fine.
-- No middleware chains — Qt signals exist. Connect them directly.
-- No DI containers — `AppContext` is a bag of references.
-- No state machines — a `bool` or string enum is fine.
-- No batch/diff/reconciliation — `self.lst.clear()` and rebuild.
-- No caching layers — `data/` already handles audio/image/lyrics caches.
-- No observer/mediator wrappers — the event bus IS the pub/sub system.
+- Keep changes minimal and behavior-preserving unless the user asks otherwise.
+- Never revert unrelated user changes in a dirty worktree.
+- Do not commit, branch, amend, reset, or push unless explicitly requested.
+- Do not edit generated/cache/build output unless the task is about those files.
+- Prefer `os.path.join()` in existing code; use `pathlib.Path` only where it fits.
+- Respect license/user docs: this is personal, research, non-commercial software.
 
-### Other Conventions
+## KISS Rules
 
-- Paths: `os.path.join()` for filesystem, `pathlib.Path` for manipulation.
-- Config: plain JSON at project root, loaded/saved by `core/config.py`.
-- Cache: audio/images/lyrics under `data/`. Songs identified by track ID (int or str).
-- Icons: `SouthsideIcon` enum in `core/icons.py` extends `FluentIconBase`.
+- The author favors simple Qt code over enterprise patterns.
+- Before adding abstraction, ask whether a bool, direct signal, or helper is enough.
+- Avoid factories, DI containers, state machines, caching layers, observer wrappers.
+- Prefer `self.lst.clear()` and rebuild over complex diff/reconciliation logic.
+- Fix root causes, but keep the edit surface local.

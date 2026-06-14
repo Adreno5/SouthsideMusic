@@ -30,6 +30,8 @@ class DebugWindow(QWidget):
         self.scroll_area.setWidget(content_widget)
         self.scroll_area.setWidgetResizable(True)
 
+        content_widget.setFixedWidth(self.scroll_area.width())
+
         _layout.addWidget(self.scroll_area)
 
         self.setLayout(_layout)
@@ -65,6 +67,7 @@ class DebugWindow(QWidget):
             label = QLabel()
             self.content_layout.addWidget(label)
             self.content_labels.append(label)
+            label.setWordWrap(True)
 
         for i, (label, info_dict) in enumerate(zip(self.content_labels, self.infos)):
             label.setText(

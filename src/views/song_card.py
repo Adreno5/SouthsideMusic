@@ -35,6 +35,7 @@ from imports import (
 )
 from qfluentwidgets import (
     Action,
+    CheckBox,
     FluentIcon,
     IndeterminateProgressRing,
     InfoBar,
@@ -69,6 +70,7 @@ from views.folder_card import CloudFolderCard, LocalFolderCard
 
 
 _image_download_locks: dict[str, threading.Lock] = {}
+SONG_CARD_HEIGHT = 70
 
 
 def _get_image_download_lock(song_id: str) -> threading.Lock:
@@ -91,10 +93,11 @@ class DummyCard:
 
 
 class FolderSelectDialog(MessageBoxBase):
-    def __init__(self, parent, mwindow, song_id: str):
+    def __init__(self, parent, mwindow, song_id: str | list[str]):
         super().__init__(parent)
         self._mwindow = mwindow
         self._cloud_playlists: list[CloudFolderInfo] = []
+        song_ids = [song_id] if isinstance(song_id, str) else song_id
 
         self.title_label = SubtitleLabel('Add to Folder')
         self.viewLayout.addWidget(self.title_label)
@@ -107,7 +110,10 @@ class FolderSelectDialog(MessageBoxBase):
         local_folders = [
             f
             for f in favorites_manager.folders
-            if not any(s.id == song_id for s in f.songs)
+            if any(
+                not any(s.id == selected_id for s in f.songs)
+                for selected_id in song_ids
+            )
         ]
 
         if local_folders:
@@ -226,7 +232,7 @@ class SearchSongCard(QWidget):
         bottom_layout = QHBoxLayout()
 
         self.playbtn = PrimaryToolButton(FluentIcon.SEND)
-        self.playbtn.setEnabled(False)
+        self.playbtn.setEnabled(True)
         bottom_layout.addWidget(self.playbtn)
         self.playbtn.clicked.connect(self.play)
 
@@ -290,7 +296,7 @@ class SearchSongCard(QWidget):
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)
             InfoBar.success(
                 'Favorited',
-                f'Added {self.info.name} to cloud playlist \'{folder_name}\'',
+                f"Added {self.info.name} to cloud playlist '{folder_name}'",
                 parent=self._mwindow,
                 duration=3000,
             )
@@ -355,7 +361,7 @@ class SearchSongCard(QWidget):
         if not favorites_manager.addSong(folder_name, storable):
             InfoBar.warning(
                 'Folder not found',
-                f'Folder \'{folder_name}\' may have been removed',
+                f"Folder '{folder_name}' may have been removed",
                 parent=self._mwindow,
                 duration=3000,
             )
@@ -365,7 +371,7 @@ class SearchSongCard(QWidget):
 
         InfoBar.success(
             'Favorited',
-            f'Added {self.info.name} to \'{folder_name}\'',
+            f"Added {self.info.name} to '{folder_name}'",
             parent=self._mwindow,
             duration=3000,
         )
@@ -402,6 +408,7 @@ class SearchSongCard(QWidget):
 class _SongCardItem(QWidget):
     clicked = Signal(object)
     queued = Signal(object)
+    selectionChanged = Signal(object, bool)
 
     def __init__(
         self,
@@ -420,11 +427,19 @@ class _SongCardItem(QWidget):
         self._mwindow: MainWindow = mwindow  # type: ignore
         self._plp: PlaylistPage = plp  # type: ignore
         self.load = False
+        self.selection_mode = False
 
         self.setWindowOpacity(0)
+        self.setMinimumHeight(SONG_CARD_HEIGHT)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setContentsMargins(8, 6, 8, 6)
+
+        self.select_box = CheckBox()
+        self.select_box.hide()
+        self.select_box.setFixedSize(24, 24)
+        self.select_box.stateChanged.connect(self._onSelectionChanged)
+        layout.addWidget(self.select_box)
 
         if sortable:
             order_layout = QVBoxLayout()
@@ -448,12 +463,20 @@ class _SongCardItem(QWidget):
         layout.addWidget(self.img_label)
 
         text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(2)
+        text_layout.addSpacerItem(
+            QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        )
         title_label = SubtitleLabel(storable.name)
         title_label.setWordWrap(True)
         text_layout.addWidget(title_label)
         artists_label = QLabel(storable.artists)
         artists_label.setWordWrap(True)
         text_layout.addWidget(artists_label)
+        text_layout.addSpacerItem(
+            QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        )
         layout.addLayout(text_layout, 1)
 
         if not lazy:
@@ -492,6 +515,21 @@ class _SongCardItem(QWidget):
 
     def moveRequested(self, delta: int):
         pass
+
+    def setSelectionMode(self, state: bool) -> None:
+        self.selection_mode = state
+        self.select_box.setVisible(state)
+        if not state:
+            self.select_box.setChecked(False)
+
+    def isSelected(self) -> bool:
+        return self.select_box.isChecked()
+
+    def setSelected(self, state: bool) -> None:
+        self.select_box.setChecked(state)
+
+    def _onSelectionChanged(self, state: int) -> None:
+        self.selectionChanged.emit(self.storable, self.select_box.isChecked())
 
     def _auto_download_missing_image(self):
         storable = self.storable
@@ -573,6 +611,9 @@ class _SongCardItem(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
+            if self.selection_mode:
+                self.setSelected(not self.isSelected())
+                return super().mousePressEvent(event)
             cover_rect = self.img_label.geometry()
             if cover_rect.contains(event.pos()):
                 self.queued.emit(self.storable)

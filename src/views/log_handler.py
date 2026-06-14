@@ -22,7 +22,35 @@ def _visible_len(text: str) -> int:
     return len(_ANSI_ESCAPE.sub('', text))
 
 
+def _wrap_visible_text(text: str, width: int) -> list[str]:
+    if width <= 0:
+        return [text]
+    lines: list[str] = []
+    for raw_line in text.splitlines() or ['']:
+        line = raw_line
+        while _visible_len(line) > width:
+            pos = 0
+            visible = 0
+            while pos < len(line) and visible < width:
+                if line[pos] == '\x1b':
+                    match = _ANSI_ESCAPE.match(line, pos)
+                    if match:
+                        pos = match.end()
+                        continue
+                pos += 1
+                visible += 1
+            lines.append(line[:pos])
+            line = line[pos:]
+        lines.append(line)
+    return lines
+
+
 class LogHandler(logging.Handler):
+    def __init__(self, level: int | str = 0) -> None:
+        super().__init__(level)
+        self.last_flush: float = time.time()
+        self.buffer: str = ''
+
     def emit(self, record: logging.LogRecord) -> None:
         message = record.getMessage()
 
@@ -34,9 +62,8 @@ class LogHandler(logging.Handler):
             'CRITICAL': Fore.RED,
         }.get(record.levelname, Fore.WHITE)
 
-        time_str = datetime.datetime.now().strftime('%H:%M:%S')
+        time_str = datetime.datetime.now().strftime('%H:%M:%S.%f')
         plain_prefix = f'[{time_str}/{record.levelname}] [{record.name}] - '
-        plain_msg = plain_prefix + message
         plain_suffix = f'[{record.thread}/{record.threadName}]'
 
         try:
@@ -44,8 +71,7 @@ class LogHandler(logging.Handler):
         except Exception:
             term_width = 80
 
-        visible_len = _visible_len(plain_msg) + _visible_len(plain_suffix)
-        spaces = max(term_width - visible_len, 1)
+        suffix_width = _visible_len(plain_suffix)
 
         colored_prefix = (
             f'[{Fore.LIGHTBLACK_EX}{time_str}{Style.RESET_ALL}/'
@@ -58,10 +84,25 @@ class LogHandler(logging.Handler):
             f'{Fore.LIGHTGREEN_EX}]{Style.RESET_ALL}'
         )
 
-        final = f'{colored_prefix}{message}{' ' * spaces}{colored_suffix}'
-        assert sys.__stdout__ is not None
-        sys.__stdout__.write(final + '\n')
-        sys.__stdout__.flush()
+        prefix_width = _visible_len(plain_prefix)
+        content_width = max(term_width - prefix_width - suffix_width - 1, 1)
+        continuation_prefix = ' ' * prefix_width
+        lines = _wrap_visible_text(message, content_width)
+        rendered_lines = []
+        for i, line in enumerate(lines):
+            prefix = colored_prefix if i == 0 else continuation_prefix
+            spaces = max(
+                term_width - _visible_len(prefix) - _visible_len(line) - suffix_width,
+                1,
+            )
+            rendered_lines.append(f'{prefix}{line}{" " * spaces}{colored_suffix}')
+        self.buffer += '\n'.join(rendered_lines) + '\n'
+        if time.time() - self.last_flush > 0.2:
+            assert sys.__stdout__ is not None
+            sys.__stdout__.write(self.buffer + '\n')
+            sys.__stdout__.flush()
+            self.buffer = ''
+            self.last_flush = time.time()
 
 
 class LoggingStream:

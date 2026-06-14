@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from core import theme
 from core.app_context import AppContext
@@ -27,6 +28,7 @@ from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from imports import (
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QVBoxLayout,
     QHBoxLayout,
     QWidget,
@@ -35,7 +37,10 @@ from views.list_widget import SListWidget
 from qfluentwidgets import InfoBar, TransparentPushButton
 from core.models import SongStorable
 from core.icons import bindIcon
-from views.song_card import DummyCard, PlaylistSongCard
+from views.song_card import DummyCard, PlaylistSongCard, SONG_CARD_HEIGHT
+
+if TYPE_CHECKING:
+    from core.ws_server import QObjectHandler, WebSocketServer
 
 WHITE = QColor(255, 255, 255, 100)
 BLACK = QColor(0, 0, 0, 100)
@@ -157,6 +162,16 @@ class PlaylistPage(QWidget):
                 return
 
     def removeAllSongs(self) -> None:
+        reply = QMessageBox.question(
+            self._mwindow,
+            'Confirm Delete',
+            'Are you sure you want to remove all songs from playlist?',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
         self._pm.playlist.clear()
         if isinstance(self._dp.cur, DummyCard) and isinstance(
             self._dp.cur.storable, SongStorable
@@ -172,7 +187,7 @@ class PlaylistPage(QWidget):
     def addSongCardToList(self, song: SongStorable) -> QListWidgetItem:
         item = QListWidgetItem()
         item.setData(Qt.ItemDataRole.UserRole, song)
-        item.setSizeHint(QSize(0, 62))
+        item.setSizeHint(QSize(0, SONG_CARD_HEIGHT))
         card = PlaylistSongCard(
             song, self._dp, mwindow=self._mwindow, plp=self, lazy=True
         )

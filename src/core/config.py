@@ -53,6 +53,9 @@ class Config:
     login_method: Literal['anonymous', 'cell phone', 'QR code'] = 'anonymous'
 
     stereo: bool = True
+    stereo_haas_index: int = 1
+    enable_reverb: bool = False
+    reverb_intensity: int = 3
 
     background_ratio: float = 0.4
     volume: float = 1

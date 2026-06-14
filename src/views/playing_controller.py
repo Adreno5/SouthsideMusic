@@ -5,7 +5,7 @@ import logging
 import math
 import numpy as np
 import time
-from typing import cast as _cast
+from typing import TYPE_CHECKING, cast as _cast
 
 from core.app_context import AppContext
 from core.models import SongStorable
@@ -57,6 +57,10 @@ from core.lyrics import LyricInfo, LRCLyricParser, YRCLyricInfo, YRCLyricParser
 from core.audio_player import AudioPlayer
 from core.ws_server import QObjectHandler
 from core.config import cfg
+
+if TYPE_CHECKING:
+    from views.main_window import MainWindow
+    from views.playing_page import PlayingPage
 
 
 class PlayingControllerLyricsViewer(QWidget):
@@ -130,11 +134,6 @@ class PlayingControllerLyricsViewer(QWidget):
         self.update()
 
     def _onRepaintTick(self):
-        now = time.perf_counter_ns()
-        _elapsed = min((now - self.last_draw) / 1_000_000_000, 0.1)
-        self.last_draw = now
-        multiple_factor = _elapsed * self.refresh_rate
-
         position = self._player.getPosition()
         if self._ymgr.parsed:
             current = self._ymgr.getCurrentLyric(position)
@@ -244,6 +243,7 @@ class PlayingController(QWidget):
     ):
         super().__init__()
         self.ctx = ctx
+        self._app = ctx.app
         self._player: AudioPlayer = _cast(AudioPlayer, ctx.player)
         self._mgr: LRCLyricParser = _cast(LRCLyricParser, ctx.mgr)
         self._transmgr: LRCLyricParser = _cast(LRCLyricParser, ctx.transmgr)
@@ -258,6 +258,9 @@ class PlayingController(QWidget):
         self.dev_mag: float = 1
 
         self.lastfm = time.time()
+        self.last_draw: int = time.perf_counter_ns()
+        self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
+        self.delta = 1 / self.refresh_rate
 
         global_layout = QHBoxLayout()
         global_layout.setContentsMargins(0, 0, 0, 0)
@@ -336,6 +339,7 @@ class PlayingController(QWidget):
         event_bus.subscribe(SONG_CHANGED, self._updateDatas)
         event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
+        event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
 
         if self._mwindow:
@@ -351,6 +355,10 @@ class PlayingController(QWidget):
                 QColor(40, 40, 40) if theme.isDark() else QColor(230, 230, 230)
             )
 
+    def _onRefreshRateChanged(self):
+        self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
+        self.delta = 1 / self.refresh_rate
+
     def emitDebugInfo(self):
         event_bus.emit(
             EMIT_DEBUG_INFO,
@@ -358,6 +366,7 @@ class PlayingController(QWidget):
             [
                 f'dragging={self.dragging}',
                 f'dev_mag={self.dev_mag:.3f}',
+                f'refresh_rate={self.refresh_rate}',
                 f'preloaded={self._dp.preloaded}',
                 f'total_length={self._dp.total_length:.1f}',
                 f'is_playing={self._player.is_playing}',
@@ -552,6 +561,11 @@ class PlayingController(QWidget):
             event_bus.emit(PLAY_STATE_CHANGED, True)
 
     def paintEvent(self, event: QPaintEvent) -> None:
+        now = time.perf_counter_ns()
+        _elapsed = min((now - self.last_draw) / 1_000_000_000, 0.1)
+        self.last_draw = now
+        multiple_factor = _elapsed / self.delta
+
         painter = QPainter(self)
         painter.setRenderHints(QPainter.RenderHint.Antialiasing)
 
@@ -570,7 +584,8 @@ class PlayingController(QWidget):
             self.draw_magnitudes = np.maximum(
                 self.final_magnitudes, self.draw_magnitudes
             )
-            self.draw_magnitudes = np.maximum(self.draw_magnitudes * 0.8, 0)
+            self.draw_magnitudes += -self.draw_magnitudes * 0.05 * multiple_factor
+            self.draw_magnitudes = np.maximum(self.draw_magnitudes, 0)
 
             path = QPainterPath(QPointF(0, 0))
             total = int(self.cur_magnitudes.size * 0.67)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 
 import os
@@ -9,7 +8,11 @@ from core.app_context import AppContext
 from imports import Qt
 from imports import QPixmap
 from imports import QHBoxLayout, QLabel, QVBoxLayout, QWidget, event_bus
-from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
+from services.events.events import (
+    COLLECT_DEBUG_INFO,
+    EMIT_DEBUG_INFO,
+    MWINDOW_REFRESH_FOLDERS,
+)
 from qfluentwidgets import MessageBox, PrimaryPushButton, SubtitleLabel, TitleLabel
 
 from core.dialogs import QRCodeLoginDialog, getValueBylist, getTextLineedit
@@ -222,6 +225,7 @@ class SessionPage(QWidget):
         )
 
         self.refreshInformations()
+        event_bus.emit(MWINDOW_REFRESH_FOLDERS)
 
     def showSession(self):
         s = ncm.dumpSessionAsString(ncm.getCurrentSession())

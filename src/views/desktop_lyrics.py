@@ -58,6 +58,9 @@ class DesktopLyricsViewer(LyricsViewer):
 
         event_bus.subscribe(REPAINT, self._onRepaintTick)
 
+    def prewarmFontMetrics(self):
+        pass
+
     def emitDebugInfo(self):
         event_bus.emit(
             EMIT_DEBUG_INFO,

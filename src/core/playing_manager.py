@@ -24,8 +24,6 @@ from core.loudness import getAdjustedGainFactor
 from core.models import (
     IMAGE_DATA_DIR,
     MUSIC_DATA_DIR,
-    SearchSongInfo,
-    SongInfo,
     SongStorable,
     TrackLyricsInfo,
 )
@@ -38,7 +36,6 @@ from services.events.events import (
     IMAGE_ASSET_PERSISTED,
     PLAY_CONTINUE_LAST_SONG,
     PLAY_PLAYLIST_STORABLE,
-    PLAY_SEARCH_SONG,
     PLAY_SONG_AT_INDEX,
     PLAY_START_PLAYLIST,
     PLAY_STATE_CHANGED,
@@ -93,7 +90,6 @@ class PlayingManager:
         self.current_song: SongStorable | None = None
         self._gain_cache: dict[str, float] = {}
         self._play_seq = 0
-        self._pending_search_id: str | None = None
         self._preload_download_seq = 0
         self._preload_download_song_id: str | None = None
         self._pending_play_selection: PlaySelection | None = None
@@ -138,7 +134,6 @@ class PlayingManager:
         event_bus.subscribe(SONG_FINISH, lambda: self.playNext(False))
         event_bus.subscribe(PLAYNEXT, lambda: self.playNext(True))
         event_bus.subscribe(PLAYLAST, self.playLast)
-        event_bus.subscribe(PLAY_SEARCH_SONG, self.playSearchSong)
         event_bus.subscribe(PLAY_STORABLE, self.playStorable)
         event_bus.subscribe(PLAY_PLAYLIST_STORABLE, self.playPlaylistStorable)
         event_bus.subscribe(PLAY_SONG_AT_INDEX, self.playSongAtIndex)
@@ -162,7 +157,6 @@ class PlayingManager:
                 f'reserved_next={self._reserved_next is not None}',
                 f'preload_triggered={self._preload_triggered}',
                 f'next_song_audio={self.next_song_audio is not None}',
-                f'pending_search_id={self._pending_search_id}',
                 f'pending_play={self._pending_play_selection is not None}',
             ],
         )
@@ -380,7 +374,7 @@ class PlayingManager:
         song_id = str(song_storable.id)
 
         for folder in self._favs_ref:
-            for favorite in folder['songs']:
+            for favorite in folder.songs:
                 if str(favorite.id) != song_id:
                     continue
                 if (
@@ -397,123 +391,6 @@ class PlayingManager:
 
         if favorites_changed:
             saveFavorites()
-
-    def playSearchSong(self, info: SearchSongInfo, image_url: str) -> None:
-        player = self._player
-        if player is not None and player.isPlaying():
-            player.stop()
-
-        song_id = str(info.id)
-        self._pending_search_id = song_id
-        event_bus.emit(PLAYBACK_SONG_LOADING, info)
-
-        prepared: dict[str, object] = {}
-
-        def _is_current_search() -> bool:
-            return self._pending_search_id == song_id
-
-        def _try_play() -> None:
-            if prepared.get('music_error'):
-                prepared['_playing'] = True
-                self._emitError('Playback failed', 'Failed to get song audio URL.')
-                return
-
-            image = prepared.get('image')
-            lyrics_data = prepared.get('lyrics')
-            music = prepared.get('music')
-            if (
-                not isinstance(image, bytes)
-                or not isinstance(lyrics_data, dict)
-                or not isinstance(music, bytes)
-            ):
-                return
-            if len(music) == 0 or prepared.get('_playing'):
-                return
-            prepared['_playing'] = True
-
-            song_info = SongInfo(
-                name=info.name,
-                artists=', '.join(a.name for a in info.artists),
-                id=str(info.id),
-                privilege=info.privilege.fee,
-            )
-            storable = SongStorable(
-                info=song_info,
-                image=image,
-                music_bin=music,
-                lyric=lyrics_data.get('lyric', ''),
-                translated_lyric=lyrics_data.get('translated_lyric', ''),
-                yrc_lyric=lyrics_data.get('yrc_lyric', ''),
-            )
-
-            self.playlist.insert(self.current_index + 1, storable)
-            self.refreshRandom()
-            event_bus.emit(PLAYLIST_CHANGED)
-            self.playStorable(storable)
-
-        def _prepare() -> None:
-            try:
-                prepared['image'] = requests.get(image_url).content
-                prepared['lyrics'] = getBackend().getTrackLyrics(song_id)
-            except Exception as e:
-                prepared['error'] = str(e)
-
-        def _on_prepared() -> None:
-            if not _is_current_search():
-                return
-
-            if prepared.get('error'):
-                self._logger.error('Asset download failed: %s', prepared['error'])
-                self._emitError('Playback failed', 'Failed to download song assets.')
-                return
-
-            image = prepared.get('image')
-            if isinstance(image, bytes):
-                event_bus.emit(
-                    PLAYBACK_IMAGE_LOADED,
-                    info,
-                    image,
-                    getAverageColorFromBytes(image),
-                )
-
-            _try_play()
-
-        def _process_audio() -> None:
-            try:
-                audio = getBackend().getTrackAudio(
-                    song_id, bitrate=info.privilege.max_br
-                )
-                prepared['music_url'] = audio.url
-            except Exception as e:
-                prepared['music_error'] = str(e)
-
-        def _on_audio_prepare_done() -> None:
-            if not _is_current_search():
-                return
-            if prepared.get('music_error'):
-                self._emitError('Playback failed', 'Failed to get song audio URL.')
-                return
-
-            music_url = prepared.get('music_url')
-            if not isinstance(music_url, str) or not music_url:
-                return
-
-            def _on_downloaded(data: bytes) -> None:
-                if not _is_current_search():
-                    return
-                prepared['music'] = data
-                _try_play()
-
-            asyncDownload(
-                music_url,
-                _AUDIO_HEADERS,
-                None,
-                self._mwindow_obj,
-                _on_downloaded,
-            )
-
-        asyncTask(_prepare, (), self._mwindow_obj, _on_prepared)
-        asyncTask(_process_audio, (), self._mwindow_obj, _on_audio_prepare_done)
 
     def preloadNextSong(self) -> None:
         if len(self.playlist) <= 1:
@@ -915,6 +792,25 @@ class PlayingManager:
             cache_decoded_audio(cache_key, audio)
         return audio
 
+    def _selectStorableForPlayback(self, song_storable: SongStorable) -> SongStorable:
+        if 0 <= self.current_index < len(self.playlist):
+            current_song = self.playlist[self.current_index]
+            if current_song == song_storable:
+                return current_song
+
+        for index, song in enumerate(self.playlist):
+            if song == song_storable:
+                self.current_index = index
+                return song
+
+        insert_index = self.current_index + 1
+        insert_index = max(0, min(insert_index, len(self.playlist)))
+        self.playlist.insert(insert_index, song_storable)
+        self.current_index = insert_index
+        self.refreshRandom()
+        event_bus.emit(PLAYLIST_CHANGED)
+        return song_storable
+
     def playStorable(
         self,
         song_storable: SongStorable,
@@ -923,6 +819,7 @@ class PlayingManager:
         pause_after_load: bool = False,
         mark_loaded: bool = False,
     ) -> None:
+        song_storable = self._selectStorableForPlayback(song_storable)
         self._logger.debug(f'{song_storable.target_lufs=} {cfg.target_lufs=}')
 
         if not self.ensureAssets(
@@ -1066,8 +963,9 @@ class PlayingManager:
         def _download() -> None:
             nonlocal lyric_result
             need_yrc = song_storable.yrc_lyrics_missing()
+            need_translated_lyric = song_storable.translated_lyrics_missing()
             need_ytlrc = song_storable.ytlrc_missing()
-            if not need_yrc and not need_ytlrc:
+            if not need_yrc and not need_translated_lyric and not need_ytlrc:
                 return
             try:
                 lyric_result = getBackend().getTrackLyrics(song_storable.id)

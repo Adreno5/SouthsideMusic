@@ -9,13 +9,12 @@ from core.app_context import AppContext
 from core.color import mixColor
 from core.config import cfg
 from core.icons import bindIcon
-from core.models import SearchSongInfo, SongStorable
+from core.models import SongStorable
 from core.theme import isDark
 from core.playing_manager import PlayMode
 from imports import (
     BACKGROUND_RATIO_CHANGED,
     PLAY_START_PLAYLIST,
-    PLAY_SEARCH_SONG,
     PLAYBACK_ERROR,
     PLAYBACK_IMAGE_LOADED,
     PLAYBACK_LYRICS_UPDATED,
@@ -224,15 +223,6 @@ class PlayingPage(QWidget):
     def onNosoundSkipChanged(self, state: Qt.CheckState) -> None:
         cfg.skip_nosound = state == Qt.CheckState.Checked
 
-    def init(self) -> None:
-        if self.cur is None:
-            return
-        detail = getattr(self.cur, 'detail', None)
-        info = getattr(self.cur, 'info', None)
-        if detail is None or info is None:
-            return
-        event_bus.emit(PLAY_SEARCH_SONG, info, detail.get('image_url', ''))
-
     def onPlayButtonClicked(self) -> None:
         if self.cur is None:
             event_bus.emit(PLAY_START_PLAYLIST)
@@ -290,18 +280,13 @@ class PlayingPage(QWidget):
         painter.setBrush(card.backgroundColor)
         painter.drawRoundedRect(rect, r, r)
 
-    def _onPlaybackSongLoading(self, song: SongStorable | SearchSongInfo) -> None:
+    def _onPlaybackSongLoading(self, song: SongStorable) -> None:
         for label in self.findChildren(QLabel):
             label.setWordWrap(True)
 
-        if isinstance(song, SongStorable):
-            self.cur = DummyCard(song)
-            self.title_label.setText(song.name)
-            self.artists_label.setText(song.artists)
-        else:
-            self.cur = None
-            self.title_label.setText(song.name)
-            self.artists_label.setText('、'.join(a.name for a in song.artists))
+        self.cur = DummyCard(song)
+        self.title_label.setText(song.name)
+        self.artists_label.setText(song.artists)
 
         self._mgr.cur = ''
         self._transmgr.cur = ''
@@ -317,7 +302,7 @@ class PlayingPage(QWidget):
 
     def _onPlaybackImageLoaded(
         self,
-        song: SongStorable | SearchSongInfo,
+        song: SongStorable,
         image_bytes: bytes,
         avg_color: list[int] | tuple[int, int, int] | None = None,
     ) -> None:
@@ -348,6 +333,7 @@ class PlayingPage(QWidget):
     def _onPlaybackLyricsUpdated(self, song: SongStorable) -> None:
         if self.cur is not None and self.cur.storable.id != song.id:
             return
+        self.translation_button.setVisible(bool(song.translated_lyric))
         self.viewer.prewarmFontMetrics()
 
     def _onPlaybackError(self, title: str, message: str) -> None:

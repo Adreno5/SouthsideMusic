@@ -320,6 +320,17 @@ class SongStorable:
             return True
         return not data.get('has_yrc_lyric')
 
+    def translated_lyrics_missing(self) -> bool:
+        self._ensure_cache_fields()
+        if self.lyrics_missing():
+            return True
+        try:
+            with open(self.get_lyric_path(), 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception:
+            return True
+        return not data.get('translated_lyric')
+
     def ytlrc_missing(self) -> bool:
         self._ensure_cache_fields()
         if self.lyrics_missing():

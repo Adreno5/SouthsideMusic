@@ -8,6 +8,7 @@ from typing import cast
 
 from core.app_context import AppContext
 
+from core.downloader import asyncTask
 from imports import (
     REFRESH_RATE_CHANGED,
     REPAINT,
@@ -36,7 +37,7 @@ from core.color import mixColor
 from core import theme
 from core.smooth import EaseOutTimer
 from core.lyrics import LyricInfo, YRCLyricInfo
-from services.events.events import PLAY_STORABLE, COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
+from services.events.events import PLAY_STORABLE, COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO, START_PROGRESS_LOADING, STOP_PROGRESS_LOADING, UPDATE_LOADING_PROGRESS
 
 
 class LyricsViewer(QWidget):
@@ -61,6 +62,7 @@ class LyricsViewer(QWidget):
         self._dp = ctx.playing_page
 
         self.current_index: int = 0
+        self.yrc_current_ratio: float = 0
 
         self.draw_offset: float = 0
         self.target_draw_offset: float = 0
@@ -88,7 +90,6 @@ class LyricsViewer(QWidget):
         self.setMouseTracking(True)
 
         self._lyrics_ready = True
-        self._prewarm_version = 0
         self._translation_lookup_key: tuple[int, int] | None = None
         self._translation_by_time: dict[int, str] = {}
         self._shifted_translation_by_time: dict[int, str] = {}
@@ -119,18 +120,14 @@ class LyricsViewer(QWidget):
 
     def emitDebugInfo(self):
         event_bus.emit(EMIT_DEBUG_INFO, 'Lyrics Viewer', [
-            f'target acc={self.target_acc}', f'actual acc={self.acc}', f'target offset={self.target_draw_offset}', f'actual offset={self.draw_offset}', f'shown lines=({len(self._shown_lines)}) {self._shown_lines}', f'line alphas=({len(self._line_alphas)}) {[int(obj.current_value) for obj in self._line_alphas.values()]}', f'current index={self.current_index}'
+            f'target acc={self.target_acc}', f'actual acc={self.acc}', f'target offset={self.target_draw_offset}', f'actual offset={self.draw_offset}', f'shown lines=({len(self._shown_lines)}) {self._shown_lines}', f'line alphas=({len(self._line_alphas)}) {[int(obj.current_value) for obj in self._line_alphas.values()]}', f'current index={self.current_index}', f'yrc current char progress={self.yrc_current_ratio}'
         ])
 
     def prewarmFontMetrics(self):
         self._lyrics_ready = False
-        self._prewarm_version += 1
-        version = self._prewarm_version
-        QTimer.singleShot(0, lambda: self._doPrewarm(version))
+        asyncTask(self._doPrewarm, (), self)
 
-    def _doPrewarm(self, version: int):
-        if version != self._prewarm_version:
-            return
+    def _doPrewarm(self):
         all_texts: set[str] = set()
         for mgr in (self._mgr, self._transmgr, self._ymgr):
             for line in mgr.parsed:
@@ -142,10 +139,13 @@ class LyricsViewer(QWidget):
                         c = ch.char.strip()
                         if c:
                             all_texts.add(c)
-        for text in all_texts:
+        event_bus.emit(START_PROGRESS_LOADING)
+        for i, text in enumerate(all_texts):
             self.metri.horizontalAdvance(text)
+            event_bus.emit(UPDATE_LOADING_PROGRESS, i / len(all_texts))
+            time.sleep(0.02)
+        event_bus.emit(STOP_PROGRESS_LOADING)
         self._lyrics_ready = True
-        self.update()
 
     def _onRepaintTick(self):
         self.update()
@@ -462,6 +462,8 @@ class LyricsViewer(QWidget):
                     else:
                         progress = (position - ch.start) / duration
                     progress = max(0.0, min(1.0, progress))
+                    if progress > 0 and progress < 1:
+                        self.yrc_current_ratio = progress
                     clip_w = text_width * progress
                     if clip_w > 0:
                         painter.save()

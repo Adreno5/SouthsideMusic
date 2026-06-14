@@ -15,8 +15,9 @@ from imports import (
     WEBSOCKET_DISCONNECTED,
     InfoBar,
     QEasingCurve,
+    QPropertyAnimation,
+    Property,
     Qt,
-    SmoothScrollArea,
     event_bus,
 )
 from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
@@ -50,6 +51,128 @@ from core.ws_server import (
     QObjectHandler,
 )
 
+from views.list_widget import SScrollArea
+
+
+class SectionContainer(QWidget):
+    def __init__(self, title: str, description: str, parent=None) -> None:
+        super().__init__(parent)
+        self._title = title
+        self._expanded = True
+        self._content_height = 0
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        self.header = QWidget()
+        self.header.setCursor(Qt.CursorShape.PointingHandCursor)
+        header_layout = QVBoxLayout(self.header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(2)
+
+        title_l = TitleLabel(title)
+        desc_l = QLabel(description)
+        desc_l.setWordWrap(True)
+        desc_l.setStyleSheet(f'color: {"#A8A8A8" if theme.isDark() else "#666666"};')
+        header_layout.addWidget(title_l)
+        header_layout.addWidget(desc_l)
+
+        self.content_view = QWidget()
+        self.content_view.setMaximumHeight(16777215)
+        self.content_view.setMinimumHeight(0)
+
+        self.content_widget = QWidget(self.content_view)
+        self.content_layout = QVBoxLayout(self.content_widget)
+        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setSpacing(10)
+
+        self.overlay = QWidget(self.content_view)
+        self.overlay.setStyleSheet('background: black;')
+        self.overlay.hide()
+
+        self.anim = QPropertyAnimation(self, b'contentHeight')
+        self.anim.setDuration(800)
+        self.anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self.anim.finished.connect(self._onAnimFinished)
+
+        layout.addWidget(self.header)
+        layout.addWidget(self.content_view)
+        self.header.mousePressEvent = lambda e: self._onHeaderClicked()
+
+    def addWidget(self, widget: QWidget) -> None:
+        self.content_layout.addWidget(widget)
+        if self._expanded:
+            self.content_view.setFixedHeight(self._contentHeightHint())
+        self._syncContentGeometry()
+
+    def collapseNow(self) -> None:
+        self._expanded = False
+        self.content_view.setFixedHeight(0)
+        self.overlay.setGeometry(self.content_view.rect())
+        self.overlay.hide()
+        self._syncContentGeometry()
+
+    def _onHeaderClicked(self) -> None:
+        self.toggle()
+
+    def toggle(self) -> None:
+        self.setExpanded(not self._expanded)
+
+    def setExpanded(self, expanded: bool) -> None:
+        if (
+            expanded == self._expanded
+            and self.anim.state() != QPropertyAnimation.State.Running
+        ):
+            return
+        self._expanded = expanded
+        self._content_height = self._contentHeightHint()
+        self.content_view.setFixedHeight(max(0, self.content_view.height()))
+        if expanded:
+            self.content_widget.move(0, 0)
+        else:
+            self.content_widget.move(
+                0, self.content_view.height() - self._content_height
+            )
+        self._syncContentGeometry()
+        self.overlay.setGeometry(self.content_view.rect())
+        self.overlay.hide()
+
+        self.anim.stop()
+        self.anim.setStartValue(self.content_view.height())
+        self.anim.setEndValue(self._content_height if expanded else 0)
+        self.anim.start()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._syncContentGeometry()
+
+    def _syncContentGeometry(self) -> None:
+        height = self._contentHeightHint()
+        y = 0 if self._expanded else self.content_view.height() - height
+        self.content_widget.setGeometry(0, y, self.content_view.width(), height)
+        self.overlay.setGeometry(self.content_view.rect())
+
+    def _contentHeightHint(self) -> int:
+        return max(
+            self.content_widget.sizeHint().height(),
+            self.content_layout.sizeHint().height(),
+        )
+
+    def _onAnimFinished(self) -> None:
+        if self._expanded:
+            self.content_view.setFixedHeight(self._content_height)
+            self.overlay.hide()
+
+    def getContentHeight(self) -> int:
+        return self.content_view.height()
+
+    def setContentHeight(self, value: int) -> None:
+        self.content_view.setFixedHeight(max(0, value))
+        self._syncContentGeometry()
+
+    contentHeight = Property(int, getContentHeight, setContentHeight)
+
 
 class SettingPage(QWidget):
     def __init__(
@@ -68,10 +191,7 @@ class SettingPage(QWidget):
 
         global_layout = QVBoxLayout()
 
-        self.scroller = SmoothScrollArea()
-        self.scroller.setScrollAnimation(
-            Qt.Orientation.Vertical, 450, QEasingCurve.Type.OutCubic
-        )
+        self.scroller = SScrollArea()
 
         self.setObjectName('SettingPage')
         self.updateTheme()
@@ -79,9 +199,13 @@ class SettingPage(QWidget):
         self.options_layout.setContentsMargins(24, 24, 24, 24)
         self.options_layout.setSpacing(10)
         self._section_count = 0
+        self._current_section: SectionContainer | None = None
+        self._sections: list[SectionContainer] = []
         self.options_widget = QWidget()
         self.options_widget.setLayout(self.options_layout)
         self._initOptions()
+        for section in self._sections:
+            section.collapseNow()
         self.options_layout.addStretch(1)
 
         self.scroller.setWidget(self.options_widget)
@@ -108,6 +232,9 @@ class SettingPage(QWidget):
                 f'background_ratio={cfg.background_ratio:.2f}',
                 f'play_speed={cfg.play_speed:.2f}',
                 f'stereo={cfg.stereo}',
+                f'stereo_haas_index={cfg.stereo_haas_index}',
+                f'enable_reverb={cfg.enable_reverb}',
+                f'reverb_intensity={cfg.reverb_intensity}',
                 f'skip_nosound={cfg.skip_nosound}',
                 f'enable_fft={cfg.enable_fft}',
                 f'target_lufs={cfg.target_lufs}',
@@ -153,6 +280,23 @@ class SettingPage(QWidget):
         self.addSetting('Play order', 'the order of play', self.play_method_box)
 
         self.addCheckSetting('Enable Stereo', 'enable stereo effect', 'stereo')
+        self.addNumberSetting(
+            'Stereo Haas Index',
+            'adjust the right-channel delay of stereo Haas effect',
+            0,
+            30,
+            1,
+            'stereo_haas_index',
+        )
+        self.addCheckSetting('Enable Reverb', 'enable reverb effect', 'enable_reverb')
+        self.addNumberSetting(
+            'Reverb Intensity',
+            'adjust the strength of the reverb effect',
+            0,
+            30,
+            1,
+            'reverb_intensity',
+        )
         self.addCheckSetting(
             'Smart Skip', 'Skip the no sound section when song ends', 'skip_nosound'
         )
@@ -409,13 +553,17 @@ class SettingPage(QWidget):
     def addSection(self, title: str, description: str) -> None:
         if self._section_count:
             self.options_layout.addSpacing(12)
-        title_l = TitleLabel(title)
-        desc_l = QLabel(description)
-        desc_l.setWordWrap(True)
-        desc_l.setStyleSheet(f'color: {"#A8A8A8" if theme.isDark() else "#666666"};')
-        self.options_layout.addWidget(title_l)
-        self.options_layout.addWidget(desc_l)
+        section = SectionContainer(title, description)
+        self.options_layout.addWidget(section)
+        self._current_section = section
+        self._sections.append(section)
         self._section_count += 1
+
+    def _addOptionWidget(self, widget: QWidget) -> None:
+        if self._current_section is None:
+            self.options_layout.addWidget(widget)
+            return
+        self._current_section.addWidget(widget)
 
     def _createTransparentCard(self) -> CardWidget:
         card = CardWidget()
@@ -446,7 +594,7 @@ class SettingPage(QWidget):
         global_layout.addLayout(text_layout, 1)
         global_layout.addWidget(widget, 0, Qt.AlignmentFlag.AlignRight)
         card.setLayout(global_layout)
-        self.options_layout.addWidget(card)
+        self._addOptionWidget(card)
 
     def addInfoBlock(self, title: str, text: str) -> None:
         card = self._createTransparentCard()
@@ -460,7 +608,7 @@ class SettingPage(QWidget):
         layout.addWidget(title_l)
         layout.addWidget(body_l)
         card.setLayout(layout)
-        self.options_layout.addWidget(card)
+        self._addOptionWidget(card)
 
     def _onBackgroundRatioChanged(self, v):
         event_bus.emit(BACKGROUND_RATIO_CHANGED)
@@ -535,7 +683,7 @@ class SettingPage(QWidget):
         painter.drawRoundedRect(rect, r, r)
 
     def addSeparateWidget(self, widget: QWidget) -> None:
-        self.options_layout.addWidget(widget)
+        self._addOptionWidget(widget)
 
     def disconnectFromSouthsideClient(self):
         self._ws_server.tryGetHandler()

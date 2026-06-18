@@ -448,7 +448,7 @@ class MainWindow(FluentWindowBase):
         storable = SongStorable(
             info=SongInfo(
                 name=card.info.name,
-                artists='、'.join(a.name for a in card.info.artists),
+                artists=card.info.artists,
                 id=str(card.info.id),
                 privilege=card.info.privilege.fee,
             )

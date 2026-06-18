@@ -66,7 +66,7 @@ def getCachedHashes(song_id: str) -> dict[str, str]:
 @dataclass
 class SongInfo:
     name: str
-    artists: str
+    artists: list[ArtistInfo]
     id: str
     privilege: int
 
@@ -75,10 +75,14 @@ class SongInfo:
 class SongDetail:
     image_url: str
 
+@dataclass
+class ArtistInfo:
+    id: int
+    name: str
 
 class SongStorable:
     name: str
-    artists: str
+    artists: list[ArtistInfo]
     id: str
     loudness_gain: float
     target_lufs: int
@@ -389,10 +393,12 @@ class SongStorable:
             music_bytes = base64.b64decode(old_content_b64)
             content_cache_hash = ''
 
+        artists_raw = obj.get('artists', [])
+        assert isinstance(artists_raw, list)
         return SongStorable(
             info=SongInfo(
                 name=str(obj.get('name', '')),
-                artists=str(obj.get('artists', '')),
+                artists=list(artists_raw),
                 id=str(obj.get('id', '')),
                 privilege=-1,
             ),
@@ -430,13 +436,6 @@ class SearchCloudFolderInfo:
     image_url: str
     id: str
     author: str
-
-
-@dataclass
-class ArtistInfo:
-    id: int
-    name: str
-    avatar_url: str
 
 
 @dataclass

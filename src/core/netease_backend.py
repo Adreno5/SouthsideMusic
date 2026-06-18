@@ -56,8 +56,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             artists = [
                 ArtistInfo(
                     id=art.get('id', 0),
-                    name=art.get('name', ''),
-                    avatar_url='',
+                    name=art.get('name', '')
                 )
                 for art in songdict.get('ar', [])
             ]
@@ -205,12 +204,14 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             songs = response['songs']  # type: ignore
             result: list[SongStorable] = []
             for s in songs:
-                artist_names = [a['name'] for a in (s.get('ar') or [])]
                 cached = getCachedHashes(str(s['id']))
                 storable = SongStorable(
                     info=SongInfo(
                         name=s['name'],
-                        artists='/'.join(artist_names),
+                        artists=[ArtistInfo(
+                            id=obj['id'],
+                            name=obj['name']
+                        ) for obj in s.get('ar', [])],
                         id=str(s['id']),
                         privilege=-1,
                     ),

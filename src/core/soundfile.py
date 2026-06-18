@@ -24,6 +24,7 @@ from mutagen.id3._frames import (
 )
 
 from core.lyrics import LRCLyricParser
+from core.models import ArtistInfo
 
 _EXT_MAP: dict[type, str] = {
     MP3: '.mp3',
@@ -67,7 +68,7 @@ def _detect_format(song_bytes: bytes):
 def _set_id3_tags(
     audio: MP3 | WAVE,
     song_name: str,
-    song_artists: str,
+    song_artists: list[ArtistInfo],
     song_image: bytes,
     lyrics: str,
     album: str,
@@ -96,7 +97,7 @@ def _set_id3_tags(
     tags.delall('TIT2')
     tags.delall('TPE1')
     tags.add(TIT2(encoding=3, text=song_name))
-    tags.add(TPE1(encoding=3, text=song_artists))
+    tags.add(TPE1(encoding=3, text='、'.join([obj.name for obj in song_artists])))
 
     if lyrics:
         tags.delall('USLT')
@@ -142,7 +143,7 @@ def _set_id3_tags(
 def _set_tags_vorbis(
     audio: FLAC | OggOpus | OggVorbis,
     song_name: str,
-    song_artists: str,
+    song_artists: list[ArtistInfo],
     song_image: bytes,
     lyrics: str,
     album: str,
@@ -153,7 +154,7 @@ def _set_tags_vorbis(
     composer: str,
 ) -> None:
     audio['title'] = song_name
-    audio['artist'] = song_artists
+    audio['artist'] = '、'.join([obj.name for obj in song_artists])
 
     if lyrics:
         audio['lyrics'] = lyrics
@@ -191,7 +192,7 @@ def _set_tags_vorbis(
 def _set_tags_mp4(
     audio: MP4,
     song_name: str,
-    song_artists: str,
+    song_artists: list[ArtistInfo],
     song_image: bytes,
     lyrics: str,
     album: str,
@@ -202,7 +203,7 @@ def _set_tags_mp4(
     composer: str,
 ) -> None:
     audio['\xa9nam'] = song_name
-    audio['\xa9ART'] = song_artists
+    audio['\xa9ART'] = '、'.join([obj.name for obj in song_artists])
 
     if lyrics:
         audio['\xa9lyr'] = lyrics
@@ -233,7 +234,7 @@ def saveSongWithInformation(
     song_bytes: bytes,
     song_image: bytes,
     song_name: str,
-    song_artists: str,
+    song_artists: list[ArtistInfo],
     output_path: str,
     lyrics: str = '',
     album: str = '',

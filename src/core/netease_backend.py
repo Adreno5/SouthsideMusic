@@ -115,7 +115,10 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             cd=detail.get('cd', '1'),
             track_no=detail.get('no', 1),
             publish_time=detail.get('publishTime', 0),
-        )
+            artists=[ArtistInfo(
+                id=obj['id'], name=obj['name']
+            ) for obj in detail.get('ar', [])]
+       )
 
     def getTrackAudio(
         self, track_id: int | str, bitrate: int = 999000

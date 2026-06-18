@@ -51,6 +51,10 @@ from views.lyrics_viewer import LyricsViewer
 from views.song_card import DummyCard
 
 
+def _artists_text(song: SongStorable) -> str:
+    return '、'.join([artist.name for artist in song.artists])
+
+
 class PlayingPage(QWidget):
     def __init__(
         self,
@@ -286,7 +290,7 @@ class PlayingPage(QWidget):
 
         self.cur = DummyCard(song)
         self.title_label.setText(song.name)
-        self.artists_label.setText(song.artists)
+        self.artists_label.setText(_artists_text(song))
 
         self._mgr.cur = ''
         self._transmgr.cur = ''

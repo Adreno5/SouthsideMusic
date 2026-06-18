@@ -80,6 +80,39 @@ class ArtistInfo:
     id: int
     name: str
 
+
+def _artist_to_object(artist: ArtistInfo) -> dict[str, object]:
+    return {
+        'id': artist.id,
+        'name': artist.name,
+    }
+
+
+def _artist_from_object(obj: object) -> ArtistInfo | None:
+    if isinstance(obj, ArtistInfo):
+        return obj
+    if isinstance(obj, str):
+        return ArtistInfo(id=0, name=obj)
+    if not isinstance(obj, dict):
+        return None
+
+    try:
+        artist_id = int(obj.get('id', 0))
+    except (TypeError, ValueError):
+        artist_id = 0
+    return ArtistInfo(id=artist_id, name=str(obj.get('name', '')))
+
+
+def _artists_from_object(obj: object) -> list[ArtistInfo]:
+    if not isinstance(obj, list):
+        return []
+    return [
+        artist
+        for artist in (_artist_from_object(item) for item in obj)
+        if artist is not None
+    ]
+
+
 class SongStorable:
     name: str
     artists: list[ArtistInfo]
@@ -362,7 +395,7 @@ class SongStorable:
     def toObject(self) -> dict[str, object]:
         return {
             'name': self.name,
-            'artists': self.artists,
+            'artists': [_artist_to_object(artist) for artist in self.artists],
             'id': self.id,
             'image_cache_hash': self.image_cache_hash,
             'content_cache_hash': self.content_cache_hash,
@@ -393,12 +426,10 @@ class SongStorable:
             music_bytes = base64.b64decode(old_content_b64)
             content_cache_hash = ''
 
-        artists_raw = obj.get('artists', [])
-        assert isinstance(artists_raw, list)
         return SongStorable(
             info=SongInfo(
                 name=str(obj.get('name', '')),
-                artists=list(artists_raw),
+                artists=_artists_from_object(obj.get('artists', [])),
                 id=str(obj.get('id', '')),
                 privilege=-1,
             ),
@@ -469,6 +500,7 @@ class TrackDetailInfo:
     cd: str
     track_no: int
     publish_time: int
+    artists: list[ArtistInfo]
 
 
 @dataclass

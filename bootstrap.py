@@ -3,20 +3,44 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+import re
 import subprocess
 import threading
 import time
 from typing import Callable, Literal
-from PySide6.QtWidgets import *  # type: ignore
-from PySide6.QtCore import *  # type: ignore
+from urllib.request import Request, urlopen
+
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (
+    QApplication,
+    QLabel,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PYTHON_EXE = SCRIPT_DIR / 'python' / 'python.exe'
 FULL_REQUIREMENTS = SCRIPT_DIR / 'full_requirements.txt'
 MAIN_SCRIPT = SCRIPT_DIR / 'src' / 'main.py'
+SITE_PACKAGES = PYTHON_EXE.parent / 'Lib' / 'site-packages'
 
-from urllib.request import Request, urlopen
+PYSIDE_REQUIREMENT_NAMES = {
+    'pyside6',
+    'pyside6-addons',
+    'pyside6-essentials',
+    'shiboken6',
+}
+PYSIDE_REQUIRED_FILES = [
+    Path('PySide6') / 'Qt6WebEngineCore.dll',
+    Path('PySide6') / 'Qt6WebEngineWidgets.dll',
+    Path('PySide6') / 'QtWebEngineCore.pyd',
+    Path('PySide6') / 'QtWebEngineWidgets.pyd',
+    Path('PySide6') / 'QtWebEngineProcess.exe',
+    Path('PySide6') / 'resources' / 'qtwebengine_resources.pak',
+]
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -72,13 +96,16 @@ class RequirementInfo:
 def getRequirements() -> list[RequirementInfo]:
     result = []
     for line in FULL_REQUIREMENTS.read_text().splitlines():
-        try:
-            result.append(
-                RequirementInfo(name=line.split('==')[0], version=line.split('==')[1])
-            )
-        except:
-            pass
+        line = line.strip()
+        if '==' not in line:
+            continue
+        name, version = line.split('==', 1)
+        result.append(RequirementInfo(name=name, version=version))
     return result
+
+
+def normalizePackageName(name: str) -> str:
+    return re.sub(r'[-_.]+', '-', name).lower()
 
 
 def getInstalledPackages() -> list[RequirementInfo]:
@@ -94,10 +121,37 @@ def getInstalledPackages() -> list[RequirementInfo]:
     ).stdout
     parsed = json.loads(output)
     for data in parsed:
-        if data['name'] == 'pip':
+        if normalizePackageName(data['name']) == 'pip':
             continue
         result.append(RequirementInfo(name=data['name'], version=data['version']))
     return result
+
+
+def getUnsatisfiedRequirements(
+    installed: list[RequirementInfo], required: list[RequirementInfo]
+) -> list[RequirementInfo]:
+    installed_versions = {
+        normalizePackageName(requirement.name): requirement.version
+        for requirement in installed
+    }
+    return [
+        requirement
+        for requirement in required
+        if installed_versions.get(normalizePackageName(requirement.name))
+        != requirement.version
+    ]
+
+
+def getPySideRequirements(required: list[RequirementInfo]) -> list[RequirementInfo]:
+    return [
+        requirement
+        for requirement in required
+        if normalizePackageName(requirement.name) in PYSIDE_REQUIREMENT_NAMES
+    ]
+
+
+def isFullPySideInstalled() -> bool:
+    return all((SITE_PACKAGES / path).exists() for path in PYSIDE_REQUIRED_FILES)
 
 
 class BootstrapWindow(QWidget):
@@ -154,45 +208,64 @@ class BootstrapWindow(QWidget):
         self.status_label.setText(
             f'Installing requirements with mirror {mirror_name} | {int(latency * 1000)}ms'
         )
-        installed = {r.name: r.version for r in getInstalledPackages()}
-        required = {r.name: r.version for r in getRequirements()}
+        installed = getInstalledPackages()
+        required = getRequirements()
+        unsatisfied = getUnsatisfiedRequirements(installed, required)
+        pyside_incomplete = not isFullPySideInstalled()
+        if not unsatisfied and not pyside_incomplete:
+            self.allDone.emit()
+            return
 
-        for name in installed:
-            self.updateStatus(name, 'Uninstalling')
-            popen = subprocess.Popen(
-                [str(PYTHON_EXE), '-m', 'pip', 'uninstall', '-y', name],
-                cwd=str(SCRIPT_DIR),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
+        installed_versions = {
+            normalizePackageName(requirement.name): requirement.version
+            for requirement in installed
+        }
+        for requirement in required:
+            installed_version = installed_versions.get(
+                normalizePackageName(requirement.name)
             )
-            if popen.stdout:
-                for line in popen.stdout:
-                    _logger.debug(line.strip())
-            popen.wait()
-            self.updateStatus(name, 'Uninstalled')
+            if installed_version == requirement.version:
+                self.updateStatus(requirement.name, 'Installed')
+            else:
+                self.updateStatus(requirement.name, 'Waiting')
 
-        for name in required:
-            self.updateStatus(name, 'Waiting')
-        popen = subprocess.Popen(
-            [
-                str(PYTHON_EXE),
-                '-m',
-                'pip',
-                'install',
-                '--index-url',
+        if unsatisfied:
+            returncode = self.runPipInstall(mirror_url, ['-r', str(FULL_REQUIREMENTS)])
+            if returncode == 0:
+                for requirement in required:
+                    self.updateStatus(requirement.name, 'Installed')
+
+        if pyside_incomplete:
+            pyside_requirements = getPySideRequirements(required)
+            for requirement in pyside_requirements:
+                self.updateStatus(requirement.name, 'Waiting')
+            returncode = self.runPipInstall(
                 mirror_url,
-                '-r',
-                str(FULL_REQUIREMENTS),
-            ],
+                [
+                    '--ignore-installed',
+                    *[
+                        f'{requirement.name}=={requirement.version}'
+                        for requirement in pyside_requirements
+                    ],
+                ],
+            )
+            if returncode == 0:
+                for requirement in pyside_requirements:
+                    self.updateStatus(requirement.name, 'Installed')
+
+        self.allDone.emit()
+
+    def runPipInstall(self, mirror_url: str, args: list[str]) -> int:
+        popen = subprocess.Popen(
+            [str(PYTHON_EXE), '-m', 'pip', 'install', '--index-url', mirror_url, *args],
             cwd=str(SCRIPT_DIR),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
         )
         if not popen.stdout:
-            self.allDone.emit()
-            return
+            popen.wait()
+            return popen.returncode
         for line in popen.stdout:
             c = line.strip()
             _logger.debug(line.strip())
@@ -206,8 +279,7 @@ class BootstrapWindow(QWidget):
                 package = c.split('Using cached ')[1].split(' ')[0]
                 self.updateStatus(package, 'Installed')
         popen.wait()
-
-        self.allDone.emit()
+        return popen.returncode
 
     def updateStatus(
         self,
@@ -282,17 +354,22 @@ class BootstrapWindow(QWidget):
                 latency = end_time - start_time
                 self.latency_testing = False
                 self.latencyFinished.emit(mirror_name, mirror_url, latency)
-        except Exception as e:
+        except Exception:
             return
 
     def startTestLatency(self):
-        installed = {r.name: r.version for r in getInstalledPackages()}
-        required = {r.name: r.version for r in getRequirements()}
+        installed = getInstalledPackages()
+        required = getRequirements()
+        unsatisfied = getUnsatisfiedRequirements(installed, required)
+        pyside_incomplete = not isFullPySideInstalled()
         _logger.info(f'{len(installed)} installed, {len(required)} required')
-        if installed == required:
+        if not unsatisfied and not pyside_incomplete:
             _logger.info('all requirements satisfied')
             self.allDone.emit()
             return
+        _logger.info(f'{len(unsatisfied)} requirements need install/update')
+        if pyside_incomplete:
+            _logger.info('PySide6 needs install overwrite to restore full files')
 
         for mirror_name, mirror_url in MIRRORS.items():
             thread = threading.Thread(

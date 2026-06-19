@@ -126,7 +126,7 @@ class EventsServices(QObject):
         dialog.cancelButton.setText(tr('events_services.cancel'))
         dialog.yesButton.setStyleSheet(
             dialog.yesButton.styleSheet() +
-            'PrimaryPushButton { color: white; background: #c42b1c; }'
+            'PrimaryPushButton { color: white; background: #c42b1c; border: none; }'
             'PrimaryPushButton:hover { background: #d13438; }'
             'PrimaryPushButton:pressed { background: #a4262c; }'
         )

@@ -11,7 +11,7 @@ mkdir build.result 2>nul
 title Building - Copy launcher.dist
 xcopy .\launcher.dist .\build.result /E /I /Y
 title Building - Copy embed_python
-xcopy .\embed_python .\build.result\python /E /I /Y
+xcopy .\embed_python .\build.result\raw\python /E /I /Y
 title Building - Copy src
 xcopy .\src .\build.result\src /E /I /Y
 title Building - Copy fonts

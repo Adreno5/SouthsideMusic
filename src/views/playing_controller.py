@@ -575,20 +575,13 @@ class PlayingController(QWidget):
         progress_width = self.width() - progress_left
         painter.drawLine(progress_left, 0, self.width(), 0)
         if self._dp.total_length > 0:
-            prepared_start, prepared_end = self._player.getPreparedTimeSection()
+            _, prepared_end = self._player.getPreparedTimeSection()
             current_time = max(
                 0.0, min(self._player.getPosition(), self._dp.total_length)
             )
             self.draw_ratio_timer.target_value = current_time / self._dp.total_length
             draw_current_x = progress_left + int(
                 progress_width * self.draw_ratio_timer.current_value
-            )
-            prepared_start_x = progress_left + int(
-                progress_width
-                * (
-                    max(0.0, min(prepared_start, self._dp.total_length))
-                    / self._dp.total_length
-                )
             )
             self.prepared_ratio_timer.target_value = (
                 max(0.0, min(prepared_end, self._dp.total_length))
@@ -598,20 +591,18 @@ class PlayingController(QWidget):
                 progress_width * self.prepared_ratio_timer.current_value
             )
 
-            prepared_visible_start_x = max(prepared_start_x, draw_current_x)
-            if prepared_draw_end_x > prepared_visible_start_x:
-                painter.setPen(
-                    QPen(
-                        QColor(255, 255, 255, 70) if isDark else QColor(0, 0, 0, 45),
-                        8,
-                    )
+            painter.setPen(
+                QPen(
+                    QColor(255, 255, 255, 70) if isDark else QColor(0, 0, 0, 45),
+                    8,
                 )
-                painter.drawLine(
-                    prepared_visible_start_x,
-                    0,
-                    prepared_draw_end_x,
-                    0,
-                )
+            )
+            painter.drawLine(
+                0,
+                0,
+                prepared_draw_end_x,
+                0,
+            )
 
             painter.setPen(
                 QPen(QColor(255, 255, 255) if isDark else QColor(0, 0, 0), 8)

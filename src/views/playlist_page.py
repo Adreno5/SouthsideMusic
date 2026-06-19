@@ -24,7 +24,6 @@ from imports import (
     QTimer,
     event_bus,
 )
-from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from imports import (
     QListWidget,
     QListWidgetItem,
@@ -101,19 +100,6 @@ class PlaylistPage(QWidget):
         event_bus.subscribe(PLAYLIST_CHANGED, self.refreshPlaylistWidget)
         event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
-
-    def emitDebugInfo(self):
-        pm = self.ctx.playing_manager
-        event_bus.emit(
-            EMIT_DEBUG_INFO,
-            'Playlist Page',
-            [
-                f'song_cards={len(self._song_cards)}',
-                f'playlist_size={len(pm.playlist)}',
-                f'current_index={pm.current_index}',
-            ],
-        )
 
     @property
     def _dp(self):

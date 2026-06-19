@@ -16,7 +16,7 @@ from core.models import (
     MUSIC_DATA_DIR,
     SongStorable,
 )
-from services.events import event_bus, COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
+from services.events import event_bus, EMIT_DEBUG_INFO
 from qfluentwidgets import MessageBoxBase, SubtitleLabel
 from views.list_widget import SListWidget
 from imports import QHBoxLayout, QLabel, QListWidget, QVBoxLayout
@@ -31,18 +31,6 @@ class FavoritesManager:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self.folders: list[LocalFolderInfo] = []
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
-
-    def emitDebugInfo(self):
-        total_songs = sum(len(f.songs) for f in self.folders)
-        event_bus.emit(
-            EMIT_DEBUG_INFO,
-            'FavoritesManager',
-            [
-                f'folders={len(self.folders)}',
-                f'total_songs={total_songs}',
-            ],
-        )
 
     def load(self) -> None:
         _ensure_dirs()

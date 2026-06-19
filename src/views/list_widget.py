@@ -10,11 +10,13 @@ from imports import (
     QColor,
     QEasingCurve,
     QEvent,
+    QFont,
     QLinearGradient,
     QListView,
     QObject,
     QPaintEvent,
     QPainter,
+    QPen,
     QPropertyAnimation,
     QResizeEvent,
     QTimer,
@@ -25,6 +27,17 @@ from imports import (
     event_bus,
 )
 from qfluentwidgets import ListWidget, ScrollBar, SmoothScrollArea
+
+
+def _debugging_enabled(widget: QWidget) -> bool:
+    obj = widget
+    while obj is not None:
+        ctx = getattr(obj, 'ctx', None)
+        if ctx is not None:
+            return bool(getattr(ctx, 'debugging', False))
+        parent = obj.parent()
+        obj = parent if isinstance(parent, QWidget) else None
+    return False
 
 
 @dataclass
@@ -39,12 +52,17 @@ class SSmoothScrollBar(ScrollBar):
     def __init__(self, orientation: Qt.Orientation, parent: QAbstractScrollArea):
         super().__init__(orientation, parent)
         self._logger = logging.getLogger(__name__)
+        self._area = parent
         self.animating_objs: list[AnimatingObject] = []
         self.refresh_rate = max(60, parent.window().screen().refreshRate() / 2)
         self._logger.info(f'{self.refresh_rate=}')
         self.delta = 1 / self.refresh_rate
         self.last_draw: int = time.perf_counter_ns()
         self._scroll_remainder = 0.0
+        self.debug_forces: list[float] = []
+        self.debug_total_force = 0.0
+        self.debug_offset = 0.0
+        self.debug_offset_target = 0.0
 
         self.anim_timer = QTimer(self)
         self.anim_timer.timeout.connect(self._tick)
@@ -74,10 +92,13 @@ class SSmoothScrollBar(ScrollBar):
 
         new: list[AnimatingObject] = []
         total_delta = 0.0
+        forces: list[float] = []
         for obj in self.animating_objs:
             obj.elapsed += self.delta * 1000 * multiple_factor
             progress = self._smoothstep(obj.elapsed / obj.duration)
-            total_delta += obj.total * (progress - obj.last_progress)
+            force = obj.total * (progress - obj.last_progress)
+            forces.append(force)
+            total_delta += force
             obj.last_progress = progress
             if obj.elapsed < obj.duration:
                 new.append(obj)
@@ -87,6 +108,18 @@ class SSmoothScrollBar(ScrollBar):
             final_value = int(next_value)
             self._scroll_remainder = next_value - final_value
             self.setValue(final_value)
+        self.debug_forces = forces
+        self.debug_total_force = total_delta
+        self.debug_offset = float(self.value())
+        self.debug_offset_target = (
+            self.debug_offset
+            + self._scroll_remainder
+            + sum(obj.total * (1.0 - obj.last_progress) for obj in self.animating_objs)
+        )
+        if _debugging_enabled(self._area):
+            overlay = getattr(self._area, '_overlay', None)
+            if overlay is not None:
+                overlay.update()
 
     def scrollValue(self, delta: int):
         self.animating_objs.append(
@@ -180,6 +213,8 @@ class LimitOverlay(QWidget):
         super().__init__(parent)
         self.par = parent
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.db_ft = QFont()
+        self.db_ft.setPointSize(10)
         self.show()
 
     def paintEvent(self, event: QPaintEvent) -> None:
@@ -187,8 +222,9 @@ class LimitOverlay(QWidget):
         bl = self.par.blmtimer.current_value
         ll = self.par.llmtimer.current_value
         rl = self.par.rlmtimer.current_value
+        debugging = _debugging_enabled(self.par)
 
-        if tl <= 0 and bl <= 0 and ll <= 0 and rl <= 0:
+        if tl <= 0 and bl <= 0 and ll <= 0 and rl <= 0 and not debugging:
             return
 
         painter = QPainter(self)
@@ -234,7 +270,63 @@ class LimitOverlay(QWidget):
             painter.setBrush(gra)
             painter.drawRect(w - right_w, 0, right_w, h)
 
+        if debugging:
+            self._paint_debug_overlay(painter)
+
         painter.end()
+
+    def _paint_debug_overlay(self, painter: QPainter) -> None:
+        delegate = getattr(self.par, 'scrollDelegate', None) or getattr(
+            self.par, 'delegate', None
+        )
+        if delegate is None:
+            return
+        bar = getattr(delegate, 'vScrollBar', None)
+        if bar is None:
+            return
+
+        center = self.height() // 2
+        force_left = self.width() - 400
+        force_right = self.width() - 200
+        offset_left = force_right
+        offset_right = self.width()
+
+        painter.setFont(self.db_ft)
+        painter.setPen(QPen(QColor(160, 160, 160), 1))
+        painter.drawLine(force_left, center, force_right, center)
+        force_colors = (
+            QColor(255, 120, 120),
+            QColor(255, 180, 80),
+            QColor(255, 255, 80),
+            QColor(120, 255, 120),
+            QColor(120, 255, 255),
+            QColor(120, 120, 255),
+        )
+        bar_gap = 0
+        bar_width = 8
+        x = force_left
+        for i, force in enumerate(bar.debug_forces):
+            delta_ = int(force) + center
+            painter.setPen(QPen(force_colors[i % len(force_colors)], bar_width))
+            painter.drawLine(x, center, x, delta_)
+            x += bar_width + bar_gap
+
+        x += bar_gap
+        painter.setPen(QPen(QColor(255, 75, 255), bar_width + 2))
+        delta_ = int(bar.debug_total_force) + center
+        painter.drawLine(x, center, x, delta_)
+        painter.setPen(QPen(QColor(255, 75, 255), 1))
+        painter.drawText(x + 5, delta_ + 15, f'Force Sum: {bar.debug_total_force:.2f}')
+
+        painter.setPen(QPen(QColor(255, 120, 120), 1))
+        offset_delta = bar.debug_offset_target - bar.debug_offset
+        delta_ = int(offset_delta) + center
+        painter.drawLine(offset_left, delta_, offset_right, delta_)
+        painter.drawText(offset_left, delta_ + 15, 'Offset Target')
+
+        painter.setPen(QPen(QColor(120, 255, 255), 1))
+        painter.drawLine(offset_left, center, offset_right, center)
+        painter.drawText(offset_left, center + 15, 'Offset')
 
 
 class SListWidget(ListWidget):

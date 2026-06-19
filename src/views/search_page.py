@@ -14,7 +14,6 @@ from imports import (
     QWidget,
     event_bus,
 )
-from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from views.folder_card import SearchCloudFolderCard
 from views.list_widget import SListWidget
 
@@ -73,22 +72,7 @@ class SearchPage(QWidget):
         self.check_timer.start(50)
 
         self.cards: list[SearchSongCard | SearchCloudFolderCard] = []
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
-
-    def emitDebugInfo(self):
-        event_bus.emit(
-            EMIT_DEBUG_INFO,
-            'Search Page',
-            [
-                f'searching={self.searching}',
-                f'last_search={self.last_search!r}',
-                f'curr_offset={self.curr_offset}',
-                f'cards={len(self.cards)}',
-                f'img_cards={len(self.img_card_map)}',
-                f'search_type={self.ctx.cfg.search_type}',
-            ],
-        )
-
+        
     @property
     def _mwindow(self):
         return self.ctx.main_window

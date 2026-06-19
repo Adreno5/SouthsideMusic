@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, cast as _cast
 from core.app_context import AppContext
 from core.models import SongStorable
 from core.qt_utils import toQtInt
+from core.smooth import EaseOutTimer
 from views.setting_page import SettingPage
 
 from core.color import mixColor
@@ -36,7 +37,6 @@ from imports import (
     QTimer,
     event_bus,
 )
-from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from imports import (
     QColor,
     QLinearGradient,
@@ -95,18 +95,6 @@ class PlayingControllerLyricsViewer(QWidget):
 
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(REPAINT, self._onRepaintTick)
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
-
-    def emitDebugInfo(self):
-        event_bus.emit(
-            EMIT_DEBUG_INFO,
-            'Controller Lyrics Viewer',
-            [
-                f'lyrics_ready={self._lyrics_ready}',
-                f'prewarm_version={self._prewarm_version}',
-                f'refresh_rate={self.refresh_rate}',
-            ],
-        )
 
     def prewarmFontMetrics(self):
         self._lyrics_ready = False
@@ -257,6 +245,9 @@ class PlayingController(QWidget):
 
         self.dev_mag: float = 1
 
+        self.draw_ratio_timer = EaseOutTimer(0.25, 4)
+        self.prepared_ratio_timer = EaseOutTimer(0.35, 4)
+
         self.lastfm = time.time()
         self.last_draw: int = time.perf_counter_ns()
         self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
@@ -340,7 +331,6 @@ class PlayingController(QWidget):
         event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
 
         if self._mwindow:
             self.bg_color = mixColor(
@@ -358,20 +348,6 @@ class PlayingController(QWidget):
     def _onRefreshRateChanged(self):
         self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
         self.delta = 1 / self.refresh_rate
-
-    def emitDebugInfo(self):
-        event_bus.emit(
-            EMIT_DEBUG_INFO,
-            'Playing Controller',
-            [
-                f'dragging={self.dragging}',
-                f'dev_mag={self.dev_mag:.3f}',
-                f'refresh_rate={self.refresh_rate}',
-                f'preloaded={self._dp.preloaded}',
-                f'total_length={self._dp.total_length:.1f}',
-                f'is_playing={self._player.is_playing}',
-            ],
-        )
 
     def onTogglePlaylist(self):
         if self._mwindow and not self._mwindow.pl_animating:
@@ -492,25 +468,24 @@ class PlayingController(QWidget):
         else:
             bindIcon(self.play_pausebtn, 'playa')
 
+    def _progressLeft(self) -> int:
+        return 52 if self.fm_label.isVisible() else 0
+
+    def _eventPlayingTime(self, event: QMouseEvent) -> float:
+        progress_left = self._progressLeft()
+        progress_width = max(1, self.width() - progress_left)
+        progress = (event.position().x() - progress_left) / progress_width
+        progress = max(0.0, min(1.0, progress))
+        return progress * self._dp.total_length
+
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if (
             event.position().y() < 8
-            and event.position().x() > (52 if self.fm_label.isVisible() else 0)
+            and event.position().x() > self._progressLeft()
             and self._dp.preloaded
         ):
             self.dragging = True
-            playing_time = min(
-                self._dp.total_length,
-                max(
-                    0,
-                    (
-                        event.position().x()
-                        / (self.width() - (52 if self.fm_label.isVisible() else 0))
-                    )
-                    * self._dp.total_length,
-                ),
-            )
-            self._player.setPosition(playing_time)
+            self._player.setPosition(self._eventPlayingTime(event))
         elif event.position().y() > 8:
             if self._mwindow and not self._mwindow.dp_animating:
                 self._mwindow.togglePlayingPageExpand()
@@ -518,35 +493,13 @@ class PlayingController(QWidget):
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self.dragging and self._dp.preloaded:
-            playing_time = min(
-                self._dp.total_length,
-                max(
-                    0,
-                    (
-                        event.position().x()
-                        / (self.width() - (52 if self.fm_label.isVisible() else 0))
-                    )
-                    * self._dp.total_length,
-                ),
-            )
-            self._player.setPosition(playing_time)
+            self._player.setPosition(self._eventPlayingTime(event))
             self.dragging = False
         return super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self.dragging and self._dp.preloaded:
-            playing_time = min(
-                self._dp.total_length,
-                max(
-                    0,
-                    (
-                        event.position().x()
-                        / (self.width() - (52 if self.fm_label.isVisible() else 0))
-                    )
-                    * self._dp.total_length,
-                ),
-            )
-            self._player.setPosition(playing_time)
+            self._player.setPosition(self._eventPlayingTime(event))
         return super().mouseMoveEvent(event)
 
     def toggle(self):
@@ -618,18 +571,55 @@ class PlayingController(QWidget):
             painter.setClipPath(path, Qt.ClipOperation.NoClip)
 
         painter.setPen(QPen(QColor(120, 120, 120), 8))
-        painter.drawLine(0, 0, self.width(), 0)
+        progress_left = self._progressLeft()
+        progress_width = self.width() - progress_left
+        painter.drawLine(progress_left, 0, self.width(), 0)
         if self._dp.total_length > 0:
+            prepared_start, prepared_end = self._player.getPreparedTimeSection()
+            current_time = max(
+                0.0, min(self._player.getPosition(), self._dp.total_length)
+            )
+            self.draw_ratio_timer.target_value = current_time / self._dp.total_length
+            draw_current_x = progress_left + int(
+                progress_width * self.draw_ratio_timer.current_value
+            )
+            prepared_start_x = progress_left + int(
+                progress_width
+                * (
+                    max(0.0, min(prepared_start, self._dp.total_length))
+                    / self._dp.total_length
+                )
+            )
+            self.prepared_ratio_timer.target_value = (
+                max(0.0, min(prepared_end, self._dp.total_length))
+                / self._dp.total_length
+            )
+            prepared_draw_end_x = progress_left + int(
+                progress_width * self.prepared_ratio_timer.current_value
+            )
+
+            prepared_visible_start_x = max(prepared_start_x, draw_current_x)
+            if prepared_draw_end_x > prepared_visible_start_x:
+                painter.setPen(
+                    QPen(
+                        QColor(255, 255, 255, 70) if isDark else QColor(0, 0, 0, 45),
+                        8,
+                    )
+                )
+                painter.drawLine(
+                    prepared_visible_start_x,
+                    0,
+                    prepared_draw_end_x,
+                    0,
+                )
+
             painter.setPen(
                 QPen(QColor(255, 255, 255) if isDark else QColor(0, 0, 0), 8)
             )
             painter.drawLine(
-                52 if self.fm_label.isVisible() else 0,
+                progress_left,
                 0,
-                int(
-                    (self.width() - (52 if self.fm_label.isVisible() else 0))
-                    * (self._player.getPosition() / self._dp.total_length)
-                ),
+                draw_current_x,
                 0,
             )
 

@@ -1,7 +1,7 @@
 import logging
 import random
 
-from services.events import event_bus, COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
+from services.events import event_bus, EMIT_DEBUG_INFO
 from typing import Generic, TypeVar
 
 _logger = logging.getLogger(__name__)
@@ -15,14 +15,7 @@ class AdvancedRandom(Generic[T]):
         self.list_weight: list[float] = []
         self.randomed_times: list[int] = []
         self.target_lst: list[T] = []
-
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
-
-    def emitDebugInfo(self):
-        event_bus.emit(EMIT_DEBUG_INFO, 'Advanced Random', [
-            f'weights={self.list_weight}', f'triggered times={self.randomed_times}'
-        ])
-
+        
     def init(self, lst: list[T]):
         if not lst:
             return

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from core.app_context import AppContext
 
+from core.smooth import SmoothTimer
 from imports import (
     QSize,
     Qt,
@@ -38,8 +39,8 @@ class DesktopLyricsViewer(LyricsViewer):
         self.indentation_y: float = 0
         self.indentation: bool = False
 
-        self.cwidth: float = 10
-        self.cheight: float = 65
+        self.width_timer = SmoothTimer(0.5, 3)
+        self.height_timer = SmoothTimer(0.5, 3)
 
         self.dragging: bool = False
         self.dragging_point: QPoint = QPoint(0, 0)
@@ -126,8 +127,8 @@ class DesktopLyricsViewer(LyricsViewer):
         tar_height = 65 if has_translation and self.ctx.cfg.show_translation else 46
         if meta:
             tar_height = self.font_height + 10
-        self.cheight += (tar_height - self.cheight) * 0.12
-        self.setFixedHeight(int(self.cheight))
+        self.height_timer.target_value = tar_height
+        self.setFixedHeight(int(self.height_timer.current_value))
 
         tar_width = 0
         if self._ymgr.parsed:
@@ -152,8 +153,8 @@ class DesktopLyricsViewer(LyricsViewer):
             )
         tar_width += self.draw_x_offset + self.height() * 0.5 + 10
 
-        self.cwidth += (tar_width - self.cwidth) * 0.07
-        self.setFixedWidth(int(self.cwidth))
+        self.width_timer.target_value = tar_width
+        self.setFixedWidth(int(self.width_timer.current_value))
 
         target_point = QPoint(0, 0)
         if cfg.desktop_lyrics_anchor == 'top-center':

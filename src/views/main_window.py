@@ -12,6 +12,7 @@ from core.app_context import AppContext
 
 from core.backend import getBackend
 from core.dialogs import getTextLineedit
+from core.smooth import EaseOutTimer
 from imports import (
     BACKGROUND_RATIO_CHANGED,
     ENDING_NO_SOUND,
@@ -33,19 +34,20 @@ from imports import (
     QAbstractAnimation,
     QEasingCurve,
     QFont,
+    QFontMetricsF,
     QListWidget,
     QListWidgetItem,
     QPropertyAnimation,
     QRect,
     QSize,
     QStackedWidget,
+    QWheelEvent,
     Qt,
     QTimer,
     Signal,
     TransparentPushButton,
     event_bus,
 )
-from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from imports import QCloseEvent, QColor, QKeyEvent, QPainter
 from views.list_widget import SListWidget
 from imports import QHBoxLayout, QVBoxLayout, QWidget
@@ -66,6 +68,58 @@ from views.line_edit import SearchLineEdit
 from views.playing_controller import PlayingController
 from views.song_card import SearchSongCard
 from views.title_bar import SouthsideMusicTitleBar
+
+
+class DebugOverlay(QWidget):
+    def __init__(self, ctx: AppContext, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.ctx = ctx
+        self.title_ft = QFont(ctx.harmony_font_family, 13, QFont.Weight.Bold)
+        self.content_ft = QFont(ctx.harmony_font_family, 10, QFont.Weight.Normal)
+        self.title_height = int(QFontMetricsF(self.title_ft).height())
+        self.content_height = int(QFontMetricsF(self.content_ft).height())
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.hide()
+
+        self.offset_timer = EaseOutTimer(0.2, 2)
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        self.offset_timer.target_value += event.angleDelta().y()
+        return super().wheelEvent(event)
+
+    def refresh(self) -> None:
+        self.setVisible(self.ctx.debugging)
+        if self.ctx.debugging:
+            self.raise_()
+            self.update()
+
+    def paintEvent(self, event) -> None:
+        if not self.ctx.debugging:
+            return
+        
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(255, 255, 255, 45) if theme.isLight() else QColor(0, 0, 0, 70))
+
+        painter.drawRect(self.rect())
+
+        painter.setPen(QColor(255, 255, 255) if theme.isDark() else QColor(0, 0, 0))
+
+        y = 50 + int(self.offset_timer.current_value)
+        painter.setFont(self.title_ft)
+        for info in self.ctx.debugging_obj.infos:
+            name, lines = next(iter(info.items()))
+            painter.setFont(self.title_ft)
+            painter.drawText(10, y, name)
+            y += self.title_height + 10
+            painter.setFont(self.content_ft)
+            for line in lines:
+                painter.drawText(20, y, line)
+                y += self.content_height + 1
+
+        painter.end()
 
 
 class MainWindow(FluentWindowBase):
@@ -233,6 +287,12 @@ class MainWindow(FluentWindowBase):
         self.controller.raise_()
         self.controller.show()
 
+        self.debug_overlay = DebugOverlay(ctx, self)
+        geo = self.rect()
+        geo.setWidth(int(self.width() * 0.25))
+        self.debug_overlay.setGeometry(geo)
+        self.debug_overlay.raise_()
+
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(REPAINT, self.updateDatas)
         event_bus.subscribe(START_INTER_LOADING, self.onStartInterLoading)
@@ -244,24 +304,6 @@ class MainWindow(FluentWindowBase):
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self.update)
         event_bus.subscribe(VIEW_FOLDER, self.onViewFolder)
         event_bus.subscribe(MWINDOW_REFRESH_FOLDERS, self.refreshFolders)
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
-
-    def emitDebugInfo(self):
-        event_bus.emit(
-            EMIT_DEBUG_INFO,
-            'Main Window',
-            [
-                f'connected={self.connected}',
-                f'closing={self.closing}',
-                f'loading_tasks={self.loading_tasks}',
-                f'loading_progress={self.loading_progress:.2f}',
-                f'dp_expanded={self.dp_expanded}',
-                f'pl_expanded={self.pl_expanded}',
-                f'scheduled={len(self._scheduled_tasks)}',
-                f'refresh_rate={self.refresh_rate}',
-                f'song_theme={self.song_theme is not None}',
-            ],
-        )
 
     def onStackedWidgetChanged(self):
         if self.dp_expanded and not self.dp_animating:
@@ -425,6 +467,10 @@ class MainWindow(FluentWindowBase):
                 self.left = max(0, min(self.width(), self.left))
 
             self.update()
+            return
+        
+        if self.ctx.debugging:
+            self.debug_overlay.refresh()
 
     def addScheduledTask(self, task: Callable, *args, **kwargs) -> None:
         with self._scheduled_tasks_lock:
@@ -654,6 +700,12 @@ class MainWindow(FluentWindowBase):
             self.search_input.setFixedWidth(self.width() - self.minimumWidth())
             self.search_input.raise_()
 
+        if hasattr(self, 'debug_overlay'):
+            geo = self.rect()
+            geo.setWidth(int(self.width() * 0.25))
+            self.debug_overlay.setGeometry(geo)
+            self.debug_overlay.raise_()
+
     def onWebsocketConnected(self):
         InfoBar.success(
             'SouthsideClient connection',
@@ -701,7 +753,8 @@ class MainWindow(FluentWindowBase):
             self.controller.toggle()
             event.accept()
         elif event.key() == Qt.Key.Key_F3:
-            self.ctx.debug_window.setVisible(not self.ctx.debug_window.isVisible())
+            self.ctx.debugging_obj.toggle()
+            self.debug_overlay.refresh()
             event.accept()
         else:
             return super().keyPressEvent(event)
@@ -741,11 +794,5 @@ class MainWindow(FluentWindowBase):
                     0, 0, int(self.width() * self.draw_progress), int(self.bar_height)
                 )
             painter.setPen(QColor(255, 255, 255) if theme.isDark() else QColor(0, 0, 0))
-
-            painter.drawText(
-                4,
-                int(self.bar_height + 18),
-                f'Loading... ({f"{round(self.loading_progress * 100, 2)}%" if self.loading_progressing else self.loading_tasks})',
-            )
 
         painter.end()

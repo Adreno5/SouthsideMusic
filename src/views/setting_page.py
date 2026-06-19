@@ -18,9 +18,9 @@ from imports import (
     QPropertyAnimation,
     Property,
     Qt,
+    Signal,
     event_bus,
 )
-from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from imports import QColor
 from imports import (
     QHBoxLayout,
@@ -55,6 +55,8 @@ from views.list_widget import SScrollArea
 
 
 class SectionContainer(QWidget):
+    expandedChanged = Signal(str, bool)
+
     def __init__(self, title: str, description: str, parent=None) -> None:
         super().__init__(parent)
         self._title = title
@@ -113,6 +115,13 @@ class SectionContainer(QWidget):
         self.overlay.hide()
         self._syncContentGeometry()
 
+    def isExpanded(self) -> bool:
+        return self._expanded
+
+    @property
+    def title(self) -> str:
+        return self._title
+
     def _onHeaderClicked(self) -> None:
         self.toggle()
 
@@ -126,6 +135,7 @@ class SectionContainer(QWidget):
         ):
             return
         self._expanded = expanded
+        self.expandedChanged.emit(self._title, expanded)
         self._content_height = self._contentHeightHint()
         self.content_view.setFixedHeight(max(0, self.content_view.height()))
         if expanded:
@@ -205,7 +215,10 @@ class SettingPage(QWidget):
         self.options_widget.setLayout(self.options_layout)
         self._initOptions()
         for section in self._sections:
+            if cfg.setting_section_expanded.get(section.title, False):
+                continue
             section.collapseNow()
+        self._syncSectionExpandedConfig()
         self.options_layout.addStretch(1)
 
         self.scroller.setWidget(self.options_widget)
@@ -222,28 +235,7 @@ class SettingPage(QWidget):
             DB_CHANGED,
             lambda v: self.now_volume.setText(f'Current volume(db): {int(v)}'),
         )
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
-
-    def emitDebugInfo(self):
-        event_bus.emit(
-            EMIT_DEBUG_INFO,
-            'Setting Page',
-            [
-                f'background_ratio={cfg.background_ratio:.2f}',
-                f'play_speed={cfg.play_speed:.2f}',
-                f'stereo={cfg.stereo}',
-                f'stereo_haas_index={cfg.stereo_haas_index}',
-                f'enable_reverb={cfg.enable_reverb}',
-                f'reverb_intensity={cfg.reverb_intensity}',
-                f'skip_nosound={cfg.skip_nosound}',
-                f'enable_fft={cfg.enable_fft}',
-                f'target_lufs={cfg.target_lufs}',
-                f'output_device_index={cfg.output_device_index}',
-                f'enable_desktop_lyrics={cfg.enable_desktop_lyrics}',
-                f'ws_server_running={self._ws_server.is_alive() if self._ws_server else False}',
-            ],
-        )
-
+        
     @property
     def _dp(self):
         return self.ctx.playing_page
@@ -281,10 +273,10 @@ class SettingPage(QWidget):
 
         self.addCheckSetting('Enable Stereo', 'enable stereo effect', 'stereo')
         self.addNumberSetting(
-            'Stereo Haas Index',
+            'Stereo Haas Index (ms)',
             'adjust the right-channel delay of stereo Haas effect',
             0,
-            30,
+            100,
             1,
             'stereo_haas_index',
         )
@@ -293,8 +285,8 @@ class SettingPage(QWidget):
             'Reverb Intensity',
             'adjust the strength of the reverb effect',
             0,
-            30,
-            1,
+            3,
+            0.01,
             'reverb_intensity',
         )
         self.addCheckSetting(
@@ -503,7 +495,7 @@ class SettingPage(QWidget):
                     parent=self._mwindow,
                 )
             cfg.output_device_index = idx
-        except:
+        except Exception:
             pass
 
     def onSliderReleased(self):
@@ -554,10 +546,19 @@ class SettingPage(QWidget):
         if self._section_count:
             self.options_layout.addSpacing(12)
         section = SectionContainer(title, description)
+        section.expandedChanged.connect(self._onSectionExpandedChanged)
         self.options_layout.addWidget(section)
         self._current_section = section
         self._sections.append(section)
         self._section_count += 1
+
+    def _onSectionExpandedChanged(self, title: str, expanded: bool) -> None:
+        cfg.setting_section_expanded[title] = expanded
+
+    def _syncSectionExpandedConfig(self) -> None:
+        cfg.setting_section_expanded = {
+            section.title: section.isExpanded() for section in self._sections
+        }
 
     def _addOptionWidget(self, widget: QWidget) -> None:
         if self._current_section is None:

@@ -45,7 +45,7 @@ from views.favorites_page import FavoritesPage
 from views.session_page import SessionPage
 from views.main_window import MainWindow
 from views.error_popup import ErrorPopupWindow
-from views.debug_window import DebugWindow
+from core.debugging import Debugging
 from services.update import startUpdateCheck
 
 logging_handler = LogHandler()
@@ -317,8 +317,8 @@ if __name__ == '__main__':
         events_service = EventsServices(ctx)
 
         launchwindow.push('Initializing debug window...')
-        dw = DebugWindow(ctx)
-        ctx.debug_window = dw
+        dw = Debugging(ctx)
+        ctx.debugging_obj = dw
         launchwindow.push('Initializing playing page...')
         dp = PlayingPage(ctx)
         ctx.playing_page = dp

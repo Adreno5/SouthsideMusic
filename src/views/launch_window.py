@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from imports import Qt
 from imports import QLabel, QVBoxLayout, QWidget, event_bus
-from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from qfluentwidgets import TitleLabel
 import hPyT
 
@@ -48,7 +47,6 @@ class LaunchWindow(QWidget):
         )
 
         self.show()
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
 
     def push(self, text: str):
         self._stack.append(text)
@@ -69,16 +67,6 @@ class LaunchWindow(QWidget):
 
     def clear(self):
         pass
-
-    def emitDebugInfo(self):
-        event_bus.emit(
-            EMIT_DEBUG_INFO,
-            'Launch Window',
-            [
-                f'stack_size={len(self._stack)}',
-                f'last_5={self._stack[-5:] if len(self._stack) > 0 else None}',
-            ],
-        )
 
     def updateLabel(self):
         text = (

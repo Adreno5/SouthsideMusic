@@ -24,7 +24,6 @@ from core.loudness import getAdjustedGainFactor
 from core.models import (
     IMAGE_DATA_DIR,
     MUSIC_DATA_DIR,
-    ArtistInfo,
     SongStorable,
     TrackLyricsInfo,
 )
@@ -450,7 +449,6 @@ class PlayingManager:
                     next_song,
                     image_missing,
                     music_missing,
-                    artists_missing,
                     _after_download,
                 )
 
@@ -516,7 +514,7 @@ class PlayingManager:
                     self.clearReservedNext()
                     self._schedule(self.playPreloadedSong, sel)
 
-            image_missing, music_missing, artists_missing = self._storable_asset_missing(next_song)
+            image_missing, music_missing = self._storable_asset_missing(next_song)
             if image_missing or music_missing:
                 _download_then_preload(image_missing, music_missing)
             else:
@@ -618,33 +616,30 @@ class PlayingManager:
             return
         self.playStorable(storable)
 
-    def _storable_asset_missing(self, song_storable: SongStorable) -> tuple[bool, bool, bool]:
+    def _storable_asset_missing(self, song_storable: SongStorable) -> tuple[bool, bool]:
         backend = getBackend()
         return not song_storable.image_cached(), not song_storable.audio_cached(
             not backend.userAnonymous(), int(backend.getUserVipType())
-        ), not bool(song_storable.artists)
+        )
 
     def _downloadStorableMissingAssets(
         self,
         song_storable: SongStorable,
         image_missing: bool,
         music_missing: bool,
-        artists_missing: bool,
         finished: Callable[[bool], None],
     ) -> None:
         class PrepareInfo(TypedDict):
             error: Optional[str]
             image: Optional[bytes]
             music_url: Optional[str]
-            artists: Optional[list[ArtistInfo]]
-        prepared: PrepareInfo = PrepareInfo(error=None, image=None, music_url=None, artists=None)
+
+        prepared: PrepareInfo = PrepareInfo(error=None, image=None, music_url=None)
 
         def _prepare() -> None:
             try:
                 if image_missing:
                     detail = getBackend().getTrackDetail(song_storable.id)
-                    if artists_missing:
-                        prepared['artists'] = detail.artists
                     image_url = detail.cover_url
                     prepared['image'] = requests.get(image_url).content
 
@@ -697,9 +692,6 @@ class PlayingManager:
                 finished(False)
                 return
 
-            if prepared.get('artists'):
-                song_storable.artists = prepared.get('artists') or []
-
             if music_missing:
                 music_url = prepared.get('music_url')
                 if not isinstance(music_url, str) or not music_url:
@@ -727,7 +719,6 @@ class PlayingManager:
         song_storable: SongStorable,
         image_missing: bool,
         music_missing: bool,
-        artists_missing: bool,
         after_download: Callable[[], None] | None = None,
     ) -> None:
         player = self._player
@@ -752,7 +743,6 @@ class PlayingManager:
             song_storable,
             image_missing,
             music_missing,
-            artists_missing,
             _play_after_download,
         )
 
@@ -761,7 +751,7 @@ class PlayingManager:
         song_storable: SongStorable,
         after_download: Callable[[], None] | None = None,
     ) -> bool:
-        image_missing, music_missing, artists_missing = self._storable_asset_missing(song_storable)
+        image_missing, music_missing = self._storable_asset_missing(song_storable)
         if image_missing or music_missing:
             if (
                 self._preload_download_song_id is not None
@@ -784,7 +774,6 @@ class PlayingManager:
                 song_storable,
                 image_missing,
                 music_missing,
-                artists_missing,
                 after_download,
             )
             return False

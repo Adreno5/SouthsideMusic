@@ -14,6 +14,7 @@ from imports import (
     REPAINT,
     QEnterEvent,
     QEvent,
+    QPen,
     QPointF,
     Qt,
     QTimer,
@@ -37,7 +38,7 @@ from core.color import mixColor
 from core import theme
 from core.smooth import EaseOutTimer
 from core.lyrics import LyricInfo, YRCLyricInfo
-from services.events.events import PLAY_STORABLE, COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO, START_PROGRESS_LOADING, STOP_PROGRESS_LOADING, UPDATE_LOADING_PROGRESS
+from services.events.events import PLAY_STORABLE, START_PROGRESS_LOADING, STOP_PROGRESS_LOADING, UPDATE_LOADING_PROGRESS
 
 
 class LyricsViewer(QWidget):
@@ -78,6 +79,8 @@ class LyricsViewer(QWidget):
         self.theight = QFontMetricsF(self.tft).height()
         self.tmetri = QFontMetricsF(self.tft)
 
+        self.db_ft = QFont(ctx.harmony_font_family, 10)
+
         self.selecting: bool = False
         self.hovering_lyric: LyricInfo | YRCLyricInfo | None = None
         self.mouse_pos: QPointF | None = None
@@ -116,13 +119,7 @@ class LyricsViewer(QWidget):
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(REPAINT, self._onRepaintTick)
         event_bus.subscribe(PLAY_STORABLE, lambda _: self.prewarmFontMetrics())
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
-
-    def emitDebugInfo(self):
-        event_bus.emit(EMIT_DEBUG_INFO, 'Lyrics Viewer', [
-            f'target acc={self.target_acc}', f'actual acc={self.acc}', f'target offset={self.target_draw_offset}', f'actual offset={self.draw_offset}', f'shown lines=({len(self._shown_lines)}) {self._shown_lines}', f'line alphas=({len(self._line_alphas)}) {[int(obj.current_value) for obj in self._line_alphas.values()]}', f'current index={self.current_index}', f'yrc current char progress={self.yrc_current_ratio}'
-        ])
-
+        
     def prewarmFontMetrics(self):
         self._lyrics_ready = False
         asyncTask(self._doPrewarm, (), self)
@@ -413,7 +410,13 @@ class LyricsViewer(QWidget):
                 self._line_alphas[i] = EaseOutTimer(0.2, 2)
             timer = self._line_alphas[i]
             is_current_line = i == idx
-            y = top_offset + y_offsets[i]
+            y = int(top_offset + y_offsets[i])
+            if self.ctx.debugging:
+                painter.setPen(QPen(QColor(255, 0, 0), 1))
+                painter.drawLine(0, y, self.width(), y)
+                painter.setFont(self.db_ft)
+                painter.drawText(10, y + 15, f'Baseline {y}')
+                painter.setFont(self.ft)
             if is_current_line:
                 timer.target_value = 255
                 self.current_index = i
@@ -422,6 +425,7 @@ class LyricsViewer(QWidget):
 
             alpha = timer.current_value
 
+            
             if is_current_line:
                 if line.isMetadata:
                     tar_color = QColor(255, 255, 255)
@@ -436,6 +440,7 @@ class LyricsViewer(QWidget):
                     else QColor(55, 55, 55, 120)
                 )
             tar_color.setAlpha(int(alpha))
+
             color = (
                 mixColor(
                     self._mwindow.song_theme, tar_color, self._cfg.background_ratio / 2
@@ -443,6 +448,9 @@ class LyricsViewer(QWidget):
                 if self._mwindow and self._mwindow.song_theme
                 else tar_color
             )
+            if is_current_line and self.ctx.debugging:
+                color = QColor(0, 255, 0)
+
             if is_current_line and use_yrc and not line.isMetadata:
                 y_line = cast(YRCLyricInfo, line)
                 content = (y_line.content or line.content).strip()
@@ -467,6 +475,13 @@ class LyricsViewer(QWidget):
                     clip_w = text_width * progress
                     if clip_w > 0:
                         painter.save()
+                        if self.ctx.debugging and (progress > 0 and progress < 1):
+                            painter.setPen(QPen(QColor(120, 0, 255), 1))
+                            _x = toQtInt(x + self.draw_x_offset + clip_w)
+                            painter.drawLine(_x, clip_y, _x, clip_y + clip_h)
+                            painter.setFont(self.db_ft)
+                            painter.drawText(_x + 5, clip_y, f'YRC Clip Progress: {progress:.2f}')
+                            painter.setFont(self.ft)
                         painter.setClipRect(
                             toQtInt(x + self.draw_x_offset),
                             clip_y,
@@ -488,6 +503,29 @@ class LyricsViewer(QWidget):
                     toQtInt(y),
                     line.content.strip(),
                 )
+
+            if self.ctx.debugging:
+                center = self.height() // 2
+
+                painter.setPen(QPen(QColor(255, 120, 120), 1))
+                delta_ = -int(self.target_draw_offset - self.draw_offset) + center
+                painter.drawLine(self.width() - 200, delta_, self.width(), delta_)
+                painter.setFont(self.db_ft)
+                painter.drawText(self.width() - 200, delta_ + 15, 'Offset Target')
+                
+                painter.setPen(QPen(QColor(120, 255, 255), 1))
+                painter.drawLine(self.width() - 200, center, self.width(), center)
+                painter.drawText(self.width() - 200, center + 15, 'Offset')
+
+                painter.setPen(QPen(QColor(255, 75, 255), 1))
+                delta_ = -int(self.target_acc) + center
+                painter.drawLine(self.width() - 400, delta_, self.width() - 200, delta_)
+                painter.drawText(self.width() - 400, delta_ + 15, 'Acceleration Target')
+
+                painter.setPen(QPen(QColor(75, 75, 255), 1))
+                delta_ = -int(self.target_acc - self.acc) + center
+                painter.drawLine(self.width() - 400, delta_, self.width() - 200, delta_)
+                painter.drawText(self.width() - 400, delta_ + 15, 'Acceleration')
 
             translation_text = (
                 self._translationTextForLine(line, use_yrc)

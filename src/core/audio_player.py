@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import array
+import ctypes
 from dataclasses import dataclass
 import io
 import logging
@@ -8,6 +9,7 @@ import struct
 import subprocess
 from queue import Empty, Full, Queue
 import sys
+import time
 import numpy as np
 import sounddevice as sd
 from pathlib import Path
@@ -35,10 +37,44 @@ from collections import namedtuple, OrderedDict
 _AUDIO_DECODE_CACHE: OrderedDict[str, AudioSegment] = OrderedDict()
 _AUDIO_CACHE_LOCK = threading.Lock()
 _AUDIO_CACHE_MAX = 10
-_MAX_EFFECT_INDEX = 30
-_MAX_HAAS_DELAY_MS = 35
 _REVERB_DELAY_MS = (29, 43, 61, 79)
 _REVERB_TAP_GAINS = (0.42, 0.31, 0.22, 0.15)
+_PRODUCER_QUEUE_BLOCKS = 32768
+_PRODUCER_PROGRESS_BOOST_RATIO = 0.2
+_PRODUCER_EARLY_LEAD = 5.0
+_PRODUCER_EARLY_STRESSED_LEAD = 3.0
+_PRODUCER_EARLY_IDLE_LEAD = 8.0
+_PRODUCER_LATE_LEAD = 90.0
+_PRODUCER_LATE_STRESSED_LEAD = 25.0
+_PRODUCER_LATE_IDLE_LEAD = 120.0
+
+
+class _MemoryStatus(ctypes.Structure):
+    _fields_ = [
+        ('dwLength', ctypes.c_ulong),
+        ('dwMemoryLoad', ctypes.c_ulong),
+        ('ullTotalPhys', ctypes.c_ulonglong),
+        ('ullAvailPhys', ctypes.c_ulonglong),
+        ('ullTotalPageFile', ctypes.c_ulonglong),
+        ('ullAvailPageFile', ctypes.c_ulonglong),
+        ('ullTotalVirtual', ctypes.c_ulonglong),
+        ('ullAvailVirtual', ctypes.c_ulonglong),
+        ('ullAvailExtendedVirtual', ctypes.c_ulonglong),
+    ]
+
+
+def _get_memory_load() -> float:
+    windll = getattr(ctypes, 'windll', None)
+    if windll is None:
+        return 0.0
+    try:
+        status = _MemoryStatus()
+        status.dwLength = ctypes.sizeof(_MemoryStatus)
+        if windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            return float(status.dwMemoryLoad)
+    except Exception:
+        pass
+    return 0.0
 
 
 def cache_decoded_audio(key: str, segment: AudioSegment) -> None:
@@ -268,10 +304,20 @@ class AudioPlayer(QObject):
 
         self._BLOCK_SIZE = 768
 
-        self._audio_queue: Queue[tuple[np.ndarray, int] | None] = Queue(maxsize=32)
+        self._audio_queue: Queue[tuple[np.ndarray, int] | None] = Queue(
+            maxsize=_PRODUCER_QUEUE_BLOCKS
+        )
         self._producer_running = False
         self._producer_thread: Optional[threading.Thread] = None
+        self._producer_seq = 0
         self._producer_index: int = 0
+        self._prepared_start_index: int = 0
+        self._prepared_end_index: int = 0
+        self._producer_cpu_load: float = 0.0
+        self._producer_memory_load: float = 0.0
+        self._producer_target_lead: float = _PRODUCER_EARLY_LEAD
+        self._producer_last_resource_sample = 0.0
+        self._producer_last_process_time = time.process_time()
         self._wsola_tail: np.ndarray | None = None
         self._reverb_tail: np.ndarray | None = None
 
@@ -319,6 +365,10 @@ class AudioPlayer(QObject):
                 f'audio_qsize={self._audio_queue.qsize()}',
                 f'fft_qsize={self.fft_queue.qsize()}',
                 f'producer_running={self._producer_running}',
+                f'producer_cpu_load={self._producer_cpu_load:.1f}',
+                f'producer_memory_load={self._producer_memory_load:.1f}',
+                f'producer_target_lead={self._producer_target_lead:.2f}',
+                f'prepared_lead={self._producer_prepared_lead():.2f}',
             ],
         )
 
@@ -343,11 +393,10 @@ class AudioPlayer(QObject):
         self, mono_chunk: np.ndarray, absolute_start: int
     ) -> np.ndarray:
         stereo_chunk = np.repeat(mono_chunk.reshape(-1, 1), 2, axis=1)
-        haas_index = max(0, min(_MAX_EFFECT_INDEX, int(cfg.stereo_haas_index)))
-        if not cfg.stereo or haas_index == 0 or len(mono_chunk) == 0:
+        if not cfg.stereo or cfg.stereo_haas_index == 0 or len(mono_chunk) == 0:
             return stereo_chunk
 
-        delay_ms = _MAX_HAAS_DELAY_MS * haas_index / _MAX_EFFECT_INDEX
+        delay_ms = cfg.stereo_haas_index
         delay = min(
             max(1, int(self.sample_rate * delay_ms / 1000)),
             max(1, len(self.samples) // 8),
@@ -367,8 +416,7 @@ class AudioPlayer(QObject):
         self._reverb_tail = None
 
     def _apply_reverb(self, chunk: np.ndarray) -> np.ndarray:
-        intensity = max(0, min(_MAX_EFFECT_INDEX, int(cfg.reverb_intensity)))
-        if not cfg.enable_reverb or intensity == 0 or len(chunk) == 0:
+        if not cfg.enable_reverb or cfg.reverb_intensity == 0 or len(chunk) == 0:
             return chunk
 
         delays = [max(1, int(self.sample_rate * ms / 1000)) for ms in _REVERB_DELAY_MS]
@@ -391,7 +439,7 @@ class AudioPlayer(QObject):
         for delay, tap_gain in zip(delays, _REVERB_TAP_GAINS):
             wet += history[start - delay : end - delay] * tap_gain
 
-        mix = intensity / _MAX_EFFECT_INDEX
+        mix = cfg.reverb_intensity
         out = dry * (1.0 - mix * 0.25) + wet * (mix * 0.55)
         self._reverb_tail = history[-max_delay:].copy()
         return out.astype(np.float32, copy=False)
@@ -432,6 +480,9 @@ class AudioPlayer(QObject):
 
             self.current_index = 0
             self._producer_index = 0
+            self._prepared_start_index = 0
+            self._prepared_end_index = 0
+            self._producer_target_lead = _PRODUCER_EARLY_LEAD
             self._reset_wsola()
             self._reset_reverb()
             self._playback_time = 0.0
@@ -453,6 +504,7 @@ class AudioPlayer(QObject):
                 return
             if self.is_paused:
                 self._reset_wsola()
+                self._reset_reverb()
                 self._clear_queue()
                 self._start_producer()
                 self._start_stream()
@@ -462,6 +514,8 @@ class AudioPlayer(QObject):
                 self.stop()
                 self.current_index = 0
                 self._producer_index = 0
+                self._prepared_start_index = 0
+                self._prepared_end_index = 0
                 self._reset_wsola()
                 self._reset_reverb()
                 self._clear_queue()
@@ -490,6 +544,9 @@ class AudioPlayer(QObject):
                 self.stream.stop()
             self.current_index = 0
             self._producer_index = 0
+            self._prepared_start_index = 0
+            self._prepared_end_index = 0
+            self._producer_target_lead = _PRODUCER_EARLY_LEAD
             self._reset_wsola()
             self._reset_reverb()
             self._playback_time = 0.0
@@ -504,6 +561,9 @@ class AudioPlayer(QObject):
             self._playback_time = max(0.0, seconds)
             self.current_index = int(self._playback_time * self.sample_rate)
             self._producer_index = self.current_index
+            self._prepared_start_index = self.current_index
+            self._prepared_end_index = self.current_index
+            self._producer_target_lead = self._producer_desired_lead()
             self._reset_wsola()
             self._reset_reverb()
             self._clear_queue()
@@ -516,14 +576,31 @@ class AudioPlayer(QObject):
     def getLength(self) -> float:
         return len(self.samples) / self.sample_rate if self.sample_rate > 0 else 0.0
 
+    def getPreparedTimeSection(self) -> tuple[float, float]:
+        if self.sample_rate <= 0:
+            return 0.0, 0.0
+        with self._lock:
+            start = min(self._prepared_start_index, self._prepared_end_index)
+            end = max(self._prepared_start_index, self._prepared_end_index)
+            return start / self.sample_rate, end / self.sample_rate
+
     def setVolume(self, volume: float) -> None:
         self.volume_gain = max(0.0, min(1.0, volume))
 
     def setPlaySpeed(self, speed: float) -> None:
         with self._lock:
-            self.play_speed = max(0.1, speed)
+            speed = max(0.1, speed)
+            if abs(speed - self.play_speed) < 1e-6:
+                return
+            was_playing = self.is_playing
+            if was_playing:
+                self._stop_producer()
+            self.play_speed = speed
             self._reset_wsola()
             self._reset_reverb()
+            if was_playing:
+                self._clear_queue()
+                self._start_producer()
 
     def isPlaying(self) -> bool:
         if self.is_playing:
@@ -739,9 +816,15 @@ class AudioPlayer(QObject):
 
         chunk, src_frames = item
         copy_len = min(len(chunk), frames)
-        outdata[:copy_len, : self.output_channels] = chunk[
-            :copy_len, : self.output_channels
-        ]
+        gain = self.volume_gain * self.loudness_gain
+        played_chunk = chunk[:copy_len, : self.output_channels] * gain
+        np.clip(
+            played_chunk,
+            -1.0,
+            (61.0 + cfg.target_lufs) * 3.0,
+            out=played_chunk,
+        )
+        outdata[:copy_len, : self.output_channels] = played_chunk
 
         self.current_index = min(self.current_index + src_frames, len(self.samples))
         self._playback_time = self.current_index / self.sample_rate
@@ -751,7 +834,7 @@ class AudioPlayer(QObject):
 
         if not finished:
             monitor_chunk = (
-                chunk[:copy_len].mean(axis=1) if chunk.ndim == 2 else chunk[:copy_len]
+                played_chunk.mean(axis=1) if played_chunk.ndim == 2 else played_chunk
             )
             rms = np.sqrt(np.mean(monitor_chunk**2))
             if rms > 0:
@@ -801,59 +884,179 @@ class AudioPlayer(QObject):
                 self._audio_queue.get_nowait()
             except Empty:
                 break
+        self._producer_index = self.current_index
+        self._prepared_start_index = self.current_index
+        self._prepared_end_index = self.current_index
 
     def _start_producer(self) -> None:
         self._producer_running = True
+        self._producer_seq += 1
+        producer_seq = self._producer_seq
+        self._producer_last_resource_sample = time.perf_counter()
+        self._producer_last_process_time = time.process_time()
         self._producer_thread = threading.Thread(
-            target=self._producer_loop, daemon=True
+            target=lambda: self._producer_loop(producer_seq), daemon=True
         )
         self._producer_thread.start()
 
     def _stop_producer(self) -> None:
         self._producer_running = False
+        self._producer_seq += 1
         if self._producer_thread is not None and self._producer_thread.is_alive():
             self._producer_thread.join(timeout=0.1)
         self._producer_thread = None
 
-    def _producer_loop(self) -> None:
-        while self._producer_running:
+    def _producer_prepared_lead(self) -> float:
+        if self.sample_rate <= 0:
+            return 0.0
+        return max(
+            0.0, (self._prepared_end_index - self.current_index) / self.sample_rate
+        )
+
+    def _producer_desired_lead(self) -> float:
+        if len(self.samples) == 0:
+            return _PRODUCER_EARLY_LEAD
+
+        resources_sampled = self._producer_memory_load > 0.0
+        stressed = self._producer_cpu_load > 70.0 or (
+            resources_sampled and self._producer_memory_load > 88.0
+        )
+        idle = (
+            resources_sampled
+            and self._producer_cpu_load < 35.0
+            and self._producer_memory_load < 75.0
+        )
+        progress = self.current_index / len(self.samples)
+
+        if progress < _PRODUCER_PROGRESS_BOOST_RATIO:
+            if stressed:
+                return _PRODUCER_EARLY_STRESSED_LEAD
+            if idle:
+                return _PRODUCER_EARLY_IDLE_LEAD
+            return _PRODUCER_EARLY_LEAD
+
+        if stressed:
+            return _PRODUCER_LATE_STRESSED_LEAD
+        if idle:
+            return _PRODUCER_LATE_IDLE_LEAD
+        return _PRODUCER_LATE_LEAD
+
+    def _sample_producer_resources(self) -> None:
+        now = time.perf_counter()
+        elapsed = now - self._producer_last_resource_sample
+        if elapsed < 0.75:
+            return
+
+        process_time = time.process_time()
+        cpu_load = (process_time - self._producer_last_process_time) / elapsed * 100
+        cpu_load = max(0.0, min(100.0, cpu_load))
+        if self._producer_cpu_load == 0.0:
+            self._producer_cpu_load = cpu_load
+        else:
+            self._producer_cpu_load += (cpu_load - self._producer_cpu_load) * 0.35
+        self._producer_memory_load = _get_memory_load()
+        self._producer_last_resource_sample = now
+        self._producer_last_process_time = process_time
+
+    def _producer_loop(self, producer_seq: int) -> None:
+        finished = False
+        while self._producer_running and producer_seq == self._producer_seq:
+            self._sample_producer_resources()
+
+            target_lead = self._producer_desired_lead()
+            self._producer_target_lead += (
+                target_lead - self._producer_target_lead
+            ) * 0.2
+
+            lead = self._producer_prepared_lead()
+            if lead >= max(0.8, self._producer_target_lead * 0.45):
+                time.sleep(0.02)
+                continue
+
+            with self._lock:
+                batch_start_index = max(
+                    self._prepared_start_index,
+                    min(self._producer_index, self._prepared_end_index),
+                )
+                batch_end_index = self._prepared_end_index
+
+            while self._producer_running and producer_seq == self._producer_seq:
+                if self.sample_rate <= 0:
+                    break
+                if (
+                    batch_end_index - self.current_index
+                ) / self.sample_rate >= self._producer_target_lead:
+                    break
+
+                with self._lock:
+                    if (
+                        not self._producer_running
+                        or producer_seq != self._producer_seq
+                        or len(self.samples) == 0
+                    ):
+                        break
+                    if self._producer_index >= len(self.samples):
+                        finished = True
+                        break
+
+                    start_idx = int(self._producer_index)
+                    chunk = self._read_speed(start_idx, self._BLOCK_SIZE)
+                    if len(chunk) == 0:
+                        break
+
+                    if self.channels == 1:
+                        out = self._apply_stereo_effect(
+                            chunk[:, 0], int(self._producer_index)
+                        )
+                    else:
+                        if not cfg.stereo:
+                            mono = chunk.mean(axis=1, keepdims=True)
+                            out = np.repeat(mono, 2, axis=1)
+                        else:
+                            out = chunk[:, :2].copy()
+
+                    out = out.astype(np.float32, copy=False)
+                    out = self._apply_reverb(out)
+
+                    src_frames = self._speed_source_frames(start_idx, self._BLOCK_SIZE)
+                    next_index = min(start_idx + src_frames, len(self.samples))
+
+                try:
+                    self._audio_queue.put((out, src_frames), timeout=0.1)
+                except Full:
+                    time.sleep(0.02)
+                    break
+                else:
+                    with self._lock:
+                        if (
+                            not self._producer_running
+                            or producer_seq != self._producer_seq
+                        ):
+                            break
+                        self._producer_index = next_index
+                        batch_end_index = max(batch_end_index, self._producer_index)
+
+                if finished:
+                    break
+
+                time.sleep(0.001)
+
             with self._lock:
                 if (
-                    not self._producer_running
-                    or len(self.samples) == 0
-                    or self._producer_index >= len(self.samples)
+                    self._producer_running
+                    and producer_seq == self._producer_seq
+                    and batch_end_index > self._prepared_end_index
                 ):
-                    break
+                    self._prepared_start_index = batch_start_index
+                    self._prepared_end_index = batch_end_index
 
-                start_idx = int(self._producer_index)
-                chunk = self._read_speed(start_idx, self._BLOCK_SIZE)
-                if len(chunk) == 0:
-                    break
+            if finished:
+                break
 
-                if self.channels == 1:
-                    out = self._apply_stereo_effect(
-                        chunk[:, 0], int(self._producer_index)
-                    )
-                else:
-                    if not cfg.stereo:
-                        mono = chunk.mean(axis=1, keepdims=True)
-                        out = np.repeat(mono, 2, axis=1)
-                    else:
-                        out = chunk[:, :2].copy()
+            time.sleep(0.02)
 
-                out = out.astype(np.float32, copy=False)
-                out = self._apply_reverb(out)
-                out *= self.volume_gain * self.loudness_gain
-                np.clip(out, -1.0, (61.0 + cfg.target_lufs) * 3.0, out=out)
-
-                src_frames = self._speed_source_frames(start_idx, self._BLOCK_SIZE)
-                self._producer_index = min(start_idx + src_frames, len(self.samples))
-
-            try:
-                self._audio_queue.put((out, src_frames), timeout=0.1)
-            except Full:
-                pass
-
+        if not finished or producer_seq != self._producer_seq:
+            return
         try:
             self._audio_queue.put(None, timeout=0.1)
         except Full:

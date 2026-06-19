@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import logging
 import os
@@ -66,6 +66,7 @@ class Config:
     play_speed: float = 1
 
     show_translation: bool = True
+    setting_section_expanded: dict[str, bool] = field(default_factory=dict)
 
 
 cfg = Config()
@@ -98,6 +99,15 @@ def _config_to_json_object() -> dict[str, Any]:
 
 
 def _apply_config_json_object(data: dict[str, Any]) -> None:
+    if 'setting_section_expanded' in data:
+        section_expanded = data.get('setting_section_expanded')
+        if isinstance(section_expanded, dict):
+            data['setting_section_expanded'] = {
+                str(key): bool(value) for key, value in section_expanded.items()
+            }
+        else:
+            data['setting_section_expanded'] = {}
+
     if 'last_playlist' in data:
         data['last_playlist'] = [
             song

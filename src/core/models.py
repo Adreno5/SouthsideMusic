@@ -144,6 +144,7 @@ class SongStorable:
         self.name = info.name
         self.artists = info.artists
         self.id = info.id
+        self._ensure_artists()
 
         if isinstance(image, bytes):
             self._write_cache(image, IMAGE_DATA_DIR, 'image_cache_hash')
@@ -162,6 +163,16 @@ class SongStorable:
         self.target_lufs = target_lufs
         self.loggedin_when_download = loggedin_when_download
         self.viptype_when_download = viptype_when_download
+
+    def _ensure_artists(self) -> None:
+        if self.artists or not self.id:
+            return
+        try:
+            from core.backend import getBackend
+
+            self.artists = getBackend().getTrackDetail(self.id).artists
+        except Exception:
+            self.artists = []
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, SongStorable):

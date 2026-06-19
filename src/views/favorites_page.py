@@ -20,7 +20,6 @@ from imports import (
     QTimer,
     event_bus,
 )
-from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from imports import (
     QListWidget,
     QListWidgetItem,
@@ -130,22 +129,6 @@ class FavoritesPage(QWidget):
         self._selected_song_ids: set[str] = set()
 
         event_bus.subscribe(FAVORITES_CHANGED, self._onFavoritesChanged)
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
-
-    def emitDebugInfo(self):
-        event_bus.emit(
-            EMIT_DEBUG_INFO,
-            'Favorites Page',
-            [
-                f'is_cloud={self.is_cloud}',
-                f'folder={self.curr_folder.folder_name if self.curr_folder else None}',
-                f'cloud_folder={self.curr_cloud_folder.folder_name if self.curr_cloud_folder else None}',
-                f'song_cards={len(self._song_cards)}',
-                f'cloud_loading={self._cloud_loading}',
-                f'batch_mode={self._batch_mode}',
-                f'selected_songs={len(self._selected_song_ids)}',
-            ],
-        )
 
     def _onFavoritesChanged(self, folder_name=None):
         if self.is_cloud:

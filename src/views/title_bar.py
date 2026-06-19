@@ -3,7 +3,6 @@ from typing import TYPE_CHECKING
 
 from imports import QPaintEvent, Qt
 from imports import QHBoxLayout, QVBoxLayout, event_bus
-from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from qfluentwidgets import CaptionLabel, FluentStyleSheet
 from qframelesswindow import TitleBar
 
@@ -41,19 +40,7 @@ class SouthsideMusicTitleBar(TitleBar):
         self.hBoxLayout.addLayout(self.vBoxLayout, 0)
 
         FluentStyleSheet.FLUENT_WINDOW.apply(self)
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
-
-    def emitDebugInfo(self):
-        window = self.window()
-        event_bus.emit(
-            EMIT_DEBUG_INFO,
-            'Title Bar',
-            [
-                f'title={self.titleLabel.text()!r}',
-                f'maximized={window.isMaximized() if window else False}',
-            ],
-        )
-
+        
     def setTitle(self, title):
         self.titleLabel.setText(title)
         self.titleLabel.adjustSize()

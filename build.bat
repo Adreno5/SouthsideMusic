@@ -9,42 +9,33 @@ call build_venv\Scripts\python.exe -m nuitka launcher.py --windows-console-mode=
 
 mkdir build.result 2>nul
 title Building - Copy launcher.dist
-xcopy .\launcher.dist .\build.result /E /I /Y
+xcopy .\launcher.dist .\build.result\raw /E /I /Y
 title Building - Copy embed_python
 xcopy .\embed_python .\build.result\raw\python /E /I /Y
 title Building - Copy src
-xcopy .\src .\build.result\src /E /I /Y
+xcopy .\src .\build.result\raw\src /E /I /Y
 title Building - Copy fonts
-xcopy .\fonts .\build.result\fonts /E /I /Y
+xcopy .\fonts .\build.result\raw\fonts /E /I /Y
 title Building - Copy icons
-xcopy .\icons .\build.result\icons /E /I /Y
+xcopy .\icons .\build.result\raw\icons /E /I /Y
 title Building - Copy images
-xcopy .\images .\build.result\images /E /I /Y
+xcopy .\images .\build.result\raw\images /E /I /Y
 
-copy .\pyproject.toml .\build.result\pyproject.toml
-copy .\bootstrap.py .\build.result\bootstrap.py
-copy .\full_requirements.txt .\build.result\full_requirements.txt
+copy .\pyproject.toml .\build.result\raw\pyproject.toml
+copy .\bootstrap.py .\build.result\raw\bootstrap.py
+copy .\full_requirements.txt .\build.result\raw\full_requirements.txt
 
 title Building - Remove unneeded files
-RD /S /Q "build.result\python\Lib\site-packages\__pycache__" 2>nul
-RD /S /Q "build.result\python\Lib\site-packages\*.dist-info" 2>nul
-RD /S /Q "build.result\python\Lib\site-packages\*.egg-info" 2>nul
-RD /S /Q "build.result\python\Lib\site-packages\tests" 2>nul
-RD /S /Q "build.result\python\Lib\site-packages\test" 2>nul
-RD /S /Q "build.result\python\Lib\site-packages\docs" 2>nul
-RD /S /Q "build.result\python\Lib\site-packages\examples" 2>nul
-RD /S /Q "build.result\python\Lib\site-packages\PySide6\*.pdb" 2>nul
-RD /S /Q "build.result\python\Lib\__pycache__" 2>nul
-del /S /Q "build.result\python\Lib\site-packages\*.pyc" 2>nul
-
-title Building - Reorganize into raw
-mkdir build.result\raw 2>nul
-move build.result\python build.result\raw\python >nul
-move build.result\src build.result\raw\src >nul
-move build.result\fonts build.result\raw\fonts >nul
-move build.result\icons build.result\raw\icons >nul
-move build.result\images build.result\raw\images >nul
-for %%f in (build.result\*) do move "%%f" "build.result\raw\" >nul 2>nul
+RD /S /Q "build.result\raw\python\Lib\site-packages\__pycache__" 2>nul
+RD /S /Q "build.result\raw\python\Lib\site-packages\*.dist-info" 2>nul
+RD /S /Q "build.result\raw\python\Lib\site-packages\*.egg-info" 2>nul
+RD /S /Q "build.result\raw\python\Lib\site-packages\tests" 2>nul
+RD /S /Q "build.result\raw\python\Lib\site-packages\test" 2>nul
+RD /S /Q "build.result\raw\python\Lib\site-packages\docs" 2>nul
+RD /S /Q "build.result\raw\python\Lib\site-packages\examples" 2>nul
+RD /S /Q "build.result\raw\python\Lib\site-packages\PySide6\*.pdb" 2>nul
+RD /S /Q "build.result\raw\python\Lib\__pycache__" 2>nul
+del /S /Q "build.result\raw\python\Lib\site-packages\*.pyc" 2>nul
 
 title Building - Generate icon
 call python scripts\create_icon.py

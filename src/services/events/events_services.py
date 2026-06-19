@@ -127,8 +127,8 @@ class EventsServices(QObject):
         dialog.yesButton.setStyleSheet(
             dialog.yesButton.styleSheet() +
             'PrimaryPushButton { color: white; background: #c42b1c; border: none; }'
-            'PrimaryPushButton:hover { background: #d13438; }'
-            'PrimaryPushButton:pressed { background: #a4262c; }'
+            'PrimaryPushButton:hover { background: #d13438; border: none; }'
+            'PrimaryPushButton:pressed { background: #a4262c; border: none; }'
         )
         return bool(dialog.exec())
 

@@ -1,6 +1,6 @@
 import io
 
-from imports import QLabel, QListWidget, QWidget
+from imports import QLabel, QListWidget, QWidget, bindText, tr
 from imports import QImage, QPixmap
 from pyncm import apis
 import qrcode
@@ -19,12 +19,14 @@ class LineInputDialog(MessageBoxBase):
     def __init__(self, parent, title: str, desc: str, place: str):
         super().__init__(parent)
 
-        self.title_label = SubtitleLabel(title)
-        self.desc_label = QLabel(desc)
+        self.title_label = SubtitleLabel()
+        self.desc_label = QLabel()
+        bindText(self.title_label, title)
+        bindText(self.desc_label, desc)
 
         self.inputer = LineEdit(self)
         self.inputer.returnPressed.connect(self.accept)
-        self.inputer.setPlaceholderText(place)
+        self.inputer.setPlaceholderText(tr(place))
         self.inputer.setFixedWidth(parent.width() * 0.7)
 
         self.viewLayout.addWidget(self.title_label)
@@ -43,11 +45,13 @@ class TextEditDialog(MessageBoxBase):
     def __init__(self, parent, title: str, desc: str, place: str):
         super().__init__(parent)
 
-        self.title_label = SubtitleLabel(title)
-        self.desc_label = QLabel(desc)
+        self.title_label = SubtitleLabel()
+        self.desc_label = QLabel()
+        bindText(self.title_label, title)
+        bindText(self.desc_label, desc)
 
         self.inputer = TextEdit(self)
-        self.inputer.setPlaceholderText(place)
+        self.inputer.setPlaceholderText(tr(place))
         self.inputer.setFixedSize(parent.size() * 0.65)
 
         self.viewLayout.addWidget(self.title_label)
@@ -68,8 +72,10 @@ class ListDialog(MessageBoxBase):
     def __init__(self, parent, title: str, desc: str, texts: list[str]):
         super().__init__(parent)
 
-        self.title_label = SubtitleLabel(title)
-        self.desc_label = QLabel(desc)
+        self.title_label = SubtitleLabel()
+        self.desc_label = QLabel()
+        bindText(self.title_label, title)
+        bindText(self.desc_label, desc)
 
         self.inputer = SListWidget(self)
         self.inputer.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
@@ -88,7 +94,7 @@ def getValueBylist(
     reply = dialog.exec()
     try:
         selected = dialog.inputer.selectedItems()[0].text()
-    except:
+    except Exception:
         return None
 
     if reply and selected:
@@ -104,19 +110,23 @@ class QRCodeLoginDialog(MessageBoxBase):
         self.key = key
         self.logger = logger
 
-        self.viewLayout.addWidget(TitleLabel('Login via QRCode'))
-        self.viewLayout.addWidget(
-            QLabel(
-                'use your CloudMusic app to scan the QRCode and click \'I scanned\' button'
-            )
+        title_label = TitleLabel()
+        bindText(title_label, 'dialogs.login_via_qr_code')
+        self.viewLayout.addWidget(title_label)
+        desc_label = QLabel()
+        bindText(
+            desc_label,
+            'dialogs.use_your_cloudmusic_app_to_scan_the_qr_code_and_click_i_scanned_button',
         )
+        self.viewLayout.addWidget(desc_label)
 
         self.qrlabel = QLabel()
         self.qrlabel.setFixedSize(parent.height() * 0.5, parent.height() * 0.5)
 
         self.viewLayout.addWidget(self.qrlabel)
 
-        self.is_btn = PrimaryPushButton('I scanned')
+        self.is_btn = PrimaryPushButton('')
+        bindText(self.is_btn, 'dialogs.i_scanned')
         self.is_btn.clicked.connect(self.login)
         self.viewLayout.addWidget(self.is_btn)
         self.is_btn.setEnabled(False)
@@ -154,8 +164,8 @@ class QRCodeLoginDialog(MessageBoxBase):
 
             self.accept()
         elif rsp['code'] == 8821:
-            self.errlabel.setText('Login anomaly risk control')
+            self.errlabel.setText(tr('dialogs.login_anomaly_risk_control'))
             self.errlabel.show()
         elif rsp['code'] == 800:
-            self.errlabel.setText('QRCode expired or not exist')
+            self.errlabel.setText(tr('dialogs.qr_code_expired_or_not_exist'))
             self.errlabel.show()

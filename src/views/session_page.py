@@ -5,9 +5,9 @@ import logging
 import os
 
 from core.app_context import AppContext
-from imports import Qt
+from imports import LANGUAGE_CHANGED, Qt
 from imports import QPixmap
-from imports import QHBoxLayout, QLabel, QVBoxLayout, QWidget, event_bus
+from imports import QHBoxLayout, QLabel, QVBoxLayout, QWidget, bindText, event_bus, tr
 from services.events.events import (
     MWINDOW_REFRESH_FOLDERS,
 )
@@ -26,6 +26,8 @@ class SessionPage(QWidget):
         super().__init__()
         self._logger = logging.getLogger(__name__)
         self.ctx = ctx
+        self._nickname = 'Anonymous User'
+        self._vip_level = 0
         lw = ctx.launch_window
         if lw:
             lw.top('Initializing session page...')
@@ -51,14 +53,15 @@ class SessionPage(QWidget):
         if lw:
             lw.top('  creating VIP level label')
         bottom_layout = QHBoxLayout()
-        self.vip = SubtitleLabel('VIP Level: Loading...')
+        self.vip = SubtitleLabel(tr('session_page.vip_level_loading'))
         bottom_layout.addWidget(
             self.vip, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
         )
 
         if lw:
             lw.top('  creating login button')
-        self.login_btn = PrimaryPushButton('Login')
+        self.login_btn = PrimaryPushButton('')
+        bindText(self.login_btn, 'session_page.login')
         bindIcon(self.login_btn, 'login', 'light')
         self.login_btn.clicked.connect(self.login)
         bottom_layout.addWidget(
@@ -71,6 +74,7 @@ class SessionPage(QWidget):
         if lw:
             lw.top('  loading user info from server')
         self.refreshInformations()
+        event_bus.subscribe(LANGUAGE_CHANGED, self.updateLanguage)
 
     @property
     def _mwindow(self):
@@ -78,6 +82,14 @@ class SessionPage(QWidget):
 
     def _dialog_parent(self) -> QWidget:
         return self._mwindow or self
+
+    def updateLanguage(self) -> None:
+        self.nickname.setText(
+            tr('session_page.anonymous_user')
+            if self._nickname == 'Anonymous User'
+            else self._nickname
+        )
+        self.vip.setText(tr('session_page.vip_level_value', value=self._vip_level))
 
     def refreshInformations(self):
         if os.path.exists('images/avatar.png'):
@@ -117,7 +129,12 @@ class SessionPage(QWidget):
                         nickname = nick.strip()
             except Exception as e:
                 self._logger.warning(f'Failed to get nickname: {e}')
-        self.nickname.setText(nickname)
+        self._nickname = nickname
+        self.nickname.setText(
+            tr('session_page.anonymous_user')
+            if nickname == 'Anonymous User'
+            else nickname
+        )
 
         vip_level = 0
         if session is not None:
@@ -127,7 +144,8 @@ class SessionPage(QWidget):
                     vip_level = int(vip)
             except Exception as e:
                 self._logger.warning(f'Failed to get vipType: {e}')
-        self.vip.setText(f'VIP Level: {vip_level}')
+        self._vip_level = vip_level
+        self.vip.setText(tr('session_page.vip_level_value', value=vip_level))
 
         if not os.path.exists('images/avatar.png'):
             pixmap = QPixmap('images/def_avatar.png')
@@ -146,12 +164,22 @@ class SessionPage(QWidget):
         parent = self._dialog_parent()
         method = getValueBylist(
             parent,
-            'Login',
-            'choose method to log into an account',
-            ['QR Code', 'Cell Phone', 'Anonymous'],
+            tr('session_page.login'),
+            tr('session_page.choose_method_to_log_into_an_account'),
+            [
+                tr('session_page.qr_code'),
+                tr('session_page.cell_phone'),
+                tr('session_page.anonymous'),
+            ],
         )
         if method is None:
             return
+        method_map = {
+            tr('session_page.qr_code'): 'QR Code',
+            tr('session_page.cell_phone'): 'Cell Phone',
+            tr('session_page.anonymous'): 'Anonymous',
+        }
+        method = method_map.get(method, method)
 
         if method == 'Anonymous':
             apis.login.loginViaAnonymousAccount()
@@ -173,7 +201,10 @@ class SessionPage(QWidget):
         elif method == 'Cell Phone':
             self._logger.info('start logging in(via cell phone)')
             phone = getTextLineedit(
-                'Login', 'enter your cell phone number', '1xxxxxxxxxx', parent
+                tr('session_page.login'),
+                tr('session_page.enter_your_cell_phone_number'),
+                '1xxxxxxxxxx',
+                parent,
             )
             if not phone:
                 return
@@ -182,8 +213,8 @@ class SessionPage(QWidget):
             assert result.get('code', 0) == 200, 'Invaild response'  # type: ignore
             while True:
                 captcha = getTextLineedit(
-                    'Verification Code Sent',
-                    'enter the verification code',
+                    tr('session_page.verification_code_sent'),
+                    tr('session_page.enter_the_verification_code'),
                     'xxxx',
                     parent,
                 )
@@ -205,8 +236,8 @@ class SessionPage(QWidget):
         from qfluentwidgets import InfoBar
 
         InfoBar.success(
-            'Login successful',
-            f'logged in via method {method}',
+            tr('session_page.login_successful'),
+            tr('session_page.logged_in_via_method_method', method=tr(method)),
             parent=parent,
             duration=5000,
         )
@@ -217,5 +248,5 @@ class SessionPage(QWidget):
     def showSession(self):
         s = ncm.dumpSessionAsString(ncm.getCurrentSession())
 
-        msgbox = MessageBox('Session', s, self._dialog_parent())
+        msgbox = MessageBox(tr('session_page.session'), s, self._dialog_parent())
         msgbox.exec()

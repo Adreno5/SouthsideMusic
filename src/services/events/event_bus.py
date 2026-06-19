@@ -5,12 +5,24 @@ import threading
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Callable
 
+import shiboken6
+
 
 if TYPE_CHECKING:
     from views.launch_window import LaunchWindow
 
 
 Listener = Callable[..., Any]
+
+
+def _isValidListener(listener: Listener) -> bool:
+    owner = getattr(listener, '__self__', None)
+    if owner is None:
+        return True
+    try:
+        return shiboken6.isValid(owner)
+    except TypeError:
+        return True
 
 
 class EventBus:
@@ -59,6 +71,9 @@ class EventBus:
         else:
             listeners = list(self._listeners.get(event, []))
         for listener in listeners:
+            if not _isValidListener(listener):
+                self.unsubscribe(event, listener)
+                continue
             listener(*args, **kwargs)
 
 

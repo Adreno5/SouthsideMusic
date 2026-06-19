@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import logging
 
-from typing import Callable
+from typing import Callable, cast
 
 from core.app_context import AppContext
 
 from imports import (
     BACKGROUND_RATIO_CHANGED,
     DB_CHANGED,
+    LANGUAGE_CHANGED,
     LUFS_TARGET_CHANGED,
     POST_THEME_CHANGED,
     WEBSOCKET_CONNECTED,
@@ -20,6 +21,9 @@ from imports import (
     Qt,
     Signal,
     event_bus,
+    bindText,
+    refreshBoundTexts,
+    tr,
 )
 from imports import QColor
 from imports import (
@@ -45,7 +49,8 @@ from qfluentwidgets import (
 from core.icons import bindIcon
 from core import theme
 from core.audio_player import getAudioDevices
-from core.config import cfg
+from core.config import cfg, saveConfig
+from core.i18n import Language, setLanguage
 from core.ws_server import (
     WebSocketServer,
     QObjectHandler,
@@ -73,11 +78,14 @@ class SectionContainer(QWidget):
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(2)
 
-        title_l = TitleLabel(title)
-        desc_l = QLabel(description)
+        self.title_l = TitleLabel()
+        self.desc_l = QLabel()
+        bindText(self.title_l, title)
+        bindText(self.desc_l, description)
+        desc_l = self.desc_l
         desc_l.setWordWrap(True)
         desc_l.setStyleSheet(f'color: {"#A8A8A8" if theme.isDark() else "#666666"};')
-        header_layout.addWidget(title_l)
+        header_layout.addWidget(self.title_l)
         header_layout.addWidget(desc_l)
 
         self.content_view = QWidget()
@@ -190,7 +198,7 @@ class SettingPage(QWidget):
         ctx: AppContext,
     ):
         super().__init__()
-        self.now_volume = QLabel('Current volume(db): 0')
+        self.now_volume = QLabel(tr('setting_page.current_volume_db_value', value=0))
 
         self._logger = logging.getLogger(__name__)
         self.ctx = ctx
@@ -231,11 +239,14 @@ class SettingPage(QWidget):
         event_bus.subscribe(WEBSOCKET_CONNECTED, self._onWsConnected)
         event_bus.subscribe(WEBSOCKET_DISCONNECTED, self._onWsDisconnected)
         event_bus.subscribe(POST_THEME_CHANGED, self.updateTheme)
+        event_bus.subscribe(LANGUAGE_CHANGED, self.updateLanguage)
         event_bus.subscribe(
             DB_CHANGED,
-            lambda v: self.now_volume.setText(f'Current volume(db): {int(v)}'),
+            lambda v: self.now_volume.setText(
+                tr('setting_page.current_volume_db_value', value=f'{v:.1f}')
+            ),
         )
-        
+
     @property
     def _dp(self):
         return self.ctx.playing_page
@@ -255,46 +266,86 @@ class SettingPage(QWidget):
     def updateTheme(self) -> None:
         self.setStyleSheet(f'background: #{"000000" if theme.isDark() else "FFFFFF"}')
 
+    def updateLanguage(self) -> None:
+        refreshBoundTexts()
+        self._refreshLanguageBox()
+        self._refreshPlayMethodBox()
+        self._refreshConnectionStatus()
+        if hasattr(self, 'target_lufs_label'):
+            self.target_lufs_label.setText(
+                tr('setting_page.target_lufs_value', value=cfg.target_lufs)
+            )
+
     def _initOptions(self) -> None:
         lw = self._launchwindow
         if lw:
             lw.push('Setting up sidebar options...')
 
         self.addSection(
-            'Playing', 'Playback order, stereo output, speed and skip behavior.'
+            'setting_page.app', 'setting_page.language_and_application_behavior'
+        )
+
+        self.language_box = ComboBox()
+        self._refreshLanguageBox()
+        self.language_box.currentIndexChanged.connect(self._onLanguageChanged)
+        self.addSetting(
+            'setting_page.language',
+            'setting_page.change_the_display_language_immediately',
+            self.language_box,
+        )
+
+        self.addSection(
+            'setting_page.playing',
+            'setting_page.playback_order_stereo_output_speed_and_skip_behavior',
         )
 
         self.play_method_box = ComboBox()
-        self.play_method_box.addItems(
-            ['Repeat one', 'Repeat list', 'Shuffle', 'Play in order']
+        self._refreshPlayMethodBox()
+        self.play_method_box.currentIndexChanged.connect(self._onPlayMethodChanged)
+        self.addSetting(
+            'setting_page.play_order',
+            'setting_page.the_order_of_play',
+            self.play_method_box,
         )
-        self.play_method_box.setCurrentText('Repeat list')
-        self.addSetting('Play order', 'the order of play', self.play_method_box)
 
-        self.addCheckSetting('Enable Stereo', 'enable stereo effect', 'stereo')
+        self.addCheckSetting(
+            'setting_page.enable_stereo',
+            'setting_page.enable_stereo_effect',
+            'stereo',
+            lambda: self._player.restartProducer(),
+        )
         self.addNumberSetting(
-            'Stereo Haas Index (ms)',
-            'adjust the right-channel delay of stereo Haas effect',
+            'setting_page.stereo_haas_index_ms',
+            'setting_page.adjust_the_right_channel_delay_of_stereo_haas_effect',
             0,
             100,
             1,
             'stereo_haas_index',
+            lambda val: self._player.restartProducer(),
         )
-        self.addCheckSetting('Enable Reverb', 'enable reverb effect', 'enable_reverb')
+        self.addCheckSetting(
+            'setting_page.enable_reverb',
+            'setting_page.enable_reverb_effect',
+            'enable_reverb',
+            lambda: self._player.restartProducer(),
+        )
         self.addNumberSetting(
-            'Reverb Intensity',
-            'adjust the strength of the reverb effect',
+            'setting_page.reverb_intensity',
+            'setting_page.adjust_the_strength_of_the_reverb_effect',
             0,
             3,
             0.01,
             'reverb_intensity',
+            lambda val: self._player.restartProducer(),
         )
         self.addCheckSetting(
-            'Smart Skip', 'Skip the no sound section when song ends', 'skip_nosound'
+            'setting_page.smart_skip',
+            'setting_page.skip_the_no_sound_section_when_song_ends',
+            'skip_nosound',
         )
         self.addNumberSetting(
-            'Playback Speed',
-            'speed of playing',
+            'setting_page.playback_speed',
+            'setting_page.speed_of_playing',
             0.1,
             3,
             0.1,
@@ -302,13 +353,31 @@ class SettingPage(QWidget):
             lambda val: self._player.setPlaySpeed(val),
         )
         self.addNumberSetting(
-            'Skip Threshold', 'the threshold of the skip', -100, 0, 1, 'skip_threshold'
+            'setting_page.playback_pitch',
+            'setting_page.pitch_shift_in_semitones',
+            -12,
+            12,
+            0.1,
+            'play_pitch',
+            lambda val: self._player.setPlayPitch(val),
         )
-        self.addSetting('Current Volume', 'live playback volume in db', self.now_volume)
+        self.addNumberSetting(
+            'setting_page.skip_threshold',
+            'setting_page.the_threshold_of_the_skip',
+            -100,
+            0,
+            1,
+            'skip_threshold',
+        )
+        self.addSetting(
+            'setting_page.current_volume',
+            'setting_page.live_playback_volume_in_db',
+            self.now_volume,
+        )
 
         self.addNumberSetting(
-            'Remain time to Skip',
-            'start detecting volume during the remaining specified seconds',
+            'setting_page.remain_time_to_skip',
+            'setting_page.start_detecting_volume_during_the_remaining_specified_seconds',
             1,
             60,
             1,
@@ -323,15 +392,19 @@ class SettingPage(QWidget):
         self.device_selector.currentIndexChanged.connect(self.deviceChanged)
         self.device_selector.setCurrentIndex(cfg.output_device_index)
         self.addSetting(
-            'Output Device', 'the device to output audio', self.device_selector
+            'setting_page.output_device',
+            'setting_page.the_device_to_output_audio',
+            self.device_selector,
         )
 
         if lw:
             lw.top('Setting up window options...')
-        self.addSection('Window', 'Theme-sensitive background mixing.')
+        self.addSection(
+            'setting_page.window', 'setting_page.theme_sensitive_background_mixing'
+        )
         self.addNumberSetting(
-            'Window Background Mix Ratio',
-            'larger value make color of backgound nearly to image of playing song',
+            'setting_page.window_background_mix_ratio',
+            'setting_page.larger_value_make_color_of_backgound_nearly_to_image_of_playing_song',
             0,
             1,
             0.05,
@@ -341,18 +414,21 @@ class SettingPage(QWidget):
 
         if lw:
             lw.top('Setting up lyrics options...')
-        self.addSection('Lyrics', 'Smoothing controls for the main lyrics animation.')
+        self.addSection(
+            'setting_page.lyrics',
+            'setting_page.smoothing_controls_for_the_main_lyrics_animation',
+        )
         self.addNumberSetting(
-            'Lyrics Smooth Factor',
-            'larger value means a more sudden change',
+            'setting_page.lyrics_smooth_factor',
+            'setting_page.larger_value_means_a_more_sudden_change',
             0,
             1,
             0.002,
             'lyrics_smooth_factor',
         )
         self.addNumberSetting(
-            'Acceleration Smooth Factor',
-            'smaller value means a more bounce effect',
+            'setting_page.acceleration_smooth_factor',
+            'setting_page.smaller_value_means_a_more_bounce_effect',
             0,
             1,
             0.002,
@@ -362,68 +438,75 @@ class SettingPage(QWidget):
         if lw:
             lw.top('Setting up Desktop lyrics options...')
 
-        self.addSection('Desktop Lyrics', 'Floating lyrics window controls.')
+        self.addSection(
+            'setting_page.desktop_lyrics',
+            'setting_page.floating_lyrics_window_controls',
+        )
         dsp = self._dsp
         assert dsp is not None, (
             'Desktop lyrics page must be initialized before settings'
         )
-        self.desktop_lyrics_box = CheckBox('Enable Desktop Lyrics')
+        self.desktop_lyrics_box = CheckBox()
+        bindText(self.desktop_lyrics_box, 'setting_page.enable_desktop_lyrics')
         self.desktop_lyrics_box.checkStateChanged.connect(
             lambda: self._onDesktopLyricsEnableChanged()
         )
         self.desktop_lyrics_box.setChecked(cfg.enable_desktop_lyrics)
         self.addSetting(
-            'Enable Desktop Lyrics',
-            'show lyrics in a floating always-on-top window',
+            'setting_page.enable_desktop_lyrics',
+            'setting_page.show_lyrics_in_a_floating_always_on_top_window',
             self.desktop_lyrics_box,
         )
-        self.desktop_lyrics_reset_pos = PushButton(FluentIcon.SYNC, 'Reset Position')
+        self.desktop_lyrics_reset_pos = PushButton(FluentIcon.SYNC, '')
+        bindText(self.desktop_lyrics_reset_pos, 'setting_page.reset_position')
         self.desktop_lyrics_reset_pos.clicked.connect(dsp.onResetPos)
         self.addSetting(
-            'Reset Position',
-            'move the desktop lyrics window back to the origin',
+            'setting_page.reset_position',
+            'setting_page.move_the_desktop_lyrics_window_back_to_the_origin',
             self.desktop_lyrics_reset_pos,
         )
 
         if lw:
             lw.top('Setting up FFT options...')
         self.addSection(
-            'FFT', 'Frequency visualization tuning for local and client output.'
+            'setting_page.fft',
+            'setting_page.frequency_visualization_tuning_for_local_and_client_output',
         )
-        self.enableFFT_box = CheckBox('Enable Frequency Graphics')
+        self.enableFFT_box = CheckBox()
+        bindText(self.enableFFT_box, 'setting_page.enable_frequency_graphics')
         self.enableFFT_box.setChecked(cfg.enable_fft)
         self.addSetting(
-            'Frequency Graphics',
-            'enable FFT-driven visual effects',
+            'setting_page.frequency_graphics',
+            'setting_page.enable_fft_driven_visual_effects',
             self.enableFFT_box,
         )
         self.addNumberSetting(
-            'FFT Filtering Window size',
-            'larger value means more smoothing',
+            'setting_page.fft_filtering_window_size',
+            'setting_page.larger_value_means_more_smoothing',
             1,
             200,
             1,
             'fft_filtering_windowsize',
         )
         self.addNumberSetting(
-            'FFT Smoothing Factor',
-            'larger value means a more sudden change',
+            'setting_page.fft_smoothing_factor',
+            'setting_page.larger_value_means_a_more_sudden_change',
             0.01,
             1.0,
             0.05,
             'fft_factor',
         )
         self.addNumberSetting(
-            'SouthsideMusic side FFT Multiple Factor',
-            'larger value means more intense changing(only on SouthsideMusic side)',
+            'setting_page.southside_music_side_fft_multiple_factor',
+            'setting_page.larger_value_means_more_intense_changing_only_on_southside_music_side',
             0,
             15.0,
             0.05,
             'cfft_multiple',
         )
         self.addNumberSetting(
-            'SouthsideClient side FFT Multiple Factor',
-            'larger value means more intense changing(only on SouthsideClient side)',
+            'setting_page.southside_client_side_fft_multiple_factor',
+            'setting_page.larger_value_means_more_intense_changing_only_on_southside_client_side',
             00,
             15.0,
             0.05,
@@ -432,7 +515,10 @@ class SettingPage(QWidget):
 
         if lw:
             lw.top('Setting up loudness balance...')
-        self.addSection('Loudness', 'Target volume normalization for playback.')
+        self.addSection(
+            'setting_page.loudness',
+            'setting_page.target_volume_normalization_for_playback',
+        )
         self.target_lufs = Slider(Qt.Orientation.Horizontal)
         self.target_lufs.valueChanged.connect(self.onTargetLUFSChanged)
         self.target_lufs.wheelEvent = lambda e: e.ignore()
@@ -440,34 +526,37 @@ class SettingPage(QWidget):
         self.target_lufs.setRange(-60, 0)
         self.target_lufs.setSingleStep(1)
         self.target_lufs.setValue(cfg.target_lufs)
-        self.target_lufs_label = SubtitleLabel(f'Target LUFS: {cfg.target_lufs}')
+        self.target_lufs_label = SubtitleLabel(
+            tr('setting_page.target_lufs_value', value=cfg.target_lufs)
+        )
         self.addSetting(
-            'Target LUFS', 'restart to apply loudness changes', self.target_lufs
+            'setting_page.target_lufs',
+            'setting_page.restart_to_apply_loudness_changes',
+            self.target_lufs,
         )
         self.addSeparateWidget(self.target_lufs_label)
         self.addInfoBlock(
-            'Reference',
-            'Range: -60(quietest)~0(loudest)\n'
-            'Recommend: -16~-18\n'
-            'Youtube: -14 LUFS\n'
-            'Netflix: -27 LUFS\n'
-            'TikTok / Instagram Reels: -13 LUFS\n'
-            'Apple Music (Video): -16 LUFS\n'
-            'Spotify (Video): -14 LUFS / -16 LUFS',
+            'setting_page.reference',
+            'setting_page.range_60_quietest_0_loudest_recommend_16_18_youtube_14_lufs_netflix_27',
         )
 
         if lw:
             lw.top('Setting up connection options...')
-        self.addSection('Connection', 'SouthsideClient websocket status and controls.')
+        self.addSection(
+            'setting_page.connection',
+            'setting_page.southside_client_websocket_status_and_controls',
+        )
         self.southsideclient_status_label = SubtitleLabel(
             "Connection Status: <span style='color: red;'>Disconnected</span>"
         )
         self.addSeparateWidget(self.southsideclient_status_label)
-        self.disconnect_btn = TransparentPushButton('Disconnect')
+        self.disconnect_btn = TransparentPushButton('')
+        bindText(self.disconnect_btn, 'setting_page.disconnect')
         bindIcon(self.disconnect_btn, 'disc')
         self.disconnect_btn.clicked.connect(self.disconnectFromSouthsideClient)
         self.disconnect_btn.setEnabled(False)
-        self.connect_btn = TransparentPushButton('Try connect')
+        self.connect_btn = TransparentPushButton('')
+        bindText(self.connect_btn, 'setting_page.try_connect')
         bindIcon(self.connect_btn, 'cnnt')
         self.connect_btn.clicked.connect(self.connectToSouthsideClient)
         self.connect_btn.setEnabled(False)
@@ -489,8 +578,11 @@ class SettingPage(QWidget):
             self._player.setOutputDevice(device)
             if self._mwindow:
                 InfoBar.success(
-                    'Device changed',
-                    f'changed output deivce to {device.display_name}',
+                    tr('setting_page.device_changed'),
+                    tr(
+                        'setting_page.changed_output_device_to_device',
+                        device=device.display_name,
+                    ),
                     duration=3000,
                     parent=self._mwindow,
                 )
@@ -500,8 +592,8 @@ class SettingPage(QWidget):
 
     def onSliderReleased(self):
         InfoBar.info(
-            'Need Restart',
-            'Restart the application to apply the new LUFS',
+            tr('setting_page.need_restart'),
+            tr('setting_page.restart_the_application_to_apply_the_new_lufs'),
             duration=7000,
             parent=self._mwindow,
         )
@@ -531,12 +623,19 @@ class SettingPage(QWidget):
         self.addSetting(title, description, box)
 
     def addCheckSetting(
-        self, title: str, description: str, configurationName: str
+        self,
+        title: str,
+        description: str,
+        configurationName: str,
+        onChanged: Callable[[], None] | None = None,
     ) -> None:
-        box = CheckBox(title)
+        box = CheckBox()
+        bindText(box, title)
 
         def __valueChanged():
             setattr(cfg, configurationName, box.checkState() == Qt.CheckState.Checked)
+            if onChanged:
+                onChanged()
 
         box.stateChanged.connect(__valueChanged)
         box.setChecked(getattr(cfg, configurationName))
@@ -584,10 +683,12 @@ class SettingPage(QWidget):
         text_layout = QVBoxLayout()
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(4)
-        name_l = QLabel(name)
+        name_l = QLabel()
+        bindText(name_l, name)
         name_l.setStyleSheet('font-weight: bold;')
         name_l.setWordWrap(True)
-        desc_l = QLabel(description)
+        desc_l = QLabel()
+        bindText(desc_l, description)
         desc_l.setWordWrap(True)
         desc_l.setStyleSheet(f'color: {"#A8A8A8" if theme.isDark() else "#666666"};')
         text_layout.addWidget(name_l)
@@ -601,9 +702,11 @@ class SettingPage(QWidget):
         card = self._createTransparentCard()
         layout = QVBoxLayout()
         layout.setContentsMargins(16, 12, 16, 12)
-        title_l = QLabel(title)
+        title_l = QLabel()
+        bindText(title_l, title)
         title_l.setStyleSheet('font-weight: bold;')
-        body_l = QLabel(text)
+        body_l = QLabel()
+        bindText(body_l, text)
         body_l.setWordWrap(True)
         body_l.setStyleSheet(f'color: {"#A8A8A8" if theme.isDark() else "#666666"};')
         layout.addWidget(title_l)
@@ -615,18 +718,17 @@ class SettingPage(QWidget):
         event_bus.emit(BACKGROUND_RATIO_CHANGED)
 
     def _onWsConnected(self):
-        self.southsideclient_status_label.setText(
-            "Connection Status: <span style='color: green;'>Connected</span>"
-        )
+        self._refreshConnectionStatus(True)
 
     def _onWsDisconnected(self):
-        self.southsideclient_status_label.setText(
-            "Connection Status: <span style='color: red;'>Disconnected</span>"
-        )
+        self._refreshConnectionStatus(False)
 
     def _onVolumeChanged(self, volume: float):
         self.now_volume.setText(
-            f'Current volume(db): {(round(volume * 10) / 10) if volume != float("-inf") else "-inf"}'
+            tr(
+                'setting_page.current_volume_db_value',
+                value=(round(volume * 10) / 10) if volume != float('-inf') else '-inf',
+            )
         )
 
     def _onDesktopLyricsEnableChanged(self) -> None:
@@ -704,5 +806,74 @@ class SettingPage(QWidget):
     def onTargetLUFSChanged(self, value: int):
         cfg.target_lufs = value
         if hasattr(self, 'target_lufs_label'):
-            self.target_lufs_label.setText(f'Target LUFS: {value}')
+            self.target_lufs_label.setText(
+                tr('setting_page.target_lufs_value', value=value)
+            )
         event_bus.emit(LUFS_TARGET_CHANGED, value)
+
+    def _refreshLanguageBox(self) -> None:
+        if not hasattr(self, 'language_box'):
+            return
+        self.language_box.blockSignals(True)
+        self.language_box.clear()
+        for code in ('en_US', 'zh_CN'):
+            self.language_box.addItem(tr(f'language.{code}'), userData=code)
+        index = self.language_box.findData(cfg.language)
+        self.language_box.setCurrentIndex(max(index, 0))
+        self.language_box.blockSignals(False)
+
+    def _onLanguageChanged(self, *_args: object) -> None:
+        code = self.language_box.currentData()
+        if code not in ('en_US', 'zh_CN'):
+            return
+        if cfg.language == code:
+            return
+        setLanguage(cast(Language, code))
+        saveConfig()
+        event_bus.emit(LANGUAGE_CHANGED)
+
+    def _refreshPlayMethodBox(self) -> None:
+        current = cfg.play_method
+        if hasattr(self, 'play_method_box'):
+            data = self.play_method_box.currentData()
+            if data in ('Repeat one', 'Repeat list', 'Shuffle', 'Play in order'):
+                current = data
+            self.play_method_box.blockSignals(True)
+            self.play_method_box.clear()
+            label_keys = {
+                'Repeat one': 'setting_page.play_method.repeat_one',
+                'Repeat list': 'setting_page.play_method.repeat_list',
+                'Shuffle': 'setting_page.play_method.shuffle',
+                'Play in order': 'setting_page.play_method.play_in_order',
+            }
+            for mode in ('Repeat one', 'Repeat list', 'Shuffle', 'Play in order'):
+                self.play_method_box.addItem(tr(label_keys[mode]), userData=mode)
+            index = self.play_method_box.findData(current)
+            self.play_method_box.setCurrentIndex(max(index, 0))
+            self.play_method_box.blockSignals(False)
+
+    def _onPlayMethodChanged(self) -> None:
+        mode = self.play_method_box.currentData()
+        if mode in ('Repeat one', 'Repeat list', 'Shuffle', 'Play in order'):
+            cfg.play_method = mode
+
+    def _refreshConnectionStatus(self, connected: bool | None = None) -> None:
+        if connected is None:
+            connected = (
+                self.disconnect_btn.isEnabled()
+                if hasattr(self, 'disconnect_btn')
+                else False
+            )
+        status = (
+            tr('setting_page.connected')
+            if connected
+            else tr('setting_page.disconnected')
+        )
+        color = 'green' if connected else 'red'
+        self.southsideclient_status_label.setText(
+            tr(
+                'setting_page.connection_status_span_style_color_color_status_span',
+                color=color,
+                status=status,
+            )
+        )

@@ -27,9 +27,9 @@ from imports import (
     QWidget,
     Signal,
     SubtitleLabel,
-    event_bus,
+    bindText,
+    tr,
 )
-from services.events.events import EMIT_DEBUG_INFO
 
 if TYPE_CHECKING:
     from core.app_context import AppContext
@@ -53,7 +53,7 @@ class DependencesWindow(QWidget):
             self._set_pydub_config, Qt.ConnectionType.QueuedConnection
         )
 
-        self.setWindowTitle('Dependences Checking')
+        self.setWindowTitle(tr('dependences_window.dependences_checking'))
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint
         )
@@ -67,23 +67,29 @@ class DependencesWindow(QWidget):
         self.probar.hide()
         layout.addWidget(self.probar)
 
-        self.ffmpeg_label = SubtitleLabel('FFmpeg: Checking')
+        self.ffmpeg_label = SubtitleLabel()
+        bindText(self.ffmpeg_label, 'dependences_window.ffmpeg_checking')
         layout.addWidget(self.ffmpeg_label)
-        self.ffmpeg_btn = PushButton('Download FFmpeg Automatically')
+        self.ffmpeg_btn = PushButton('')
+        bindText(self.ffmpeg_btn, 'dependences_window.download_ffmpeg_automatically')
         self.ffmpeg_btn.clicked.connect(self.downloadFFmpeg)
         self.ffmpeg_btn.hide()
         layout.addWidget(self.ffmpeg_btn)
 
-        self.python_runtime_label = SubtitleLabel('Python Runtime: Checking')
+        self.python_runtime_label = SubtitleLabel()
+        bindText(self.python_runtime_label, 'dependences_window.python_runtime_checking')
         layout.addWidget(self.python_runtime_label)
 
-        self.audio_output_label = SubtitleLabel('Audio Output: Checking')
+        self.audio_output_label = SubtitleLabel()
+        bindText(self.audio_output_label, 'dependences_window.audio_output_checking')
         layout.addWidget(self.audio_output_label)
 
-        self.network_label = SubtitleLabel('Network: Checking')
+        self.network_label = SubtitleLabel()
+        bindText(self.network_label, 'dependences_window.network_checking')
         layout.addWidget(self.network_label)
 
-        self.opengl_label = SubtitleLabel('OpenGL: Checking')
+        self.opengl_label = SubtitleLabel()
+        bindText(self.opengl_label, 'dependences_window.opengl_checking')
         layout.addWidget(self.opengl_label)
 
         layout.addSpacerItem(
@@ -124,20 +130,22 @@ class DependencesWindow(QWidget):
         self.probar.setRange(0, 1000)
         self.probar.setValue(0)
         self.probar.show()
-        self.ffmpeg_label.setText('FFmpeg: Downloading...')
+        self.ffmpeg_label.setText(tr('dependences_window.ffmpeg_downloading'))
         self.ctx.app.processEvents()
 
         def _progress(cur: float):
             self.probar.setValue(int(cur * 1000))
-            self.ffmpeg_label.setText(f'FFmpeg: Downloading... ({cur * 100:.2f}%)')
+            self.ffmpeg_label.setText(
+                tr('dependences_window.ffmpeg_downloading_percent', percent=cur * 100)
+            )
 
         def _finished(data: bytes):
             if not data:
-                self.ffmpeg_label.setText('FFmpeg: Download failed')
+                self.ffmpeg_label.setText(tr('dependences_window.ffmpeg_download_failed'))
                 self.ffmpeg_btn.setEnabled(True)
                 return
 
-            self.ffmpeg_label.setText('FFmpeg: Extracting...')
+            self.ffmpeg_label.setText(tr('dependences_window.ffmpeg_extracting'))
             self.ctx.app.processEvents()
 
             base_dir = os.path.dirname(
@@ -171,7 +179,7 @@ class DependencesWindow(QWidget):
             except Exception as e:
                 self.logger.exception('Failed to extract FFmpeg')
                 self.logger.exception(e)
-                self.ffmpeg_label.setText('FFmpeg: Extraction failed')
+                self.ffmpeg_label.setText(tr('dependences_window.ffmpeg_extraction_failed'))
                 self.ffmpeg_btn.setEnabled(True)
                 return
             finally:
@@ -183,7 +191,7 @@ class DependencesWindow(QWidget):
 
             self._add_ffmpeg_to_path(ffmpeg_dir)
 
-            self.ffmpeg_label.setText('FFmpeg: Checking...')
+            self.ffmpeg_label.setText(tr('dependences_window.ffmpeg_checking_2'))
             self.ctx.app.processEvents()
             self.ffmpeg_btn.hide()
             self.checkFFmpeg()
@@ -254,8 +262,15 @@ class DependencesWindow(QWidget):
     def _on_check_done(self, name: str, ok: bool, detail: str) -> None:
         key = name.lower().replace(' ', '_')
         label = getattr(self, f'{key}_label')
-        status = 'OK' if ok else 'Failed'
-        label.setText(f'{name}: {status} ({detail})')
+        status = tr('dependences_window.ok') if ok else tr('dependences_window.failed')
+        label.setText(
+            tr(
+                'dependences_window.name_status_detail',
+                name=tr(name),
+                status=status,
+                detail=detail,
+            )
+        )
         label.setStyleSheet(f'color: {"green" if ok else "red"}')
         self._results[name] = ok
         if not all(self._results.values()):
@@ -324,10 +339,12 @@ class DependencesWindow(QWidget):
             devices = getAudioDevices()
             if devices:
                 self.logger.info(f'Audio Output found: {len(devices)} device(s)')
-                self.check_done.emit('Audio Output', True, f'{len(devices)} device(s)')
+                self.check_done.emit(
+                    'Audio Output', True, tr('dependences_window.count_device_s', count=len(devices))
+                )
             else:
                 self.logger.warning('Audio Output not found: no output device')
-                self.check_done.emit('Audio Output', False, 'no output device')
+                self.check_done.emit('Audio Output', False, tr('dependences_window.no_output_device'))
         except Exception as e:
             self.logger.warning(f'Audio Output not found: {e}')
             self.check_done.emit('Audio Output', False, str(e))
@@ -355,10 +372,10 @@ class DependencesWindow(QWidget):
             gl_ctx.doneCurrent()
             if valid:
                 self.logger.info('OpenGL found: available')
-                self.check_done.emit('OpenGL', True, 'available')
+                self.check_done.emit('OpenGL', True, tr('dependences_window.available'))
             else:
                 self.logger.warning('OpenGL not found: no valid context')
-                self.check_done.emit('OpenGL', False, 'no valid context')
+                self.check_done.emit('OpenGL', False, tr('dependences_window.no_valid_context'))
         except Exception as e:
             self.logger.warning(f'OpenGL not found: {e}')
             self.check_done.emit('OpenGL', False, str(e))

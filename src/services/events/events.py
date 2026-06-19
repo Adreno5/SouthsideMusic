@@ -20,6 +20,7 @@ PLAYLIST_CHANGED = 'playlist_changed'
 
 PRE_THEME_CHANGED = 'pre_theme_changed'
 POST_THEME_CHANGED = 'post_theme_changed'
+LANGUAGE_CHANGED = 'language_changed'
 BACKGROUND_RATIO_CHANGED = 'background_ratio_changed'
 
 FAVORITES_CHANGED = 'favorites_changed'

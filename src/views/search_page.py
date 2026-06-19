@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Literal
 
 from core.app_context import AppContext
-from imports import ComboBox, QSize, QTimer, Signal
+from imports import LANGUAGE_CHANGED, ComboBox, QSize, QTimer, Signal, tr
 from imports import QPixmap
 from imports import (
     QAbstractItemView,
@@ -44,10 +43,11 @@ class SearchPage(QWidget):
 
         global_layout = QVBoxLayout()
 
+        if self.ctx.cfg.search_type not in ('Songs', 'Playlists'):
+            self.ctx.cfg.search_type = 'Songs'
         self.search_type = ComboBox()
-        self.search_type.addItems(['Songs', 'Playlists'])
-        self.search_type.setCurrentText(self.ctx.cfg.search_type)
-        self.search_type.currentTextChanged.connect(self.searchTypeChanged)
+        self._refreshSearchTypeBox()
+        self.search_type.currentIndexChanged.connect(self.searchTypeChanged)
         global_layout.addWidget(self.search_type)
 
         if lw:
@@ -72,7 +72,8 @@ class SearchPage(QWidget):
         self.check_timer.start(50)
 
         self.cards: list[SearchSongCard | SearchCloudFolderCard] = []
-        
+        event_bus.subscribe(LANGUAGE_CHANGED, self._refreshSearchTypeBox)
+
     @property
     def _mwindow(self):
         return self.ctx.main_window
@@ -105,8 +106,28 @@ class SearchPage(QWidget):
     def setImage_(self, byte: bytes, ca: SearchSongCard):
         ca.img_label.setPixmap(QPixmap(byte))
 
-    def searchTypeChanged(self, text: Literal['Songs', 'Playlists']) -> None:
-        self.ctx.cfg.search_type = text
+    def _refreshSearchTypeBox(self) -> None:
+        current = self.ctx.cfg.search_type
+        data = self.search_type.currentData()
+        if data in ('Songs', 'Playlists'):
+            current = data
+        self.search_type.blockSignals(True)
+        self.search_type.clear()
+        label_keys = {
+            'Songs': 'search_page.search_type.songs',
+            'Playlists': 'search_page.search_type.playlists',
+        }
+        for search_type in ('Songs', 'Playlists'):
+            self.search_type.addItem(tr(label_keys[search_type]), userData=search_type)
+        index = self.search_type.findData(current)
+        self.search_type.setCurrentIndex(max(index, 0))
+        self.search_type.blockSignals(False)
+
+    def searchTypeChanged(self, *_args: object) -> None:
+        search_type = self.search_type.currentData()
+        if search_type not in ('Songs', 'Playlists'):
+            return
+        self.ctx.cfg.search_type = search_type
         if self.last_search:
             self.search(self.last_search)
 
@@ -115,6 +136,7 @@ class SearchPage(QWidget):
         self.searching = True
 
         if offset == 0:
+            self.curr_offset = 0
             self.lst.clear()
             self.cards.clear()
             self.img_card_map.clear()

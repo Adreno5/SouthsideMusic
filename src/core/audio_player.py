@@ -5,12 +5,14 @@ import ctypes
 from dataclasses import dataclass
 import io
 import logging
+from math import gcd
 import struct
 import subprocess
 from queue import Empty, Full, Queue
 import sys
 import time
 import numpy as np
+import psutil
 import sounddevice as sd
 from pathlib import Path
 from imports import (
@@ -26,6 +28,7 @@ from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from typing import Optional, override
 import threading
 from scipy.fft import rfft, rfftfreq
+from scipy.signal import resample_poly
 from imports import QMessageBox
 from core.config import cfg
 
@@ -75,6 +78,13 @@ def _get_memory_load() -> float:
     except Exception:
         pass
     return 0.0
+
+
+def _get_cpu_load() -> float:
+    try:
+        return max(0.0, min(100.0, float(psutil.cpu_percent(interval=None))))
+    except Exception:
+        return 0.0
 
 
 def cache_decoded_audio(key: str, segment: AudioSegment) -> None:
@@ -301,8 +311,9 @@ class AudioPlayer(QObject):
         self.fft_size = 1024
 
         self.play_speed = cfg.play_speed
+        self.play_pitch = cfg.play_pitch
 
-        self._BLOCK_SIZE = 768
+        self._BLOCK_SIZE = 2048
 
         self._audio_queue: Queue[tuple[np.ndarray, int] | None] = Queue(
             maxsize=_PRODUCER_QUEUE_BLOCKS
@@ -317,8 +328,12 @@ class AudioPlayer(QObject):
         self._producer_memory_load: float = 0.0
         self._producer_target_lead: float = _PRODUCER_EARLY_LEAD
         self._producer_last_resource_sample = 0.0
-        self._producer_last_process_time = time.process_time()
+        self._wsola_output_buffer: np.ndarray | None = None
         self._wsola_tail: np.ndarray | None = None
+        self._wsola_buffer_start_index: float = 0.0
+        self._wsola_next_source_index: float = 0.0
+        self._wsola_speed: float = 1.0
+        self._stereo_tail: np.ndarray | None = None
         self._reverb_tail: np.ndarray | None = None
 
         self._lock = threading.RLock()
@@ -350,6 +365,7 @@ class AudioPlayer(QObject):
                 f'current_index={self.current_index}',
                 f'playback_time={self._playback_time:.3f}',
                 f'play_speed={self.play_speed:.2f}',
+                f'play_pitch={self.play_pitch:.2f}',
                 f'volume_gain={self.volume_gain:.3f}',
                 f'loudness_gain={self.loudness_gain:.3f}',
                 f'db={self.db}',
@@ -389,11 +405,13 @@ class AudioPlayer(QObject):
         right = multi[:, 1::2].mean(axis=1)
         return np.stack((left, right), axis=1)
 
-    def _apply_stereo_effect(
-        self, mono_chunk: np.ndarray, absolute_start: int
-    ) -> np.ndarray:
+    def _reset_stereo_effect(self) -> None:
+        self._stereo_tail = None
+
+    def _apply_stereo_effect(self, mono_chunk: np.ndarray) -> np.ndarray:
         stereo_chunk = np.repeat(mono_chunk.reshape(-1, 1), 2, axis=1)
         if not cfg.stereo or cfg.stereo_haas_index == 0 or len(mono_chunk) == 0:
+            self._reset_stereo_effect()
             return stereo_chunk
 
         delay_ms = cfg.stereo_haas_index
@@ -401,14 +419,20 @@ class AudioPlayer(QObject):
             max(1, int(self.sample_rate * delay_ms / 1000)),
             max(1, len(self.samples) // 8),
         )
-        delayed_indices = np.arange(len(mono_chunk)) + absolute_start - delay
-        valid = (delayed_indices >= 0) & (delayed_indices < len(self.samples))
+        mono = mono_chunk.astype(np.float32, copy=False)
+        tail = self._stereo_tail
+        if tail is None:
+            tail = np.zeros(delay, dtype=np.float32)
+        elif len(tail) < delay:
+            tail = np.concatenate(
+                (np.zeros(delay - len(tail), dtype=np.float32), tail)
+            )
+        else:
+            tail = tail[-delay:]
 
-        right = stereo_chunk[:, 1]
-        if np.any(valid):
-            right[valid] = self.samples[delayed_indices[valid], 0]
-        right[~valid] = 0.0
-        right *= 0.82
+        history = np.concatenate((tail, mono))
+        stereo_chunk[:, 1] = history[: len(mono)] * 0.82
+        self._stereo_tail = history[-delay:].copy()
 
         return stereo_chunk
 
@@ -484,6 +508,7 @@ class AudioPlayer(QObject):
             self._prepared_end_index = 0
             self._producer_target_lead = _PRODUCER_EARLY_LEAD
             self._reset_wsola()
+            self._reset_stereo_effect()
             self._reset_reverb()
             self._playback_time = 0.0
             self.is_playing = False
@@ -504,6 +529,7 @@ class AudioPlayer(QObject):
                 return
             if self.is_paused:
                 self._reset_wsola()
+                self._reset_stereo_effect()
                 self._reset_reverb()
                 self._clear_queue()
                 self._start_producer()
@@ -517,6 +543,7 @@ class AudioPlayer(QObject):
                 self._prepared_start_index = 0
                 self._prepared_end_index = 0
                 self._reset_wsola()
+                self._reset_stereo_effect()
                 self._reset_reverb()
                 self._clear_queue()
                 self._start_producer()
@@ -548,6 +575,7 @@ class AudioPlayer(QObject):
             self._prepared_end_index = 0
             self._producer_target_lead = _PRODUCER_EARLY_LEAD
             self._reset_wsola()
+            self._reset_stereo_effect()
             self._reset_reverb()
             self._playback_time = 0.0
             self.is_playing = False
@@ -565,6 +593,7 @@ class AudioPlayer(QObject):
             self._prepared_end_index = self.current_index
             self._producer_target_lead = self._producer_desired_lead()
             self._reset_wsola()
+            self._reset_stereo_effect()
             self._reset_reverb()
             self._clear_queue()
             if self.is_playing:
@@ -597,9 +626,43 @@ class AudioPlayer(QObject):
                 self._stop_producer()
             self.play_speed = speed
             self._reset_wsola()
+            self._reset_stereo_effect()
             self._reset_reverb()
             if was_playing:
                 self._clear_queue()
+                self._start_producer()
+
+    def setPlayPitch(self, pitch: float) -> None:
+        with self._lock:
+            pitch = max(-12.0, min(12.0, pitch))
+            if abs(pitch - self.play_pitch) < 1e-6:
+                return
+            was_playing = self.is_playing
+            if was_playing:
+                self._stop_producer()
+            self.play_pitch = pitch
+            self._reset_wsola()
+            self._reset_stereo_effect()
+            self._reset_reverb()
+            if was_playing:
+                self._clear_queue()
+                self._start_producer()
+
+    def restartProducer(self) -> None:
+        with self._lock:
+            if len(self.samples) == 0:
+                return
+            was_playing = self.is_playing or (
+                self.stream is not None and self.stream.active
+            )
+            if was_playing:
+                self._stop_producer()
+            self._reset_wsola()
+            self._reset_stereo_effect()
+            self._reset_reverb()
+            self._clear_queue()
+            self._producer_target_lead = self._producer_desired_lead()
+            if was_playing:
                 self._start_producer()
 
     def isPlaying(self) -> bool:
@@ -663,11 +726,11 @@ class AudioPlayer(QObject):
             self._gain_anim = None
 
     @Property(float)
-    def loudnessGain(self) -> float:
+    def _loudnessGain(self) -> float:
         return self.loudness_gain
 
-    @loudnessGain.setter
-    def setLoudnessGain(self, value: float) -> None:
+    @_loudnessGain.setter
+    def loudnessGain(self, value: float) -> None:
         self.loudness_gain = value
 
     def _fft_worker(self):
@@ -695,35 +758,62 @@ class AudioPlayer(QObject):
         self.fft_thread_running = False
         self.fft_queue.put(None)
         if self.fft_thread.is_alive():
-            self.fft_thread.join(timeout=1.0)
+            self.fft_thread.join(timeout=0)
 
     def _reset_wsola(self) -> None:
+        self._wsola_output_buffer = None
         self._wsola_tail = None
+        self._wsola_buffer_start_index = 0.0
+        self._wsola_next_source_index = 0.0
+        self._wsola_speed = 1.0
 
-    def _wsola_overlap_size(self, frames: int) -> int:
-        if frames < 4:
-            return 0
-        return min(frames // 2, max(32, self.sample_rate // 100))
+    def _pitch_ratio(self) -> float:
+        return 2 ** (self.play_pitch / 12.0)
 
-    def _wsola_find_start(self, start_idx: int, frames: int, overlap: int) -> int:
+    def _wsola_hop_size(self) -> int:
+        return max(256, self.sample_rate // 43)
+
+    def _wsola_search_size(self, hop: int) -> int:
+        return min(hop // 2, max(32, self.sample_rate // 125))
+
+    def _wsola_read_source(self, start_idx: int, frames: int) -> np.ndarray:
+        n = len(self.samples)
+        if n == 0 or frames <= 0:
+            return np.zeros((0, self.channels), dtype=np.float32)
+
+        start_idx = max(0, min(start_idx, n))
+        end_idx = min(start_idx + frames, n)
+        segment = self.samples[start_idx:end_idx].copy()
+        if len(segment) >= frames:
+            return segment.astype(np.float32, copy=False)
+
+        if len(segment) > 0:
+            pad_frame = segment[-1:]
+        else:
+            pad_frame = self.samples[-1:]
+        padding = np.repeat(pad_frame, frames - len(segment), axis=0)
+        return np.concatenate((segment, padding), axis=0).astype(
+            np.float32, copy=False
+        )
+
+    def _wsola_find_start(
+        self, ideal_start: int, overlap: int, search: int
+    ) -> int:
         tail = self._wsola_tail
         n = len(self.samples)
         if tail is None or len(tail) < overlap or n <= overlap:
-            return max(0, min(start_idx, n))
+            return max(0, min(ideal_start, n))
 
-        hop_delta = abs(frames * (1.0 - self.play_speed))
-        search = max(16, int(hop_delta * 0.5))
-        search = min(search, overlap, max(32, self.sample_rate // 100))
-        min_start = max(0, start_idx - search)
-        max_start = min(n - overlap, start_idx + search)
-        if max_start <= min_start:
-            return max(0, min(start_idx, n))
+        min_start = max(0, ideal_start - search)
+        max_start = min(n - overlap, ideal_start + search)
+        if max_start < min_start:
+            return max(0, min(ideal_start, n))
 
         tail_mono = tail[:overlap].mean(axis=1).astype(np.float32, copy=False)
         tail_mono = tail_mono - tail_mono.mean()
         tail_power = float(np.sqrt(np.sum(tail_mono * tail_mono)))
         if tail_power < 1e-6:
-            return max(0, min(start_idx, n))
+            return max(0, min(ideal_start, n))
 
         mono = self.samples[min_start : max_start + overlap].mean(axis=1)
         windows = np.lib.stride_tricks.sliding_window_view(mono, overlap)
@@ -731,68 +821,163 @@ class AudioPlayer(QObject):
         powers = np.sqrt(np.sum(centered * centered, axis=1))
         scores = centered @ tail_mono
         scores /= np.maximum(powers * tail_power, 1e-6)
+        positions = np.arange(len(scores), dtype=np.float32) + min_start
+        center_bias = np.abs(positions - ideal_start) / max(1, search)
+        scores -= center_bias * 0.03
         return min_start + int(np.argmax(scores))
 
-    def _read_wsola(self, start_idx: int, frames: int) -> np.ndarray:
-        n = len(self.samples)
-        if n == 0 or start_idx >= n:
-            return np.zeros((0, self.channels), dtype=np.float32)
+    def _wsola_reset_for(self, start_idx: int, speed: float) -> None:
+        self._wsola_output_buffer = np.zeros((0, self.channels), dtype=np.float32)
+        self._wsola_tail = None
+        self._wsola_buffer_start_index = float(start_idx)
+        self._wsola_next_source_index = float(start_idx)
+        self._wsola_speed = speed
 
-        overlap = self._wsola_overlap_size(frames)
-        if overlap <= 0:
-            return self.samples[start_idx : start_idx + frames].copy()
+    def _wsola_needs_reset(self, start_idx: int, speed: float) -> bool:
+        if self._wsola_output_buffer is None:
+            return True
+        if self._wsola_output_buffer.ndim != 2:
+            return True
+        if self._wsola_output_buffer.shape[1] != self.channels:
+            return True
+        if abs(speed - self._wsola_speed) >= 1e-6:
+            return True
 
-        start_idx = max(0, start_idx)
-        segment_start = self._wsola_find_start(start_idx, frames, overlap)
-        if segment_start >= n:
-            segment_start = start_idx
-        segment_end = min(segment_start + frames + overlap, n)
-        segment = self.samples[segment_start:segment_end].copy()
-        if len(segment) == 0:
-            return np.zeros((0, self.channels), dtype=np.float32)
+        expected_start = int(round(self._wsola_buffer_start_index))
+        return abs(start_idx - expected_start) > 16
 
-        tail = self._wsola_tail
-        if tail is not None and len(tail) >= overlap:
-            fade_len = min(overlap, len(segment))
-            fade_in = np.linspace(0.0, 1.0, fade_len, dtype=np.float32).reshape(-1, 1)
-            fade_out = 1.0 - fade_in
-            mixed = tail[:fade_len] * fade_out + segment[:fade_len] * fade_in
-            if fade_len < len(tail):
-                buffer = np.concatenate((mixed, tail[fade_len:], segment[fade_len:]))
-            else:
-                buffer = np.concatenate((mixed, segment[fade_len:]))
-        else:
-            buffer = segment
+    def _wsola_append_frame(self, speed: float, hop: int, search: int) -> bool:
+        output_buffer = self._wsola_output_buffer
+        if output_buffer is None:
+            return False
 
-        if len(buffer) < frames:
-            pad = np.repeat(buffer[-1:], frames - len(buffer), axis=0)
-            buffer = np.concatenate((buffer, pad), axis=0)
+        frame_size = hop * 2
+        if self._wsola_tail is None:
+            source_start = int(round(self._wsola_next_source_index))
+            segment = self._wsola_read_source(source_start, frame_size)
+            if len(segment) == 0:
+                return False
 
-        out = buffer[:frames].copy()
-        if len(buffer) > frames:
-            self._wsola_tail = buffer[frames:].copy()
-        else:
+            self._wsola_output_buffer = np.concatenate(
+                (output_buffer, segment[:hop]), axis=0
+            )
+            self._wsola_tail = segment[hop:frame_size].copy()
+            self._wsola_next_source_index += hop * speed
+            return True
+
+        if self._wsola_next_source_index >= len(self.samples):
+            self._wsola_output_buffer = np.concatenate(
+                (output_buffer, self._wsola_tail), axis=0
+            )
             self._wsola_tail = None
+            self._wsola_next_source_index = float(len(self.samples))
+            return True
 
-        return out.astype(np.float32, copy=False)
+        ideal_start = int(round(self._wsola_next_source_index))
+        source_start = self._wsola_find_start(ideal_start, hop, search)
+        segment = self._wsola_read_source(source_start, frame_size)
+        if len(segment) == 0:
+            return False
 
-    def _speed_source_frames(self, start_idx: int, frames: int) -> int:
+        fade_in = np.linspace(0.0, 1.0, hop, dtype=np.float32).reshape(-1, 1)
+        mixed = self._wsola_tail * (1.0 - fade_in) + segment[:hop] * fade_in
+        self._wsola_output_buffer = np.concatenate((output_buffer, mixed), axis=0)
+        self._wsola_tail = segment[hop:frame_size].copy()
+        self._wsola_next_source_index += hop * speed
+        return True
+
+    def _read_wsola(self, start_idx: int, frames: int, speed: float) -> np.ndarray:
         n = len(self.samples)
         if n == 0 or start_idx >= n:
-            return 0
-        src_frames = max(1, int(round(frames * self.play_speed)))
-        return min(src_frames, n - start_idx)
-
-    def _read_speed(self, start_idx: int, frames: int) -> np.ndarray:
-        n = len(self.samples)
-        speed = self.play_speed
-        if n == 0:
             return np.zeros((0, self.channels), dtype=np.float32)
+
         if abs(speed - 1.0) < 1e-6:
             self._reset_wsola()
             return self.samples[start_idx : start_idx + frames].copy()
 
-        return self._read_wsola(start_idx, frames)
+        if frames <= 0:
+            return np.zeros((0, self.channels), dtype=np.float32)
+
+        start_idx = max(0, start_idx)
+        if self._wsola_needs_reset(start_idx, speed):
+            self._wsola_reset_for(start_idx, speed)
+
+        hop = self._wsola_hop_size()
+        if hop <= 0:
+            return self.samples[start_idx : start_idx + frames].copy()
+
+        search = self._wsola_search_size(hop)
+        while (
+            self._wsola_output_buffer is not None
+            and len(self._wsola_output_buffer) < frames
+        ):
+            if not self._wsola_append_frame(speed, hop, search):
+                break
+
+        buffer = self._wsola_output_buffer
+        if buffer is None or len(buffer) == 0:
+            return np.zeros((0, self.channels), dtype=np.float32)
+
+        out = buffer[:frames].copy()
+        if len(buffer) > frames:
+            self._wsola_output_buffer = buffer[frames:].copy()
+        else:
+            self._wsola_output_buffer = np.zeros((0, self.channels), dtype=np.float32)
+        self._wsola_buffer_start_index += len(out) * speed
+
+        return out.astype(np.float32, copy=False)
+
+    def _source_frames_for(self, start_idx: int, frames: int, speed: float) -> int:
+        n = len(self.samples)
+        if n == 0 or start_idx >= n:
+            return 0
+        src_frames = max(1, int(round(frames * speed)))
+        return min(src_frames, n - start_idx)
+
+    def _speed_source_frames(self, start_idx: int, frames: int) -> int:
+        return self._source_frames_for(start_idx, frames, self.play_speed)
+
+    def _resample_to_frames(self, chunk: np.ndarray, frames: int) -> np.ndarray:
+        if len(chunk) == frames:
+            return chunk.astype(np.float32, copy=False)
+        if len(chunk) == 0:
+            return np.zeros((0, self.channels), dtype=np.float32)
+        if len(chunk) == 1:
+            return np.repeat(chunk, frames, axis=0).astype(np.float32, copy=False)
+
+        factor = gcd(len(chunk), frames)
+        up = frames // factor
+        down = len(chunk) // factor
+        out = resample_poly(chunk, up, down, axis=0, padtype='line').astype(
+            np.float32, copy=False
+        )
+        if len(out) > frames:
+            return out[:frames]
+        if len(out) < frames:
+            pad = np.repeat(out[-1:], frames - len(out), axis=0)
+            out = np.concatenate((out, pad), axis=0)
+        return out
+
+    def _read_speed(self, start_idx: int, frames: int) -> tuple[np.ndarray, int]:
+        n = len(self.samples)
+        speed = self.play_speed
+        if n == 0:
+            return np.zeros((0, self.channels), dtype=np.float32), 0
+
+        pitch_ratio = self._pitch_ratio()
+        if abs(speed - 1.0) < 1e-6 and abs(pitch_ratio - 1.0) < 1e-6:
+            self._reset_wsola()
+            src_frames = self._speed_source_frames(start_idx, frames)
+            return self.samples[start_idx : start_idx + frames].copy(), src_frames
+
+        intermediate_frames = max(1, int(round(frames * pitch_ratio)))
+        tempo_speed = speed / pitch_ratio
+        chunk = self._read_wsola(start_idx, intermediate_frames, tempo_speed)
+        if abs(pitch_ratio - 1.0) >= 1e-6:
+            chunk = self._resample_to_frames(chunk, frames)
+
+        src_frames = self._source_frames_for(start_idx, intermediate_frames, tempo_speed)
+        return chunk, src_frames
 
     def _audio_callback(self, outdata, frames, _time_info, _status):
         outdata[:] = 0
@@ -893,7 +1078,7 @@ class AudioPlayer(QObject):
         self._producer_seq += 1
         producer_seq = self._producer_seq
         self._producer_last_resource_sample = time.perf_counter()
-        self._producer_last_process_time = time.process_time()
+        _get_cpu_load()
         self._producer_thread = threading.Thread(
             target=lambda: self._producer_loop(producer_seq), daemon=True
         )
@@ -903,7 +1088,7 @@ class AudioPlayer(QObject):
         self._producer_running = False
         self._producer_seq += 1
         if self._producer_thread is not None and self._producer_thread.is_alive():
-            self._producer_thread.join(timeout=0.1)
+            self._producer_thread.join(timeout=0)
         self._producer_thread = None
 
     def _producer_prepared_lead(self) -> float:
@@ -947,16 +1132,13 @@ class AudioPlayer(QObject):
         if elapsed < 0.75:
             return
 
-        process_time = time.process_time()
-        cpu_load = (process_time - self._producer_last_process_time) / elapsed * 100
-        cpu_load = max(0.0, min(100.0, cpu_load))
+        cpu_load = _get_cpu_load()
         if self._producer_cpu_load == 0.0:
             self._producer_cpu_load = cpu_load
         else:
             self._producer_cpu_load += (cpu_load - self._producer_cpu_load) * 0.35
         self._producer_memory_load = _get_memory_load()
         self._producer_last_resource_sample = now
-        self._producer_last_process_time = process_time
 
     def _producer_loop(self, producer_seq: int) -> None:
         finished = False
@@ -1000,14 +1182,12 @@ class AudioPlayer(QObject):
                         break
 
                     start_idx = int(self._producer_index)
-                    chunk = self._read_speed(start_idx, self._BLOCK_SIZE)
+                    chunk, src_frames = self._read_speed(start_idx, self._BLOCK_SIZE)
                     if len(chunk) == 0:
                         break
 
                     if self.channels == 1:
-                        out = self._apply_stereo_effect(
-                            chunk[:, 0], int(self._producer_index)
-                        )
+                        out = self._apply_stereo_effect(chunk[:, 0])
                     else:
                         if not cfg.stereo:
                             mono = chunk.mean(axis=1, keepdims=True)
@@ -1018,11 +1198,10 @@ class AudioPlayer(QObject):
                     out = out.astype(np.float32, copy=False)
                     out = self._apply_reverb(out)
 
-                    src_frames = self._speed_source_frames(start_idx, self._BLOCK_SIZE)
                     next_index = min(start_idx + src_frames, len(self.samples))
 
                 try:
-                    self._audio_queue.put((out, src_frames), timeout=0.1)
+                    self._audio_queue.put((out, src_frames), timeout=0)
                 except Full:
                     time.sleep(0.02)
                     break
@@ -1058,7 +1237,7 @@ class AudioPlayer(QObject):
         if not finished or producer_seq != self._producer_seq:
             return
         try:
-            self._audio_queue.put(None, timeout=0.1)
+            self._audio_queue.put(None, timeout=0)
         except Full:
             pass
 

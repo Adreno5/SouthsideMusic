@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from imports import Qt
-from imports import QLabel, QVBoxLayout, QWidget, event_bus
+from imports import LANGUAGE_CHANGED, Qt
+from imports import QLabel, QVBoxLayout, QWidget, event_bus, tr
 from qfluentwidgets import TitleLabel
 import hPyT
 
@@ -35,7 +35,7 @@ class LaunchWindow(QWidget):
             self.subtitlel,
             alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
         )
-        self.sublabel = QLabel('Launching...')
+        self.sublabel = QLabel(tr('launch_window.launching'))
         launchlayout.addWidget(
             self.sublabel,
             alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
@@ -47,6 +47,7 @@ class LaunchWindow(QWidget):
         )
 
         self.show()
+        event_bus.subscribe(LANGUAGE_CHANGED, self.updateLabel)
 
     def push(self, text: str):
         self._stack.append(text)
@@ -61,7 +62,7 @@ class LaunchWindow(QWidget):
             self.updateLabel()
 
     def subtitle(self, text: str):
-        self.subtitlel.setText(text)
+        self.subtitlel.setText(tr(text))
         self.push(text)
         time.sleep(0.05)
 
@@ -76,5 +77,8 @@ class LaunchWindow(QWidget):
         )
         if len(self._stack) > 5:
             text = '...\n' + text
+        if not text:
+            text = 'Launching...'
+        text = '\n'.join(tr(line) for line in text.split('\n'))
         self.sublabel.setText(text)
         self._app.processEvents()

@@ -21,10 +21,11 @@ from imports import (
     REPAINT,
     SONG_CHANGED,
     InfoBar,
-    QMessageBox,
+    MessageBox,
     QObject,
     QTimer,
     event_bus,
+    tr,
 )
 import pyncm as ncm
 from pyncm import apis
@@ -112,17 +113,27 @@ class EventsServices(QObject):
 
         asyncTask(_add, (), self, _finished)
 
-    def cloudRemoveFolder(self, card: CloudFolderCard):
-        confirmed: bool = (
-            QMessageBox.question(
-                None,
-                'Remove Folder',
-                f"Are you sure to remove folder '{card.folder.folder_name}'?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            == QMessageBox.StandardButton.Yes
+    def _confirmRemoveFolder(self, folder_name: str) -> bool:
+        dialog = MessageBox(
+            tr('events_services.remove_folder'),
+            tr(
+                'events_services.are_you_sure_to_remove_folder',
+                folder_name=folder_name,
+            ),
+            self._ctx.main_window,
         )
+        dialog.yesButton.setText(tr('events_services.remove'))
+        dialog.cancelButton.setText(tr('events_services.cancel'))
+        dialog.yesButton.setStyleSheet(
+            dialog.yesButton.styleSheet() +
+            'PrimaryPushButton { color: white; background: #c42b1c; }'
+            'PrimaryPushButton:hover { background: #d13438; }'
+            'PrimaryPushButton:pressed { background: #a4262c; }'
+        )
+        return bool(dialog.exec())
+
+    def cloudRemoveFolder(self, card: CloudFolderCard) -> None:
+        confirmed = self._confirmRemoveFolder(card.folder.folder_name)
         if confirmed:
             getBackend().removePlaylist(card.folder.id)
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)
@@ -158,17 +169,8 @@ class EventsServices(QObject):
 
         asyncTask(_rename, (), self, _finished)
 
-    def localRemoveFolder(self, card: LocalFolderCard):
-        confirmed: bool = (
-            QMessageBox.question(
-                None,
-                'Remove Folder',
-                f"Are you sure to remove folder '{card.folder.folder_name}'?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            == QMessageBox.StandardButton.Yes
-        )
+    def localRemoveFolder(self, card: LocalFolderCard) -> None:
+        confirmed = self._confirmRemoveFolder(card.folder.folder_name)
         if confirmed:
             favorites_manager.removeFolder(card.folder.folder_name)
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)

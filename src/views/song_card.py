@@ -22,6 +22,8 @@ from imports import (
     Qt,
     Signal,
     event_bus,
+    bindText,
+    tr,
 )
 from imports import QImage, QMouseEvent, QPixmap
 from imports import (
@@ -73,6 +75,17 @@ _image_download_locks: dict[str, threading.Lock] = {}
 SONG_CARD_HEIGHT = 70
 
 
+def _artist_names_text(storable: SongStorable) -> str:
+    return '、'.join(artist.name for artist in storable.artists)
+
+
+def _export_default_path(storable: SongStorable, fmt: str) -> str:
+    artists_text = _artist_names_text(storable)
+    if artists_text:
+        return f'./{storable.name} - {artists_text}{fmt}'
+    return f'./{storable.name}{fmt}'
+
+
 def _get_image_download_lock(song_id: str) -> threading.Lock:
     global _image_download_locks
     if song_id not in _image_download_locks:
@@ -99,7 +112,8 @@ class FolderSelectDialog(MessageBoxBase):
         self._cloud_playlists: list[CloudFolderInfo] = []
         song_ids = [song_id] if isinstance(song_id, str) else song_id
 
-        self.title_label = SubtitleLabel('Add to Folder')
+        self.title_label = SubtitleLabel()
+        bindText(self.title_label, 'song_card.add_to_folder')
         self.viewLayout.addWidget(self.title_label)
 
         self.list_widget = SListWidget()
@@ -117,7 +131,7 @@ class FolderSelectDialog(MessageBoxBase):
         ]
 
         if local_folders:
-            self.list_widget.addItem(QListWidgetItem('Local'))
+            self.list_widget.addItem(QListWidgetItem(tr('song_card.local')))
             for folder in local_folders:
                 card = LocalFolderCard(folder, self.list_widget.width())
                 card.clicked.connect(
@@ -130,7 +144,8 @@ class FolderSelectDialog(MessageBoxBase):
                 self.list_widget.setItemWidget(item, card)
 
         create_item = QListWidgetItem()
-        create_btn = TransparentPushButton(FluentIcon.ADD_TO, 'Create New Folder...')
+        create_btn = TransparentPushButton(FluentIcon.ADD_TO, '')
+        bindText(create_btn, 'song_card.create_new_folder')
         create_btn.clicked.connect(self._selectCreateNew)
         create_item.setSizeHint(create_btn.sizeHint())
         self.list_widget.addItem(create_item)
@@ -138,9 +153,9 @@ class FolderSelectDialog(MessageBoxBase):
 
         anonymous = getBackend().userAnonymous()
         if not anonymous:
-            self.list_widget.addItem(QListWidgetItem('Cloud'))
+            self.list_widget.addItem(QListWidgetItem(tr('song_card.cloud')))
             self._cloud_section_idx = self.list_widget.count()
-            loading_item = QListWidgetItem('Loading...')
+            loading_item = QListWidgetItem(tr('song_card.loading'))
             self.list_widget.addItem(loading_item)
             threading.Thread(target=self._loadCloudPlaylists, daemon=True).start()
 
@@ -161,7 +176,7 @@ class FolderSelectDialog(MessageBoxBase):
             self._mwindow.addScheduledTask(lambda: self._onCloudLoaded(playlists))
         except Exception:
             self._mwindow.addScheduledTask(
-                lambda: self.list_widget.addItem(QListWidgetItem('Failed to load'))
+                lambda: self.list_widget.addItem(QListWidgetItem(tr('song_card.failed_to_load')))
             )
 
     def _onCloudLoaded(self, playlists: list[CloudFolderInfo]):
@@ -267,8 +282,8 @@ class SearchSongCard(QWidget):
         )
         if all_local_have and anonymous:
             InfoBar.info(
-                'Already saved',
-                'This song is already in all folders',
+                tr('song_card.already_saved'),
+                tr('song_card.this_song_is_already_in_all_folders'),
                 parent=self._mwindow,
                 duration=3000,
             )
@@ -287,16 +302,20 @@ class SearchSongCard(QWidget):
         if folder_type == 'cloud' and cloud_id:
             if not getBackend().editPlaylist('add', [str(self.info.id)], cloud_id):
                 InfoBar.warning(
-                    'Session expired',
-                    'Please re-login to perform this action',
+                    tr('song_card.session_expired'),
+                    tr('song_card.please_re_login_to_perform_this_action'),
                     parent=self._mwindow,
                     duration=5000,
                 )
                 return
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)
             InfoBar.success(
-                'Favorited',
-                f"Added {self.info.name} to cloud playlist '{folder_name}'",
+                tr('song_card.favorited'),
+                tr(
+                    'song_card.added_song_name_to_cloud_playlist_folder_name',
+                    song_name=self.info.name,
+                    folder_name=folder_name,
+                ),
                 parent=self._mwindow,
                 duration=3000,
             )
@@ -306,7 +325,10 @@ class SearchSongCard(QWidget):
             from core.dialogs import getTextLineedit
 
             folder_name = getTextLineedit(
-                self._mwindow, 'Create New Folder', 'My first folder', self._mwindow
+                self._mwindow,
+                tr('song_card.create_new_folder_2'),
+                tr('song_card.my_first_folder'),
+                self._mwindow,
             )
             if not folder_name:
                 return
@@ -360,8 +382,11 @@ class SearchSongCard(QWidget):
         )
         if not favorites_manager.addSong(folder_name, storable):
             InfoBar.warning(
-                'Folder not found',
-                f"Folder '{folder_name}' may have been removed",
+                tr('song_card.folder_not_found'),
+                tr(
+                    'song_card.folder_folder_name_may_have_been_removed',
+                    folder_name=folder_name,
+                ),
                 parent=self._mwindow,
                 duration=3000,
             )
@@ -370,8 +395,12 @@ class SearchSongCard(QWidget):
         event_bus.emit(FAVORITES_CHANGED, folder_name)
 
         InfoBar.success(
-            'Favorited',
-            f"Added {self.info.name} to '{folder_name}'",
+            tr('song_card.favorited'),
+            tr(
+                'song_card.added_song_name_to_folder_name',
+                song_name=self.info.name,
+                folder_name=folder_name,
+            ),
             parent=self._mwindow,
             duration=3000,
         )
@@ -629,8 +658,8 @@ class _SongCardItem(QWidget):
         )
         if all_local_have and anonymous:
             InfoBar.info(
-                'Already saved',
-                'This song is already in all folders',
+                tr('song_card.already_saved'),
+                tr('song_card.this_song_is_already_in_all_folders'),
                 parent=self._mwindow,
                 duration=3000,
             )
@@ -651,8 +680,12 @@ class _SongCardItem(QWidget):
         elif folder_type == 'cloud':
             getBackend().editPlaylist('add', [song_id], str(cloud_id))
         InfoBar.info(
-            'Added',
-            f'Song {self.storable.name} has been added to {folder_name}',
+            tr('song_card.added'),
+            tr(
+                'song_card.song_song_name_has_been_added_to_folder_name',
+                song_name=self.storable.name,
+                folder_name=folder_name,
+            ),
             parent=self._mwindow,
             duration=3000,
         )
@@ -666,11 +699,11 @@ class PlaylistSongCard(_SongCardItem):
     def contextMenuEvent(self, event):
         menu = RoundMenu(parent=self)
 
-        export = Action('Export', menu)
+        export = Action(tr('song_card.export'), menu)
         export.setIcon(getQIcon('export'))
-        repeat = Action('Repeat', menu)
+        repeat = Action(tr('song_card.repeat'), menu)
         repeat.setIcon(FluentIcon.SYNC.icon())
-        rm = Action('Remove', menu)
+        rm = Action(tr('song_card.remove'), menu)
         rm.setIcon(getQIcon('remove'))
 
         export.triggered.connect(lambda: self._exportSong())
@@ -689,9 +722,9 @@ class PlaylistSongCard(_SongCardItem):
         ) as f:
             export_path, fmt = QFileDialog.getSaveFileName(
                 self._mwindow,
-                'Export song',
-                f'./{self.storable.name} - {self.storable.artists}{getSongFormat(f.read())}',
-                'Song Files (*.mp3, *.m4a, *.flac, *.wav, *.ogg, *.opus)',
+                tr('song_card.export_song'),
+                _export_default_path(self.storable, getSongFormat(f.read())),
+                tr('song_card.song_files_mp3_m4a_flac_wav_ogg_opus'),
             )
 
         if export_path:
@@ -734,8 +767,8 @@ class PlaylistSongCard(_SongCardItem):
 
             def _final():
                 InfoBar.success(
-                    'Export',
-                    f'Exported song {self.storable.name}',
+                    tr('song_card.export'),
+                    tr('song_card.exported_song_song_name', song_name=self.storable.name),
                     parent=self._mwindow,
                     duration=5000,
                 )
@@ -793,15 +826,15 @@ class FavoriteSongCard(_SongCardItem):
     def contextMenuEvent(self, event):
         menu = RoundMenu(parent=self)
 
-        export = Action('Export', menu)
+        export = Action(tr('song_card.export'), menu)
         export.setIcon(getQIcon('export'))
         export.triggered.connect(lambda: self._exportSong())
 
-        remove = Action('Remove', menu)
+        remove = Action(tr('song_card.remove'), menu)
         remove.setIcon(getQIcon('remove'))
         remove.triggered.connect(self._removeSong)
 
-        addto = Action('Add to ...', menu)
+        addto = Action(tr('song_card.add_to'), menu)
         addto.setIcon(getQIcon('add'))
         addto.triggered.connect(lambda: self._addTo())
 
@@ -821,9 +854,9 @@ class FavoriteSongCard(_SongCardItem):
         ) as f:
             export_path, fmt = QFileDialog.getSaveFileName(
                 self._mwindow,
-                'Export song',
-                f'./{self.storable.name} - {self.storable.artists}{getSongFormat(f.read())}',
-                'Song Files (*.mp3, *.m4a, *.flac, *.wav, *.ogg, *.opus)',
+                tr('song_card.export_song'),
+                _export_default_path(self.storable, getSongFormat(f.read())),
+                tr('song_card.song_files_mp3_m4a_flac_wav_ogg_opus'),
             )
 
         if export_path:
@@ -866,8 +899,8 @@ class FavoriteSongCard(_SongCardItem):
 
             def _final():
                 InfoBar.success(
-                    'Export',
-                    f'Exported song {self.storable.name}',
+                    tr('song_card.export'),
+                    tr('song_card.exported_song_song_name', song_name=self.storable.name),
                     parent=self._mwindow,
                     duration=5000,
                 )
@@ -894,15 +927,15 @@ class CloudFavoriteSongCard(_SongCardItem):
     def contextMenuEvent(self, event):
         menu = RoundMenu(parent=self)
 
-        export = Action('Export', menu)
+        export = Action(tr('song_card.export'), menu)
         export.setIcon(getQIcon('export'))
         export.triggered.connect(lambda: self._exportSong())
 
-        remove = Action('Remove', menu)
+        remove = Action(tr('song_card.remove'), menu)
         remove.setIcon(getQIcon('remove'))
         remove.triggered.connect(self._removeSong)
 
-        addto = Action('Add to ...', menu)
+        addto = Action(tr('song_card.add_to'), menu)
         addto.setIcon(getQIcon('add'))
         addto.triggered.connect(lambda: self._addTo())
 
@@ -922,9 +955,9 @@ class CloudFavoriteSongCard(_SongCardItem):
         ) as f:
             export_path, fmt = QFileDialog.getSaveFileName(
                 self._mwindow,
-                'Export song',
-                f'./{self.storable.name} - {self.storable.artists}{getSongFormat(f.read())}',
-                'Song Files (*.mp3, *.m4a, *.flac, *.wav, *.ogg, *.opus)',
+                tr('song_card.export_song'),
+                _export_default_path(self.storable, getSongFormat(f.read())),
+                tr('song_card.song_files_mp3_m4a_flac_wav_ogg_opus'),
             )
 
         if export_path:
@@ -967,8 +1000,8 @@ class CloudFavoriteSongCard(_SongCardItem):
 
             def _final():
                 InfoBar.success(
-                    'Export',
-                    f'Exported song {self.storable.name}',
+                    tr('song_card.export'),
+                    tr('song_card.exported_song_song_name', song_name=self.storable.name),
                     parent=self._mwindow,
                     duration=5000,
                 )

@@ -14,6 +14,8 @@ cfg_cache: dict[str, Any] = {}
 
 @dataclass
 class Config:
+    language: Literal['en_US', 'zh_CN'] = 'en_US'
+
     search_type: Literal['Songs', 'Playlists'] = 'Songs'
 
     play_method: Literal['Repeat one', 'Repeat list', 'Shuffle', 'Play in order'] = (
@@ -64,6 +66,7 @@ class Config:
     acceleration_smooth_factor: float = 0.068
 
     play_speed: float = 1
+    play_pitch: float = 0
 
     show_translation: bool = True
     setting_section_expanded: dict[str, bool] = field(default_factory=dict)
@@ -99,6 +102,9 @@ def _config_to_json_object() -> dict[str, Any]:
 
 
 def _apply_config_json_object(data: dict[str, Any]) -> None:
+    if data.get('language') not in ('en_US', 'zh_CN'):
+        data.pop('language', None)
+
     if 'setting_section_expanded' in data:
         section_expanded = data.get('setting_section_expanded')
         if isinstance(section_expanded, dict):

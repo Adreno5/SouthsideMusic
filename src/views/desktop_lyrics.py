@@ -13,6 +13,7 @@ from imports import (
     event_bus,
 )
 from imports import (
+    bindText,
     QColor,
     QMouseEvent,
     QMoveEvent,
@@ -20,6 +21,7 @@ from imports import (
     QPainterPath,
     QPaintEvent,
     QWheelEvent,
+    tr,
 )
 from imports import QVBoxLayout, QWidget
 from qfluentwidgets import CheckBox, FlowLayout, PushButton, FluentIcon, TitleLabel
@@ -49,7 +51,7 @@ class DesktopLyricsViewer(LyricsViewer):
         super().__init__(ctx)
         self.indentation_timer = QTimer(self)
         self.indentation_timer.timeout.connect(self.unindentation)
-        
+
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -85,9 +87,15 @@ class DesktopLyricsViewer(LyricsViewer):
         if position is None:
             position = self._player.getPosition()
         if self._ymgr.parsed:
-            return self._ymgr.getCurrentLyric(position)
+            line = self._ymgr.getCurrentLyric(position)
+            if line.content.strip():
+                self.last_lyric = line
+            return line
         if self._mgr.parsed:
-            return self._mgr.getCurrentLyric(position)
+            line = self._mgr.getCurrentLyric(position)
+            if line.content.strip():
+                self.last_lyric = line
+            return line
         return None
 
     def _shouldDrawTranslationForLine(
@@ -96,7 +104,9 @@ class DesktopLyricsViewer(LyricsViewer):
         use_yrc: bool,
         is_current_line: bool,
     ) -> bool:
-        return is_current_line
+        if is_current_line:
+            return True
+        return use_yrc and line is self.last_lyric
 
     def _hasCurrentLineTranslation(
         self,
@@ -104,7 +114,14 @@ class DesktopLyricsViewer(LyricsViewer):
     ) -> bool:
         if line is None:
             line = self._currentLyricLine()
-        return bool(line and self._translationTextForLine(line))
+        use_yrc = bool(self._ymgr.parsed)
+        if line and self._translationTextForLine(line, use_yrc):
+            return True
+        return bool(
+            use_yrc
+            and self.last_lyric
+            and self._translationTextForLine(self.last_lyric, True)
+        )
 
     def _hasTranslation(self) -> bool:
         return self._hasCurrentLineTranslation()
@@ -324,13 +341,13 @@ class DesktopLyricsPage(QWidget):
     ) -> None:
         super().__init__()
         if ctx.launch_window:
-            ctx.launch_window.top('Initializing desktop lyrics page...')
+            ctx.launch_window.top(tr('desktop_lyrics.initializing_desktop_lyrics_page'))
         self.ctx = ctx
         self._app = ctx.app
         self.setObjectName('desktop_lyrics_page')
 
         if ctx.launch_window:
-            ctx.launch_window.top('  Creating desktop lyrics viewer...')
+            ctx.launch_window.top(tr('desktop_lyrics.creating_desktop_lyrics_viewer'))
         self.viewer = DesktopLyricsViewer(ctx)
         self.viewer.setVisible(cfg.enable_desktop_lyrics)
 
@@ -338,15 +355,19 @@ class DesktopLyricsPage(QWidget):
         self.viewer.resize(ctx.app.primaryScreen().size().width(), 65)
 
         if ctx.launch_window:
-            ctx.launch_window.top('  Building settings panel...')
+            ctx.launch_window.top(tr('desktop_lyrics.building_settings_panel'))
         global_layout = QVBoxLayout()
-        global_layout.addWidget(TitleLabel('Desktop Lyrics'))
-        self.inputer = CheckBox('Enable Desktop Lyrics')
+        title_label = TitleLabel()
+        bindText(title_label, 'desktop_lyrics.desktop_lyrics')
+        global_layout.addWidget(title_label)
+        self.inputer = CheckBox()
+        bindText(self.inputer, 'desktop_lyrics.enable_desktop_lyrics')
         self.inputer.checkStateChanged.connect(self.onEnableChanged)
         self.inputer.setChecked(cfg.enable_desktop_lyrics)
         global_layout.addWidget(self.inputer)
         buttons_layout = FlowLayout()
-        self.reset_pos = PushButton(FluentIcon.SYNC, 'Reset Position')
+        self.reset_pos = PushButton(FluentIcon.SYNC, '')
+        bindText(self.reset_pos, 'desktop_lyrics.reset_position')
         self.reset_pos.clicked.connect(self.onResetPos)
         buttons_layout.addWidget(self.reset_pos)
         global_layout.addLayout(buttons_layout)

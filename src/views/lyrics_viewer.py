@@ -536,13 +536,13 @@ class LyricsViewer(QWidget):
                 self.translation_timer.target_value = (
                     1.0 if self.ctx.cfg.show_translation else 0.0
                 )
-            cur = self.translation_timer.current_value
+            cur = self.translation_timer.current_value * 0.6
             if translation_text and cur > 0.0:
                 painter.setFont(self.tft)
                 painter.setPen(
-                    QColor(255, 255, 255, int(120 * cur))
+                    QColor(255, 255, 255, int(alpha * cur))
                     if theme.isDark()
-                    else QColor(0, 0, 0, int(120 * cur))
+                    else QColor(0, 0, 0, int(alpha * cur))
                 )
                 painter.drawText(
                     toQtInt(self.draw_x_offset),

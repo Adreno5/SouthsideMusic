@@ -23,6 +23,8 @@ from imports import (
     Qt,
     QTimer,
     event_bus,
+    bindText,
+    tr,
 )
 from imports import (
     QListWidget,
@@ -54,7 +56,7 @@ class PlaylistPage(QWidget):
         self._logger = logging.getLogger(__name__)
         self.ctx = ctx
         if ctx.launch_window:
-            ctx.launch_window.top('Initializing sidebar...')
+            ctx.launch_window.top(tr('playlist_page.initializing_sidebar'))
             self._launchwindow = ctx.launch_window
         else:
             self._launchwindow = None
@@ -81,7 +83,8 @@ class PlaylistPage(QWidget):
         self._lazy_timer.start(50)
 
         btn_layout = QHBoxLayout()
-        self.removeall_btn = TransparentPushButton('Remove All')
+        self.removeall_btn = TransparentPushButton('')
+        bindText(self.removeall_btn, 'playlist_page.remove_all')
         bindIcon(self.removeall_btn, 'clearall')
         self.removeall_btn.clicked.connect(self.removeAllSongs)
         btn_layout.addWidget(self.removeall_btn)
@@ -150,8 +153,8 @@ class PlaylistPage(QWidget):
     def removeAllSongs(self) -> None:
         reply = QMessageBox.question(
             self._mwindow,
-            'Confirm Delete',
-            'Are you sure you want to remove all songs from playlist?',
+            tr('playlist_page.confirm_delete'),
+            tr('playlist_page.are_you_sure_you_want_to_remove_all_songs_from_playlist'),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -167,7 +170,10 @@ class PlaylistPage(QWidget):
         self.refreshPlaylistWidget()
 
         InfoBar.success(
-            'Removed', 'Removed all songs', duration=1500, parent=self._mwindow
+            tr('playlist_page.removed'),
+            tr('playlist_page.removed_all_songs'),
+            duration=1500,
+            parent=self._mwindow,
         )
 
     def addSongCardToList(self, song: SongStorable) -> QListWidgetItem:

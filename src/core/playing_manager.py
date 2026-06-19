@@ -124,7 +124,7 @@ class PlayingManager:
     @property
     def play_mode(self) -> PlayMode:
         if self.ctx is not None and self.ctx.setting_page:
-            mode = self.ctx.setting_page.play_method_box.currentText()
+            mode = self.ctx.setting_page.play_method_box.currentData()
             if mode in ('Repeat one', 'Repeat list', 'Shuffle', 'Play in order'):
                 return mode
         return cfg.play_method

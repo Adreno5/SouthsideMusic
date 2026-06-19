@@ -16,6 +16,7 @@ from core.smooth import EaseOutTimer
 from imports import (
     BACKGROUND_RATIO_CHANGED,
     ENDING_NO_SOUND,
+    LANGUAGE_CHANGED,
     MWINDOW_REFRESH_FOLDERS,
     PLAY_CONTINUE_LAST_SONG,
     PLAY_STORABLE,
@@ -31,10 +32,12 @@ from imports import (
     WEBSOCKET_CONNECTED,
     WEBSOCKET_DISCONNECTED,
     FluentIcon,
+    Path,
     QAbstractAnimation,
     QEasingCurve,
     QFont,
     QFontMetricsF,
+    QIcon,
     QListWidget,
     QListWidgetItem,
     QPropertyAnimation,
@@ -46,7 +49,9 @@ from imports import (
     QTimer,
     Signal,
     TransparentPushButton,
+    bindText,
     event_bus,
+    tr,
 )
 from imports import QCloseEvent, QColor, QKeyEvent, QPainter
 from views.list_widget import SListWidget
@@ -96,12 +101,14 @@ class DebugOverlay(QWidget):
     def paintEvent(self, event) -> None:
         if not self.ctx.debugging:
             return
-        
+
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-        
+
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(255, 255, 255, 45) if theme.isLight() else QColor(0, 0, 0, 70))
+        painter.setBrush(
+            QColor(255, 255, 255, 45) if theme.isLight() else QColor(0, 0, 0, 70)
+        )
 
         painter.drawRect(self.rect())
 
@@ -148,6 +155,10 @@ class MainWindow(FluentWindowBase):
         self._stp = ctx.setting_page
         self._plp = ctx.playlist_page
 
+        self.setWindowIcon(
+            QIcon(str(Path(__file__).resolve().parent.parent.parent / 'icon.png'))
+        )
+
         self.contents_widget = QStackedWidget()
         for w in [self._fp, self._sp, self._stp, self._sep]:
             if ctx.launch_window:
@@ -192,18 +203,22 @@ class MainWindow(FluentWindowBase):
         self.folders_list = SListWidget()
         self.folders_list.itemClicked.connect(self._onFolderItemClicked)
         self.folders_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self._folder_header_items: list[tuple[QListWidgetItem, str]] = []
 
         left_layout = QVBoxLayout()
         left_layout.setContentsMargins(0, 48, 0, 52)
 
-        self.settings_btn = TransparentPushButton('Settings')
+        self.settings_btn = TransparentPushButton('')
+        bindText(self.settings_btn, 'main_window.settings')
         bindIcon(self.settings_btn, 'settings')
-        self.session_btn = TransparentPushButton('Account')
+        self.session_btn = TransparentPushButton('')
+        bindText(self.session_btn, 'main_window.account')
         bindIcon(self.session_btn, 'session')
         self.settings_btn.clicked.connect(self._onSettingsClicked)
         self.session_btn.clicked.connect(self._onSessionClicked)
 
-        self.refresh_button = TransparentPushButton(FluentIcon.SYNC, 'Refresh')
+        self.refresh_button = TransparentPushButton(FluentIcon.SYNC, '')
+        bindText(self.refresh_button, 'main_window.refresh')
         self.refresh_button.clicked.connect(lambda: self.refreshFolders())
 
         left_layout.addWidget(self.refresh_button)
@@ -304,6 +319,11 @@ class MainWindow(FluentWindowBase):
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self.update)
         event_bus.subscribe(VIEW_FOLDER, self.onViewFolder)
         event_bus.subscribe(MWINDOW_REFRESH_FOLDERS, self.refreshFolders)
+        event_bus.subscribe(LANGUAGE_CHANGED, self.updateLanguage)
+
+    def updateLanguage(self) -> None:
+        for item, key in self._folder_header_items:
+            item.setText(tr(key))
 
     def onStackedWidgetChanged(self):
         if self.dp_expanded and not self.dp_animating:
@@ -317,7 +337,11 @@ class MainWindow(FluentWindowBase):
 
     def search(self):
         if not self.search_input.text().strip():
-            InfoBar.warning('Search failed', 'the keyword is empty!', parent=self)
+            InfoBar.warning(
+                tr('main_window.search_failed'),
+                tr('main_window.the_keyword_is_empty'),
+                parent=self,
+            )
             return
         else:
             self.contents_widget.setCurrentWidget(self._sp)
@@ -468,7 +492,7 @@ class MainWindow(FluentWindowBase):
 
             self.update()
             return
-        
+
         if self.ctx.debugging:
             self.debug_overlay.refresh()
 
@@ -550,8 +574,11 @@ class MainWindow(FluentWindowBase):
 
         self.refresh_button.setEnabled(False)
         self.folders_list.clear()
+        self._folder_header_items.clear()
 
-        self.folders_list.addItem(QListWidgetItem('Local'))
+        local_item = QListWidgetItem(tr('main_window.local'))
+        self._folder_header_items.append((local_item, 'main_window.local'))
+        self.folders_list.addItem(local_item)
 
         for folder in favorites_manager.folders:
             card = LocalFolderCard(folder, self.folders_list.width())
@@ -570,16 +597,15 @@ class MainWindow(FluentWindowBase):
             self._fp.setDisplayFolder(open_folder)
 
         item = QListWidgetItem()
-        widget = TransparentPushButton(FluentIcon.ADD_TO, 'Add folder')
+        widget = TransparentPushButton(FluentIcon.ADD_TO, '')
+        bindText(widget, 'main_window.add_folder')
         widget.clicked.connect(self.onAddLocalFolder)
         item.setSizeHint(widget.sizeHint())
         self.folders_list.addItem(item)
         self.folders_list.setItemWidget(item, widget)
 
         def _cloud():
-            self.addScheduledTask(
-                lambda: self.folders_list.addItem(QListWidgetItem('Cloud'))
-            )
+            self.addScheduledTask(lambda: self._addFolderHeader('main_window.cloud'))
             playlists = getBackend().getUserPlaylists()
 
             def add():
@@ -601,7 +627,8 @@ class MainWindow(FluentWindowBase):
                     self._fp.setDisplayFolder(open_folder)
 
                 item = QListWidgetItem()
-                widget = TransparentPushButton(FluentIcon.ADD_TO, 'Add folder')
+                widget = TransparentPushButton(FluentIcon.ADD_TO, '')
+                bindText(widget, 'main_window.add_folder')
                 widget.clicked.connect(self.onAddCloudFolder)
                 item.setSizeHint(widget.sizeHint())
                 self.folders_list.addItem(item)
@@ -616,6 +643,11 @@ class MainWindow(FluentWindowBase):
 
         saveFavorites()
 
+    def _addFolderHeader(self, key: str) -> None:
+        item = QListWidgetItem(tr(key))
+        self._folder_header_items.append((item, key))
+        self.folders_list.addItem(item)
+
     def _openFolder(self, folder):
         self.contents_widget.setCurrentWidget(self._fp)
         self._fp.updateGeometry()
@@ -623,7 +655,10 @@ class MainWindow(FluentWindowBase):
 
     def onAddCloudFolder(self):
         name = getTextLineedit(
-            'Add New Folder', 'enter name of your new folder', 'my folder', self
+            tr('main_window.add_new_folder'),
+            tr('main_window.enter_name_of_your_new_folder'),
+            tr('main_window.my_folder'),
+            self,
         )
         if name:
             getBackend().createPlaylist(name)
@@ -631,7 +666,10 @@ class MainWindow(FluentWindowBase):
 
     def onAddLocalFolder(self):
         name = getTextLineedit(
-            'Add New Folder', 'enter name of your new folder', 'my folder', self
+            tr('main_window.add_new_folder'),
+            tr('main_window.enter_name_of_your_new_folder'),
+            tr('main_window.my_folder'),
+            self,
         )
         if name:
             new = favorites_manager.addFolder(name)
@@ -708,8 +746,8 @@ class MainWindow(FluentWindowBase):
 
     def onWebsocketConnected(self):
         InfoBar.success(
-            'SouthsideClient connection',
-            'SouthsideMusic was connected to SouthsidClient',
+            tr('main_window.southside_client_connection'),
+            tr('main_window.southside_music_was_connected_to_southsidclient'),
             duration=5000,
             parent=self,
         )
@@ -735,8 +773,8 @@ class MainWindow(FluentWindowBase):
 
     def onWebsocketDisconnected(self):
         InfoBar.warning(
-            'SouthsideClient connection',
-            'SouthsideMusic was been disconnected from SouthsidClient',
+            tr('main_window.southside_client_connection'),
+            tr('main_window.southside_music_was_been_disconnected_from_southsidclient'),
             duration=5000,
             parent=self,
         )

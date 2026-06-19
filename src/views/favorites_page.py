@@ -19,6 +19,8 @@ from imports import (
     Qt,
     QTimer,
     event_bus,
+    bindText,
+    tr,
 )
 from imports import (
     QListWidget,
@@ -61,22 +63,24 @@ class FavoritesPage(QWidget):
         self.ctx = ctx
         lw = ctx.launch_window
         if lw:
-            lw.top('Initializing favorites page...')
+            lw.top(tr('favorites_page.initializing_favorites_page'))
         self.setObjectName('favorites_page')
 
         global_layout = QVBoxLayout(self)
 
-        self.title_label = TitleLabel('None')
+        self.title_label = TitleLabel(tr('favorites_page.none'))
         buttons_layout = FlowLayout()
-        self.reppl_btn = PushButton('Replace Playlist')
+        self.reppl_btn = PushButton('')
+        bindText(self.reppl_btn, 'favorites_page.replace_playlist')
         self.reppl_btn.clicked.connect(self.replacePlaylist)
         buttons_layout.addWidget(self.reppl_btn)
-        self.addpl_btn = PushButton('Add to Playlist')
+        self.addpl_btn = PushButton('')
+        bindText(self.addpl_btn, 'favorites_page.add_to_playlist')
         self.addpl_btn.clicked.connect(self.addFolderToPlaylist)
         buttons_layout.addWidget(self.addpl_btn)
         self.batch_btn = PillToolButton(self)
         self.batch_btn.setFixedSize(32, 32)
-        self.batch_btn.setToolTip('Multiple selection')
+        self.batch_btn.setToolTip(tr('favorites_page.multiple_selection'))
         bindIcon(self.batch_btn, 'playlist_multiple_selection')
         self.batch_btn.toggled.connect(self.setBatchMode)
         buttons_layout.addWidget(self.batch_btn)
@@ -87,23 +91,28 @@ class FavoritesPage(QWidget):
         self.batch_widget = QWidget()
         batch_layout = QHBoxLayout(self.batch_widget)
         batch_layout.setContentsMargins(0, 0, 0, 0)
-        self.selectall_btn = PushButton('Select All')
+        self.selectall_btn = PushButton('')
+        bindText(self.selectall_btn, 'favorites_page.select_all')
         bindIcon(self.selectall_btn, 'playlist_multiple_selection')
         self.selectall_btn.clicked.connect(self.selectAllSongs)
         batch_layout.addWidget(self.selectall_btn)
-        self.clear_selection_btn = PushButton('Clear')
+        self.clear_selection_btn = PushButton('')
+        bindText(self.clear_selection_btn, 'favorites_page.clear')
         bindIcon(self.clear_selection_btn, 'clearall')
         self.clear_selection_btn.clicked.connect(self.clearSelection)
         batch_layout.addWidget(self.clear_selection_btn)
-        self.batch_addpl_btn = PushButton('Add to Playlist')
+        self.batch_addpl_btn = PushButton('')
+        bindText(self.batch_addpl_btn, 'favorites_page.add_to_playlist')
         bindIcon(self.batch_addpl_btn, 'playlist')
         self.batch_addpl_btn.clicked.connect(self.addSelectedToPlaylist)
         batch_layout.addWidget(self.batch_addpl_btn)
-        self.batch_addto_btn = PushButton('Add to Folder')
+        self.batch_addto_btn = PushButton('')
+        bindText(self.batch_addto_btn, 'favorites_page.add_to_folder')
         bindIcon(self.batch_addto_btn, 'add')
         self.batch_addto_btn.clicked.connect(self.addSelectedToFolder)
         batch_layout.addWidget(self.batch_addto_btn)
-        self.batch_remove_btn = PushButton('Remove')
+        self.batch_remove_btn = PushButton('')
+        bindText(self.batch_remove_btn, 'favorites_page.remove')
         bindIcon(self.batch_remove_btn, 'remove')
         self.batch_remove_btn.clicked.connect(self.removeSelectedSongs)
         batch_layout.addWidget(self.batch_remove_btn)
@@ -171,7 +180,7 @@ class FavoritesPage(QWidget):
         return self._song_cards
 
     def displayEmpty(self):
-        self.title_label.setText('None')
+        self.title_label.setText(tr('favorites_page.none'))
         self.setBatchMode(False)
         self.batch_btn.setChecked(False)
         self._song_cards = []
@@ -462,8 +471,11 @@ class FavoritesPage(QWidget):
 
         reply = QMessageBox.question(
             self._mwindow,
-            'Confirm Delete',
-            f'Are you sure you want to delete song {song_name} from favorites?',
+            tr('favorites_page.confirm_delete'),
+            tr(
+                'favorites_page.are_you_sure_you_want_to_delete_song_song_name_from_favorites',
+                song_name=song_name,
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -480,7 +492,9 @@ class FavoritesPage(QWidget):
         self.refresh()
 
         InfoBar.success(
-            'Song deleted', f'Song {song_name} deleted', parent=self._mwindow
+            tr('favorites_page.song_deleted'),
+            tr('favorites_page.song_song_name_deleted', song_name=song_name),
+            parent=self._mwindow,
         )
 
         event_bus.emit(MWINDOW_REFRESH_FOLDERS)
@@ -493,8 +507,12 @@ class FavoritesPage(QWidget):
 
         reply = QMessageBox.question(
             self._mwindow,
-            'Confirm Delete',
-            f"Are you sure you want to delete song {song_name} from cloud folder '{folder_name}'?",
+            tr('favorites_page.confirm_delete'),
+            tr(
+                'favorites_page.are_you_sure_you_want_to_delete_song_song_name_from_cloud_folder_folde',
+                song_name=song_name,
+                folder_name=folder_name,
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -503,8 +521,8 @@ class FavoritesPage(QWidget):
                 'del', [song_storable.id], self.curr_cloud_folder.id
             ):
                 InfoBar.warning(
-                    'Session expired',
-                    'Please re-login to perform this action',
+                    tr('favorites_page.session_expired'),
+                    tr('favorites_page.please_re_login_to_perform_this_action'),
                     parent=self._mwindow,
                     duration=5000,
                 )
@@ -514,8 +532,11 @@ class FavoritesPage(QWidget):
             ]
             self.refresh()
             InfoBar.success(
-                'Song deleted',
-                f'Song {song_name} removed from cloud folder',
+                tr('favorites_page.song_deleted'),
+                tr(
+                    'favorites_page.song_song_name_removed_from_cloud_folder',
+                    song_name=song_name,
+                ),
                 parent=self._mwindow,
             )
 
@@ -535,8 +556,11 @@ class FavoritesPage(QWidget):
         event_bus.emit(PLAYLIST_CHANGED)
         if added_count > 0:
             InfoBar.success(
-                'Songs added',
-                f'Added {added_count} selected songs to playlist',
+                tr('favorites_page.songs_added'),
+                tr(
+                    'favorites_page.added_added_count_selected_songs_to_playlist',
+                    added_count=added_count,
+                ),
                 parent=self._mwindow,
             )
 
@@ -561,9 +585,9 @@ class FavoritesPage(QWidget):
                 from core.dialogs import getTextLineedit
 
                 folder_name = getTextLineedit(
-                    'Create New Folder',
-                    'enter name of your new folder',
-                    'my folder',
+                    tr('favorites_page.create_new_folder'),
+                    tr('favorites_page.enter_name_of_your_new_folder'),
+                    tr('favorites_page.my_folder'),
                     self._mwindow,
                 )
                 if not folder_name:
@@ -586,8 +610,12 @@ class FavoritesPage(QWidget):
             event_bus.emit(FAVORITES_CHANGED, folder_name)
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)
             InfoBar.success(
-                'Songs added',
-                f'Added {added_count} selected songs to {folder_name}',
+                tr('favorites_page.songs_added'),
+                tr(
+                    'favorites_page.added_added_count_selected_songs_to_folder_name',
+                    added_count=added_count,
+                    folder_name=folder_name,
+                ),
                 parent=self._mwindow,
             )
         elif folder_type == 'cloud' and cloud_id:
@@ -595,16 +623,20 @@ class FavoritesPage(QWidget):
                 'add', [str(song.id) for song in selected], cloud_id
             ):
                 InfoBar.warning(
-                    'Session expired',
-                    'Please re-login to perform this action',
+                    tr('favorites_page.session_expired'),
+                    tr('favorites_page.please_re_login_to_perform_this_action'),
                     parent=self._mwindow,
                     duration=5000,
                 )
                 return
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)
             InfoBar.success(
-                'Songs added',
-                f'Added {len(selected)} selected songs to {folder_name}',
+                tr('favorites_page.songs_added'),
+                tr(
+                    'favorites_page.added_count_selected_songs_to_folder_name',
+                    count=len(selected),
+                    folder_name=folder_name,
+                ),
                 parent=self._mwindow,
             )
 
@@ -622,9 +654,12 @@ class FavoritesPage(QWidget):
         )
         reply = QMessageBox.question(
             self._mwindow,
-            'Confirm Delete',
-            f'Are you sure you want to delete {len(selected)} '
-            f"selected songs from '{folder_name}'?",
+            tr('favorites_page.confirm_delete'),
+            tr(
+                'favorites_page.are_you_sure_you_want_to_delete_count_selected_songs_from_folder_name',
+                count=len(selected),
+                folder_name=folder_name,
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -640,8 +675,8 @@ class FavoritesPage(QWidget):
                 'del', list(selected_ids), self.curr_cloud_folder.id
             ):
                 InfoBar.warning(
-                    'Session expired',
-                    'Please re-login to perform this action',
+                    tr('favorites_page.session_expired'),
+                    tr('favorites_page.please_re_login_to_perform_this_action'),
                     parent=self._mwindow,
                     duration=5000,
                 )
@@ -667,8 +702,8 @@ class FavoritesPage(QWidget):
         if should_refresh:
             self.refresh()
         InfoBar.success(
-            'Songs deleted',
-            f'Deleted {len(selected)} selected songs',
+            tr('favorites_page.songs_deleted'),
+            tr('favorites_page.deleted_count_selected_songs', count=len(selected)),
             parent=self._mwindow,
         )
         event_bus.emit(MWINDOW_REFRESH_FOLDERS)
@@ -687,8 +722,8 @@ class FavoritesPage(QWidget):
         )
         if tip:
             InfoBar.success(
-                'Playlist replaced',
-                f'Playlist replaced with {folder_name}',
+                tr('favorites_page.playlist_replaced'),
+                tr('favorites_page.playlist_replaced_with_folder_name', folder_name=folder_name),
                 parent=self._mwindow,
             )
 
@@ -702,8 +737,11 @@ class FavoritesPage(QWidget):
         if added_count > 0:
             event_bus.emit(PLAYLIST_CHANGED)
             InfoBar.success(
-                'Songs added',
-                f'Added {added_count} songs from favorites to playlist',
+                tr('favorites_page.songs_added'),
+                tr(
+                    'favorites_page.added_added_count_songs_from_favorites_to_playlist',
+                    added_count=added_count,
+                ),
                 parent=self._mwindow,
             )
 

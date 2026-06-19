@@ -3,6 +3,9 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import os
+from pathlib import Path
+import tempfile
 import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict
@@ -17,7 +20,7 @@ from core.audio_player import (
 )
 from core.backend import getBackend
 from core.config import cfg
-from core.downloader import asyncTask, asyncDownload
+from core.downloader import asyncTask, asyncDownload, downloadStream
 from core.favorites import saveFavorites
 from core.image import getAverageColorFromBytes
 from core.loudness import getAdjustedGainFactor
@@ -49,6 +52,9 @@ from services.events.events import (
     PLAYNEXT,
     SONG_CHANGED,
     SONG_FINISH,
+    START_PROGRESS_LOADING,
+    STOP_PROGRESS_LOADING,
+    UPDATE_LOADING_PROGRESS,
 )
 
 if TYPE_CHECKING:
@@ -61,6 +67,7 @@ _AUDIO_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
 }
+_STREAM_PLAY_MIN_BYTES = 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -797,6 +804,300 @@ class PlayingManager:
             cache_decoded_audio(cache_key, audio)
         return audio
 
+    def _storableDuration(
+        self,
+        song_storable: SongStorable,
+        fallback: float = 0.0,
+    ) -> float:
+        if song_storable.duration > 0:
+            return song_storable.duration / 1000
+        return fallback
+
+    def _loadPlaybackImage(
+        self,
+        song_storable: SongStorable,
+        result: dict[str, object],
+    ) -> None:
+        try:
+            image_bytes = song_storable.get_image_bytes()
+            result['image'] = image_bytes
+            result['avg_color'] = getAverageColorFromBytes(image_bytes)
+        except Exception:
+            self._logger.exception('failed to load image bytes for playback')
+
+    def _finishPlaybackLoad(
+        self,
+        song_storable: SongStorable,
+        play_seq: int,
+        result: dict[str, object],
+        pause_after_load: bool,
+        mark_loaded: bool,
+        gain_audio: AudioSegment_ | None,
+    ) -> None:
+        if play_seq != self._play_seq or self.current_song is not song_storable:
+            return
+
+        self.clearPreload()
+        if mark_loaded:
+            self.preloaded = True
+
+        if song_storable not in self.playlist:
+            self.playlist.insert(self.current_index, song_storable)
+            self.refreshRandom()
+
+        event_bus.emit(PLAYLIST_CHANGED)
+        self._show_original_lyrics(song_storable)
+        self._compute_gain_async(song_storable, gain_audio)
+        self._download_update_lyrics(song_storable)
+
+        image_bytes = result.get('image')
+        avg_color = result.get('avg_color')
+        if isinstance(image_bytes, bytes):
+            event_bus.emit(
+                PLAYBACK_IMAGE_LOADED,
+                song_storable,
+                image_bytes,
+                avg_color,
+            )
+
+        event_bus.emit(SONG_CHANGED, song_storable)
+        event_bus.emit(PLAY_STATE_CHANGED, not pause_after_load)
+
+    def _playDownloadingStorable(
+        self,
+        song_storable: SongStorable,
+        image_missing: bool,
+        play_seq: int,
+        mark_loaded: bool,
+    ) -> None:
+        class PrepareInfo(TypedDict):
+            error: Optional[str]
+            image: Optional[bytes]
+            music_url: Optional[str]
+
+        prepared: PrepareInfo = PrepareInfo(error=None, image=None, music_url=None)
+        result: dict[str, object] = {}
+        state = {'started': False, 'starting': False}
+        temp_path: Path | None = None
+
+        def _is_current() -> bool:
+            return play_seq == self._play_seq and self.current_song is song_storable
+
+        def _cleanup(path: Path) -> None:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                self._logger.exception('failed to delete stream temp file')
+
+        def _try_start_playback(path: Path) -> None:
+            state['starting'] = False
+            if state['started'] or not _is_current():
+                return
+            player = self._player
+            if player is None:
+                return
+            try:
+                audio = player.loadGrowingFile(path)
+            except Exception:
+                return
+
+            state['started'] = True
+            result['audio'] = audio
+            self.total_length = self._storableDuration(
+                song_storable,
+                player.getLength(),
+            )
+            if (
+                song_storable.target_lufs == cfg.target_lufs
+                and song_storable.loudness_gain != 1.0
+            ):
+                player.setGain(song_storable.loudness_gain)
+            player.play()
+            self._loadPlaybackImage(song_storable, result)
+            self._finishPlaybackLoad(
+                song_storable,
+                play_seq,
+                result,
+                False,
+                mark_loaded,
+                None,
+            )
+
+        def _schedule_start(path: Path) -> None:
+            if state['started'] or state['starting']:
+                return
+            state['starting'] = True
+            self._schedule(_try_start_playback, path)
+
+        def _emit_progress(progress: float) -> None:
+            if _is_current():
+                event_bus.emit(UPDATE_LOADING_PROGRESS, progress)
+
+        def _stop_progress() -> None:
+            if _is_current():
+                event_bus.emit(STOP_PROGRESS_LOADING)
+
+        def _on_progress(downloaded: int, total_size: int) -> None:
+            if total_size > 0:
+                self._schedule(
+                    _emit_progress,
+                    min(1.0, downloaded / total_size),
+                )
+            if downloaded >= _STREAM_PLAY_MIN_BYTES or (
+                total_size > 0 and downloaded >= total_size
+            ):
+                if temp_path is not None:
+                    _schedule_start(temp_path)
+
+        def _download(path: Path, music_url: str) -> None:
+            success = False
+            try:
+                success, _total_size = downloadStream(
+                    music_url,
+                    str(path),
+                    _on_progress,
+                    headers=_AUDIO_HEADERS,
+                )
+                if success:
+                    try:
+                        with open(path, 'rb') as f:
+                            music_bytes = f.read()
+                        song_storable.cache_audio(music_bytes)
+                        saveFavorites()
+                        result['complete_audio'] = AudioSegment_.from_file(
+                            io.BytesIO(music_bytes)
+                        )
+                    except Exception:
+                        self._logger.exception(
+                            'failed to persist complete streaming audio'
+                        )
+                        success = False
+            finally:
+                self._schedule(_on_download_finished, path, success)
+
+        def _on_download_finished(path: Path, success: bool) -> None:
+            _stop_progress()
+            if not success:
+                player = self._player
+                if _is_current() and state['started'] and player is not None:
+                    player.finishGrowingFile(path)
+                _cleanup(path)
+                if _is_current() and not state['started']:
+                    self._emitError(
+                        'Playback failed',
+                        'Failed to download missing cached files.',
+                    )
+                return
+
+            player = self._player
+            if _is_current() and player is not None:
+                if state['started']:
+                    complete_audio = result.get('complete_audio')
+                    if isinstance(complete_audio, AudioSegment_):
+                        player.finishGrowingFile(path, complete_audio)
+                        self.total_length = self._storableDuration(
+                            song_storable,
+                            player.getLength(),
+                        )
+                        self._compute_gain_async(song_storable, complete_audio)
+                    else:
+                        player.finishGrowingFile(path)
+                    _cleanup(path)
+                else:
+                    try:
+                        audio = player.loadGrowingFile(path, complete=True)
+                    except Exception:
+                        _cleanup(path)
+                        self.playStorable(song_storable)
+                        return
+                    state['started'] = True
+                    result['audio'] = audio
+                    self.total_length = self._storableDuration(
+                        song_storable,
+                        player.getLength(),
+                    )
+                    if (
+                        song_storable.target_lufs == cfg.target_lufs
+                        and song_storable.loudness_gain != 1.0
+                    ):
+                        player.setGain(song_storable.loudness_gain)
+                    player.play()
+                    self._loadPlaybackImage(song_storable, result)
+                    self._finishPlaybackLoad(
+                        song_storable,
+                        play_seq,
+                        result,
+                        False,
+                        mark_loaded,
+                        audio,
+                    )
+                    _cleanup(path)
+            else:
+                _cleanup(path)
+
+        def _prepare() -> None:
+            try:
+                if image_missing:
+                    detail = getBackend().getTrackDetail(song_storable.id)
+                    image_bytes = requests.get(detail.cover_url).content
+                    prepared['image'] = image_bytes
+                audio = getBackend().getTrackAudio(
+                    str(song_storable.id),
+                    bitrate=3200 * 1000,
+                )
+                prepared['music_url'] = audio.url
+            except Exception as e:
+                prepared['error'] = str(e)
+
+        def _on_prepared() -> None:
+            nonlocal temp_path
+            if not _is_current():
+                return
+            if prepared.get('error'):
+                self._logger.warning(
+                    f'failed to prepare streaming playback: {prepared["error"]}'
+                )
+                self._emitError(
+                    'Playback failed',
+                    'Failed to download missing cached files.',
+                )
+                return
+
+            if image_missing:
+                image_bytes = prepared.get('image')
+                if not isinstance(image_bytes, bytes) or not image_bytes:
+                    self._emitError(
+                        'Playback failed',
+                        'Failed to download missing cached files.',
+                    )
+                    return
+                song_storable.cache_image(image_bytes)
+                saveFavorites()
+                event_bus.emit(IMAGE_ASSET_PERSISTED, song_storable)
+
+            music_url = prepared.get('music_url')
+            if not isinstance(music_url, str) or not music_url:
+                self._emitError(
+                    'Playback failed',
+                    'Failed to download missing cached files.',
+                )
+                return
+
+            os.makedirs(MUSIC_DATA_DIR, exist_ok=True)
+            fd, raw_path = tempfile.mkstemp(
+                prefix='stream_', suffix='.part', dir=MUSIC_DATA_DIR
+            )
+            os.close(fd)
+            temp_path = Path(raw_path)
+            event_bus.emit(START_PROGRESS_LOADING)
+            event_bus.emit(UPDATE_LOADING_PROGRESS, 0.0)
+            threading.Thread(
+                target=lambda: _download(temp_path, music_url),
+                daemon=True,
+            ).start()
+
+        asyncTask(_prepare, (), self._mwindow_obj, _on_prepared)
+
     def _selectStorableForPlayback(self, song_storable: SongStorable) -> SongStorable:
         if 0 <= self.current_index < len(self.playlist):
             current_song = self.playlist[self.current_index]
@@ -827,30 +1128,48 @@ class PlayingManager:
         song_storable = self._selectStorableForPlayback(song_storable)
         self._logger.debug(f'{song_storable.target_lufs=} {cfg.target_lufs=}')
 
-        if not self.ensureAssets(
-            song_storable,
-            lambda: self.playStorable(
-                song_storable,
-                preloaded_audio,
-                restore_position,
-                pause_after_load,
-                mark_loaded,
-            ),
-        ):
-            return
-
         player = self._player
         if player is None:
             return
 
+        image_missing, music_missing = self._storable_asset_missing(song_storable)
         player.stop()
         self.current_song = song_storable
+        self.total_length = self._storableDuration(song_storable)
         self._play_seq += 1
         play_seq = self._play_seq
+        event_bus.emit(STOP_PROGRESS_LOADING)
         event_bus.emit(PLAYBACK_SONG_LOADING, song_storable)
         app = self._app
         if app is not None:
             app.processEvents()
+
+        if (
+            music_missing
+            and preloaded_audio is None
+            and restore_position is None
+            and not pause_after_load
+        ):
+            self._playDownloadingStorable(
+                song_storable,
+                image_missing,
+                play_seq,
+                mark_loaded,
+            )
+            return
+
+        if image_missing or music_missing:
+            if not self.ensureAssets(
+                song_storable,
+                lambda: self.playStorable(
+                    song_storable,
+                    preloaded_audio,
+                    restore_position,
+                    pause_after_load,
+                    mark_loaded,
+                ),
+            ):
+                return
 
         result: dict[str, object] = {}
 
@@ -865,7 +1184,10 @@ class PlayingManager:
 
             result['audio'] = audio
             player.load(audio)
-            self.total_length = player.getLength()
+            self.total_length = self._storableDuration(
+                song_storable,
+                player.getLength(),
+            )
             if not player.isPlaying():
                 player.play()
 
@@ -880,48 +1202,17 @@ class PlayingManager:
             if pause_after_load:
                 player.pause()
 
-            try:
-                image_bytes = song_storable.get_image_bytes()
-                result['image'] = image_bytes
-                result['avg_color'] = getAverageColorFromBytes(image_bytes)
-            except Exception:
-                self._logger.exception('failed to load image bytes for playback')
+            self._loadPlaybackImage(song_storable, result)
 
         def _finish() -> None:
-            if play_seq != self._play_seq or self.current_song is not song_storable:
-                return
-
-            self.clearPreload()
-            if mark_loaded:
-                self.preloaded = True
-
-            if song_storable not in self.playlist:
-                self.playlist.insert(self.current_index, song_storable)
-                self.refreshRandom()
-
-            event_bus.emit(PLAYLIST_CHANGED)
-
-            # Show original lyrics immediately (no translation)
-            self._show_original_lyrics(song_storable)
-
-            # Start async gain computation
-            self._compute_gain_async(song_storable, result.get('audio'))  # type: ignore
-
-            # Start async translation fetch
-            self._download_update_lyrics(song_storable)
-
-            image_bytes = result.get('image')
-            avg_color = result.get('avg_color')
-            if isinstance(image_bytes, bytes):
-                event_bus.emit(
-                    PLAYBACK_IMAGE_LOADED,
-                    song_storable,
-                    image_bytes,
-                    avg_color,
-                )
-
-            event_bus.emit(SONG_CHANGED, song_storable)
-            event_bus.emit(PLAY_STATE_CHANGED, not pause_after_load)
+            self._finishPlaybackLoad(
+                song_storable,
+                play_seq,
+                result,
+                pause_after_load,
+                mark_loaded,
+                result.get('audio'),  # type: ignore[arg-type]
+            )
 
         asyncTask(_prepare, (), self._mwindow_obj, _finish)
 

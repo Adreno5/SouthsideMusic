@@ -12,6 +12,7 @@ from core.app_context import AppContext
 
 from core.backend import getBackend
 from core.dialogs import getTextLineedit
+from core.qt_utils import toQtInt
 from core.smooth import EaseOutTimer
 from imports import (
     BACKGROUND_RATIO_CHANGED,
@@ -521,6 +522,7 @@ class MainWindow(FluentWindowBase):
                 artists=card.info.artists,
                 id=str(card.info.id),
                 privilege=card.info.privilege.fee,
+                duration=card.info.duration,
             )
         )
         event_bus.emit(PLAY_STORABLE, storable)
@@ -829,7 +831,7 @@ class MainWindow(FluentWindowBase):
                 )
             else:
                 painter.drawRect(
-                    0, 0, int(self.width() * self.draw_progress), int(self.bar_height)
+                    0, 0, toQtInt(self.width() * self.draw_progress), toQtInt(self.bar_height)
                 )
             painter.setPen(QColor(255, 255, 255) if theme.isDark() else QColor(0, 0, 0))
 

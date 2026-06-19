@@ -319,18 +319,26 @@ def downloadStream(
     dest_path: str,
     on_progress: Callable[[int, int], None] | None = None,
     start_byte: int = 0,
+    headers: Optional[Dict] = None,
+    data: Optional[Dict] = None,
 ) -> tuple[bool, int]:
     """sequential streaming download to a temp file.
     returns (success, total_size_bytes). total_size is 0 if unknown."""
-    headers: dict[str, str] = {}
+    request_headers = headers.copy() if headers else {}
     if start_byte > 0:
-        headers['Range'] = f'bytes={start_byte}-'
+        request_headers['Range'] = f'bytes={start_byte}-'
 
     downloaded = start_byte
     total_length = 0
 
     try:
-        response = requests.get(url, headers=headers, stream=True, timeout=30)
+        response = requests.get(
+            url,
+            headers=request_headers,
+            data=data,
+            stream=True,
+            timeout=30,
+        )
         response.raise_for_status()
 
         content_length = response.headers.get('content-length')
@@ -343,6 +351,7 @@ def downloadStream(
                 if not chunk:
                     continue
                 f.write(chunk)
+                f.flush()
                 downloaded += len(chunk)
                 if on_progress:
                     on_progress(downloaded, total_length)

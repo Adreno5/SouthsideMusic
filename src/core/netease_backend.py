@@ -22,7 +22,6 @@ from core.models import (
     SearchCloudFolderInfo,
     getCachedHashes,
 )
-from services.events import event_bus, EMIT_DEBUG_INFO
 
 _logger = logging.getLogger(__name__)
 
@@ -100,10 +99,15 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             cd=detail.get('cd', '1'),
             track_no=detail.get('no', 1),
             publish_time=detail.get('publishTime', 0),
-            artists=[ArtistInfo(
-                id=obj['id'], name=obj['name']
-            ) for obj in detail.get('ar', [])]
-       )
+            artists=[
+                ArtistInfo(
+                    id=obj['id'],
+                    name=obj['name'],
+                )
+                for obj in detail.get('ar', [])
+            ],
+            duration=detail.get('dt', 0),
+        )
 
     def getTrackAudio(
         self, track_id: int | str, bitrate: int = 999000
@@ -202,6 +206,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
                         ) for obj in s.get('ar', [])],
                         id=str(s['id']),
                         privilege=-1,
+                        duration=s.get('dt', 0),
                     ),
                     image=None,
                     image_cache_hash=cached.get('image_cache_hash', ''),

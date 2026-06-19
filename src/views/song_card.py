@@ -100,6 +100,7 @@ class DummyCard:
             artists=storable.artists,
             id=storable.id,
             privilege=-1,
+            duration=storable.duration,
         )
         self.detail: SongDetail = SongDetail(image_url='')
         self.storable: SongStorable = storable
@@ -375,6 +376,7 @@ class SearchSongCard(QWidget):
                 artists=self.info.artists,
                 id=str(self.info.id),
                 privilege=-1,
+                duration=self.info.duration,
             ),
             image=image_bytes,
             music_bin=music_bytes,

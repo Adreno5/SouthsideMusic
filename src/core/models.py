@@ -69,6 +69,7 @@ class SongInfo:
     artists: list[ArtistInfo]
     id: str
     privilege: int
+    duration: int = 0
 
 
 @dataclass
@@ -113,6 +114,13 @@ def _artists_from_object(obj: object) -> list[ArtistInfo]:
     ]
 
 
+def _int_from_object(obj: object, default: int = 0) -> int:
+    try:
+        return int(obj)
+    except (TypeError, ValueError):
+        return default
+
+
 class SongStorable:
     name: str
     artists: list[ArtistInfo]
@@ -124,6 +132,7 @@ class SongStorable:
     lyric_cache_hash: str = ''
     loggedin_when_download: bool = False
     viptype_when_download: int = 0
+    duration: int = 0
 
     def __init__(
         self,
@@ -144,6 +153,7 @@ class SongStorable:
         self.name = info.name
         self.artists = info.artists
         self.id = info.id
+        self.duration = max(0, _int_from_object(info.duration))
         self._ensure_artists()
 
         if isinstance(image, bytes):
@@ -165,14 +175,19 @@ class SongStorable:
         self.viptype_when_download = viptype_when_download
 
     def _ensure_artists(self) -> None:
-        if self.artists or not self.id:
+        if (self.artists and self.duration > 0) or not self.id:
             return
         try:
             from core.backend import getBackend
 
-            self.artists = getBackend().getTrackDetail(self.id).artists
+            detail = getBackend().getTrackDetail(self.id)
+            if not self.artists:
+                self.artists = detail.artists
+            if self.duration <= 0:
+                self.duration = max(0, _int_from_object(detail.duration))
         except Exception:
-            self.artists = []
+            if not self.artists:
+                self.artists = []
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, SongStorable):
@@ -260,6 +275,8 @@ class SongStorable:
             self.image_cache_hash = ''
         if not hasattr(self, 'content_cache_hash'):
             self.content_cache_hash = ''
+        if not hasattr(self, 'duration'):
+            self.duration = 0
         if not hasattr(self, 'lyric_cache_hash'):
             self.lyric_cache_hash = ''
             lyric = self.__dict__.get('lyric', '')
@@ -415,6 +432,7 @@ class SongStorable:
             'target_lufs': self.target_lufs,
             'loggedin_when_download': self.loggedin_when_download,
             'viptype_when_download': self.viptype_when_download,
+            'duration': self.duration,
         }
 
     @staticmethod
@@ -443,6 +461,7 @@ class SongStorable:
                 artists=_artists_from_object(obj.get('artists', [])),
                 id=str(obj.get('id', '')),
                 privilege=-1,
+                duration=_int_from_object(obj.get('duration', 0)),
             ),
             image=image_bytes,
             music_bin=music_bytes,
@@ -512,6 +531,7 @@ class TrackDetailInfo:
     track_no: int
     publish_time: int
     artists: list[ArtistInfo]
+    duration: int = 0
 
 
 @dataclass

@@ -335,6 +335,10 @@ class AudioPlayer(QObject):
         self._wsola_speed: float = 1.0
         self._stereo_tail: np.ndarray | None = None
         self._reverb_tail: np.ndarray | None = None
+        self._growing_file_path: Path | None = None
+        self._growing_file_complete = True
+        self._growing_file_size = 0
+        self._growing_file_last_decode = 0.0
 
         self._lock = threading.RLock()
         devices = getAudioDevices()
@@ -385,6 +389,8 @@ class AudioPlayer(QObject):
                 f'producer_memory_load={self._producer_memory_load:.1f}',
                 f'producer_target_lead={self._producer_target_lead:.2f}',
                 f'prepared_lead={self._producer_prepared_lead():.2f}',
+                f'growing_file={self._growing_file_path is not None}',
+                f'growing_file_complete={self._growing_file_complete}',
             ],
         )
 
@@ -489,6 +495,34 @@ class AudioPlayer(QObject):
         self.channels = self.samples.shape[1]
         self.output_channels = self.channels
 
+    def _reset_growing_file(self) -> None:
+        self._growing_file_path = None
+        self._growing_file_complete = True
+        self._growing_file_size = 0
+        self._growing_file_last_decode = 0.0
+
+    def _decode_file(self, file_path: Path) -> PatchedAudioSegment:
+        with open(str(file_path), 'rb') as f:
+            return PatchedAudioSegment.from_file(io.BytesIO(f.read()))
+
+    def _apply_audio(self, audio: PatchedAudioSegment) -> None:
+        self.sample_rate = audio.frame_rate
+        self.samples = self._prepare_samples(audio)
+        self.channels = self.samples.shape[1] if self.samples.ndim == 2 else 1
+        self.output_channels = 2
+
+        self.current_index = 0
+        self._producer_index = 0
+        self._prepared_start_index = 0
+        self._prepared_end_index = 0
+        self._producer_target_lead = _PRODUCER_EARLY_LEAD
+        self._reset_wsola()
+        self._reset_stereo_effect()
+        self._reset_reverb()
+        self._playback_time = 0.0
+        self.is_playing = False
+        self.is_paused = False
+
     def load(self, audio: PatchedAudioSegment) -> None:
         with self._lock:
             self._stop_producer()
@@ -497,31 +531,126 @@ class AudioPlayer(QObject):
                 self.stream.close()
                 self.stream = None
 
-            self.sample_rate = audio.frame_rate
-            self.samples = self._prepare_samples(audio)
-            self.channels = self.samples.shape[1] if self.samples.ndim == 2 else 1
-            self.output_channels = 2
-
-            self.current_index = 0
-            self._producer_index = 0
-            self._prepared_start_index = 0
-            self._prepared_end_index = 0
-            self._producer_target_lead = _PRODUCER_EARLY_LEAD
-            self._reset_wsola()
-            self._reset_stereo_effect()
-            self._reset_reverb()
-            self._playback_time = 0.0
-            self.is_playing = False
-            self.is_paused = False
+            self._apply_audio(audio)
+            self._reset_growing_file()
 
     def loadFromFile(self, file_path: Path) -> None:
-        with open(str(file_path), 'rb') as f:
-            audio = PatchedAudioSegment.from_file(io.BytesIO(f.read()))
+        audio = self._decode_file(file_path)
         self.load(audio)
 
     def loadFromBytes(self, data: bytes) -> None:
         audio = PatchedAudioSegment.from_file(io.BytesIO(data))
         self.load(audio)
+
+    def loadGrowingFile(
+        self,
+        file_path: Path,
+        complete: bool = False,
+    ) -> PatchedAudioSegment:
+        audio = self._decode_file(file_path)
+        file_size = file_path.stat().st_size
+        with self._lock:
+            self._stop_producer()
+            self.stop(clear_growing_file=False)
+            if self.stream:
+                self.stream.close()
+                self.stream = None
+
+            self._apply_audio(audio)
+            self._growing_file_path = file_path
+            self._growing_file_complete = complete
+            self._growing_file_size = file_size
+            self._growing_file_last_decode = time.perf_counter()
+        return audio
+
+    def refreshGrowingFile(self, force: bool = False) -> bool:
+        with self._lock:
+            file_path = self._growing_file_path
+            last_decode = self._growing_file_last_decode
+            old_size = self._growing_file_size
+            old_len = len(self.samples)
+
+        if file_path is None:
+            return False
+
+        now = time.perf_counter()
+        if not force and now - last_decode < 0.35:
+            return False
+
+        try:
+            file_size = file_path.stat().st_size
+        except OSError:
+            return False
+
+        if not force and file_size <= old_size:
+            with self._lock:
+                if file_path == self._growing_file_path:
+                    self._growing_file_last_decode = now
+            return False
+
+        try:
+            audio = self._decode_file(file_path)
+            samples = self._prepare_samples(audio)
+        except CouldntDecodeError:
+            with self._lock:
+                if file_path == self._growing_file_path:
+                    self._growing_file_last_decode = now
+            return False
+        except Exception:
+            with self._lock:
+                if file_path == self._growing_file_path:
+                    self._growing_file_last_decode = now
+            self._logger.exception('failed to refresh growing audio file')
+            return False
+
+        with self._lock:
+            if file_path != self._growing_file_path:
+                return False
+            self._growing_file_size = file_size
+            self._growing_file_last_decode = now
+            if len(samples) <= old_len and not force:
+                return False
+            if self.sample_rate != audio.frame_rate and old_len > 0:
+                return False
+            self.sample_rate = audio.frame_rate
+            self.samples = samples
+            self.channels = self.samples.shape[1] if self.samples.ndim == 2 else 1
+            if self.stream is None:
+                self.output_channels = 2
+            return force or len(self.samples) > old_len
+
+    def finishGrowingFile(
+        self,
+        file_path: Path,
+        audio: PatchedAudioSegment | None = None,
+    ) -> bool:
+        if audio is not None:
+            samples = self._prepare_samples(audio)
+
+            with self._lock:
+                if self._growing_file_path != file_path:
+                    return False
+                self.sample_rate = audio.frame_rate
+                self.samples = samples
+                self.channels = self.samples.shape[1] if self.samples.ndim == 2 else 1
+                if self.stream is None:
+                    self.output_channels = 2
+                self.current_index = min(self.current_index, len(self.samples))
+                self._producer_index = min(self._producer_index, len(self.samples))
+                self._prepared_start_index = min(
+                    self._prepared_start_index, len(self.samples)
+                )
+                self._prepared_end_index = min(
+                    self._prepared_end_index, len(self.samples)
+                )
+                self._reset_growing_file()
+                return True
+
+        refreshed = self.refreshGrowingFile(force=True)
+        with self._lock:
+            if self._growing_file_path == file_path:
+                self._reset_growing_file()
+        return refreshed
 
     def play(self) -> None:
         with self._lock:
@@ -537,7 +666,7 @@ class AudioPlayer(QObject):
                 self.is_playing = True
                 self.is_paused = False
             else:
-                self.stop()
+                self.stop(clear_growing_file=self._growing_file_path is None)
                 self.current_index = 0
                 self._producer_index = 0
                 self._prepared_start_index = 0
@@ -563,7 +692,7 @@ class AudioPlayer(QObject):
     def resume(self) -> None:
         self.play()
 
-    def stop(self) -> None:
+    def stop(self, clear_growing_file: bool = True) -> None:
         with self._lock:
             self.stopGainAnimation()
             self._stop_producer()
@@ -580,6 +709,8 @@ class AudioPlayer(QObject):
             self._playback_time = 0.0
             self.is_playing = False
             self.is_paused = False
+            if clear_growing_file:
+                self._reset_growing_file()
 
     def setPosition(self, seconds: float) -> None:
         with self._lock:
@@ -604,6 +735,9 @@ class AudioPlayer(QObject):
 
     def getLength(self) -> float:
         return len(self.samples) / self.sample_rate if self.sample_rate > 0 else 0.0
+
+    def getLoadedTime(self) -> float:
+        return self.getLength()
 
     def getPreparedTimeSection(self) -> tuple[float, float]:
         if self.sample_rate <= 0:
@@ -1014,7 +1148,12 @@ class AudioPlayer(QObject):
         self.current_index = min(self.current_index + src_frames, len(self.samples))
         self._playback_time = self.current_index / self.sample_rate
 
-        finished = self.current_index >= len(self.samples)
+        waiting_for_file = (
+            self._growing_file_path is not None
+            and not self._growing_file_complete
+            and self.current_index >= len(self.samples)
+        )
+        finished = self.current_index >= len(self.samples) and not waiting_for_file
         skip_nosound = False
 
         if not finished:
@@ -1140,6 +1279,14 @@ class AudioPlayer(QObject):
         self._producer_memory_load = _get_memory_load()
         self._producer_last_resource_sample = now
 
+    def _waiting_for_growing_file(self) -> bool:
+        with self._lock:
+            return (
+                self._growing_file_path is not None
+                and not self._growing_file_complete
+                and self._producer_index >= len(self.samples)
+            )
+
     def _producer_loop(self, producer_seq: int) -> None:
         finished = False
         while self._producer_running and producer_seq == self._producer_seq:
@@ -1162,6 +1309,7 @@ class AudioPlayer(QObject):
                 )
                 batch_end_index = self._prepared_end_index
 
+            waiting_for_growing_file = False
             while self._producer_running and producer_seq == self._producer_seq:
                 if self.sample_rate <= 0:
                     break
@@ -1178,12 +1326,22 @@ class AudioPlayer(QObject):
                     ):
                         break
                     if self._producer_index >= len(self.samples):
+                        waiting_for_growing_file = (
+                            self._growing_file_path is not None
+                            and not self._growing_file_complete
+                        )
+                        if waiting_for_growing_file:
+                            break
                         finished = True
                         break
 
                     start_idx = int(self._producer_index)
                     chunk, src_frames = self._read_speed(start_idx, self._BLOCK_SIZE)
                     if len(chunk) == 0:
+                        waiting_for_growing_file = (
+                            self._growing_file_path is not None
+                            and not self._growing_file_complete
+                        )
                         break
 
                     if self.channels == 1:
@@ -1231,6 +1389,11 @@ class AudioPlayer(QObject):
 
             if finished:
                 break
+
+            if waiting_for_growing_file or self._waiting_for_growing_file():
+                self.refreshGrowingFile()
+                time.sleep(0.05)
+                continue
 
             time.sleep(0.02)
 

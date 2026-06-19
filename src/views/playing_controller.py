@@ -575,7 +575,7 @@ class PlayingController(QWidget):
         progress_width = self.width() - progress_left
         painter.drawLine(progress_left, 0, self.width(), 0)
         if self._dp.total_length > 0:
-            _, prepared_end = self._player.getPreparedTimeSection()
+            loaded_time = self._player.getLoadedTime()
             current_time = max(
                 0.0, min(self._player.getPosition(), self._dp.total_length)
             )
@@ -584,7 +584,7 @@ class PlayingController(QWidget):
                 progress_width * self.draw_ratio_timer.current_value
             )
             self.prepared_ratio_timer.target_value = (
-                max(0.0, min(prepared_end, self._dp.total_length))
+                max(0.0, min(loaded_time, self._dp.total_length))
                 / self._dp.total_length
             )
             prepared_draw_end_x = progress_left + int(

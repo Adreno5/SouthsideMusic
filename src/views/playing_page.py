@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import base64
-import json
 import logging
 
 from core import theme
 from core.app_context import AppContext
 from core.color import mixColor
 from core.config import cfg
+from core.free_threaded_worker import json_base64_bytes
 from core.icons import bindIcon
 from core.models import SongStorable
 from core.theme import isDark
@@ -19,6 +18,7 @@ from imports import (
     PLAYBACK_IMAGE_LOADED,
     PLAYBACK_LYRICS_UPDATED,
     PLAYBACK_SONG_LOADING,
+    POST_PLAY_STORABLE,
     POST_THEME_CHANGED,
     SONG_CHANGED,
     UPDATE_FM,
@@ -139,6 +139,7 @@ class PlayingPage(QWidget):
         event_bus.subscribe(PLAYBACK_IMAGE_LOADED, self._onPlaybackImageLoaded)
         event_bus.subscribe(PLAYBACK_LYRICS_UPDATED, self._onPlaybackLyricsUpdated)
         event_bus.subscribe(PLAYBACK_ERROR, self._onPlaybackError)
+        event_bus.subscribe(POST_PLAY_STORABLE, self._onPostPlayStorable)
         event_bus.subscribe(SONG_CHANGED, self._updateDatas)
         event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
@@ -316,6 +317,10 @@ class PlayingPage(QWidget):
         )
         self._mwindow_obj.update()
         event_bus.emit(POST_THEME_CHANGED)
+
+    def _onPostPlayStorable(self, song: SongStorable) -> None:
+        if self.cur is not None and self.cur.storable.id != song.id:
+            return
         self.sendSongFMAndInfo()
 
     def _onPlaybackLyricsUpdated(self, song: SongStorable) -> None:
@@ -332,6 +337,8 @@ class PlayingPage(QWidget):
             InfoBar.error(title, message, parent=self._mwindow_obj)
 
     def sendSongFMAndInfo(self) -> None:
+        if not self._ws_handler.is_open:
+            return
         if self.cur is None:
             return
         if not isinstance(self.cur, DummyCard):
@@ -349,17 +356,33 @@ class PlayingPage(QWidget):
         img_bytes = buffer.data().data()
         buffer.close()
 
-        img_base64 = base64.b64encode(img_bytes).decode()
-
-        self._ws_handler.send(
-            json.dumps(
-                {
-                    'option': 'fm',
-                    'image': img_base64,
-                    'song_name': self.cur.storable.name,
-                    'artists': '、'.join([a.name for a in self.cur.storable.artists]),
-                }
-            )
+        song_name = self.cur.storable.name
+        position = self.ctx.player.getPosition()
+        duration = self.ctx.player.getLength()
+        translation_enabled = bool(cfg.show_translation)
+        use_yrc = bool(self._ymgr.parsed)
+        artists = _artists_text(self.cur.storable)
+        is_playing = self.ctx.player.isPlaying()
+        self._ws_handler.sendJsonFactory(
+            lambda img_bytes=img_bytes,
+            song_name=song_name,
+            position=position,
+            duration=duration,
+            translation_enabled=translation_enabled,
+            use_yrc=use_yrc,
+            artists=artists,
+            is_playing=is_playing: {
+                'option': 'fm',
+                'image': json_base64_bytes(img_bytes),
+                'song_name': song_name,
+                'position': position,
+                'duration': duration,
+                'translation_enabled': translation_enabled,
+                'use_yrc': use_yrc,
+                'artists': artists,
+                'is_playing': is_playing,
+            },
+            coalesce_key='fm',
         )
 
     def resizeEvent(self, event: QResizeEvent) -> None:

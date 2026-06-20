@@ -48,7 +48,6 @@ def _wrap_visible_text(text: str, width: int) -> list[str]:
 class LogHandler(logging.Handler):
     def __init__(self, level: int | str = 0) -> None:
         super().__init__(level)
-        self.last_flush: float = time.time()
         self.buffer: str = ''
 
     def emit(self, record: logging.LogRecord) -> None:
@@ -96,14 +95,9 @@ class LogHandler(logging.Handler):
                 1,
             )
             rendered_lines.append(f'{prefix}{line}{" " * spaces}{colored_suffix}')
-        self.buffer += '\n'.join(rendered_lines) + '\n'
-        if time.time() - self.last_flush > 0.2:
-            assert sys.__stdout__ is not None
-            sys.__stdout__.write(self.buffer + '\n')
-            sys.__stdout__.flush()
-            self.buffer = ''
-            self.last_flush = time.time()
-
+        assert sys.__stdout__ is not None
+        sys.__stdout__.write('\n'.join(rendered_lines) + '\n')
+        sys.__stdout__.flush()
 
 class LoggingStream:
     def __init__(self, level: int = logging.DEBUG, source: str = 'stderr'):

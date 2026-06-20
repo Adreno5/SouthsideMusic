@@ -12,9 +12,7 @@ from imports import (
     STOP_PROGRESS_LOADING,
     UPDATE_LOADING_PROGRESS,
     QObject,
-    QThread,
     Signal,
-    Slot,
     event_bus,
 )
 import requests
@@ -23,6 +21,7 @@ import requests
 class DownloadingManager(QObject):
     downloadStarted = Signal()
     receiveProgress = Signal(float)
+    workerFinished = Signal(bytes)
     downloadFinished = Signal(bytes)
 
     MAX_CHUNK_THREADS = 12
@@ -39,36 +38,29 @@ class DownloadingManager(QObject):
         self.url = url
         self.headers = headers.copy() if headers else {}
         self.data = data
-
-        # create worker and thread
-        self._worker_thread = QThread(self)
         self._worker = _DownloadWorker(
             self.url,
             self.headers,
             self.data,
             self.MAX_CHUNK_THREADS,
             self.MIN_CHUNK_SIZE,
+            self.receiveProgress.emit,
         )
-        self._worker.moveToThread(self._worker_thread)
-
-        self._worker_thread.started.connect(self._worker.run)
-        self._worker.progress.connect(self.receiveProgress)
-        self._worker.finished.connect(self._finish_download)
-        self._worker.finished.connect(self._worker_thread.quit)
-        self._worker.finished.connect(self._worker.deleteLater)
-        self._worker_thread.finished.connect(self._worker_thread.deleteLater)
+        self._thread: threading.Thread | None = None
         self.receiveProgress.connect(self.progress)
+        self.workerFinished.connect(self._finish_download)
 
     def start(self):
-        # start download
         self.downloadStarted.emit()
-        self._worker_thread.start()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
 
-    @Slot(float)
+    def _run(self) -> None:
+        self.workerFinished.emit(self._worker.run())
+
     def progress(self, progress: float):
         event_bus.emit(UPDATE_LOADING_PROGRESS, max(0.0, min(1.0, progress)))
 
-    @Slot(bytes)
     def _finish_download(self, data: bytes):
         if data:
             event_bus.emit(UPDATE_LOADING_PROGRESS, 1.0)
@@ -76,10 +68,7 @@ class DownloadingManager(QObject):
         self.downloadFinished.emit(data)
 
 
-class _DownloadWorker(QObject):
-    progress = Signal(float)
-    finished = Signal(bytes)
-
+class _DownloadWorker:
     def __init__(
         self,
         url: str,
@@ -87,25 +76,24 @@ class _DownloadWorker(QObject):
         data: Optional[Dict],
         max_chunk_threads: int,
         min_chunk_size: int,
+        progress: Callable[[float], None],
     ):
-        super().__init__()
         self.url = url
         self.headers = headers.copy()
         self.data = data
         self.max_chunk_threads = max_chunk_threads
         self.min_chunk_size = min_chunk_size
+        self.progress = progress
 
-    @Slot()
-    def run(self):
+    def run(self) -> bytes:
         try:
             total_length, accept_ranges = self._probe_download()
             if total_length <= 0 or not accept_ranges:
-                self.finished.emit(self._download_single(total_length))
-                return
+                return self._download_single(total_length)
 
-            self.finished.emit(self._download_chunks(total_length))
+            return self._download_chunks(total_length)
         except Exception:
-            self.finished.emit(bytes())
+            return bytes()
 
     def _probe_download(self) -> tuple[int, bool]:
         response = requests.head(
@@ -141,7 +129,7 @@ class _DownloadWorker(QObject):
             final_data.extend(chunk)
             downloaded += len(chunk)
             if total_length > 0:
-                self.progress.emit(downloaded / total_length)
+                self.progress(downloaded / total_length)
 
         return bytes(final_data)
 
@@ -164,7 +152,7 @@ class _DownloadWorker(QObject):
             with progress_lock:
                 progress_by_chunk[index] = bytes_downloaded
                 downloaded = sum(progress_by_chunk)
-            self.progress.emit(downloaded / total_length)
+            self.progress(downloaded / total_length)
 
         with ThreadPoolExecutor(max_workers=len(ranges)) as executor:
             futures = {
@@ -228,43 +216,23 @@ class TaskManager(QObject):
         parent=None,
     ):
         super().__init__(parent)
-
-        self._worker_thread = QThread(self)
-        self._worker = _TaskWorker(task, args)
-        self._worker.moveToThread(self._worker_thread)
-
-        self._worker_thread.started.connect(self._worker.run)
-        self._worker.finished.connect(self._finish_task)
-        self._worker.finished.connect(self._worker_thread.quit)
-        self._worker.finished.connect(self._worker.deleteLater)
-        self._worker_thread.finished.connect(self._worker_thread.deleteLater)
-
-    def start(self):
-        self._worker_thread.start()
-
-    @Slot()
-    def _finish_task(self):
-        self.taskFinished.emit()
-
-
-class _TaskWorker(QObject):
-    finished = Signal()
-
-    def __init__(self, task: Callable, args: tuple):
-        super().__init__()
         self._logger = logging.getLogger(__name__)
         self.task = task
         self.args = args
+        self._thread: threading.Thread | None = None
 
-    @Slot()
-    def run(self):
+    def start(self):
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self):
         try:
             self.task(*self.args)
         except Exception as e:
             self._logger.exception('Background task failed')
             raise e
         finally:
-            self.finished.emit()
+            self.taskFinished.emit()
 
 
 def asyncDownload(
@@ -295,16 +263,27 @@ def asyncTask(
     parent,
     finished: Optional[Callable[[], None]] = None,
 ) -> TaskManager:
-    """async task execution via background qthread."""
+    """async task execution via background Python thread."""
 
     event_bus.emit(START_INTER_LOADING)
 
     manager = TaskManager(task, args, parent)
 
     def __finish():
-        if finished:
-            finished()
-        event_bus.emit(STOP_INTER_LOADING)
+        def _apply_finish() -> None:
+            if finished:
+                finished()
+            event_bus.emit(STOP_INTER_LOADING)
+
+        ctx = getattr(parent, 'ctx', None)
+        if ctx is not None:
+            ctx.addScheduledTask(_apply_finish)
+            return
+        add_scheduled = getattr(parent, 'addScheduledTask', None)
+        if add_scheduled is not None:
+            add_scheduled(_apply_finish)
+            return
+        _apply_finish()
 
     manager.taskFinished.connect(__finish)
     manager.start()

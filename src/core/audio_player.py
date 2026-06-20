@@ -4,6 +4,7 @@ import array
 import ctypes
 from dataclasses import dataclass
 import io
+import json
 import logging
 from math import gcd
 import struct
@@ -20,6 +21,7 @@ from imports import (
     QObject,
     QEasingCurve,
     QPropertyAnimation,
+    QTimer,
     Signal,
     event_bus,
     Property,
@@ -32,7 +34,7 @@ from scipy.signal import resample_poly
 from imports import QMessageBox
 from core.config import cfg
 
-from pydub.utils import fsdecode, audioop, mediainfo_json
+from pydub.utils import fsdecode, audioop, get_prober_name, mediainfo_json
 from pydub.exceptions import CouldntDecodeError
 from pydub import AudioSegment
 from collections import namedtuple, OrderedDict
@@ -162,13 +164,23 @@ class PatchedAudioSegment(AudioSegment):
     @classmethod
     def from_file(
         cls,
-        file: io.BytesIO,
-    ):
-        orig_file = file
-        try:
-            filename = fsdecode(file)
-        except TypeError:
+        file: bytes | str | Path | io.BytesIO,
+    ) -> 'PatchedAudioSegment':
+        filename: str | None
+        stdin_parameter = None
+        stdin_data = None
+
+        if isinstance(file, bytes):
             filename = None
+            stdin_data = file
+        else:
+            try:
+                filename = fsdecode(file)
+            except TypeError:
+                filename = None
+                if isinstance(file, io.BytesIO):
+                    file.seek(0)
+                    stdin_data = file.read()
 
         conversion_command = [
             cls.converter,
@@ -177,19 +189,34 @@ class PatchedAudioSegment(AudioSegment):
 
         if filename:
             conversion_command += ['-i', filename]
-            stdin_parameter = None
-            stdin_data = None
         else:
-            conversion_command += [
-                '-read_ahead_limit',
-                '-1',
-                '-i',
-                'cache:pipe:0',
-            ]
             stdin_parameter = subprocess.PIPE
-            stdin_data = file.read()
+            conversion_command += ['-i', 'pipe:0']
 
-        info = mediainfo_json(orig_file, read_ahead_limit=-1)
+        info = None
+        if filename:
+            info = mediainfo_json(filename, read_ahead_limit=-1)
+        elif stdin_data is not None:
+            probe_command = [
+                get_prober_name(),
+                '-of',
+                'json',
+                '-v',
+                'info',
+                '-show_format',
+                '-show_streams',
+                'pipe:0',
+            ]
+            probe = subprocess.Popen(
+                probe_command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            probe_out, _probe_err = probe.communicate(input=stdin_data)
+            if probe.returncode == 0 and probe_out:
+                info = json.loads(probe_out.decode('utf-8', 'ignore'))
+
         if info:
             audio_streams = [x for x in info['streams'] if x['codec_type'] == 'audio']
             # This is a workaround for some ffprobe versions that always say
@@ -204,13 +231,20 @@ class PatchedAudioSegment(AudioSegment):
             ]:
                 bits_per_sample = 16
             else:
-                bits_per_sample = audio_streams[0]['bits_per_sample']
-            if bits_per_sample == 8:
+                bits_per_sample = int(
+                    audio_streams[0].get('bits_per_sample')
+                    or audio_streams[0].get('bits_per_raw_sample')
+                    or 0
+                )
+            if bits_per_sample <= 0:
+                acodec = None
+            elif bits_per_sample == 8:
                 acodec = 'pcm_u8'
             else:
                 acodec = 'pcm_s%dle' % bits_per_sample
 
-            conversion_command += ['-acodec', acodec]
+            if acodec is not None:
+                conversion_command += ['-acodec', acodec]
 
         conversion_command += [
             '-vn',  # Drop any video streams if there are any
@@ -339,6 +373,10 @@ class AudioPlayer(QObject):
         self._growing_file_complete = True
         self._growing_file_size = 0
         self._growing_file_last_decode = 0.0
+        self._growing_stream_mode = False
+        self._callback_events_lock = threading.Lock()
+        self._pending_full_finished = False
+        self._pending_ending_no_sound = False
 
         self._lock = threading.RLock()
         devices = getAudioDevices()
@@ -356,6 +394,10 @@ class AudioPlayer(QObject):
         self.fft_thread_running = True
         self.fft_thread = threading.Thread(target=self._fft_worker, daemon=True)
         self.fft_thread.start()
+
+        self._telemetry_timer = QTimer(self)
+        self._telemetry_timer.timeout.connect(self._emitPlaybackTelemetry)
+        self._telemetry_timer.start(100)
 
         event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
 
@@ -391,6 +433,7 @@ class AudioPlayer(QObject):
                 f'prepared_lead={self._producer_prepared_lead():.2f}',
                 f'growing_file={self._growing_file_path is not None}',
                 f'growing_file_complete={self._growing_file_complete}',
+                f'growing_stream_mode={self._growing_stream_mode}',
             ],
         )
 
@@ -500,10 +543,10 @@ class AudioPlayer(QObject):
         self._growing_file_complete = True
         self._growing_file_size = 0
         self._growing_file_last_decode = 0.0
+        self._growing_stream_mode = False
 
     def _decode_file(self, file_path: Path) -> PatchedAudioSegment:
-        with open(str(file_path), 'rb') as f:
-            return PatchedAudioSegment.from_file(io.BytesIO(f.read()))
+        return PatchedAudioSegment.from_file(str(file_path))
 
     def _apply_audio(self, audio: PatchedAudioSegment) -> None:
         self.sample_rate = audio.frame_rate
@@ -539,7 +582,7 @@ class AudioPlayer(QObject):
         self.load(audio)
 
     def loadFromBytes(self, data: bytes) -> None:
-        audio = PatchedAudioSegment.from_file(io.BytesIO(data))
+        audio = PatchedAudioSegment.from_file(data)
         self.load(audio)
 
     def loadGrowingFile(
@@ -561,7 +604,100 @@ class AudioPlayer(QObject):
             self._growing_file_complete = complete
             self._growing_file_size = file_size
             self._growing_file_last_decode = time.perf_counter()
+            self._growing_stream_mode = False
         return audio
+
+    def loadGrowingStream(
+        self,
+        file_path: Path,
+        sample_rate: int,
+        channels: int,
+    ) -> None:
+        with self._lock:
+            self._stop_producer()
+            self.stop(clear_growing_file=False)
+            if self.stream:
+                self.stream.close()
+                self.stream = None
+
+            self.sample_rate = sample_rate
+            self.samples = np.zeros((0, channels), dtype=np.float32)
+            self.channels = channels
+            self.output_channels = channels
+            self.current_index = 0
+            self._producer_index = 0
+            self._prepared_start_index = 0
+            self._prepared_end_index = 0
+            self._producer_target_lead = _PRODUCER_EARLY_LEAD
+            self._reset_wsola()
+            self._reset_stereo_effect()
+            self._reset_reverb()
+            self._playback_time = 0.0
+            self.is_playing = False
+            self.is_paused = False
+            self._growing_file_path = file_path
+            self._growing_file_complete = False
+            self._growing_file_size = 0
+            self._growing_file_last_decode = time.perf_counter()
+            self._growing_stream_mode = True
+
+    def appendGrowingStreamPcm(
+        self,
+        file_path: Path,
+        pcm_data: bytes,
+        channels: int,
+    ) -> float:
+        frame_width = channels * 4
+        valid_len = len(pcm_data) - (len(pcm_data) % frame_width)
+        if valid_len <= 0:
+            return self.getLength()
+
+        chunk = np.frombuffer(pcm_data[:valid_len], dtype='<f4').reshape(-1, channels)
+        chunk = chunk.astype(np.float32, copy=True)
+        with self._lock:
+            if self._growing_file_path != file_path or self._growing_file_complete:
+                return self.getLength()
+            if len(self.samples) == 0:
+                self.samples = chunk
+            else:
+                self.samples = np.concatenate((self.samples, chunk), axis=0)
+            self._growing_file_size += valid_len
+            self._growing_file_last_decode = time.perf_counter()
+            return self.getLength()
+
+    def finishGrowingStream(self, file_path: Path) -> bool:
+        with self._lock:
+            if self._growing_file_path != file_path:
+                return False
+            self._growing_file_complete = True
+            self._growing_file_path = None
+            self._growing_stream_mode = False
+            self._growing_file_last_decode = 0.0
+            return True
+        
+    def setSampleRate(self, rate: int):
+        with self._lock:
+            if rate == self.sample_rate:
+                return
+            was_playing = self.is_playing or (
+                self.stream is not None and self.stream.active
+            )
+            self._stop_producer()
+            if self.stream:
+                try:
+                    self.stream.stop()
+                    self.stream.close()
+                except Exception:
+                    pass
+                self.stream = None
+            self.sample_rate = rate
+            self._clear_queue()
+            self._reset_wsola()
+            self._reset_stereo_effect()
+            self._reset_reverb()
+            if was_playing:
+                self._start_producer()
+                self._start_stream()
 
     def refreshGrowingFile(self, force: bool = False) -> bool:
         with self._lock:
@@ -569,8 +705,9 @@ class AudioPlayer(QObject):
             last_decode = self._growing_file_last_decode
             old_size = self._growing_file_size
             old_len = len(self.samples)
+            stream_mode = self._growing_stream_mode
 
-        if file_path is None:
+        if file_path is None or stream_mode:
             return False
 
         now = time.perf_counter()
@@ -1121,6 +1258,8 @@ class AudioPlayer(QObject):
             return
 
         if item is None:
+            if self._growing_file_path is not None and not self._growing_file_complete:
+                return
             self.is_playing = False
             self.is_paused = False
             if self.stream:
@@ -1130,7 +1269,7 @@ class AudioPlayer(QObject):
                 except Exception:
                     pass
                 self.stream = None
-            self.onFullFinished.emit()
+            self._queueCallbackEvent('full_finished')
             raise sd.CallbackStop
 
         chunk, src_frames = item
@@ -1148,10 +1287,11 @@ class AudioPlayer(QObject):
         self.current_index = min(self.current_index + src_frames, len(self.samples))
         self._playback_time = self.current_index / self.sample_rate
 
+        growing_file_incomplete = (
+            self._growing_file_path is not None and not self._growing_file_complete
+        )
         waiting_for_file = (
-            self._growing_file_path is not None
-            and not self._growing_file_complete
-            and self.current_index >= len(self.samples)
+            growing_file_incomplete and self.current_index >= len(self.samples)
         )
         finished = self.current_index >= len(self.samples) and not waiting_for_file
         skip_nosound = False
@@ -1166,21 +1306,21 @@ class AudioPlayer(QObject):
             else:
                 self.db = -100
 
-            remain = self.getLength() - self._playback_time
-            if (
-                (remain < cfg.skip_remain_time) if cfg.skip_remain_time < 60 else True
-            ) and cfg.skip_nosound:
-                if self.db < cfg.skip_threshold:
-                    skip_nosound = True
+            if not growing_file_incomplete:
+                remain = self.getLength() - self._playback_time
+                if (
+                    (remain < cfg.skip_remain_time)
+                    if cfg.skip_remain_time < 60
+                    else True
+                ) and cfg.skip_nosound:
+                    if self.db < cfg.skip_threshold:
+                        skip_nosound = True
 
             if self.fft_enabled:
                 try:
                     self.fft_queue.put_nowait(monitor_chunk)
                 except Full:
                     pass
-
-        self.positionChanged.emit(self._playback_time)
-        event_bus.emit(DB_CHANGED, self.db)
 
         if finished:
             self.is_playing = False
@@ -1192,15 +1332,37 @@ class AudioPlayer(QObject):
                 except Exception:
                     pass
                 self.stream = None
-            self.onFullFinished.emit()
+            self._queueCallbackEvent('full_finished')
             raise sd.CallbackStop
 
         if skip_nosound:
-            self.onEndingNoSound.emit()
             self.is_playing = False
             self.is_paused = False
             self._logger.info(f'skip {self.db=}')
+            self._queueCallbackEvent('ending_no_sound')
             raise sd.CallbackStop
+
+    def _queueCallbackEvent(self, event_name: str) -> None:
+        with self._callback_events_lock:
+            if event_name == 'full_finished':
+                self._pending_full_finished = True
+            elif event_name == 'ending_no_sound':
+                self._pending_ending_no_sound = True
+
+    def _emitPlaybackTelemetry(self) -> None:
+        self.positionChanged.emit(self._playback_time)
+        event_bus.emit(DB_CHANGED, self.db)
+
+        with self._callback_events_lock:
+            full_finished = self._pending_full_finished
+            ending_no_sound = self._pending_ending_no_sound
+            self._pending_full_finished = False
+            self._pending_ending_no_sound = False
+
+        if full_finished:
+            self.onFullFinished.emit()
+        if ending_no_sound:
+            self.onEndingNoSound.emit()
 
     def _clear_queue(self) -> None:
         while not self._audio_queue.empty():

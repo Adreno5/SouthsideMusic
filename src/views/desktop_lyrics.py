@@ -9,7 +9,6 @@ from imports import (
     QTimer,
     QPoint,
     QRect,
-    REPAINT,
     event_bus,
 )
 from imports import (
@@ -46,6 +45,7 @@ class DesktopLyricsViewer(LyricsViewer):
 
         self.dragging: bool = False
         self.dragging_point: QPoint = QPoint(0, 0)
+        self._draw_progress_ratio = 0.0
 
         self.scr_size: QSize = ctx.app.primaryScreen().size()
         super().__init__(ctx)
@@ -59,8 +59,6 @@ class DesktopLyricsViewer(LyricsViewer):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
-        event_bus.subscribe(REPAINT, self._onRepaintTick)
-
     def prewarmFontMetrics(self):
         pass
 
@@ -70,10 +68,6 @@ class DesktopLyricsViewer(LyricsViewer):
             'Desktop Lyrics Viewer',
             [f'{len(self._shown_lines)=}', f'{self.last_lyric=}'],
         )
-
-    def _onRepaintTick(self):
-        self.updateDatas()
-        self.update()
 
     def unindentation(self):
         if not cfg.desktop_lyrics_anchor == 'top-center':
@@ -131,10 +125,10 @@ class DesktopLyricsViewer(LyricsViewer):
             return self.font_height + self.theight + self.font_height * 0.75
         return self.font_height * 1.85
 
-    def updateDatas(self):
+    def updateDatas(self, multiple_factor: float = 1.0) -> None:
         self.indentation_y += (
             (-self.height() + 8 if self.indentation else 0) - self.indentation_y
-        ) * 0.2
+        ) * 0.2 * multiple_factor
 
         position = self._player.getPosition()
         cur_line = self._currentLyricLine(position)
@@ -145,7 +139,7 @@ class DesktopLyricsViewer(LyricsViewer):
         if meta:
             tar_height = self.font_height + 10
         self.height_timer.target_value = tar_height
-        self.setFixedHeight(int(self.height_timer.current_value))
+        self.setFixedHeight(max(1, int(self.height_timer.current_value)))
 
         tar_width = 0
         if self._ymgr.parsed:
@@ -171,7 +165,15 @@ class DesktopLyricsViewer(LyricsViewer):
         tar_width += self.draw_x_offset + self.height() * 0.5 + 10
 
         self.width_timer.target_value = tar_width
-        self.setFixedWidth(int(self.width_timer.current_value))
+        self.setFixedWidth(max(1, int(self.width_timer.current_value)))
+
+        if self._dp.total_length > 0:
+            self._draw_progress_ratio = max(
+                0.0,
+                min(1.0, self._player.getPosition() / self._dp.total_length),
+            )
+        else:
+            self._draw_progress_ratio = 0.0
 
         target_point = QPoint(0, 0)
         if cfg.desktop_lyrics_anchor == 'top-center':
@@ -193,6 +195,11 @@ class DesktopLyricsViewer(LyricsViewer):
             self.move(target_point)
 
         self.draw_x_offset = self.height() / 2
+        self._layout_payload = self.lyricLayoutPayload(
+            update_animation=True,
+            multiple_factor=multiple_factor,
+        )
+        self.update()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         self.dragging = True
@@ -267,7 +274,7 @@ class DesktopLyricsViewer(LyricsViewer):
                         0,
                         int(
                             (self.width() - self.height())
-                            * (self._player.getPosition() / self._dp.total_length)
+                            * self._draw_progress_ratio
                         ),
                         1,
                     )
@@ -319,10 +326,7 @@ class DesktopLyricsViewer(LyricsViewer):
                     painter.drawRect(
                         12,
                         0,
-                        int(
-                            (self.width() - 24)
-                            * (self._player.getPosition() / self._dp.total_length)
-                        ),
+                        int((self.width() - 24) * self._draw_progress_ratio),
                         1,
                     )
                     painter.restore()

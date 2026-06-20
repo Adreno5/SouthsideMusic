@@ -174,9 +174,9 @@ class FolderSelectDialog(MessageBoxBase):
     def _loadCloudPlaylists(self):
         try:
             playlists = getBackend().getUserPlaylists()
-            self._mwindow.addScheduledTask(lambda: self._onCloudLoaded(playlists))
+            self._mwindow.ctx.addScheduledTask(lambda: self._onCloudLoaded(playlists))
         except Exception:
-            self._mwindow.addScheduledTask(
+            self._mwindow.ctx.addScheduledTask(
                 lambda: self.list_widget.addItem(QListWidgetItem(tr('song_card.failed_to_load')))
             )
 
@@ -340,7 +340,7 @@ class SearchSongCard(QWidget):
         def _on_prepared():
             if not result.get('done'):
                 return
-            self._mwindow.addScheduledTask(
+            self._mwindow.ctx.addScheduledTask(
                 lambda: self._finishAddToFavorites(
                     folder_name, result['image'], result['music']
                 )
@@ -588,7 +588,7 @@ class _SongCardItem(QWidget):
             storable._write_cache(image_bytes, IMAGE_DATA_DIR, 'image_cache_hash')
             favorites_manager._save()
             if self._mwindow:
-                self._mwindow.addScheduledTask(
+                self._mwindow.ctx.addScheduledTask(
                     lambda s=storable: event_bus.emit(IMAGE_ASSET_PERSISTED, s)
                 )
             else:
@@ -600,21 +600,18 @@ class _SongCardItem(QWidget):
         if self._mwindow is None:
             return
 
-        result: dict[str, QImage] = {}
+        result: dict[str, bytes] = {}
 
         def _decode():
             try:
                 image_bytes = self.storable.get_image_bytes()
             except FileNotFoundError:
                 return
-            image = QImage()
-            image.loadFromData(image_bytes)
-            if not image.isNull():
-                result['image'] = image
+            result['image_bytes'] = image_bytes
 
         def _finish():
-            image = result.get('image')
-            if image is None:
+            image_bytes = result.get('image_bytes')
+            if image_bytes is None:
                 return
 
             def _apply_pixmap():
@@ -623,6 +620,10 @@ class _SongCardItem(QWidget):
                 try:
                     self.img_label.objectName()
                 except RuntimeError:
+                    return
+                image = QImage()
+                image.loadFromData(image_bytes)
+                if image.isNull():
                     return
                 pixmap = QPixmap.fromImage(image)
                 if not pixmap.isNull():
@@ -633,7 +634,7 @@ class _SongCardItem(QWidget):
                     )
                     self.img_label.setPixmap(scaled)
 
-            self._mwindow.addScheduledTask(_apply_pixmap)
+            self._mwindow.ctx.addScheduledTask(_apply_pixmap)
 
         try:
             asyncTask(_decode, (), self._mwindow, _finish)

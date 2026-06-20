@@ -2,7 +2,6 @@ from core import theme
 from core.color import mixColor
 from core.config import cfg
 from core.icons import SouthsideIcon, bindIcon
-from core.models import SongStorable
 from core.smooth import EaseOutTimer
 from imports import (
     BACKGROUND_RATIO_CHANGED,
@@ -96,7 +95,7 @@ class SearchLineEdit(QLineEdit):
         self.setTextMargins(self._text_padding, 0, right_margin, 0)
         self.update()
 
-    def _repaintTick(self, song: SongStorable | None = None):
+    def _repaintTick(self, _multiple_factor: float = 1.0):
         if self.iconx_timer.is_animating or self.bgwidth_timer.is_animating:
             self.update()
 

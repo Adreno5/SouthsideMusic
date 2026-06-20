@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 import base64
 import hashlib
 import json
@@ -64,22 +64,23 @@ def getCachedHashes(song_id: str) -> dict[str, str]:
 
 
 @dataclass
-class SongInfo:
+class ArtistInfo:
+    id: int
     name: str
-    artists: list[ArtistInfo]
-    id: str
-    privilege: int
-    duration: int = 0
 
 
 @dataclass
 class SongDetail:
     image_url: str
 
+
 @dataclass
-class ArtistInfo:
-    id: int
+class SongInfo:
     name: str
+    artists: list[ArtistInfo]
+    id: str
+    privilege: int
+    duration: int = 0
 
 
 def _artist_to_object(artist: ArtistInfo) -> dict[str, object]:
@@ -116,7 +117,7 @@ def _artists_from_object(obj: object) -> list[ArtistInfo]:
 
 def _int_from_object(obj: object, default: int = 0) -> int:
     try:
-        return int(obj)
+        return int(obj) # type: ignore
     except (TypeError, ValueError):
         return default
 

@@ -215,7 +215,7 @@ def startUpdateCheck(mwindow: MainWindow) -> None:
         if update_result is None:
             return
 
-        mwindow.addScheduledTask(lambda: _checked(update_result))
+        mwindow.ctx.addScheduledTask(lambda: _checked(update_result))
 
     def _checked(update_result: UpdateInfo):
         dialog = MessageBox(
@@ -255,7 +255,7 @@ def applyUpdateImmediately(update_info: UpdateInfo, mwindow=None) -> None:
             )
 
     if mwindow:
-        mwindow.addScheduledTask(_show_result)
+        mwindow.ctx.addScheduledTask(_show_result)
     else:
         _show_result()
 

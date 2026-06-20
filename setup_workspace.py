@@ -31,9 +31,11 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PYTHON_ZIP = os.path.join(SCRIPT_DIR, 'python.zip')
 EMBED_DIR = os.path.join(SCRIPT_DIR, 'embed_python')
 BUILD_VENV = os.path.join(SCRIPT_DIR, 'build_venv')
+FREE_THREADED_VENV = os.path.join(SCRIPT_DIR, '.venv-ft-pyside-blocked')
 GET_PIP = os.path.join(SCRIPT_DIR, 'get-pip.py')
 REQUIREMENTS = os.path.join(SCRIPT_DIR, 'embed_python_requirements.txt')
 REQUIREMENTS_HASH = os.path.join(SCRIPT_DIR, '.requirements_sha256')
+FREE_THREADED_WORKER_PACKAGES = ['numpy', 'scipy', 'pillow']
 
 PYTHON_VERSION = '3.14.2'
 DOWNLOAD_BASE = 'https://www.python.org/ftp/python/3.14.2'
@@ -357,22 +359,25 @@ def main() -> None:
     _ensure_uv(_maybe_inquirer)
 
     # 6. Sync uv project environment
-    print('\n[1/5] Syncing uv environment...')
+    print('\n[1/6] Syncing uv environment...')
     _uv_sync_with_retry()
 
-    # 7. Set up embedded Python
+    # 7. Set up free-threaded worker environment
+    _setup_free_threaded_worker_venv()
+
+    # 8. Set up embedded Python
     _setup_embed_python(tqdm, requests, zipfile)
 
-    # 8. Set up build venv (clean venv with Nuitka only)
+    # 9. Set up build venv (clean venv with Nuitka only)
     _setup_build_venv()
 
-    # 9. Install requirements into embedded Python
+    # 10. Install requirements into embedded Python
     _install_embed_requirements()
 
-    # 10. Quick validation
+    # 11. Quick validation
     _validate_embed_python()
 
-    # 11. Inno Setup
+    # 12. Inno Setup
     _ensure_innosetup(tqdm, requests)
 
     print('\nSetup complete!')
@@ -413,7 +418,7 @@ def _ensure_uv(inquirer_mod: Any | None = None) -> None:
         print(f'  uv installed: {result.stdout.strip()}')
     except (subprocess.CalledProcessError, FileNotFoundError):
         raise SetupError(
-            'uv was installed but '--version' still fails. Check the docs above.'
+            "uv was installed but '--version' still fails. Check the docs above."
         )
 
 
@@ -434,11 +439,56 @@ def _uv_sync_with_retry(retries: int = 3) -> None:
                 raise SetupError(f'uv sync failed after {retries} attempts.')
 
 
+def _setup_free_threaded_worker_venv() -> None:
+    print('\n[2/6] Setting up free-threaded worker venv...')
+
+    ft_python = os.path.join(FREE_THREADED_VENV, 'Scripts', 'python.exe')
+    needs_create = True
+    if os.path.isfile(ft_python):
+        try:
+            result = run(
+                [
+                    ft_python,
+                    '-c',
+                    (
+                        'import sys, sysconfig; '
+                        'print(int(not sys._is_gil_enabled())); '
+                        'print(sysconfig.get_config_var("Py_GIL_DISABLED"))'
+                    ),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            values = [line.strip() for line in result.stdout.splitlines()]
+            needs_create = values[:2] != ['1', '1']
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            needs_create = True
+
+    if needs_create:
+        _safe_remove(FREE_THREADED_VENV)
+        run(['uv', 'venv', '--python', '3.14t', FREE_THREADED_VENV], cwd=SCRIPT_DIR)
+
+    env = os.environ.copy()
+    env['PYTHON_GIL'] = '0'
+    run(
+        [
+            'uv',
+            'pip',
+            'install',
+            '--python',
+            ft_python,
+            *FREE_THREADED_WORKER_PACKAGES,
+        ],
+        cwd=SCRIPT_DIR,
+        env=env,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Step: embedded Python
 # ---------------------------------------------------------------------------
 def _setup_embed_python(tqdm, requests, zipfile) -> None:
-    print('\n[2/5] Setting up embedded Python...')
+    print('\n[3/6] Setting up embedded Python...')
 
     embed_exe = os.path.join(EMBED_DIR, 'python.exe')
     if os.path.isfile(embed_exe):
@@ -544,7 +594,7 @@ def _setup_build_venv() -> None:
     Uses venv (not embedded Python) so Nuitka's ReExecute mechanism works.
     Has no extra packages, so standalone builds stay lean.
     '''
-    print('\n[3/5] Setting up build venv (Nuitka only)...')
+    print('\n[4/6] Setting up build venv (Nuitka only)...')
 
     build_python = os.path.join(BUILD_VENV, 'Scripts', 'python.exe')
     if os.path.isfile(build_python):
@@ -619,7 +669,7 @@ def _install_embed_requirements() -> None:
         raise SetupError(f'Embedded Python not found at {embed_exe}.')
 
     # Install pip if not present
-    print('[4/5] Ensuring pip in embedded Python...')
+    print('[5/6] Ensuring pip in embedded Python...')
     try:
         run([embed_exe, '-m', 'pip', '--version'], capture_output=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
@@ -630,7 +680,7 @@ def _install_embed_requirements() -> None:
             raise SetupError('Failed to install pip in embedded Python.')
 
     # Install requirements
-    print('\n[4/5] Installing requirements into embedded Python...')
+    print('\n[5/6] Installing requirements into embedded Python...')
     _validate_requirements_file(REQUIREMENTS)
 
     if not _requirements_changed():
@@ -832,7 +882,7 @@ def _ensure_innosetup(tqdm, requests) -> None:
         print('Download Inno Setup manually:\n  https://jrsoftware.org/isdl.php')
         return
 
-    print('\n[5/5] Installing Inno Setup...')
+    print('\n[6/6] Installing Inno Setup...')
     _check_network('https://api.github.com')
 
     api_url = INNO_SETUP_RELEASES_API
@@ -894,9 +944,9 @@ def _pick_innosetup_asset(assets: list[dict], inquirer_mod: Any | None) -> dict 
     if inquirer_mod is None:
         print('  Multiple Inno Setup .exe files found:')
         for a in assets:
-            print(f'    - {a['name']}')
+            print(f'    - {a["name"]}')
         print(
-            '  Install 'inquirer' (pip install inquirer) to enable interactive selection.'
+            "  Install 'inquirer' (pip install inquirer) to enable interactive selection."
         )
         print('  Defaulting to the first asset.')
         return assets[0]

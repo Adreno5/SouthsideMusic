@@ -150,6 +150,8 @@ class FavoritesPage(QWidget):
             return
         self.refresh()
 
+        event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+
     @property
     def _dp(self):
         return self.ctx.playing_page
@@ -207,12 +209,11 @@ class FavoritesPage(QWidget):
         self._cloud_loading = True
         result: list[SongStorable] = []
         folder_id = folder.id
-        mwindow = self._mwindow
 
         def _fetch():
             nonlocal result
             result = getBackend().getPlaylistTracks(folder_id)
-            mwindow.addScheduledTask(_apply)
+            self.ctx.addScheduledTask(_apply)
 
         def _apply():
             self._cloud_loading = False

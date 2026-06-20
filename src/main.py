@@ -1,6 +1,10 @@
 from __future__ import annotations
+import json
+import subprocess
 import sys
 import os
+import traceback
+from pathlib import Path
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'views'))
@@ -137,8 +141,6 @@ def patchedExceptHook(
 
 sys.excepthook = patchedExceptHook
 
-import subprocess  # noqa: E402
-
 original_popen = subprocess.Popen
 
 
@@ -153,9 +155,6 @@ def patched_popen(*args, **kwargs):
 
 subprocess.Popen = patched_popen  # type: ignore
 subprocess.call = patched_popen  # type: ignore
-
-import traceback
-from pathlib import Path
 
 _ims.QApplication.setHighDpiScaleFactorRoundingPolicy(
     _ims.Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
@@ -187,6 +186,69 @@ ws_handler.onConnected.connect(_on_ws_connected)
 ws_handler.onDisconnected.connect(_on_ws_disconnected)
 
 
+def _handle_ws_message(message: str) -> None:
+    try:
+        payload = json.loads(message)
+    except json.JSONDecodeError:
+        _logger.debug('ignored non-json websocket message: %s', message)
+        return
+
+    if not isinstance(payload, dict):
+        return
+    if payload.get('option') != 'music_control':
+        return
+
+    command = payload.get('command')
+
+    def _run() -> None:
+        if command == 'toggle':
+            if mwindow and getattr(mwindow, 'controller', None):
+                mwindow.controller.toggle()
+            else:
+                player_obj = globals().get('player')
+                if player_obj is None:
+                    return
+                if player_obj.isPlaying():
+                    player_obj.pause()
+                    _ims.event_bus.emit(_ims.PLAY_STATE_CHANGED, False)
+                else:
+                    player_obj.resume()
+                    _ims.event_bus.emit(_ims.PLAY_STATE_CHANGED, True)
+        elif command == 'seek':
+            player_obj = globals().get('player')
+            if player_obj is None:
+                return
+            try:
+                position = float(payload.get('position', 0.0))
+            except (TypeError, ValueError):
+                return
+            player_obj.setPosition(max(0.0, position))
+        elif command == 'next':
+            _ims.event_bus.emit(_ims.PLAYNEXT)
+        elif command == 'previous':
+            _ims.event_bus.emit(_ims.PLAYLAST)
+
+    if mwindow and getattr(mwindow, 'ctx', None):
+        mwindow.ctx.addScheduledTask(_run)
+    else:
+        _ims.QTimer.singleShot(0, _run)
+
+
+ws_handler.onMessage.connect(_handle_ws_message)
+_ims.event_bus.subscribe(
+    _ims.PLAY_STATE_CHANGED,
+    lambda is_playing: ws_handler.sendJson(
+        {
+            'option': 'play_state',
+            'is_playing': bool(is_playing),
+            'position': player.getPosition(),
+            'duration': player.getLength()
+        },
+        coalesce_key='play_state',
+    ),
+)
+
+
 if __name__ == '__main__':
     assert launchwindow is not None
     launchwindow.subtitle('Phase 1 (start core...)')
@@ -209,7 +271,7 @@ if __name__ == '__main__':
             _ims.event_bus.emit(_ims.POST_THEME_CHANGED)
 
         if mwindow:
-            mwindow.addScheduledTask(_updateTheme)
+            mwindow.ctx.addScheduledTask(_updateTheme)
 
     _ims.event_bus.subscribe(_ims.PRE_THEME_CHANGED, _themeChanged)
 
@@ -311,10 +373,12 @@ if __name__ == '__main__':
     depwindow = DependencesWindow(ctx)
 
     def _postStageInit():
+        global mwindow
+
         if not launchwindow:
             return
         launchwindow.push('Initializing events services...')
-        events_service = EventsServices(ctx)
+        ctx.events_service = EventsServices(ctx)
 
         launchwindow.push('Initializing debug window...')
         dw = Debugging(ctx)
@@ -359,7 +423,7 @@ if __name__ == '__main__':
 
         print(ncm.getCurrentSession().bindings)
 
-        _ims.QTimer.singleShot(2000, lambda: startUpdateCheck(mwindow))
+        _ims.QTimer.singleShot(2000, lambda: startUpdateCheck(mwindow)) # type: ignore
 
         _logger.debug(f'{sys.path=}')
 

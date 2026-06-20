@@ -155,6 +155,8 @@ class CloudFolderCard(QWidget):
 
             def _download():
                 image_bytes = requests.get(self.folder.image_url).content
+                with open(file, 'wb') as f:
+                    f.write(image_bytes)
 
                 def applyPixmap():
                     pixmap = QPixmap()
@@ -167,10 +169,7 @@ class CloudFolderCard(QWidget):
                         )
                         self.img_label.setPixmap(scaled)
 
-                    with open(file, 'wb') as f:
-                        f.write(image_bytes)
-
-                self._ctx.main_window.addScheduledTask(applyPixmap)
+                self._ctx.addScheduledTask(applyPixmap)
 
             asyncTask(_download, (), self._ctx.main_window)
         else:
@@ -262,6 +261,8 @@ class SearchCloudFolderCard(QWidget):
 
             def _download():
                 image_bytes = requests.get(self.folder.image_url).content
+                with open(file, 'wb') as f:
+                    f.write(image_bytes)
 
                 def applyPixmap():
                     pixmap = QPixmap()
@@ -274,10 +275,7 @@ class SearchCloudFolderCard(QWidget):
                         )
                         self.img_label.setPixmap(scaled)
 
-                    with open(file, 'wb') as f:
-                        f.write(image_bytes)
-
-                self._ctx.main_window.addScheduledTask(applyPixmap)
+                self._ctx.addScheduledTask(applyPixmap)
 
             asyncTask(_download, (), self._ctx.main_window)
         else:

@@ -32,6 +32,9 @@ from imports import (
     QSlider,
     QVBoxLayout,
     QWidget,
+    QSizePolicy,
+    QSpacerItem,
+    QTimer
 )
 from qfluentwidgets import (
     CardWidget,
@@ -57,6 +60,7 @@ from core.ws_server import (
 )
 
 from views.list_widget import SScrollArea
+from views.number_viewer import NumberViewer, SettableNumberViewer
 
 
 class SectionContainer(QWidget):
@@ -527,14 +531,23 @@ class SettingPage(QWidget):
         self.target_lufs.setSingleStep(1)
         self.target_lufs.setValue(cfg.target_lufs)
         self.target_lufs_label = SubtitleLabel(
-            tr('setting_page.target_lufs_value', value=cfg.target_lufs)
+            tr('setting_page.target_lufs_value')
         )
         self.addSetting(
             'setting_page.target_lufs',
             'setting_page.restart_to_apply_loudness_changes',
             self.target_lufs,
         )
-        self.addSeparateWidget(self.target_lufs_label)
+        middle_widget = QWidget()
+        middle_layout = QHBoxLayout()
+        middle_layout.addWidget(self.target_lufs_label)
+        self.target_lufs_viewer = NumberViewer(self.ctx.harmony_font_family, self.ctx)
+        self.target_lufs_viewer.setText(str(cfg.target_lufs))
+        middle_layout.addWidget(self.target_lufs_viewer)
+        middle_layout.addSpacerItem(QSpacerItem(10, 10, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        middle_layout.setSpacing(8)
+        middle_widget.setLayout(middle_layout)
+        self.addSeparateWidget(middle_widget)
         self.addInfoBlock(
             'setting_page.reference',
             'setting_page.range_60_quietest_0_loudest_recommend_16_18_youtube_14_lufs_netflix_27',
@@ -546,10 +559,47 @@ class SettingPage(QWidget):
             'setting_page.connection',
             'setting_page.southside_client_websocket_status_and_controls',
         )
-        self.southsideclient_status_label = SubtitleLabel(
-            "Connection Status: <span style='color: red;'>Disconnected</span>"
-        )
+        self.southsideclient_status_label = SubtitleLabel()
         self.addSeparateWidget(self.southsideclient_status_label)
+
+        self.status_widget = QWidget()
+        status_layout = QHBoxLayout()
+        prefix_label = QLabel('')
+        bindText(prefix_label, 'setting_page.sent_size')
+        self.sent_label = NumberViewer(self.ctx.harmony_font_family, self.ctx)
+        self.update_statuses_timer = QTimer(self)
+        status_layout.addWidget(prefix_label)
+        status_layout.addWidget(self.sent_label)
+        status_layout.addWidget(QLabel('MB'))
+        status_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+
+        prefix_label = QLabel('')
+        bindText(prefix_label, 'setting_page.received_size')
+        self.received_label = NumberViewer(self.ctx.harmony_font_family, self.ctx)
+        status_layout.addWidget(prefix_label)
+        status_layout.addWidget(self.received_label)
+        status_layout.addWidget(QLabel('KB'))
+        status_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        status_layout.setSpacing(8)
+        self.status_widget.setLayout(status_layout)
+        self.addSeparateWidget(self.status_widget)
+
+        prefix_label = QLabel('')
+        bindText(prefix_label, 'setting_page.latency')
+        self.latency_label = NumberViewer(self.ctx.harmony_font_family, self.ctx)
+        status_layout.addWidget(prefix_label)
+        status_layout.addWidget(self.latency_label)
+        status_layout.addWidget(QLabel('ms'))
+        status_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        status_layout.setSpacing(8)
+        self.status_widget.setLayout(status_layout)
+        self.addSeparateWidget(self.status_widget)
+
+        self.update_statuses_timer.timeout.connect(lambda: self.sent_label.setText(f'{self.ctx.ws_handler.sent:.2f}'))
+        self.update_statuses_timer.timeout.connect(lambda: self.received_label.setText(f'{self.ctx.ws_handler.received:.2f}'))
+        self.update_statuses_timer.timeout.connect(lambda: self.latency_label.setText(f'{self.ctx.ws_handler.ping:.2f}'))
+        self.update_statuses_timer.start(200)
+
         self.disconnect_btn = TransparentPushButton('')
         bindText(self.disconnect_btn, 'setting_page.disconnect')
         bindIcon(self.disconnect_btn, 'disc')
@@ -568,6 +618,7 @@ class SettingPage(QWidget):
         connection_layout.addStretch(1)
         connection_buttons.setLayout(connection_layout)
         self.addSeparateWidget(connection_buttons)
+        self._refreshConnectionStatus()
 
         for slider in self.findChildren(QSlider):
             slider.wheelEvent = lambda e: e.ignore()  # type: ignore[method-assign]
@@ -608,11 +659,10 @@ class SettingPage(QWidget):
         configurationName: str,
         onChanged: Callable[[float], None] | None = None,
     ) -> None:
-        box = DoubleSpinBox()
+        box = SettableNumberViewer(self.ctx.harmony_font_family, self.ctx)
         box.setRange(min, max_v)
-        box.setValue(getattr(cfg, configurationName))
         box.setSingleStep(step)
-        box.setDecimals(max(int(len(str(step)) - 2), 0))
+        box.setValue(getattr(cfg, configurationName))
 
         def _valueChanged(value: float | int):
             setattr(cfg, configurationName, value)
@@ -791,24 +841,25 @@ class SettingPage(QWidget):
     def disconnectFromSouthsideClient(self):
         self._ws_server.tryGetHandler()
         self._ws_server.stop()
-        self._ws_server.join()
         self._ws_handler.onDisconnected.emit()
 
         self.disconnect_btn.setEnabled(False)
         self.connect_btn.setEnabled(True)
 
-    def connectToSouthsideClient(self):
-        _ws_server = WebSocketServer(port=15489)
-        _ws_server.start()
+    def connectToSouthsideClient(self) -> None:
+        self._ws_server = WebSocketServer(port=15489)
+        self.ctx.ws_server = self._ws_server
+        main_window = getattr(self.ctx, 'main_window', None)
+        if main_window is not None:
+            main_window._ws_server = self._ws_server
+        self._ws_server.start()
 
         self.connect_btn.setEnabled(False)
 
     def onTargetLUFSChanged(self, value: int):
         cfg.target_lufs = value
-        if hasattr(self, 'target_lufs_label'):
-            self.target_lufs_label.setText(
-                tr('setting_page.target_lufs_value', value=value)
-            )
+        if hasattr(self, 'target_lufs_viewer'):
+            self.target_lufs_viewer.setText(f'{value}')
         event_bus.emit(LUFS_TARGET_CHANGED, value)
 
     def _refreshLanguageBox(self) -> None:
@@ -859,17 +910,15 @@ class SettingPage(QWidget):
 
     def _refreshConnectionStatus(self, connected: bool | None = None) -> None:
         if connected is None:
-            connected = (
-                self.disconnect_btn.isEnabled()
-                if hasattr(self, 'disconnect_btn')
-                else False
-            )
+            connected = self._ws_handler.is_open
         status = (
             tr('setting_page.connected')
             if connected
             else tr('setting_page.disconnected')
         )
         color = 'green' if connected else 'red'
+        self.disconnect_btn.setEnabled(connected)
+        self.connect_btn.setEnabled(not connected)
         self.southsideclient_status_label.setText(
             tr(
                 'setting_page.connection_status_span_style_color_color_status_span',
@@ -877,3 +926,4 @@ class SettingPage(QWidget):
                 status=status,
             )
         )
+        self.status_widget.setVisible(connected)

@@ -56,8 +56,7 @@ uv run python -m pytest tests/test_foo.py -k name  # one test by expression
 uv run python -m pytest tests/test_foo.py::test_x  # one exact test
 ```
 
-For small non-test changes, prefer narrow validation first: `python -m py_compile
-<file>`, then `uv run ruff check <file>`, then broader lint/type checks if useful.
+For small non-test changes, prefer narrow validation first: `python -m py_compile <file>`, then `uv run ruff check <file>`, then broader lint/type checks if useful.
 
 ## Project Structure
 
@@ -177,3 +176,13 @@ from imports import QTimer, QVBoxLayout, QWidget, Qt, Signal, event_bus
 - Avoid factories, DI containers, state machines, caching layers, observer wrappers.
 - Prefer `self.lst.clear()` and rebuild over complex diff/reconciliation logic.
 - Fix root causes, but keep the edit surface local.
+
+# Southside Dual Workspace(Only in Codex)
+
+Python project:
+D:\PythonProjects\SouthsideMusic
+
+Java project:
+D:\Path\To\JavaClient
+
+跨端协议任务必须先读两个项目的入口说明，再确认 Python 发出的 JSON 字段和 Java 消费字段是否一致。

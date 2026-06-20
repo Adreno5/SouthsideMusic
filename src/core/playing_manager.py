@@ -5,6 +5,7 @@ import io
 import logging
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import threading
 from dataclasses import dataclass
@@ -20,8 +21,9 @@ from core.audio_player import (
 )
 from core.backend import getBackend
 from core.config import cfg
-from core.downloader import asyncTask, asyncDownload, downloadStream
+from core.downloader import asyncTask, asyncDownload
 from core.favorites import saveFavorites
+from core.free_threaded_worker import FreeThreadedJsonSender
 from core.image import getAverageColorFromBytes
 from core.loudness import getAdjustedGainFactor
 from core.models import (
@@ -43,6 +45,7 @@ from services.events.events import (
     PLAY_START_PLAYLIST,
     PLAY_STATE_CHANGED,
     PLAY_STORABLE,
+    POST_PLAY_STORABLE,
     PLAYBACK_ERROR,
     PLAYBACK_IMAGE_LOADED,
     PLAYBACK_LYRICS_UPDATED,
@@ -67,7 +70,10 @@ _AUDIO_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
 }
-_STREAM_PLAY_MIN_BYTES = 1024 * 1024
+_STREAM_SAMPLE_RATE = 44100
+_STREAM_CHANNELS = 2
+_STREAM_PCM_READ_BYTES = _STREAM_SAMPLE_RATE * _STREAM_CHANNELS * 4
+_STREAM_PLAY_MIN_SECONDS = 5.0
 
 
 @dataclass(frozen=True)
@@ -100,9 +106,16 @@ class PlayingManager:
         self._preload_download_seq = 0
         self._preload_download_song_id: str | None = None
         self._pending_play_selection: PlaySelection | None = None
+        self._ft_worker = FreeThreadedJsonSender(logger=self._logger)
 
         if ctx is not None:
             self._bindEvents()
+            ctx.app.aboutToQuit.connect(self.shutdownWorkers)
+            threading.Thread(
+                target=self._warmFreeThreadedWorker,
+                daemon=True,
+                name='southside-ft-worker-warmup',
+            ).start()
 
     @property
     def _app(self):
@@ -177,11 +190,73 @@ class PlayingManager:
         event_bus.emit(PLAYBACK_ERROR, title, message)
 
     def _schedule(self, func: Callable, *args) -> None:
-        mwindow = self._mwindow_obj
-        if mwindow is not None:
-            mwindow.addScheduledTask(func, *args)
-        else:
-            func(*args)
+        self.ctx.addScheduledTask(func, *args)
+
+    def shutdownWorkers(self) -> None:
+        self._ft_worker.shutdown()
+
+    def _warmFreeThreadedWorker(self) -> None:
+        self._callFreeThreadedWorker('base64_decode', {'data': ''}, timeout=10.0)
+
+    def _callFreeThreadedWorker(
+        self,
+        op: str,
+        payload: dict[str, object],
+        timeout: float,
+    ) -> object | None:
+        try:
+            return self._ft_worker.call(op, payload, timeout=timeout)
+        except Exception as e:
+            self._logger.debug('free-threaded worker %s failed: %s', op, e)
+            return None
+
+    def _averageColorFromBytes(self, image_bytes: bytes) -> list[float]:
+        allow_local_fallback = threading.current_thread() is not threading.main_thread()
+        timeout = 1.5 if allow_local_fallback else 0.1
+        if allow_local_fallback or self._ft_worker.is_running():
+            result = self._callFreeThreadedWorker(
+                'average_color',
+                {'image': image_bytes},
+                timeout=timeout,
+            )
+            if isinstance(result, (list, tuple)) and len(result) >= 3:
+                return [float(result[0]), float(result[1]), float(result[2])]
+        if allow_local_fallback:
+            return getAverageColorFromBytes(image_bytes)
+        return [128, 128, 128]
+
+    def _computeLoudnessGain(
+        self,
+        target_lufs: float,
+        audio: AudioSegment_,
+    ) -> float:
+        try:
+            samples = audio.get_array_of_samples()
+            result = self._callFreeThreadedWorker(
+                'loudness_gain',
+                {
+                    'target_lufs': float(target_lufs),
+                    'samples': samples.tobytes(),
+                    'sample_width': int(audio.sample_width),
+                    'frame_rate': int(audio.frame_rate),
+                },
+                timeout=30.0,
+            )
+            if isinstance(result, (int, float)) and np.isfinite(result):
+                return float(result)
+        except Exception as e:
+            self._logger.debug('free-threaded loudness payload failed: %s', e)
+        return getAdjustedGainFactor(target_lufs, audio)
+
+    def _decodeBase64(self, data: str) -> bytes:
+        result = self._callFreeThreadedWorker(
+            'base64_decode',
+            {'data': data},
+            timeout=10.0,
+        )
+        if isinstance(result, bytes):
+            return result
+        return base64.b64decode(data)
 
     def setPlaylist(self, playlist: list[SongStorable]) -> None:
         self.playlist = playlist
@@ -497,7 +572,10 @@ class PlayingManager:
 
                 self.next_song_audio = audio  # type: ignore
                 if next_song.target_lufs != cfg.target_lufs:
-                    gain = getAdjustedGainFactor(cfg.target_lufs, self.next_song_audio)  # type: ignore
+                    gain = self._computeLoudnessGain(
+                        cfg.target_lufs,
+                        self.next_song_audio,  # type: ignore[arg-type]
+                    )
                     self._setStorableLoudness(next_song, cfg.target_lufs, gain)
                 else:
                     gain = next_song.loudness_gain
@@ -821,7 +899,7 @@ class PlayingManager:
         try:
             image_bytes = song_storable.get_image_bytes()
             result['image'] = image_bytes
-            result['avg_color'] = getAverageColorFromBytes(image_bytes)
+            result['avg_color'] = self._averageColorFromBytes(image_bytes)
         except Exception:
             self._logger.exception('failed to load image bytes for playback')
 
@@ -850,6 +928,7 @@ class PlayingManager:
         self._compute_gain_async(song_storable, gain_audio)
         self._download_update_lyrics(song_storable)
 
+        event_bus.emit(SONG_CHANGED, song_storable)
         image_bytes = result.get('image')
         avg_color = result.get('avg_color')
         if isinstance(image_bytes, bytes):
@@ -859,9 +938,8 @@ class PlayingManager:
                 image_bytes,
                 avg_color,
             )
-
-        event_bus.emit(SONG_CHANGED, song_storable)
         event_bus.emit(PLAY_STATE_CHANGED, not pause_after_load)
+        event_bus.emit(POST_PLAY_STORABLE, song_storable)
 
     def _playDownloadingStorable(
         self,
@@ -877,7 +955,13 @@ class PlayingManager:
 
         prepared: PrepareInfo = PrepareInfo(error=None, image=None, music_url=None)
         result: dict[str, object] = {}
-        state = {'started': False, 'starting': False}
+        state = {
+            'started': False,
+            'starting': False,
+            'download_success': False,
+            'cancelled': False,
+        }
+        download_done = threading.Event()
         temp_path: Path | None = None
 
         def _is_current() -> bool:
@@ -896,13 +980,10 @@ class PlayingManager:
             player = self._player
             if player is None:
                 return
-            try:
-                audio = player.loadGrowingFile(path)
-            except Exception:
+            if player.getLoadedTime() <= 0:
                 return
 
             state['started'] = True
-            result['audio'] = audio
             self.total_length = self._storableDuration(
                 song_storable,
                 player.getLength(),
@@ -943,97 +1024,138 @@ class PlayingManager:
                     _emit_progress,
                     min(1.0, downloaded / total_size),
                 )
-            if downloaded >= _STREAM_PLAY_MIN_BYTES or (
-                total_size > 0 and downloaded >= total_size
-            ):
-                if temp_path is not None:
-                    _schedule_start(temp_path)
 
-        def _download(path: Path, music_url: str) -> None:
+        def _cancel_process(process: subprocess.Popen[bytes]) -> None:
+            state['cancelled'] = True
+            try:
+                process.terminate()
+            except OSError:
+                pass
+
+        def _decode_stream(path: Path, process: subprocess.Popen[bytes]) -> None:
             success = False
             try:
-                success, _total_size = downloadStream(
+                stdout = process.stdout
+                if stdout is None:
+                    _cancel_process(process)
+                    download_done.wait()
+                    return
+                while True:
+                    pcm_data = stdout.read(_STREAM_PCM_READ_BYTES)
+                    if not pcm_data:
+                        break
+                    player = self._player
+                    if player is None or not _is_current():
+                        _cancel_process(process)
+                        download_done.wait()
+                        return
+                    loaded_time = player.appendGrowingStreamPcm(
+                        path,
+                        pcm_data,
+                        _STREAM_CHANNELS,
+                    )
+                    if loaded_time >= _STREAM_PLAY_MIN_SECONDS:
+                        _schedule_start(path)
+                returncode = process.wait()
+                download_done.wait()
+                success = returncode == 0 and state['download_success']
+            except Exception:
+                self._logger.exception('failed to decode streaming audio')
+            finally:
+                self._schedule(_on_stream_finished, path, success)
+
+        def _download(
+            path: Path,
+            music_url: str,
+            process: subprocess.Popen[bytes],
+        ) -> None:
+            success = False
+            downloaded = 0
+            total_size = 0
+            try:
+                with requests.get(
                     music_url,
-                    str(path),
-                    _on_progress,
                     headers=_AUDIO_HEADERS,
-                )
+                    stream=True,
+                    timeout=30,
+                ) as response:
+                    response.raise_for_status()
+                    content_length = response.headers.get('content-length')
+                    if content_length:
+                        total_size = int(content_length)
+
+                    stdin = process.stdin
+                    with open(path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=65536):
+                            if not chunk:
+                                continue
+                            if not _is_current():
+                                state['cancelled'] = True
+                                return
+                            f.write(chunk)
+                            f.flush()
+                            if stdin is not None:
+                                try:
+                                    stdin.write(chunk)
+                                    stdin.flush()
+                                except (BrokenPipeError, OSError):
+                                    stdin = None
+                            downloaded += len(chunk)
+                            _on_progress(downloaded, total_size)
+
+                success = True
                 if success:
                     try:
                         with open(path, 'rb') as f:
                             music_bytes = f.read()
                         song_storable.cache_audio(music_bytes)
                         saveFavorites()
-                        result['complete_audio'] = AudioSegment_.from_file(
-                            io.BytesIO(music_bytes)
-                        )
                     except Exception:
                         self._logger.exception(
                             'failed to persist complete streaming audio'
                         )
                         success = False
+            except Exception:
+                if not state['cancelled']:
+                    self._logger.exception('failed to download streaming audio')
             finally:
-                self._schedule(_on_download_finished, path, success)
+                state['download_success'] = success
+                try:
+                    if process.stdin is not None:
+                        process.stdin.close()
+                except OSError:
+                    pass
+                if not success:
+                    _cancel_process(process)
+                download_done.set()
 
-        def _on_download_finished(path: Path, success: bool) -> None:
+        def _on_stream_finished(path: Path, success: bool) -> None:
             _stop_progress()
+            player = self._player
             if not success:
-                player = self._player
                 if _is_current() and state['started'] and player is not None:
-                    player.finishGrowingFile(path)
+                    player.finishGrowingStream(path)
                 _cleanup(path)
                 if _is_current() and not state['started']:
-                    self._emitError(
-                        'Playback failed',
-                        'Failed to download missing cached files.',
-                    )
+                    if state['download_success']:
+                        self.playStorable(song_storable)
+                    else:
+                        self._emitError(
+                            'Playback failed',
+                            'Failed to download missing cached files.',
+                        )
                 return
 
-            player = self._player
             if _is_current() and player is not None:
+                player.finishGrowingStream(path)
                 if state['started']:
-                    complete_audio = result.get('complete_audio')
-                    if isinstance(complete_audio, AudioSegment_):
-                        player.finishGrowingFile(path, complete_audio)
-                        self.total_length = self._storableDuration(
-                            song_storable,
-                            player.getLength(),
-                        )
-                        self._compute_gain_async(song_storable, complete_audio)
-                    else:
-                        player.finishGrowingFile(path)
-                    _cleanup(path)
-                else:
-                    try:
-                        audio = player.loadGrowingFile(path, complete=True)
-                    except Exception:
-                        _cleanup(path)
-                        self.playStorable(song_storable)
-                        return
-                    state['started'] = True
-                    result['audio'] = audio
                     self.total_length = self._storableDuration(
                         song_storable,
                         player.getLength(),
                     )
-                    if (
-                        song_storable.target_lufs == cfg.target_lufs
-                        and song_storable.loudness_gain != 1.0
-                    ):
-                        player.setGain(song_storable.loudness_gain)
-                    player.play()
-                    self._loadPlaybackImage(song_storable, result)
-                    self._finishPlaybackLoad(
-                        song_storable,
-                        play_seq,
-                        result,
-                        False,
-                        mark_loaded,
-                        audio,
-                    )
-                    _cleanup(path)
-            else:
-                _cleanup(path)
+                else:
+                    _try_start_playback(path)
+            _cleanup(path)
 
         def _prepare() -> None:
             try:
@@ -1091,8 +1213,53 @@ class PlayingManager:
             temp_path = Path(raw_path)
             event_bus.emit(START_PROGRESS_LOADING)
             event_bus.emit(UPDATE_LOADING_PROGRESS, 0.0)
+            player = self._player
+            if player is None:
+                _cleanup(temp_path)
+                return
+            try:
+                player.loadGrowingStream(
+                    temp_path,
+                    _STREAM_SAMPLE_RATE,
+                    _STREAM_CHANNELS,
+                )
+                process = subprocess.Popen(
+                    [
+                        AudioSegment_.converter,
+                        '-hide_banner',
+                        '-loglevel',
+                        'error',
+                        '-i',
+                        'pipe:0',
+                        '-vn',
+                        '-f',
+                        'f32le',
+                        '-acodec',
+                        'pcm_f32le',
+                        '-ac',
+                        str(_STREAM_CHANNELS),
+                        '-ar',
+                        str(_STREAM_SAMPLE_RATE),
+                        'pipe:1',
+                    ],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                _cleanup(temp_path)
+                self._logger.exception('failed to start streaming decoder')
+                self._emitError(
+                    'Playback failed',
+                    'Failed to start streaming playback.',
+                )
+                return
             threading.Thread(
-                target=lambda: _download(temp_path, music_url),
+                target=lambda: _decode_stream(temp_path, process),
+                daemon=True,
+            ).start()
+            threading.Thread(
+                target=lambda: _download(temp_path, music_url, process),
                 daemon=True,
             ).start()
 
@@ -1242,13 +1409,12 @@ class PlayingManager:
             player = self._player
             if player is None:
                 return
-            gain = getAdjustedGainFactor(cfg.target_lufs, raw_audio)
+            gain = self._computeLoudnessGain(cfg.target_lufs, raw_audio)
             self._setStorableLoudness(song_storable, cfg.target_lufs, gain)
             if self.current_song is song_storable:
-                if self._mwindow_obj is not None:
-                    self._mwindow_obj.addScheduledTask(
-                        lambda g=gain: player.animateLoudnessGain(g)
-                    )
+                self.ctx.addScheduledTask(
+                    lambda g=gain: player.animateLoudnessGain(g)
+                )
 
         threading.Thread(target=_compute_and_apply, daemon=True).start()
 
@@ -1313,7 +1479,7 @@ class PlayingManager:
         asyncTask(_download, (), self._mwindow_obj, _apply)
 
     def loadMusicFromBase64(self, content_base64: str, gain: float) -> None:
-        self.loadMusicFromBytes(base64.b64decode(content_base64), gain)
+        self.loadMusicFromBytes(self._decodeBase64(content_base64), gain)
 
     def loadMusicFromBytes(self, music_bytes: bytes, gain: float) -> None:
         self._logger.debug(f'loading data {len(music_bytes)}')

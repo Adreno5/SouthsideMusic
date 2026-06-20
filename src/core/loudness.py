@@ -1,11 +1,16 @@
+from __future__ import annotations
+
 from functools import lru_cache
 import logging
-from pydub import AudioSegment
+from typing import TYPE_CHECKING
 
 from textwrap import dedent
 import scipy.signal
 import warnings
 import numpy as np
+
+if TYPE_CHECKING:
+    from pydub import AudioSegment
 
 _logger = logging.getLogger(__name__)
 
@@ -208,22 +213,22 @@ class Meter(object):
 
         for i in range(numChannels):
             for j in j_range:
-                l = int(T_g * (j * step) * self.rate)
+                start = int(T_g * (j * step) * self.rate)
                 u = int(T_g * (j * step + 1) * self.rate)
                 z[i, j] = (1.0 / (T_g * self.rate)) * np.sum(
-                    np.square(input_data[l:u, i])
+                    np.square(input_data[start:u, i])
                 )
 
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', category=RuntimeWarning)
-            l = [
+            loudness_blocks = [
                 -0.691
                 + 10.0 * np.log10(np.sum([G[i] * z[i, j] for i in range(numChannels)]))
                 for j in j_range
             ]
-        self.blockwise_loudness = l
+        self.blockwise_loudness = loudness_blocks
 
-        J_g = [j for j, l_j in enumerate(l) if l_j >= Gamma_a]
+        J_g = [j for j, l_j in enumerate(loudness_blocks) if l_j >= Gamma_a]
 
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', category=RuntimeWarning)
@@ -235,7 +240,11 @@ class Meter(object):
             - 10.0
         )
 
-        J_g = [j for j, l_j in enumerate(l) if (l_j > Gamma_r and l_j > Gamma_a)]
+        J_g = [
+            j
+            for j, l_j in enumerate(loudness_blocks)
+            if (l_j > Gamma_r and l_j > Gamma_a)
+        ]
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', category=RuntimeWarning)
             z_avg_gated = np.nan_to_num(
@@ -366,6 +375,26 @@ class Meter(object):
 
 def getAdjustedGainFactor(target_lufs: float, audio: AudioSegment) -> float:
     return getAdjustedGainFactor_impl(target_lufs, audio)
+
+
+def getAdjustedGainFactorFromSamples(
+    target_lufs: float,
+    samples_bytes: bytes,
+    sample_width: int,
+    frame_rate: int,
+) -> float:
+    dtype_map = {1: np.int8, 2: np.int16, 4: np.int32}
+    dtype = dtype_map[sample_width]
+    samples = np.frombuffer(samples_bytes, dtype=dtype).astype(np.float32)
+    max_val = np.iinfo(dtype).max  # type: ignore[type-var]
+    samples = samples / max_val  # type: ignore[assignment]
+
+    meter = Meter(frame_rate)
+    loudness = meter.integratedLoudness(samples)
+
+    gain = 10 ** ((target_lufs - loudness) / 20.0)
+    _logger.info(f'loudness adjusted, {gain=}, {target_lufs=}')
+    return gain
 
 
 @lru_cache(maxsize=1024)

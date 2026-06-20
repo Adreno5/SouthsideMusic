@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import json
 import logging
 
 import sys
-import threading
 import time
-from typing import Any, Callable
 
 from core.app_context import AppContext
 
@@ -48,7 +45,6 @@ from imports import (
     QWheelEvent,
     Qt,
     QTimer,
-    Signal,
     TransparentPushButton,
     bindText,
     event_bus,
@@ -131,8 +127,6 @@ class DebugOverlay(QWidget):
 
 
 class MainWindow(FluentWindowBase):
-    scheduledTaskRequested = Signal()
-
     def __init__(
         self,
         ctx: AppContext,
@@ -141,7 +135,7 @@ class MainWindow(FluentWindowBase):
         super().__init__(parent)
         self._logger = logging.getLogger(__name__)
         self.ctx = ctx
-        ctx.main_window = self
+        ctx.main_window = self # type: ignore
         self._app = ctx.app
         self._dp = ctx.playing_page
         self._sp = ctx.search_page
@@ -168,11 +162,6 @@ class MainWindow(FluentWindowBase):
 
         self.contents_widget.currentChanged.connect(self.onStackedWidgetChanged)
 
-        self._scheduled_tasks: list[
-            tuple[Callable, tuple[Any, ...], dict[str, Any]]
-        ] = []
-        self._scheduled_tasks_lock = threading.Lock()
-        self.scheduledTaskRequested.connect(self._runScheduledTasks)
         self.setTitleBar(SouthsideMusicTitleBar(self))
 
         contents_layout = QHBoxLayout()
@@ -450,12 +439,7 @@ class MainWindow(FluentWindowBase):
 
         self.delta = 1 / self.refresh_rate
 
-    def updateDatas(self):
-        now = time.perf_counter_ns()
-        _elapsed: float = (now - self.last_draw) / 1_000_000_000
-        self.last_draw = now
-        multiple_factor = _elapsed * self.refresh_rate / 2
-
+    def updateDatas(self, multiple_factor: float = 1.0) -> None:
         loading = self.loading_progressing or self.loading_tasks > 0
 
         self.bar_height += (
@@ -497,22 +481,8 @@ class MainWindow(FluentWindowBase):
         if self.ctx.debugging:
             self.debug_overlay.refresh()
 
-    def addScheduledTask(self, task: Callable, *args, **kwargs) -> None:
-        with self._scheduled_tasks_lock:
-            self._scheduled_tasks.append((task, args, kwargs))
-        self.scheduledTaskRequested.emit()
-
-    def _runScheduledTasks(self) -> None:
-        while True:
-            with self._scheduled_tasks_lock:
-                if not self._scheduled_tasks:
-                    return
-                task, args, kwargs = self._scheduled_tasks.pop(0)
-            try:
-                task(*args, **kwargs)
-            except Exception as e:
-                self._logger.exception('scheduled task failed')
-                raise e
+    def addScheduledTask(self, task, *args, **kwargs) -> None:
+        self.ctx.addScheduledTask(task, *args, **kwargs)
 
     def play(self, card: SearchSongCard) -> None:
         self._logger.debug(card.info.id)
@@ -550,7 +520,7 @@ class MainWindow(FluentWindowBase):
                     def _continue():
                         event_bus.emit(PLAY_CONTINUE_LAST_SONG, cfg.last_playing_index)
 
-                    self.addScheduledTask(_continue)
+                    self.ctx.addScheduledTask(_continue)
 
             self._launchwindow.top('refreshing login information')
             self._sep.refreshInformations()
@@ -566,7 +536,7 @@ class MainWindow(FluentWindowBase):
                 if favorites_manager.folders:
                     self._fp.setDisplayFolder(favorites_manager.folders[0])
 
-            self.addScheduledTask(_show)
+            self.ctx.addScheduledTask(_show)
 
         asyncTask(_init, (), self, finished=_finish_init)
 
@@ -607,7 +577,9 @@ class MainWindow(FluentWindowBase):
         self.folders_list.setItemWidget(item, widget)
 
         def _cloud():
-            self.addScheduledTask(lambda: self._addFolderHeader('main_window.cloud'))
+            self.ctx.addScheduledTask(
+                lambda: self._addFolderHeader('main_window.cloud')
+            )
             playlists = getBackend().getUserPlaylists()
 
             def add():
@@ -638,7 +610,7 @@ class MainWindow(FluentWindowBase):
 
                 self.refresh_button.setEnabled(True)
 
-            self.addScheduledTask(add)
+            self.ctx.addScheduledTask(add)
 
         if not getBackend().userAnonymous():
             asyncTask(_cloud, (), self)
@@ -692,8 +664,7 @@ class MainWindow(FluentWindowBase):
         self.hide()
         self._player.stop()
 
-        self._ws_server.stop()
-        self._ws_server.join()
+        self._ws_server.stop(shutdown_json_sender=True)
 
         cfg.last_playlist = self._dp.playlist.copy()
         cfg.last_playing_index = self._dp.current_index
@@ -707,10 +678,6 @@ class MainWindow(FluentWindowBase):
 
         saveConfig()
         saveFavorites()
-
-        self._ws_server.stop()
-        self._ws_server.join()
-        self._player.stop()
 
         sys.exit(0)
 
@@ -755,16 +722,13 @@ class MainWindow(FluentWindowBase):
         )
         QTimer.singleShot(
             500,
-            lambda: self._ws_handler.send(
-                json.dumps(
-                    {
-                        'option': f'{"disable" if not self._stp.enableFFT_box.isChecked() else "enable"}_fft'
-                    }
-                )
+            lambda: self._ws_handler.sendJson(
+                {
+                    'option': f'{"disable" if not self._stp.enableFFT_box.isChecked() else "enable"}_fft'
+                }
             ),
         )
-
-        self._dp.sendSongFMAndInfo()
+        QTimer.singleShot(500, self._dp.sendSongFMAndInfo)
 
         self.connected = True
 

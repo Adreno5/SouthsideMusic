@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import logging
 import threading
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, Callable, cast
 
-from services.events import event_bus, EMIT_DEBUG_INFO
-from core.debugging import Debugging
-from views.dependences_window import DependencesWindow
+from imports import QObject, Signal
 
 if TYPE_CHECKING:
     from core.audio_player import AudioPlayer
@@ -23,6 +22,39 @@ if TYPE_CHECKING:
     from views.search_page import SearchPage
     from views.session_page import SessionPage
     from views.setting_page import SettingPage
+    from core.debugging import Debugging
+    from services.events.events_services import EventsServices
+    from views.dependences_window import DependencesWindow
+
+
+class _ScheduledTaskRunner(QObject):
+    scheduledTaskRequested = Signal()
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._logger = logging.getLogger(__name__)
+        self._scheduled_tasks: list[
+            tuple[Callable[..., Any], tuple[Any, ...], dict[str, Any]]
+        ] = []
+        self._scheduled_tasks_lock = threading.Lock()
+        self.scheduledTaskRequested.connect(self._runScheduledTasks)
+
+    def addTask(self, task: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
+        with self._scheduled_tasks_lock:
+            self._scheduled_tasks.append((task, args, kwargs))
+        self.scheduledTaskRequested.emit()
+
+    def _runScheduledTasks(self) -> None:
+        while True:
+            with self._scheduled_tasks_lock:
+                if not self._scheduled_tasks:
+                    return
+                task, args, kwargs = self._scheduled_tasks.pop(0)
+            try:
+                task(*args, **kwargs)
+            except Exception as e:
+                self._logger.exception('scheduled task failed')
+                raise e
 
 
 class AppContext:
@@ -51,6 +83,7 @@ class AppContext:
         self.harmony_font_family = harmony_font_family
         self.favs = favs if favs is not None else []
         self.lock = lock if lock is not None else threading.Lock()
+        self._scheduled_task_runner = _ScheduledTaskRunner()
         self.playing_manager: PlayingManager = cast('PlayingManager', None)
         self.dependences_available: bool = True
         self.debugging: bool = False
@@ -66,3 +99,12 @@ class AppContext:
         self.playlist_page: PlaylistPage = cast('PlaylistPage', None)
         self.dependences_window: DependencesWindow = cast('DependencesWindow', None)
         self.debugging_obj: Debugging = cast('Debugging', None)
+        self.events_service: EventsServices = cast('EventsServices', None)
+
+    def addScheduledTask(
+        self,
+        task: Callable[..., Any],
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        self._scheduled_task_runner.addTask(task, *args, **kwargs)

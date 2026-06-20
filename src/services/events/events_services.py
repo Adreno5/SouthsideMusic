@@ -44,8 +44,9 @@ class EventsServices(QObject):
         self._start_session_refresher()
 
         self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
+        self.last_repaint = time.perf_counter_ns()
         self.repaint_timer = QTimer(self)
-        self.repaint_timer.timeout.connect(lambda: event_bus.emit(REPAINT))
+        self.repaint_timer.timeout.connect(self._emitRepaint)
         self.repaint_timer.start(int(1000 / self.refresh_rate))
         self._app.primaryScreen().refreshRateChanged.connect(
             lambda: event_bus.emit(REFRESH_RATE_CHANGED)
@@ -80,7 +81,7 @@ class EventsServices(QObject):
 
         def _finished():
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)
-            self._ctx.main_window.addScheduledTask(
+            self._ctx.addScheduledTask(
                 lambda: InfoBar.success(
                     'Imported successfully',
                     f'Folder {folder_name} was added to local',
@@ -102,7 +103,7 @@ class EventsServices(QObject):
 
         def _finished():
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)
-            self._ctx.main_window.addScheduledTask(
+            self._ctx.addScheduledTask(
                 lambda: InfoBar.success(
                     'Imported successfully',
                     f'Folder {folder_name} was added to cloud',
@@ -158,7 +159,7 @@ class EventsServices(QObject):
 
         def _finished():
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)
-            self._ctx.main_window.addScheduledTask(
+            self._ctx.addScheduledTask(
                 lambda: InfoBar.success(
                     'Renamed successfully',
                     f'Folder {folder_name} was renamed to {new_name}',
@@ -190,6 +191,13 @@ class EventsServices(QObject):
         self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
 
         self.repaint_timer.setInterval(int(1000 / self.refresh_rate))
+
+    def _emitRepaint(self) -> None:
+        now = time.perf_counter_ns()
+        elapsed = min((now - self.last_repaint) / 1_000_000_000, 0.1)
+        self.last_repaint = now
+        multiple_factor = elapsed * self.refresh_rate
+        event_bus.emit(REPAINT, multiple_factor)
 
     @staticmethod
     def _start_session_refresher() -> None:

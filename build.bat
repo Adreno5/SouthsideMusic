@@ -12,6 +12,10 @@ title Building - Copy launcher.dist
 xcopy .\launcher.dist .\build.result\raw /E /I /Y
 title Building - Copy embed_python
 xcopy .\embed_python .\build.result\raw\python /E /I /Y
+title Building - Copy free-threaded Python
+if exist .venv-ft-pyside-blocked (
+    xcopy .venv-ft-pyside-blocked .\build.result\raw\.venv-ft-pyside-blocked /E /I /Y
+)
 title Building - Copy src
 xcopy .\src .\build.result\raw\src /E /I /Y
 title Building - Copy fonts

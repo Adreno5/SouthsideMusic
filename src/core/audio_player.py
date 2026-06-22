@@ -31,7 +31,7 @@ from typing import Optional, override
 import threading
 from scipy.fft import rfft, rfftfreq
 from scipy.signal import resample_poly
-from imports import QMessageBox
+from imports import MessageBox
 from core.config import cfg
 
 from pydub.utils import fsdecode, audioop, get_prober_name, mediainfo_json
@@ -382,12 +382,14 @@ class AudioPlayer(QObject):
         devices = getAudioDevices()
         if len(devices) == 0:
             self._logger.error('no devices found')
-            QMessageBox.critical(
-                None,
+            dialog = MessageBox(
                 'Error ',
                 'No any device can be used to play audio on your computer!',
-                QMessageBox.StandardButton.Ok,
+                None,
             )
+            dialog.cancelButton.hide()
+            dialog.yesButton.setText('OK')
+            dialog.exec()
             sys.exit(1)
         self._device_id: int = devices[0].index
         self.fft_queue = Queue(maxsize=8)
@@ -473,9 +475,7 @@ class AudioPlayer(QObject):
         if tail is None:
             tail = np.zeros(delay, dtype=np.float32)
         elif len(tail) < delay:
-            tail = np.concatenate(
-                (np.zeros(delay - len(tail), dtype=np.float32), tail)
-            )
+            tail = np.concatenate((np.zeros(delay - len(tail), dtype=np.float32), tail))
         else:
             tail = tail[-delay:]
 
@@ -674,7 +674,7 @@ class AudioPlayer(QObject):
             self._growing_stream_mode = False
             self._growing_file_last_decode = 0.0
             return True
-        
+
     def setSampleRate(self, rate: int):
         with self._lock:
             if rate == self.sample_rate:
@@ -1063,13 +1063,9 @@ class AudioPlayer(QObject):
         else:
             pad_frame = self.samples[-1:]
         padding = np.repeat(pad_frame, frames - len(segment), axis=0)
-        return np.concatenate((segment, padding), axis=0).astype(
-            np.float32, copy=False
-        )
+        return np.concatenate((segment, padding), axis=0).astype(np.float32, copy=False)
 
-    def _wsola_find_start(
-        self, ideal_start: int, overlap: int, search: int
-    ) -> int:
+    def _wsola_find_start(self, ideal_start: int, overlap: int, search: int) -> int:
         tail = self._wsola_tail
         n = len(self.samples)
         if tail is None or len(tail) < overlap or n <= overlap:
@@ -1247,7 +1243,9 @@ class AudioPlayer(QObject):
         if abs(pitch_ratio - 1.0) >= 1e-6:
             chunk = self._resample_to_frames(chunk, frames)
 
-        src_frames = self._source_frames_for(start_idx, intermediate_frames, tempo_speed)
+        src_frames = self._source_frames_for(
+            start_idx, intermediate_frames, tempo_speed
+        )
         return chunk, src_frames
 
     def _audio_callback(self, outdata, frames, _time_info, _status):
@@ -1290,8 +1288,8 @@ class AudioPlayer(QObject):
         growing_file_incomplete = (
             self._growing_file_path is not None and not self._growing_file_complete
         )
-        waiting_for_file = (
-            growing_file_incomplete and self.current_index >= len(self.samples)
+        waiting_for_file = growing_file_incomplete and self.current_index >= len(
+            self.samples
         )
         finished = self.current_index >= len(self.samples) and not waiting_for_file
         skip_nosound = False

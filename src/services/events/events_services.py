@@ -76,7 +76,7 @@ class EventsServices(QObject):
 
         def _add():
             response = getBackend().getPlaylistTracks(str(card.folder.id))
-            for song in response:
+            for song in reversed(response):
                 favorites_manager.addSong(folder_name, song)
 
         def _finished():
@@ -98,7 +98,7 @@ class EventsServices(QObject):
         def _add():
             id_ = getBackend().createPlaylist(folder_name)
             getBackend().editPlaylist(
-                'add', [song.id for song in card.folder.songs], id_
+                'add', [song.id for song in reversed(card.folder.songs)], id_
             )
 
         def _finished():
@@ -126,8 +126,8 @@ class EventsServices(QObject):
         dialog.yesButton.setText(tr('events_services.remove'))
         dialog.cancelButton.setText(tr('events_services.cancel'))
         dialog.yesButton.setStyleSheet(
-            dialog.yesButton.styleSheet() +
-            'PrimaryPushButton { color: white; background: #c42b1c; border: none; }'
+            dialog.yesButton.styleSheet()
+            + 'PrimaryPushButton { color: white; background: #c42b1c; border: none; }'
             'PrimaryPushButton:hover { background: #d13438; border: none; }'
             'PrimaryPushButton:pressed { background: #a4262c; border: none; }'
         )

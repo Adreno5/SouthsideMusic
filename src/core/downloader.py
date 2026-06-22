@@ -1,9 +1,11 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 import math
+import os
 
 import threading
 from typing import Callable, Dict, Optional
+from core.config import cfg
 
 from imports import (
     START_INTER_LOADING,
@@ -24,8 +26,8 @@ class DownloadingManager(QObject):
     workerFinished = Signal(bytes)
     downloadFinished = Signal(bytes)
 
-    MAX_CHUNK_THREADS = 12
-    MIN_CHUNK_SIZE = 1024 * 1024
+    MAX_CHUNK_THREADS = int(cfg.download_concurrent_threads)
+    MIN_CHUNK_SIZE = 4096
 
     def __init__(
         self,
@@ -242,8 +244,6 @@ def asyncDownload(
     parent=None,
     finished: Optional[Callable[[bytes], None]] = None,
 ) -> DownloadingManager:
-    """async download with progress tracking via event bus."""
-
     event_bus.emit(UPDATE_LOADING_PROGRESS, 0)
     event_bus.emit(START_PROGRESS_LOADING)
     box = DownloadingManager(parent, url, headers, data)
@@ -263,8 +263,6 @@ def asyncTask(
     parent,
     finished: Optional[Callable[[], None]] = None,
 ) -> TaskManager:
-    """async task execution via background Python thread."""
-
     event_bus.emit(START_INTER_LOADING)
 
     manager = TaskManager(task, args, parent)
@@ -292,6 +290,8 @@ def asyncTask(
 
 _stream_logger = logging.getLogger(__name__)
 
+_MIN_STREAM_CHUNK = 4096
+
 
 def downloadStream(
     url: str,
@@ -301,40 +301,130 @@ def downloadStream(
     headers: Optional[Dict] = None,
     data: Optional[Dict] = None,
 ) -> tuple[bool, int]:
-    """sequential streaming download to a temp file.
-    returns (success, total_size_bytes). total_size is 0 if unknown."""
     request_headers = headers.copy() if headers else {}
+
+    try:
+        probe = requests.head(
+            url,
+            headers=request_headers,
+            timeout=10,
+            allow_redirects=True,
+        )
+        probe.raise_for_status()
+        total_length = int(probe.headers.get('content-length', 0))
+        accept_ranges = probe.headers.get('accept-ranges', '').lower() == 'bytes'
+
+        if total_length <= 0 or not accept_ranges:
+            return _download_stream_single(
+                url, dest_path, on_progress, start_byte, request_headers, data
+            )
+
+        remaining = total_length - start_byte
+        if remaining <= 0:
+            return True, total_length
+
+        num_threads = min(
+            int(cfg.download_concurrent_threads),
+            max(1, math.ceil(remaining / _MIN_STREAM_CHUNK)),
+        )
+        chunk_size = math.ceil(remaining / num_threads)
+        ranges: list[tuple[int, int]] = []
+        for i in range(num_threads):
+            chunk_start = start_byte + i * chunk_size
+            chunk_end = min(chunk_start + chunk_size - 1, total_length - 1)
+            if chunk_start <= chunk_end:
+                ranges.append((chunk_start, chunk_end))
+
+        if not os.path.exists(dest_path):
+            with open(dest_path, 'wb') as f:
+                f.truncate(total_length)
+        else:
+            with open(dest_path, 'r+b') as f:
+                f.truncate(total_length)
+
+        progress_by_chunk = [0] * len(ranges)
+        progress_lock = threading.Lock()
+        errors: list[Exception] = []
+
+        def _dl_range(index: int, start: int, end: int) -> None:
+            try:
+                hdrs = request_headers.copy()
+                hdrs['Range'] = f'bytes={start}-{end}'
+                resp = requests.get(
+                    url, headers=hdrs, data=data, stream=True, timeout=30
+                )
+                resp.raise_for_status()
+                with open(dest_path, 'r+b') as f:
+                    f.seek(start)
+                    written = 0
+                    for chunk in resp.iter_content(chunk_size=65536):
+                        if not chunk:
+                            continue
+                        f.write(chunk)
+                        written += len(chunk)
+                        with progress_lock:
+                            progress_by_chunk[index] = written
+                            if on_progress:
+                                on_progress(
+                                    start_byte + sum(progress_by_chunk),
+                                    total_length,
+                                )
+            except Exception as e:
+                errors.append(e)
+
+        with ThreadPoolExecutor(max_workers=len(ranges)) as executor:
+            futures = [
+                executor.submit(_dl_range, i, s, e)
+                for i, (s, e) in enumerate(ranges)
+            ]
+            for f in futures:
+                f.result()
+
+        if errors:
+            raise errors[0]
+
+        return True, total_length
+    except Exception:
+        _stream_logger.exception('stream download failed')
+        return False, 0
+
+
+def _download_stream_single(
+    url: str,
+    dest_path: str,
+    on_progress: Callable[[int, int], None] | None,
+    start_byte: int,
+    request_headers: Dict,
+    data: Optional[Dict],
+) -> tuple[bool, int]:
     if start_byte > 0:
+        request_headers = request_headers.copy()
         request_headers['Range'] = f'bytes={start_byte}-'
 
     downloaded = start_byte
     total_length = 0
 
-    try:
-        response = requests.get(
-            url,
-            headers=request_headers,
-            data=data,
-            stream=True,
-            timeout=30,
-        )
-        response.raise_for_status()
+    response = requests.get(
+        url,
+        headers=request_headers,
+        data=data,
+        stream=True,
+        timeout=30,
+    )
+    response.raise_for_status()
 
-        content_length = response.headers.get('content-length')
-        if content_length:
-            total_length = int(content_length) + start_byte
+    content_length = response.headers.get('content-length')
+    if content_length:
+        total_length = int(content_length) + start_byte
 
-        mode = 'ab' if start_byte > 0 else 'wb'
-        with open(dest_path, mode) as f:
-            for chunk in response.iter_content(chunk_size=65536):
-                if not chunk:
-                    continue
-                f.write(chunk)
-                f.flush()
-                downloaded += len(chunk)
-                if on_progress:
-                    on_progress(downloaded, total_length)
-        return True, total_length
-    except Exception:
-        _stream_logger.exception('stream download failed')
-        return False, 0
+    mode = 'ab' if start_byte > 0 else 'wb'
+    with open(dest_path, mode) as f:
+        for chunk in response.iter_content(chunk_size=65536):
+            if not chunk:
+                continue
+            f.write(chunk)
+            f.flush()
+            downloaded += len(chunk)
+            if on_progress:
+                on_progress(downloaded, total_length)
+    return True, total_length

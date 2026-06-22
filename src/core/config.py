@@ -71,6 +71,8 @@ class Config:
     show_translation: bool = True
     setting_section_expanded: dict[str, bool] = field(default_factory=dict)
 
+    download_concurrent_threads: int = 16
+
 
 cfg = Config()
 

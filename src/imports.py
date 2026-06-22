@@ -101,7 +101,6 @@ from PySide6.QtWidgets import (
     QMdiSubWindow,
     QMenu,
     QMenuBar,
-    QMessageBox,
     QPanGesture,
     QPinchGesture,
     QPlainTextDocumentLayout,

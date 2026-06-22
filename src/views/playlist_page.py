@@ -27,9 +27,9 @@ from imports import (
     tr,
 )
 from imports import (
+    MessageBox,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QVBoxLayout,
     QHBoxLayout,
     QWidget,
@@ -151,14 +151,14 @@ class PlaylistPage(QWidget):
                 return
 
     def removeAllSongs(self) -> None:
-        reply = QMessageBox.question(
-            self._mwindow,
+        dialog = MessageBox(
             tr('playlist_page.confirm_delete'),
             tr('playlist_page.are_you_sure_you_want_to_remove_all_songs_from_playlist'),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            self._mwindow,
         )
-        if reply != QMessageBox.StandardButton.Yes:
+        dialog.cancelButton.setText(tr('playlist_page.cancel'))
+        dialog.yesButton.setText(tr('playlist_page.delete'))
+        if not dialog.exec():
             return
 
         self._pm.playlist.clear()

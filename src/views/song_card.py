@@ -177,7 +177,9 @@ class FolderSelectDialog(MessageBoxBase):
             self._mwindow.ctx.addScheduledTask(lambda: self._onCloudLoaded(playlists))
         except Exception:
             self._mwindow.ctx.addScheduledTask(
-                lambda: self.list_widget.addItem(QListWidgetItem(tr('song_card.failed_to_load')))
+                lambda: self.list_widget.addItem(
+                    QListWidgetItem(tr('song_card.failed_to_load'))
+                )
             )
 
     def _onCloudLoaded(self, playlists: list[CloudFolderInfo]):
@@ -326,8 +328,8 @@ class SearchSongCard(QWidget):
             from core.dialogs import getTextLineedit
 
             folder_name = getTextLineedit(
-                self._mwindow,
                 tr('song_card.create_new_folder_2'),
+                tr('song_card.my_first_folder'),
                 tr('song_card.my_first_folder'),
                 self._mwindow,
             )
@@ -771,7 +773,10 @@ class PlaylistSongCard(_SongCardItem):
             def _final():
                 InfoBar.success(
                     tr('song_card.export'),
-                    tr('song_card.exported_song_song_name', song_name=self.storable.name),
+                    tr(
+                        'song_card.exported_song_song_name',
+                        song_name=self.storable.name,
+                    ),
                     parent=self._mwindow,
                     duration=5000,
                 )
@@ -903,7 +908,10 @@ class FavoriteSongCard(_SongCardItem):
             def _final():
                 InfoBar.success(
                     tr('song_card.export'),
-                    tr('song_card.exported_song_song_name', song_name=self.storable.name),
+                    tr(
+                        'song_card.exported_song_song_name',
+                        song_name=self.storable.name,
+                    ),
                     parent=self._mwindow,
                     duration=5000,
                 )
@@ -1004,7 +1012,10 @@ class CloudFavoriteSongCard(_SongCardItem):
             def _final():
                 InfoBar.success(
                     tr('song_card.export'),
-                    tr('song_card.exported_song_song_name', song_name=self.storable.name),
+                    tr(
+                        'song_card.exported_song_song_name',
+                        song_name=self.storable.name,
+                    ),
                     parent=self._mwindow,
                     duration=5000,
                 )

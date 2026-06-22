@@ -61,7 +61,7 @@ class LogHandler(logging.Handler):
             'CRITICAL': Fore.RED,
         }.get(record.levelname, Fore.WHITE)
 
-        time_str = datetime.datetime.now().strftime('%H:%M:%S.%f')
+        time_str = datetime.datetime.now().strftime('%H:%M:%S')
         plain_prefix = f'[{time_str}/{record.levelname}] [{record.name}] - '
         plain_suffix = f'[{record.thread}/{record.threadName}]'
 
@@ -86,18 +86,42 @@ class LogHandler(logging.Handler):
         prefix_width = _visible_len(plain_prefix)
         content_width = max(term_width - prefix_width - suffix_width - 1, 1)
         continuation_prefix = ' ' * prefix_width
-        lines = _wrap_visible_text(message, content_width)
-        rendered_lines = []
-        for i, line in enumerate(lines):
-            prefix = colored_prefix if i == 0 else continuation_prefix
-            spaces = max(
-                term_width - _visible_len(prefix) - _visible_len(line) - suffix_width,
-                1,
-            )
-            rendered_lines.append(f'{prefix}{line}{" " * spaces}{colored_suffix}')
+
+        match = re.search(r'(?:https?://)?(?:[\w-]+\.)?music\.126\.net', message)
+        if match:  # NeteaseCloudMusic private resource domain
+            domain_end = match.end()
+            remaining = message[domain_end:]
+            m = re.search(r'\s', remaining)
+            path_end = domain_end + m.start() if m else len(message)
+            path = message[domain_end:path_end]
+            masked = re.sub(r'[^/?.=&%_\-]', '*', path)
+            message = message[:domain_end] + masked + message[path_end:]
+
+        if content_width < 15:
+            fallback_width = max(term_width - prefix_width - 1, 20)
+            lines = _wrap_visible_text(message, fallback_width)
+            rendered_lines = []
+            for i, line in enumerate(lines):
+                prefix = colored_prefix if i == 0 else continuation_prefix
+                rendered_lines.append(f'{prefix}{line}')
+        else:
+            lines = _wrap_visible_text(message, content_width)
+            rendered_lines = []
+            for i, line in enumerate(lines):
+                prefix = colored_prefix if i == 0 else continuation_prefix
+                spaces = max(
+                    term_width
+                    - _visible_len(prefix)
+                    - _visible_len(line)
+                    - suffix_width,
+                    1,
+                )
+                final = f'{prefix}{line}{" " * spaces}{colored_suffix}'
+                rendered_lines.append(final)
         assert sys.__stdout__ is not None
         sys.__stdout__.write('\n'.join(rendered_lines) + '\n')
         sys.__stdout__.flush()
+
 
 class LoggingStream:
     def __init__(self, level: int = logging.DEBUG, source: str = 'stderr'):

@@ -16,7 +16,6 @@ from urllib.parse import quote as _url_quote
 import requests
 from imports import (
     MessageBox,
-    QMessageBox,
     event_bus,
     START_PROGRESS_LOADING,
     STOP_PROGRESS_LOADING,
@@ -239,20 +238,24 @@ def applyUpdateImmediately(update_info: UpdateInfo, mwindow=None) -> None:
 
     def _show_result():
         if success:
-            QMessageBox.information(
-                mwindow,
+            dialog = MessageBox(
                 'Update Complete',
                 'Update completed. Click ok to restart',
-                QMessageBox.StandardButton.Ok,
+                mwindow,
             )
+            dialog.cancelButton.hide()
+            dialog.yesButton.setText('OK')
+            dialog.exec()
             _restart_app()
         else:
-            QMessageBox.warning(
-                mwindow,
+            dialog = MessageBox(
                 'Update Failed',
                 'Failed to update. Please try again later.',
-                QMessageBox.StandardButton.Ok,
+                mwindow,
             )
+            dialog.cancelButton.hide()
+            dialog.yesButton.setText('OK')
+            dialog.exec()
 
     if mwindow:
         mwindow.ctx.addScheduledTask(_show_result)

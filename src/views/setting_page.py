@@ -297,6 +297,11 @@ class SettingPage(QWidget):
             'setting_page.change_the_display_language_immediately',
             self.language_box,
         )
+        self.addNumberSetting(
+            'setting_page.download_concurrent_threads',
+            'setting_page.download_concurrent_threads_description',
+            1, 128, 1, 'download_concurrent_threads'
+        )
 
         self.addSection(
             'setting_page.playing',
@@ -322,8 +327,8 @@ class SettingPage(QWidget):
             'setting_page.stereo_haas_index_ms',
             'setting_page.adjust_the_right_channel_delay_of_stereo_haas_effect',
             0,
-            100,
-            1,
+            200,
+            5,
             'stereo_haas_index',
             lambda val: self._player.restartProducer(),
         )
@@ -338,7 +343,7 @@ class SettingPage(QWidget):
             'setting_page.adjust_the_strength_of_the_reverb_effect',
             0,
             3,
-            0.01,
+            0.05,
             'reverb_intensity',
             lambda val: self._player.restartProducer(),
         )
@@ -505,7 +510,7 @@ class SettingPage(QWidget):
             'setting_page.larger_value_means_more_intense_changing_only_on_southside_music_side',
             0,
             15.0,
-            0.05,
+            0.1,
             'cfft_multiple',
         )
         self.addNumberSetting(
@@ -513,7 +518,7 @@ class SettingPage(QWidget):
             'setting_page.larger_value_means_more_intense_changing_only_on_southside_client_side',
             00,
             15.0,
-            0.05,
+            0.5,
             'sfft_multiple',
         )
 

@@ -19,7 +19,7 @@ class LineInputDialog(MessageBoxBase):
     def __init__(self, parent, title: str, desc: str, place: str):
         super().__init__(parent)
 
-        self.title_label = SubtitleLabel()
+        self.title_label = SubtitleLabel('')
         self.desc_label = QLabel()
         bindText(self.title_label, title)
         bindText(self.desc_label, desc)

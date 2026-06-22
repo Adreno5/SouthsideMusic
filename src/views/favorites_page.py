@@ -11,6 +11,8 @@ from imports import (
     MWINDOW_REFRESH_FOLDERS,
     PLAYLIST_CHANGED,
     PLAY_PLAYLIST_STORABLE,
+    START_INTER_LOADING,
+    STOP_INTER_LOADING,
     PushButton,
     QLabel,
     QPixmap,
@@ -25,7 +27,6 @@ from imports import (
 from imports import (
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QHBoxLayout,
     QVBoxLayout,
     QWidget,
@@ -36,6 +37,7 @@ from imports import (
 from qfluentwidgets import (
     FlowLayout,
     InfoBar,
+    MessageBox,
     PillToolButton,
     TitleLabel,
 )
@@ -192,6 +194,7 @@ class FavoritesPage(QWidget):
         self.setBatchMode(False)
         self.batch_btn.setChecked(False)
         if isinstance(folder, CloudFolderInfo):
+            self.displayEmpty()
             self.is_cloud = True
             self.curr_cloud_folder = folder
             self.curr_folder = None
@@ -207,6 +210,7 @@ class FavoritesPage(QWidget):
         if self._cloud_loading:
             return
         self._cloud_loading = True
+        event_bus.emit(START_INTER_LOADING)
         result: list[SongStorable] = []
         folder_id = folder.id
 
@@ -224,6 +228,7 @@ class FavoritesPage(QWidget):
             ):
                 self.curr_cloud_songs = result
                 self.refresh()
+                event_bus.emit(STOP_INTER_LOADING)
 
         threading.Thread(target=_fetch, daemon=True).start()
 
@@ -470,19 +475,26 @@ class FavoritesPage(QWidget):
                 len(self.curr_folder.songs),
             )
 
-        reply = QMessageBox.question(
-            self._mwindow,
+        dialog = MessageBox(
             tr('favorites_page.confirm_delete'),
             tr(
                 'favorites_page.are_you_sure_you_want_to_delete_song_song_name_from_favorites',
                 song_name=song_name,
             ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            self._mwindow,
         )
+        dialog.cancelButton.setText(tr('favorites_page.cancel'))
+        dialog.yesButton.setText(tr('favorites_page.delete'))
+        dialog.yesButton.setStyleSheet(
+            dialog.yesButton.styleSheet()
+            + 'PrimaryPushButton { color: white; background: #c42b1c; border: none; }'
+            'PrimaryPushButton:hover { background: #d13438; border: none; }'
+            'PrimaryPushButton:pressed { background: #a4262c; border: none; }'
+        )
+        reply = dialog.exec()
         _logger.info('deleteSong: reply=%r', reply)
 
-        if reply != QMessageBox.StandardButton.Yes:
+        if not reply:
             return
 
         _logger.info('deleteSong: calling removeSong(%r)', song_name)
@@ -506,18 +518,24 @@ class FavoritesPage(QWidget):
         song_name = song_storable.name
         folder_name = self.curr_cloud_folder.folder_name
 
-        reply = QMessageBox.question(
-            self._mwindow,
+        dialog = MessageBox(
             tr('favorites_page.confirm_delete'),
             tr(
                 'favorites_page.are_you_sure_you_want_to_delete_song_song_name_from_cloud_folder_folde',
                 song_name=song_name,
                 folder_name=folder_name,
             ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            self._mwindow,
         )
-        if reply == QMessageBox.StandardButton.Yes:
+        dialog.yesButton.setStyleSheet(
+            dialog.yesButton.styleSheet()
+            + 'PrimaryPushButton { color: white; background: #c42b1c; border: none; }'
+            'PrimaryPushButton:hover { background: #d13438; border: none; }'
+            'PrimaryPushButton:pressed { background: #a4262c; border: none; }'
+        )
+        dialog.cancelButton.setText(tr('favorites_page.cancel'))
+        dialog.yesButton.setText(tr('favorites_page.delete'))
+        if dialog.exec():
             if not getBackend().editPlaylist(
                 'del', [song_storable.id], self.curr_cloud_folder.id
             ):
@@ -595,7 +613,7 @@ class FavoritesPage(QWidget):
                     return
                 favorites_manager.addFolder(folder_name)
             added_count = 0
-            for song in selected:
+            for song in reversed(selected):
                 target_folder = next(
                     (
                         f
@@ -621,7 +639,7 @@ class FavoritesPage(QWidget):
             )
         elif folder_type == 'cloud' and cloud_id:
             if not getBackend().editPlaylist(
-                'add', [str(song.id) for song in selected], cloud_id
+                'add', [str(song.id) for song in reversed(selected)], cloud_id
             ):
                 InfoBar.warning(
                     tr('favorites_page.session_expired'),
@@ -653,18 +671,24 @@ class FavoritesPage(QWidget):
             if self.curr_folder
             else ''
         )
-        reply = QMessageBox.question(
-            self._mwindow,
+        dialog = MessageBox(
             tr('favorites_page.confirm_delete'),
             tr(
                 'favorites_page.are_you_sure_you_want_to_delete_count_selected_songs_from_folder_name',
                 count=len(selected),
                 folder_name=folder_name,
             ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            self._mwindow,
         )
-        if reply != QMessageBox.StandardButton.Yes:
+        dialog.yesButton.setStyleSheet(
+            dialog.yesButton.styleSheet()
+            + 'PrimaryPushButton { color: white; background: #c42b1c; border: none; }'
+            'PrimaryPushButton:hover { background: #d13438; border: none; }'
+            'PrimaryPushButton:pressed { background: #a4262c; border: none; }'
+        )
+        dialog.cancelButton.setText(tr('favorites_page.cancel'))
+        dialog.yesButton.setText(tr('favorites_page.delete'))
+        if not dialog.exec():
             return
 
         selected_ids = {str(song.id) for song in selected}
@@ -724,7 +748,10 @@ class FavoritesPage(QWidget):
         if tip:
             InfoBar.success(
                 tr('favorites_page.playlist_replaced'),
-                tr('favorites_page.playlist_replaced_with_folder_name', folder_name=folder_name),
+                tr(
+                    'favorites_page.playlist_replaced_with_folder_name',
+                    folder_name=folder_name,
+                ),
                 parent=self._mwindow,
             )
 

@@ -238,11 +238,15 @@ class BootstrapWindow(QWidget):
         if pyside_incomplete:
             pyside_requirements = getPySideRequirements(required)
             for requirement in pyside_requirements:
-                self.updateStatus(requirement.name, 'Waiting')
+                self.updateStatus(requirement.name, 'Uninstalling')
+            self.runPipUninstall(
+                [requirement.name for requirement in pyside_requirements]
+            )
+            for requirement in pyside_requirements:
+                self.updateStatus(requirement.name, 'Uninstalled')
             returncode = self.runPipInstall(
                 mirror_url,
                 [
-                    '--ignore-installed',
                     *[
                         f'{requirement.name}=={requirement.version}'
                         for requirement in pyside_requirements
@@ -278,6 +282,20 @@ class BootstrapWindow(QWidget):
             elif 'Using cached' in c:
                 package = c.split('Using cached ')[1].split(' ')[0]
                 self.updateStatus(package, 'Installed')
+        popen.wait()
+        return popen.returncode
+
+    def runPipUninstall(self, package_names: list[str]) -> int:
+        popen = subprocess.Popen(
+            [str(PYTHON_EXE), '-m', 'pip', 'uninstall', '-y', *package_names],
+            cwd=str(SCRIPT_DIR),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if popen.stdout:
+            for line in popen.stdout:
+                _logger.debug(line.strip())
         popen.wait()
         return popen.returncode
 

@@ -1,8 +1,8 @@
 from imports import (
+    MessageBox,
     QDesktopServices,
     QDialog,
     QLabel,
-    QMessageBox,
     QUrl,
     QVBoxLayout,
     TextEdit,
@@ -20,13 +20,16 @@ class ErrorPopupWindow(QDialog):
         self.detail_text = detail_text
 
     def report(self):
-        QMessageBox.information(
-            self,
+        dialog = MessageBox(
             tr('error_popup.tip'),
             tr(
                 'error_popup.describe_the_error_you_encountered_in_the_title_and_paste_the_details_'
             ),
+            self,
         )
+        dialog.cancelButton.hide()
+        dialog.yesButton.setText('OK')
+        dialog.exec()
         QDesktopServices.openUrl(
             QUrl(
                 'https://github.com/Adreno5/SouthsideMusic/issues/new?title=describe%20the%20error'
@@ -48,7 +51,10 @@ class ErrorPopupWindow(QDialog):
         detail_content.setPlainText(self.detail_text)
         global_layout.addWidget(detail_content)
         copy_label = QLabel()
-        bindText(copy_label, 'error_popup.copy_details_above_and_paste_it_to_the_issue_page_below')
+        bindText(
+            copy_label,
+            'error_popup.copy_details_above_and_paste_it_to_the_issue_page_below',
+        )
         global_layout.addWidget(copy_label)
         self.report_btn = TransparentPushButton('')
         bindText(self.report_btn, 'error_popup.report_this_problem')

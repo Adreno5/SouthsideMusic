@@ -86,7 +86,7 @@ class PlaySelection:
 
 
 class PlayingManager:
-    def __init__(self, ctx: AppContext | None = None) -> None:
+    def __init__(self, ctx: AppContext) -> None:
         self.ctx = ctx
         self.playlist: list[SongStorable] = []
         self.current_index = -1
@@ -190,7 +190,7 @@ class PlayingManager:
         event_bus.emit(PLAYBACK_ERROR, title, message)
 
     def _schedule(self, func: Callable, *args) -> None:
-        self.ctx.addScheduledTask(func, *args)
+        self.ctx.addScheduledTask(func, *args) # type: ignore
 
     def shutdownWorkers(self) -> None:
         self._ft_worker.shutdown()
@@ -1255,11 +1255,11 @@ class PlayingManager:
                 )
                 return
             threading.Thread(
-                target=lambda: _decode_stream(temp_path, process),
+                target=lambda: _decode_stream(temp_path, process), # type: ignore
                 daemon=True,
             ).start()
             threading.Thread(
-                target=lambda: _download(temp_path, music_url, process),
+                target=lambda: _download(temp_path, music_url, process), # type: ignore
                 daemon=True,
             ).start()
 
@@ -1412,7 +1412,7 @@ class PlayingManager:
             gain = self._computeLoudnessGain(cfg.target_lufs, raw_audio)
             self._setStorableLoudness(song_storable, cfg.target_lufs, gain)
             if self.current_song is song_storable:
-                self.ctx.addScheduledTask(
+                self.ctx.addScheduledTask( # type: ignore
                     lambda g=gain: player.animateLoudnessGain(g)
                 )
 

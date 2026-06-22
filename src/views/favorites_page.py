@@ -57,6 +57,7 @@ from views.song_card import (
 )
 
 _logger = logging.getLogger(__name__)
+LIST_BUILD_BATCH_SIZE = 40
 
 
 class FavoritesPage(QWidget):
@@ -138,6 +139,7 @@ class FavoritesPage(QWidget):
         self._cloud_loading = False
         self._batch_mode = False
         self._selected_song_ids: set[str] = set()
+        self._favorites_refresh_seq = 0
 
         event_bus.subscribe(FAVORITES_CHANGED, self._onFavoritesChanged)
 
@@ -184,6 +186,7 @@ class FavoritesPage(QWidget):
         return self._song_cards
 
     def displayEmpty(self):
+        self._favorites_refresh_seq += 1
         self.title_label.setText(tr('favorites_page.none'))
         self.setBatchMode(False)
         self.batch_btn.setChecked(False)
@@ -237,10 +240,9 @@ class FavoritesPage(QWidget):
 
     def _checkVisibleCards(self):
         cards = self._validSongCards()
-        for card in cards:
+        for idx, card in enumerate(cards):
             if card.load:
                 continue
-            idx = cards.index(card)
             item = self.song_viewer.item(idx)
             if item is None:
                 continue
@@ -250,6 +252,8 @@ class FavoritesPage(QWidget):
                 card.loadDetailAndImage()
 
     def refresh(self):
+        self._favorites_refresh_seq += 1
+        refresh_seq = self._favorites_refresh_seq
         self._song_cards = []
         self.song_viewer.clear()
 
@@ -267,40 +271,65 @@ class FavoritesPage(QWidget):
         else:
             return
 
+        songs = list(songs)
         self._selected_song_ids.intersection_update(str(song.id) for song in songs)
-        for song in songs:
-            item = QListWidgetItem()
-            item.setData(Qt.ItemDataRole.UserRole, song)
-            item.setSizeHint(QSize(0, SONG_CARD_HEIGHT))
-
-            if self.is_cloud:
-                card = CloudFavoriteSongCard(
-                    song,
-                    self._dp,
-                    self._mwindow,
-                    self._plp,
-                    remove_callback=lambda s=song: self.deleteCloudSong(s),
-                    lazy=True,
-                )
-            else:
-                card = FavoriteSongCard(
-                    song,
-                    self._dp,
-                    self._mwindow,
-                    self._plp,
-                    remove_callback=lambda s=song: self.deleteSong(s),
-                    move_callback=self.moveSong,
-                    lazy=True,
-                )
-            card.clicked.connect(lambda s: self._replaceAndPlay(s))
-            card.queued.connect(lambda s: self._queueAfterCurrent(s))
-            card.selectionChanged.connect(self._onSongSelectionChanged)
-            card.setSelectionMode(self._batch_mode)
-            card.setSelected(str(song.id) in self._selected_song_ids)
-            self.song_viewer.addItem(item)
-            self.song_viewer.setItemWidget(item, card)
-            self._song_cards.append(card)
         self._syncBatchButtons()
+        self._appendSongBatch(refresh_seq, songs, 0)
+
+    def _appendSongBatch(
+        self,
+        refresh_seq: int,
+        songs: list[SongStorable],
+        start: int,
+    ) -> None:
+        if refresh_seq != self._favorites_refresh_seq:
+            return
+
+        end = min(start + LIST_BUILD_BATCH_SIZE, len(songs))
+        for song in songs[start:end]:
+            self._addSongCard(song)
+
+        if end < len(songs):
+            QTimer.singleShot(
+                1,
+                lambda: self._appendSongBatch(refresh_seq, songs, end),
+            )
+            return
+
+        self._syncBatchButtons()
+
+    def _addSongCard(self, song: SongStorable) -> None:
+        item = QListWidgetItem()
+        item.setData(Qt.ItemDataRole.UserRole, song)
+        item.setSizeHint(QSize(0, SONG_CARD_HEIGHT))
+
+        if self.is_cloud:
+            card = CloudFavoriteSongCard(
+                song,
+                self._dp,
+                self._mwindow,
+                self._plp,
+                remove_callback=lambda s=song: self.deleteCloudSong(s),
+                lazy=True,
+            )
+        else:
+            card = FavoriteSongCard(
+                song,
+                self._dp,
+                self._mwindow,
+                self._plp,
+                remove_callback=lambda s=song: self.deleteSong(s),
+                move_callback=self.moveSong,
+                lazy=True,
+            )
+        card.clicked.connect(lambda s: self._replaceAndPlay(s))
+        card.queued.connect(lambda s: self._queueAfterCurrent(s))
+        card.selectionChanged.connect(self._onSongSelectionChanged)
+        card.setSelectionMode(self._batch_mode)
+        card.setSelected(str(song.id) in self._selected_song_ids)
+        self.song_viewer.addItem(item)
+        self.song_viewer.setItemWidget(item, card)
+        self._song_cards.append(card)
 
     def setBatchMode(self, state: bool) -> None:
         self._batch_mode = state
@@ -347,7 +376,6 @@ class FavoritesPage(QWidget):
 
     def _replaceAndPlay(self, song: SongStorable):
         self.replacePlaylist(False)
-        event_bus.emit(PLAYLIST_CHANGED)
         event_bus.emit(PLAY_PLAYLIST_STORABLE, song)
 
     def _queueAfterCurrent(self, song: SongStorable):
@@ -572,8 +600,8 @@ class FavoritesPage(QWidget):
                 self._pm.playlist.append(song)
                 added_count += 1
 
-        event_bus.emit(PLAYLIST_CHANGED)
         if added_count > 0:
+            event_bus.emit(PLAYLIST_CHANGED)
             InfoBar.success(
                 tr('favorites_page.songs_added'),
                 tr(
@@ -772,5 +800,3 @@ class FavoritesPage(QWidget):
                 ),
                 parent=self._mwindow,
             )
-
-        event_bus.emit(PLAYLIST_CHANGED)

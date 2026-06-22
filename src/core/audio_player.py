@@ -1025,11 +1025,35 @@ class AudioPlayer(QObject):
 
             self.fftDataReady.emit(fft_freqs, fft_vals)
 
-    def stop_fft_thread(self):
+    def stop_fft_thread(self, timeout: float = 0.5):
         self.fft_thread_running = False
-        self.fft_queue.put(None)
+        try:
+            self.fft_queue.put_nowait(None)
+        except Full:
+            try:
+                self.fft_queue.get_nowait()
+            except Empty:
+                pass
+            try:
+                self.fft_queue.put_nowait(None)
+            except Full:
+                pass
         if self.fft_thread.is_alive():
-            self.fft_thread.join(timeout=0)
+            self.fft_thread.join(timeout=timeout)
+
+    def shutdown(self) -> None:
+        self._telemetry_timer.stop()
+        self.stop()
+        self.stop_fft_thread()
+        with self._lock:
+            if self.stream:
+                try:
+                    self.stream.stop()
+                    self.stream.close()
+                except Exception:
+                    pass
+                self.stream = None
+            self._clear_queue()
 
     def _reset_wsola(self) -> None:
         self._wsola_output_buffer = None

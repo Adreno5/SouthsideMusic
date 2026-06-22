@@ -78,9 +78,9 @@ class LogHandler(logging.Handler):
             f'{Fore.LIGHTBLACK_EX}[{record.name}] -{Style.RESET_ALL} '
         )
         colored_suffix = (
-            f'{Fore.LIGHTGREEN_EX}[{Style.RESET_ALL}'
+            f'{Fore.GREEN}[{Fore.LIGHTBLACK_EX}'
             f'{record.thread}/{record.threadName}'
-            f'{Fore.LIGHTGREEN_EX}]{Style.RESET_ALL}'
+            f'{Fore.GREEN}]{Style.RESET_ALL}'
         )
 
         prefix_width = _visible_len(plain_prefix)

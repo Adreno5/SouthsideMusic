@@ -239,6 +239,7 @@ class FreeThreadedJsonSender:
         self._process: subprocess.Popen | None = None
         self._reader_thread: threading.Thread | None = None
         self._interpreter: Path | None = None
+        self._shutdown = False
 
     def submit(
         self,
@@ -289,6 +290,8 @@ class FreeThreadedJsonSender:
         callback: Callable[[Any | None], None],
     ) -> int | None:
         with self._lock:
+            if self._shutdown:
+                return None
             process = self._ensure_process_locked()
             if process is None or process.stdin is None:
                 return None
@@ -314,20 +317,25 @@ class FreeThreadedJsonSender:
         return request_id
 
     def shutdown(self) -> None:
+        reader_thread: threading.Thread | None
         with self._lock:
+            self._shutdown = True
             process = self._process
             if process is not None and process.stdin is not None:
                 try:
                     _write_frame(process.stdin, {'op': 'shutdown'})
                 except Exception:
                     pass
-            self._stop_process_locked()
+            reader_thread = self._stop_process_locked(terminate_first=False)
+        self._join_reader_thread(reader_thread)
 
     def is_running(self) -> bool:
         with self._lock:
             return self._process is not None and self._process.poll() is None
 
     def _ensure_process_locked(self) -> subprocess.Popen | None:
+        if self._shutdown:
+            return None
         if self._process is not None and self._process.poll() is None:
             return self._process
 
@@ -473,16 +481,66 @@ class FreeThreadedJsonSender:
         for callback in callbacks:
             callback(None)
 
-    def _stop_process_locked(self) -> None:
+    def _stop_process_locked(
+        self,
+        *,
+        terminate_first: bool = True,
+    ) -> threading.Thread | None:
         process = self._process
+        reader_thread = self._reader_thread
         self._process = None
+        self._reader_thread = None
         self._callbacks.clear()
         if process is None:
-            return
-        try:
-            process.terminate()
-        except Exception:
-            pass
+            return reader_thread
+
+        if not terminate_first:
+            try:
+                if process.stdin is not None:
+                    process.stdin.close()
+            except Exception:
+                pass
+            try:
+                process.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                pass
+            except Exception:
+                pass
+
+        if process.poll() is None:
+            try:
+                process.terminate()
+            except Exception:
+                pass
+            try:
+                process.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+                try:
+                    process.wait(timeout=1.0)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        for pipe in (process.stdin, process.stdout, process.stderr):
+            try:
+                if pipe is not None:
+                    pipe.close()
+            except Exception:
+                pass
+        return reader_thread
+
+    def _join_reader_thread(self, reader_thread: threading.Thread | None) -> None:
+        if (
+            reader_thread is not None
+            and reader_thread.is_alive()
+            and threading.current_thread() is not reader_thread
+        ):
+            reader_thread.join(timeout=0.5)
 
 
 if __name__ == '__main__' and '--worker' in sys.argv:

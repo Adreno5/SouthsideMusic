@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 
-import sys
 import time
 
 from core.app_context import AppContext
@@ -658,11 +657,20 @@ class MainWindow(FluentWindowBase):
             self._fp.setDisplayFolder(folder)
 
     def closeEvent(self, e: QCloseEvent):
-        e.ignore()
+        e.accept()
+        if self.closing:
+            return
         self.closing = True
 
         self.hide()
-        self._player.stop()
+        playing_manager = getattr(self.ctx, 'playing_manager', None)
+        if playing_manager is not None:
+            playing_manager.shutdownWorkers()
+        shutdown_player = getattr(self._player, 'shutdown', None)
+        if shutdown_player is not None:
+            shutdown_player()
+        else:
+            self._player.stop()
 
         self._ws_server.stop(shutdown_json_sender=True)
 
@@ -679,7 +687,7 @@ class MainWindow(FluentWindowBase):
         saveConfig()
         saveFavorites()
 
-        sys.exit(0)
+        self._app.quit()
 
     def resizeEvent(self, e):
         self.titleBar.move(20, 0)

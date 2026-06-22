@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 import base64
 import hashlib
 import json
@@ -128,6 +128,7 @@ class SongStorable:
     id: str
     loudness_gain: float
     target_lufs: int
+    loaded_loudness_gain: bool = False
     image_cache_hash: str = ''
     content_cache_hash: str = ''
     lyric_cache_hash: str = ''
@@ -145,6 +146,7 @@ class SongStorable:
         yrc_lyric: str = '',
         gain: float = 1.0,
         target_lufs: int = -16,
+        loaded_loudness_gain: bool = False,
         image_cache_hash: str = '',
         content_cache_hash: str = '',
         lyric_cache_hash: str = '',
@@ -172,6 +174,7 @@ class SongStorable:
             self.write_lyrics(lyric, translated_lyric, yrc_lyric)
         self.loudness_gain = gain
         self.target_lufs = target_lufs
+        self.loaded_loudness_gain = loaded_loudness_gain
         self.loggedin_when_download = loggedin_when_download
         self.viptype_when_download = viptype_when_download
 
@@ -278,6 +281,12 @@ class SongStorable:
             self.content_cache_hash = ''
         if not hasattr(self, 'duration'):
             self.duration = 0
+        if 'loaded_loudness_gain' not in self.__dict__:
+            self.loaded_loudness_gain = bool(
+                self.__dict__.pop('loudness_analyzed', False)
+            )
+        else:
+            self.__dict__.pop('loudness_analyzed', None)
         if not hasattr(self, 'lyric_cache_hash'):
             self.lyric_cache_hash = ''
             lyric = self.__dict__.get('lyric', '')
@@ -431,6 +440,7 @@ class SongStorable:
             'lyric_cache_hash': self.lyric_cache_hash,
             'gain': self.loudness_gain,
             'target_lufs': self.target_lufs,
+            'loaded_loudness_gain': self.loaded_loudness_gain,
             'loggedin_when_download': self.loggedin_when_download,
             'viptype_when_download': self.viptype_when_download,
             'duration': self.duration,
@@ -455,6 +465,10 @@ class SongStorable:
             assert isinstance(old_content_b64, str)
             music_bytes = base64.b64decode(old_content_b64)
             content_cache_hash = ''
+        loaded_loudness_gain = obj.get(
+            'loaded_loudness_gain',
+            obj.get('loudness_analyzed', False),
+        )
 
         return SongStorable(
             info=SongInfo(
@@ -474,6 +488,7 @@ class SongStorable:
             lyric_cache_hash=lyric_cache_hash,
             gain=float(obj.get('gain', 1.0)),  # type: ignore[arg-type]
             target_lufs=int(obj.get('target_lufs', -16)),  # type: ignore[arg-type]
+            loaded_loudness_gain=bool(loaded_loudness_gain),
             loggedin_when_download=bool(obj.get('loggedin_when_download', False)),
             viptype_when_download=int(obj.get('viptype_when_download', 0)),  # type: ignore[arg-type]
         )

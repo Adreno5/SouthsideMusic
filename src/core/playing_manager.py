@@ -107,6 +107,8 @@ class PlayingManager:
         self._preload_download_song_id: str | None = None
         self._pending_play_selection: PlaySelection | None = None
         self._ft_worker = FreeThreadedJsonSender(logger=self._logger)
+        self._stream_processes: set[subprocess.Popen[bytes]] = set()
+        self._stream_process_lock = threading.Lock()
 
         if ctx is not None:
             self._bindEvents()
@@ -193,7 +195,58 @@ class PlayingManager:
         self.ctx.addScheduledTask(func, *args) # type: ignore
 
     def shutdownWorkers(self) -> None:
+        self._play_seq += 1
+        self._preload_download_seq += 1
+        self._pending_play_selection = None
+        self.current_song = None
+        self.clearPreload()
+        self._terminateStreamProcesses()
         self._ft_worker.shutdown()
+
+    def _registerStreamProcess(self, process: subprocess.Popen[bytes]) -> None:
+        with self._stream_process_lock:
+            self._stream_processes.add(process)
+
+    def _unregisterStreamProcess(self, process: subprocess.Popen[bytes]) -> None:
+        with self._stream_process_lock:
+            self._stream_processes.discard(process)
+
+    def _terminateStreamProcesses(self) -> None:
+        with self._stream_process_lock:
+            processes = list(self._stream_processes)
+            self._stream_processes.clear()
+        for process in processes:
+            self._terminateProcess(process)
+
+    @staticmethod
+    def _terminateProcess(
+        process: subprocess.Popen[bytes],
+        timeout: float = 0.5,
+    ) -> None:
+        if process.poll() is None:
+            try:
+                process.terminate()
+            except OSError:
+                pass
+            try:
+                process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+                try:
+                    process.wait(timeout=timeout)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        for pipe in (process.stdin, process.stdout, process.stderr):
+            try:
+                if pipe is not None:
+                    pipe.close()
+            except Exception:
+                pass
 
     def _warmFreeThreadedWorker(self) -> None:
         self._callFreeThreadedWorker('base64_decode', {'data': ''}, timeout=10.0)
@@ -462,17 +515,38 @@ class PlayingManager:
                 if (
                     favorite.target_lufs == target_lufs
                     and favorite.loudness_gain == gain
+                    and favorite.loaded_loudness_gain
                 ):
                     continue
                 favorite.target_lufs = target_lufs
                 favorite.loudness_gain = gain
+                favorite.loaded_loudness_gain = True
                 favorites_changed = True
 
         song_storable.target_lufs = target_lufs
         song_storable.loudness_gain = gain
+        song_storable.loaded_loudness_gain = True
 
         if favorites_changed:
             saveFavorites()
+
+    @staticmethod
+    def _hasLoadedLoudnessGain(song_storable: SongStorable) -> bool:
+        return (
+            song_storable.loaded_loudness_gain
+            and song_storable.target_lufs == cfg.target_lufs
+        )
+
+    def _applyStoredLoudnessGain(self, song_storable: SongStorable) -> None:
+        player = self._player
+        if player is None:
+            return
+        gain = (
+            song_storable.loudness_gain
+            if self._hasLoadedLoudnessGain(song_storable)
+            else 1.0
+        )
+        player.setGain(gain)
 
     def preloadNextSong(self) -> None:
         if len(self.playlist) <= 1:
@@ -571,7 +645,7 @@ class PlayingManager:
                     return
 
                 self.next_song_audio = audio  # type: ignore
-                if next_song.target_lufs != cfg.target_lufs:
+                if not self._hasLoadedLoudnessGain(next_song):
                     gain = self._computeLoudnessGain(
                         cfg.target_lufs,
                         self.next_song_audio,  # type: ignore[arg-type]
@@ -919,11 +993,14 @@ class PlayingManager:
         if mark_loaded:
             self.preloaded = True
 
+        playlist_changed = False
         if song_storable not in self.playlist:
             self.playlist.insert(self.current_index, song_storable)
             self.refreshRandom()
+            playlist_changed = True
 
-        event_bus.emit(PLAYLIST_CHANGED)
+        if playlist_changed:
+            event_bus.emit(PLAYLIST_CHANGED)
         self._show_original_lyrics(song_storable)
         self._compute_gain_async(song_storable, gain_audio)
         self._download_update_lyrics(song_storable)
@@ -988,11 +1065,7 @@ class PlayingManager:
                 song_storable,
                 player.getLength(),
             )
-            if (
-                song_storable.target_lufs == cfg.target_lufs
-                and song_storable.loudness_gain != 1.0
-            ):
-                player.setGain(song_storable.loudness_gain)
+            self._applyStoredLoudnessGain(song_storable)
             player.play()
             self._loadPlaybackImage(song_storable, result)
             self._finishPlaybackLoad(
@@ -1027,10 +1100,8 @@ class PlayingManager:
 
         def _cancel_process(process: subprocess.Popen[bytes]) -> None:
             state['cancelled'] = True
-            try:
-                process.terminate()
-            except OSError:
-                pass
+            self._terminateProcess(process, timeout=0.3)
+            self._unregisterStreamProcess(process)
 
         def _decode_stream(path: Path, process: subprocess.Popen[bytes]) -> None:
             success = False
@@ -1062,6 +1133,8 @@ class PlayingManager:
             except Exception:
                 self._logger.exception('failed to decode streaming audio')
             finally:
+                if process.poll() is not None:
+                    self._unregisterStreamProcess(process)
                 self._schedule(_on_stream_finished, path, success)
 
         def _download(
@@ -1246,6 +1319,7 @@ class PlayingManager:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
                 )
+                self._registerStreamProcess(process)
             except Exception:
                 _cleanup(temp_path)
                 self._logger.exception('failed to start streaming decoder')
@@ -1355,14 +1429,9 @@ class PlayingManager:
                 song_storable,
                 player.getLength(),
             )
+            self._applyStoredLoudnessGain(song_storable)
             if not player.isPlaying():
                 player.play()
-
-            if (
-                song_storable.target_lufs == cfg.target_lufs
-                and song_storable.loudness_gain != 1.0
-            ):
-                player.setGain(song_storable.loudness_gain)
 
             if restore_position is not None:
                 player.setPosition(restore_position)
@@ -1402,7 +1471,7 @@ class PlayingManager:
     ) -> None:
         if raw_audio is None:
             return
-        if song_storable.target_lufs == cfg.target_lufs:
+        if self._hasLoadedLoudnessGain(song_storable):
             return
 
         def _compute_and_apply() -> None:

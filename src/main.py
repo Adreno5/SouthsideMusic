@@ -142,19 +142,31 @@ def patchedExceptHook(
 sys.excepthook = patchedExceptHook
 
 original_popen = subprocess.Popen
+original_call = subprocess.call
 
 
-def patched_popen(*args, **kwargs):
+def _hide_subprocess_window(kwargs):
+    if sys.platform != 'win32':
+        return
     startupinfo = subprocess.STARTUPINFO()
     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     startupinfo.wShowWindow = subprocess.SW_HIDE
     kwargs['startupinfo'] = startupinfo
-    kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+    kwargs['creationflags'] = int(kwargs.get('creationflags', 0)) | subprocess.CREATE_NO_WINDOW
+
+
+def patched_popen(*args, **kwargs):
+    _hide_subprocess_window(kwargs)
     return original_popen(*args, **kwargs)
 
 
+def patched_call(*args, **kwargs):
+    _hide_subprocess_window(kwargs)
+    return original_call(*args, **kwargs)
+
+
 subprocess.Popen = patched_popen  # type: ignore
-subprocess.call = patched_popen  # type: ignore
+subprocess.call = patched_call  # type: ignore
 
 _ims.QApplication.setHighDpiScaleFactorRoundingPolicy(
     _ims.Qt.HighDpiScaleFactorRoundingPolicy.PassThrough

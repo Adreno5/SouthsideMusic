@@ -2,7 +2,7 @@ import logging
 import random
 
 from services.events import event_bus, EMIT_DEBUG_INFO
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 _logger = logging.getLogger(__name__)
 
@@ -24,6 +24,15 @@ class AdvancedRandom(Generic[T]):
         self.randomed_times = [0 for _ in lst]
         self.target_lst = lst
         _logger.info(f'inited {self.list_len} weights avg {self.list_weight[0]}')
+
+    def _get_item_count(self, lst: list) -> dict[Any, int]:
+        result = {}
+        for key in lst:
+            result[key] = result.get(key, 0) + 1
+        return result
+    
+    def _get_formatted(self, lst: list) -> str:
+        return ' '.join(f'{key}: {value}' for key, value in self._get_item_count(lst).items())
 
     def random(self) -> T:
         total_weight: float = 0
@@ -47,13 +56,13 @@ class AdvancedRandom(Generic[T]):
                 selected_item = self.target_lst[i]
                 self.randomed_times[i] += 1
                 _logger.info(f'randomed {selected_item} times {self.randomed_times[i]}')
-                _logger.debug(self.randomed_times)
-                _logger.debug(adjusted_weights)
+                _logger.debug(self._get_formatted(self.randomed_times))
+                _logger.debug(self._get_formatted(adjusted_weights))
                 return selected_item
 
         selected_item = self.target_lst[-1]
         self.randomed_times[-1] += 1
         _logger.info(f'randomed {selected_item} times {self.randomed_times[-1]}')
-        _logger.debug(self.randomed_times)
-        _logger.debug(adjusted_weights)
+        _logger.debug(self._get_formatted(self.randomed_times))
+        _logger.debug(self._get_formatted(adjusted_weights))
         return selected_item

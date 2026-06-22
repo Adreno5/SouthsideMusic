@@ -16,7 +16,6 @@ from core.models import (
     MUSIC_DATA_DIR,
     SongStorable,
 )
-from services.events import event_bus, EMIT_DEBUG_INFO
 from qfluentwidgets import MessageBoxBase, SubtitleLabel
 from views.list_widget import SListWidget
 from imports import QHBoxLayout, QLabel, QListWidget, QVBoxLayout
@@ -143,6 +142,8 @@ class FavoritesManager:
                     continue
                 for s in f.songs:
                     if str(s.id) == song_id:
+                        if s.target_lufs != target_lufs:
+                            s.loaded_loudness_gain = False
                         s.target_lufs = target_lufs
                         self._save()
                         return True

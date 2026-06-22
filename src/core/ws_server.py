@@ -101,6 +101,7 @@ class QObjectHandler(QObject):
         self._json_pending: dict[str, Future[None]] = {}
         self._json_queued: dict[str, Callable[[], dict[str, object]]] = {}
         self._send_generation = 0
+        self._json_shutdown = False
         self._ping_id = 0
         self._ping_started_at = 0.0
         self._ping_waiting = False
@@ -253,6 +254,8 @@ class QObjectHandler(QObject):
     ) -> None:
         if not self.is_open:
             return
+        if self._json_shutdown:
+            return
         if coalesce_key is None:
             generation = self._send_generation
             try:
@@ -315,13 +318,14 @@ class QObjectHandler(QObject):
             self.send(msg)
 
     def shutdownJsonSender(self) -> None:
+        self._json_shutdown = True
         self._json_executor.shutdown(wait=False, cancel_futures=True)
         self._ft_json_sender.shutdown()
 
 
 class WebSocketServer(threading.Thread):
     def __init__(self, port=12513):
-        super().__init__()
+        super().__init__(daemon=True)
         self._logger = logging.getLogger(__name__)
         self.port = port
         self.app = tornado.web.Application([(r'/', WebSocketHandler)])
@@ -353,18 +357,34 @@ class WebSocketServer(threading.Thread):
         self.handler = ws_handler.getHandler()
 
     def run(self):
-        self.server = tornado.httpserver.HTTPServer(self.app)
-        if not self.server:
-            return
-        self.server.listen(self.port)
-        self.ioloop = tornado.ioloop.IOLoop.current()
-        self._logger.info(f'webSocket server started on port {self.port}')
-        if self._stopping:
-            self.server.stop()
-            return
-        self.ioloop.start()
+        try:
+            self.server = tornado.httpserver.HTTPServer(self.app)
+            if not self.server:
+                return
+            self.server.listen(self.port)
+            self.ioloop = tornado.ioloop.IOLoop.current()
+            self._logger.info(f'webSocket server started on port {self.port}')
+            if self._stopping:
+                self.server.stop()
+                return
+            self.ioloop.start()
+        finally:
+            if self.server:
+                self.server.stop()
+            self.server = None
+            self.handler = None
+            if self.ioloop is not None:
+                try:
+                    self.ioloop.close(all_fds=True)
+                except Exception:
+                    pass
+            self.ioloop = None
 
-    def stop(self, shutdown_json_sender: bool = False) -> None:
+    def stop(
+        self,
+        shutdown_json_sender: bool = False,
+        timeout: float = 2.0,
+    ) -> None:
         self._stopping = True
 
         def _stop_on_ioloop() -> None:
@@ -376,7 +396,10 @@ class WebSocketServer(threading.Thread):
                 self.ioloop.stop()
 
         if self.ioloop:
-            self.ioloop.add_callback(_stop_on_ioloop)
+            try:
+                self.ioloop.add_callback(_stop_on_ioloop)
+            except RuntimeError:
+                _stop_on_ioloop()
         elif self.server:
             self.server.stop()
         self._logger.debug(str(self.handler))
@@ -386,7 +409,9 @@ class WebSocketServer(threading.Thread):
         if shutdown_json_sender:
             ws_handler.shutdownJsonSender()
         if self.is_alive() and threading.current_thread() is not self:
-            self.join()
+            self.join(timeout=timeout)
+            if self.is_alive():
+                self._logger.warning('websocket thread did not stop within timeout')
 
 
 ws_handler = QObjectHandler()

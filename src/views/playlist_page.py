@@ -45,6 +45,7 @@ if TYPE_CHECKING:
 
 WHITE = QColor(255, 255, 255, 100)
 BLACK = QColor(0, 0, 0, 100)
+LIST_BUILD_BATCH_SIZE = 40
 
 
 class PlaylistPage(QWidget):
@@ -78,6 +79,7 @@ class PlaylistPage(QWidget):
         self.lst_layout.addWidget(self.lst)
 
         self._song_cards: list[PlaylistSongCard] = []
+        self._playlist_refresh_seq = 0
         self._lazy_timer = QTimer(self)
         self._lazy_timer.timeout.connect(self._checkVisibleCards)
         self._lazy_timer.start(50)
@@ -194,14 +196,13 @@ class PlaylistPage(QWidget):
         event_bus.emit(PLAY_PLAYLIST_STORABLE, storable)
 
     def _checkVisibleCards(self):
-        for card in list(self._song_cards):
+        for idx, card in enumerate(list(self._song_cards)):
             try:
                 card.objectName()
             except RuntimeError:
                 continue
             if card.load:
                 continue
-            idx = self._song_cards.index(card)
             item = self.lst.item(idx)
             if item is None:
                 continue
@@ -211,16 +212,43 @@ class PlaylistPage(QWidget):
                 card.loadDetailAndImage()
 
     def refreshPlaylistWidget(self):
+        self._playlist_refresh_seq += 1
+        refresh_seq = self._playlist_refresh_seq
         val = self.lst.verticalScrollBar().value()
+        songs = list(self._pm.playlist)
         self._song_cards = []
         self.lst.clear()
+        self._pm.clearPreload()
 
-        for song in self._pm.playlist:
+        self._appendPlaylistBatch(refresh_seq, songs, 0, val)
+
+    def _appendPlaylistBatch(
+        self,
+        refresh_seq: int,
+        songs: list[SongStorable],
+        start: int,
+        scroll_value: int,
+    ) -> None:
+        if refresh_seq != self._playlist_refresh_seq:
+            return
+
+        end = min(start + LIST_BUILD_BATCH_SIZE, len(songs))
+        for song in songs[start:end]:
             self.addSongCardToList(song)
 
-        self._pm.clearPreload()
-        self.lst.verticalScrollBar().setValue(val)
+        if end < len(songs):
+            QTimer.singleShot(
+                1,
+                lambda: self._appendPlaylistBatch(
+                    refresh_seq,
+                    songs,
+                    end,
+                    scroll_value,
+                ),
+            )
+            return
 
+        self.lst.verticalScrollBar().setValue(scroll_value)
         self._syncPlaylistSelection()
 
     def movePlaylistSong(self, song: SongStorable, delta: int):
@@ -246,9 +274,6 @@ class PlaylistPage(QWidget):
             self._pm.current_index = playlist.index(current_song)
 
         event_bus.emit(PLAYLIST_CHANGED)
-
-        self.refreshPlaylistWidget()
-        self._syncPlaylistSelection()
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)

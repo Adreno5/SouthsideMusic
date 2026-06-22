@@ -176,7 +176,6 @@ class BootstrapWindow(QWidget):
         self.latency_test_threads = []
         self.latency_testing = False
         self.latencyFinished.connect(self.latencyTestFinished)
-        self.startTestLatency()
 
         self.task.connect(self.doTask)
 
@@ -404,4 +403,5 @@ if __name__ == '__main__':
     app = QApplication([])
     bwindow = BootstrapWindow()
     bwindow.allDone.connect(runMain)
+    bwindow.startTestLatency()
     app.exec()

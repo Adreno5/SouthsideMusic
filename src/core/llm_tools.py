@@ -1,0 +1,851 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+import os
+import queue
+from typing import Any, Callable
+
+from core.app_context import AppContext
+from core.backend import getBackend
+from core.config import cfg
+from core.favorites import favorites_manager
+from core.llm import TOOL_USAGE, getToolUsage
+from core.models import (
+    CloudFolderInfo,
+    LocalFolderInfo,
+    SearchSongInfo,
+    SongInfo,
+    SongStorable,
+)
+from imports import QCheckBox, QComboBox, QWidget, event_bus, tr
+from services.events.events import FAVORITES_CHANGED, MWINDOW_REFRESH_FOLDERS
+from views.number_viewer import SettableNumberViewer
+
+
+ToolCallback = Callable[[str, str], None]
+PendingCallback = Callable[[str, list[dict[str, Any]]], None]
+
+USAGE_FREE_TOOLS = {'get_tool_usage', 'get_confirm'}
+ACTION_TOOLS = {
+    'refresh_folders',
+    'switch_page',
+    'open_folder',
+    'search_cloud',
+    'continue_search_cloud',
+    'favorite_song',
+    'create_favorite_folder',
+    'scroll_to_section_and_expend',
+    'set_option_value',
+    'login',
+    'remove_song',
+}
+KNOWN_TOOLS = set(TOOL_USAGE)
+TOOL_SCHEMA_DESCRIPTION = (
+    'Available app tool. Call get_tool_usage with this exact name before use.'
+)
+TOOL_ARG_DESCRIPTION = 'See get_tool_usage for this tool.'
+
+
+def _schema(name: str, description: str, properties: dict[str, Any]) -> dict[str, Any]:
+    return {
+        'type': 'function',
+        'function': {
+            'name': name,
+            'description': description,
+            'parameters': {
+                'type': 'object',
+                'properties': properties,
+                'required': [
+                    key for key, value in properties.items() if value.get('_required')
+                ],
+                'additionalProperties': False,
+            },
+        },
+    }
+
+
+def _prop(
+    prop_type: str,
+    description: str,
+    *,
+    enum: list[str] | None = None,
+    required: bool = False,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        'type': prop_type,
+        'description': description,
+        '_required': required,
+    }
+    if enum is not None:
+        result['enum'] = enum
+    return result
+
+
+def _clean_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    parameters = schema['function']['parameters']
+    for prop in parameters['properties'].values():
+        prop.pop('_required', None)
+    return schema
+
+
+def llmToolSchemas() -> list[dict[str, Any]]:
+    schemas = [
+        _schema('get_tool_usage', 'Get exact usage for one tool.', {
+            'tool_name': _prop('string', 'Exact tool name.', required=True),
+        }),
+        _schema('get_confirm', 'Ask the user to confirm a plan before actions.', {
+            'plan': _prop('string', 'Short action plan shown to the user.', required=True),
+            'tools': _prop(
+                'string',
+                'JSON array of tool calls to execute after approval.',
+                required=True,
+            ),
+        }),
+        _schema('get_current_song', TOOL_SCHEMA_DESCRIPTION, {}),
+        _schema('get_folders', TOOL_SCHEMA_DESCRIPTION, {}),
+        _schema('read', TOOL_SCHEMA_DESCRIPTION, {
+            'path': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            'offset': _prop('integer', TOOL_ARG_DESCRIPTION),
+            'limit': _prop('integer', TOOL_ARG_DESCRIPTION),
+        }),
+        _schema('refresh_folders', TOOL_SCHEMA_DESCRIPTION, {}),
+        _schema('switch_page', TOOL_SCHEMA_DESCRIPTION, {
+            'page': _prop(
+                'string',
+                TOOL_ARG_DESCRIPTION,
+                enum=['settings', 'account', 'search'],
+                required=True,
+            ),
+        }),
+        _schema('open_folder', TOOL_SCHEMA_DESCRIPTION, {
+            'folder': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+        }),
+        _schema('search_cloud', TOOL_SCHEMA_DESCRIPTION, {
+            'query': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+        }),
+        _schema('continue_search_cloud', TOOL_SCHEMA_DESCRIPTION, {}),
+        _schema('favorite_song', TOOL_SCHEMA_DESCRIPTION, {
+            'song': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            'folder': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+        }),
+        _schema('create_favorite_folder', TOOL_SCHEMA_DESCRIPTION, {
+            'name': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            'kind': _prop(
+                'string',
+                TOOL_ARG_DESCRIPTION,
+                enum=['local', 'cloud'],
+                required=True,
+            ),
+        }),
+        _schema('get_sections', TOOL_SCHEMA_DESCRIPTION, {}),
+        _schema('scroll_to_section_and_expend', TOOL_SCHEMA_DESCRIPTION, {
+            'section': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+        }),
+        _schema('get_options', TOOL_SCHEMA_DESCRIPTION, {
+            'section': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+        }),
+        _schema('set_option_value', TOOL_SCHEMA_DESCRIPTION, {
+            'section': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            'option': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            'value': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            'converter': _prop(
+                'string',
+                TOOL_ARG_DESCRIPTION,
+                enum=['str', 'int', 'float', 'bool'],
+                required=True,
+            ),
+        }),
+        _schema('get_nickname', TOOL_SCHEMA_DESCRIPTION, {}),
+        _schema('login', TOOL_SCHEMA_DESCRIPTION, {}),
+        _schema('remove_song', TOOL_SCHEMA_DESCRIPTION, {
+            'folder': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            'song': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+        }),
+    ]
+    return [_clean_schema(schema) for schema in schemas]
+
+
+@dataclass
+class SourceFile:
+    path: str
+    lines: list[str]
+
+
+class SourceTree:
+    def __init__(self, root: str) -> None:
+        self.root = os.path.abspath(root)
+        self.files: dict[str, SourceFile] = {}
+        self.dirs: dict[str, list[str]] = {}
+        self.refresh()
+
+    def refresh(self) -> None:
+        self.files.clear()
+        self.dirs.clear()
+        for dirpath, dirnames, filenames in os.walk(self.root):
+            dirnames[:] = [name for name in dirnames if name != '__pycache__']
+            rel_dir = self._to_rel(dirpath)
+            children = [f'{name}/' for name in sorted(dirnames)]
+            children.extend(sorted(filenames))
+            self.dirs[rel_dir] = children
+            for filename in filenames:
+                full = os.path.join(dirpath, filename)
+                rel = self._to_rel(full)
+                try:
+                    with open(full, 'r', encoding='utf-8') as f:
+                        lines = f.read().splitlines()
+                except UnicodeDecodeError:
+                    lines = ['<binary file>']
+                except OSError as e:
+                    lines = [f'<failed to read: {e}>']
+                self.files[rel] = SourceFile(rel, lines)
+
+    def read(self, path: str, offset: int = 0, limit: int = 80) -> dict[str, Any]:
+        rel = self._normalize(path)
+        offset = max(0, offset)
+        limit = max(1, min(400, limit))
+        if rel in self.dirs:
+            items = self.dirs[rel]
+            return {
+                'path': rel,
+                'type': 'directory',
+                'offset': offset,
+                'limit': limit,
+                'total': len(items),
+                'items': items[offset : offset + limit],
+            }
+        if rel in self.files:
+            source = self.files[rel]
+            lines = source.lines[offset : offset + limit]
+            return {
+                'path': rel,
+                'type': 'file',
+                'offset': offset,
+                'limit': limit,
+                'total': len(source.lines),
+                'lines': [
+                    {'line': offset + index + 1, 'text': text}
+                    for index, text in enumerate(lines)
+                ],
+            }
+        return {'path': rel, 'error': 'Path not found under src'}
+
+    def _normalize(self, path: str) -> str:
+        cleaned = path.replace('\\', '/').strip().strip('/')
+        if not cleaned:
+            return 'src'
+        if cleaned == 'src' or cleaned.startswith('src/'):
+            candidate = cleaned
+        else:
+            candidate = f'src/{cleaned}'
+        parts = []
+        for part in candidate.split('/'):
+            if part in ('', '.'):
+                continue
+            if part == '..':
+                return 'src'
+            parts.append(part)
+        if not parts or parts[0] != 'src':
+            return 'src'
+        return '/'.join(parts)
+
+    def _to_rel(self, path: str) -> str:
+        rel = os.path.relpath(path, os.path.dirname(self.root))
+        return rel.replace('\\', '/')
+
+
+class LLMToolRunner:
+    def __init__(
+        self,
+        ctx: AppContext,
+        callback: ToolCallback | None = None,
+        pending_callback: PendingCallback | None = None,
+        allow_actions: bool = False,
+        require_usage: bool = True,
+    ) -> None:
+        self.ctx = ctx
+        self.callback = callback
+        self.pending_callback = pending_callback
+        self.allow_actions = allow_actions
+        self.require_usage = require_usage
+        self.source_tree = SourceTree(os.path.join(os.getcwd(), 'src'))
+        self._song_handles: dict[str, SearchSongInfo | SongStorable] = {}
+        self._folder_handles: dict[str, LocalFolderInfo | CloudFolderInfo] = {}
+        self._loaded_usage: set[str] = set()
+
+    def runTool(self, name: str, arguments: dict[str, Any]) -> str:
+        self._emit(name, 'running')
+        try:
+            result = self._run_tool(name, arguments)
+        except Exception as e:
+            result = {'error': str(e)}
+        text = json.dumps(result, ensure_ascii=False)
+        self._emit(name, text)
+        return text
+
+    def _run_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if name not in KNOWN_TOOLS:
+            return {'error': f'Unknown tool: {name}'}
+        if (
+            self.require_usage
+            and name not in USAGE_FREE_TOOLS
+            and name not in self._loaded_usage
+        ):
+            return {
+                'requires_tool_usage': True,
+                'tool_name': name,
+                'error': f'Call get_tool_usage with tool_name="{name}" before using this tool.',
+            }
+        if name in ACTION_TOOLS and not self.allow_actions:
+            return {
+                'requires_user_confirmation': True,
+                'tool_name': name,
+                'error': 'Draft a plan and call get_confirm before running app-changing tools.',
+            }
+        if name == 'get_tool_usage':
+            tool_name = str(arguments.get('tool_name', ''))
+            if tool_name in KNOWN_TOOLS:
+                self._loaded_usage.add(tool_name)
+            return {'tool_name': tool_name, 'usage': getToolUsage(tool_name)}
+        if name == 'get_confirm':
+            return self.getConfirm(
+                str(arguments.get('plan', '')),
+                str(arguments.get('tools', '[]')),
+            )
+        if name == 'get_current_song':
+            return self.getCurrentSong()
+        if name == 'get_folders':
+            return self.getFolders()
+        if name == 'read':
+            return self.read(
+                str(arguments.get('path', 'src')),
+                int(arguments.get('offset', 0) or 0),
+                int(arguments.get('limit', 80) or 80),
+            )
+        if name == 'refresh_folders':
+            return self.refreshFolders()
+        if name == 'switch_page':
+            return self.switchPage(str(arguments.get('page', '')))
+        if name == 'open_folder':
+            return self.openFolder(str(arguments.get('folder', '')))
+        if name == 'search_cloud':
+            return self.searchCloud(str(arguments.get('query', '')))
+        if name == 'continue_search_cloud':
+            return self.continueSearchCloud()
+        if name == 'favorite_song':
+            return self.favoriteSong(
+                str(arguments.get('song', '')),
+                str(arguments.get('folder', '')),
+            )
+        if name == 'create_favorite_folder':
+            return self.createFavoriteFolder(
+                str(arguments.get('name', '')),
+                str(arguments.get('kind', 'local')),
+            )
+        if name == 'get_sections':
+            return self.getSections()
+        if name == 'scroll_to_section_and_expend':
+            return self.scrollToSectionAndExpend(str(arguments.get('section', '')))
+        if name == 'get_options':
+            return self.getOptions(str(arguments.get('section', '')))
+        if name == 'set_option_value':
+            return self.setOptionValue(
+                str(arguments.get('section', '')),
+                str(arguments.get('option', '')),
+                str(arguments.get('value', '')),
+                str(arguments.get('converter', 'str')),
+            )
+        if name == 'get_nickname':
+            return self.getNickname()
+        if name == 'login':
+            return self.login()
+        if name == 'remove_song':
+            return {
+                'requires_confirmation': True,
+                'message': 'remove_song is not enabled until the in-panel confirmation UI is implemented.',
+            }
+        return {'error': f'Unknown tool: {name}'}
+
+    def getConfirm(self, plan: str, tools: str) -> dict[str, Any]:
+        pending_tools = self._parse_pending_tools(tools)
+        missing_usage = [
+            str(item.get('name', ''))
+            for item in pending_tools
+            if (
+                self.require_usage
+                and str(item.get('name', '')) not in USAGE_FREE_TOOLS
+                and str(item.get('name', '')) not in self._loaded_usage
+            )
+        ]
+        if missing_usage:
+            return {
+                'requires_tool_usage': True,
+                'missing_tools': sorted(set(missing_usage)),
+                'error': 'Call get_tool_usage for every pending tool before get_confirm.',
+            }
+        if self.pending_callback is not None:
+            self.pending_callback(plan, pending_tools)
+        return {
+            'requires_user_confirmation': True,
+            'confirmed': False,
+            'plan': plan,
+            'tools': pending_tools,
+            'message': 'Show this plan to the user. Execute the listed tools only after the user confirms.',
+        }
+
+    def getCurrentSong(self) -> dict[str, Any]:
+        pm = self.ctx.playing_manager
+        player = self.ctx.player
+        song = pm.current_song if pm else None
+        if song is None and pm and 0 <= pm.current_index < len(pm.playlist):
+            song = pm.playlist[pm.current_index]
+        if song is None:
+            return {'has_song': False}
+        handle = self._song_handle(song)
+        return {
+            'has_song': True,
+            'song': self._song_to_dict(song, handle),
+            'playback': {
+                'playing': player.isPlaying(),
+                'position': player.getPosition(),
+                'duration': player.getLength(),
+                'volume': player.volume_gain,
+                'play_mode': pm.play_mode if pm else cfg.play_method,
+            },
+        }
+
+    def getFolders(self) -> dict[str, Any]:
+        local = []
+        for index, local_folder in enumerate(favorites_manager.folders):
+            handle = f'local:{index}:{local_folder.folder_name}'
+            self._folder_handles[handle] = local_folder
+            local.append(
+                {
+                    'handle': handle,
+                    'name': local_folder.folder_name,
+                    'kind': 'local',
+                    'song_count': len(local_folder.songs),
+                }
+            )
+        cloud = []
+        if not getBackend().userAnonymous():
+            for index, cloud_folder in enumerate(getBackend().getUserPlaylists()):
+                handle = f'cloud:{index}:{cloud_folder.id}'
+                self._folder_handles[handle] = cloud_folder
+                cloud.append(
+                    {
+                        'handle': handle,
+                        'name': cloud_folder.folder_name,
+                        'kind': 'cloud',
+                        'song_count': None,
+                        'id': cloud_folder.id,
+                    }
+                )
+        return {'local': local, 'cloud': cloud}
+
+    def read(self, path: str, offset: int = 0, limit: int = 80) -> dict[str, Any]:
+        return self.source_tree.read(path, offset, limit)
+
+    def refreshFolders(self) -> dict[str, Any]:
+        self._run_main_thread(lambda: self.ctx.main_window.refreshFolders())
+        return self.getFolders()
+
+    def switchPage(self, page: str) -> dict[str, Any]:
+        def _switch() -> str:
+            mw = self.ctx.main_window
+            if page == 'settings':
+                mw.contents_widget.setCurrentWidget(self.ctx.setting_page)
+            elif page == 'account':
+                mw.contents_widget.setCurrentWidget(self.ctx.session_page)
+            elif page == 'search':
+                mw.contents_widget.setCurrentWidget(self.ctx.search_page)
+            else:
+                return 'unknown page'
+            return 'ok'
+
+        return {'page': page, 'status': self._run_main_thread(_switch)}
+
+    def openFolder(self, folder: str) -> dict[str, Any]:
+        folder_obj = self._folder_handles.get(folder)
+        if folder_obj is None:
+            self.getFolders()
+            folder_obj = self._folder_handles.get(folder)
+        if folder_obj is None:
+            return {'error': f'folder handle not found: {folder}'}
+        self._run_main_thread(lambda: self.ctx.main_window._openFolder(folder_obj))
+        return {'opened': self._folder_to_dict(folder, folder_obj)}
+
+    def searchCloud(self, query: str) -> dict[str, Any]:
+        if not query.strip():
+            return {'error': 'query is required'}
+        results = getBackend().searchSong(query, offset=0)
+        self._run_main_thread(lambda: self._apply_search_results(query, results, 0))
+        return {
+            'query': query,
+            'offset': 0,
+            'count': len(results),
+            'results': [self._search_song_to_dict(song) for song in results],
+        }
+
+    def continueSearchCloud(self) -> dict[str, Any]:
+        sp = self.ctx.search_page
+        query = sp.last_search
+        if not query:
+            return {'error': 'search_cloud must be called first'}
+        offset = sp.curr_offset
+        results = getBackend().searchSong(query, offset=offset)
+        self._run_main_thread(lambda: self._apply_search_results(query, results, offset))
+        return {
+            'query': query,
+            'offset': offset,
+            'count': len(results),
+            'results': [self._search_song_to_dict(song) for song in results],
+        }
+
+    def favoriteSong(self, song: str, folder: str) -> dict[str, Any]:
+        song_obj = self._song_handles.get(song)
+        folder_obj = self._folder_handles.get(folder)
+        if song_obj is None:
+            return {'error': f'song handle not found: {song}'}
+        if folder_obj is None:
+            self.getFolders()
+            folder_obj = self._folder_handles.get(folder)
+        if folder_obj is None:
+            return {'error': f'folder handle not found: {folder}'}
+
+        storable = self._to_storable(song_obj)
+        if isinstance(folder_obj, CloudFolderInfo):
+            ok = getBackend().editPlaylist('add', [str(storable.id)], folder_obj.id)
+            if not ok:
+                return {'error': 'cloud favorite failed'}
+        else:
+            if not favorites_manager.addSong(folder_obj.folder_name, storable):
+                return {'error': 'local favorite failed'}
+            event_bus.emit(FAVORITES_CHANGED, folder_obj.folder_name)
+
+        event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+        self._run_main_thread(lambda: self.ctx.main_window._openFolder(folder_obj))
+        return {
+            'favorited': self._song_to_dict(storable, song),
+            'folder': self._folder_to_dict(folder, folder_obj),
+        }
+
+    def createFavoriteFolder(self, name: str, kind: str) -> dict[str, Any]:
+        if not name.strip():
+            return {'error': 'folder name is required'}
+        if kind == 'cloud':
+            folder_id = getBackend().createPlaylist(name)
+            folder_obj: LocalFolderInfo | CloudFolderInfo = CloudFolderInfo(
+                folder_name=name,
+                image_url='',
+                id=folder_id,
+            )
+            handle = f'cloud:new:{folder_id}'
+        else:
+            folder_obj = favorites_manager.addFolder(name)
+            handle = f'local:new:{folder_obj.folder_name}'
+        self._folder_handles[handle] = folder_obj
+        self._run_main_thread(lambda: self.ctx.main_window.refreshFolders())
+        return {'created': self._folder_to_dict(handle, folder_obj)}
+
+    def getSections(self) -> dict[str, Any]:
+        sections = []
+        for section in self.ctx.setting_page._sections:
+            if section.title == 'setting_page.llm':
+                continue
+            sections.append(
+                {
+                    'title': section.title,
+                    'title_text': tr(section.title),
+                    'description': section._title,
+                    'expanded': section.isExpanded(),
+                }
+            )
+        return {'sections': sections}
+
+    def scrollToSectionAndExpend(self, section: str) -> dict[str, Any]:
+        target = self._find_section(section)
+        if target is None:
+            return {'error': f'section not found: {section}'}
+
+        def _show() -> None:
+            self.ctx.main_window.contents_widget.setCurrentWidget(self.ctx.setting_page)
+            target.setExpanded(True)
+            center = target.y() - self.ctx.setting_page.scroller.height() // 2
+            bar = self.ctx.setting_page.scroller.verticalScrollBar()
+            bar.setValue(max(0, center))
+
+        self._run_main_thread(_show)
+        return {'section': section, 'expanded': True}
+
+    def getOptions(self, section: str) -> dict[str, Any]:
+        target = self._find_section(section)
+        if target is None:
+            return {'error': f'section not found: {section}'}
+        if target.title == 'setting_page.llm':
+            return {'error': 'LLM section is hidden from tools'}
+        options = []
+        for widget in self._section_option_cards(target):
+            name = getattr(widget, '_llm_setting_name', '')
+            desc = getattr(widget, '_llm_setting_description', '')
+            value_widget = getattr(widget, '_llm_setting_widget', None)
+            options.append(
+                {
+                    'name': name,
+                    'name_text': tr(name),
+                    'description': desc,
+                    'description_text': tr(desc),
+                    'value': self._widget_value(value_widget),
+                    'value_type': type(self._widget_value(value_widget)).__name__,
+                    'choices': self._widget_choices(value_widget),
+                }
+            )
+        return {'section': section, 'options': options}
+
+    def setOptionValue(
+        self,
+        section: str,
+        option: str,
+        value: str,
+        converter: str,
+    ) -> dict[str, Any]:
+        target = self._find_section(section)
+        if target is None or target.title == 'setting_page.llm':
+            return {'error': 'section not found or hidden'}
+        card = self._find_option_card(target, option)
+        if card is None:
+            return {'error': f'option not found: {option}'}
+        widget = getattr(card, '_llm_setting_widget', None)
+        old = self._widget_value(widget)
+        converted = self._convert(value, converter)
+        self._run_main_thread(lambda: self._set_widget_value(widget, converted))
+        return {
+            'section': section,
+            'option': option,
+            'old_value': old,
+            'new_value': self._widget_value(widget),
+        }
+
+    def getNickname(self) -> dict[str, Any]:
+        page = self.ctx.session_page
+        return {
+            'logged_in': page._nickname != 'Anonymous User',
+            'nickname': page._nickname,
+            'vip_level': page._vip_level,
+        }
+
+    def login(self) -> dict[str, Any]:
+        self._run_main_thread(
+            lambda: self.ctx.main_window.contents_widget.setCurrentWidget(
+                self.ctx.session_page
+            )
+        )
+        self._run_main_thread(lambda: self.ctx.session_page.login())
+        return self.getNickname()
+
+    def _apply_search_results(
+        self,
+        query: str,
+        results: list[SearchSongInfo],
+        offset: int,
+    ) -> None:
+        mw = self.ctx.main_window
+        sp = self.ctx.search_page
+        mw.contents_widget.setCurrentWidget(sp)
+        mw.search_input.setText(query)
+        sp.last_search = query
+        sp.searching = False
+        if offset == 0:
+            sp.curr_offset = 0
+            sp.lst.clear()
+            sp.cards.clear()
+            sp.img_card_map.clear()
+        sp.addSongs(results)
+        sp.curr_offset = offset + len(results)
+        bar = sp.lst.verticalScrollBar()
+        delegate = getattr(sp.lst, 'scrollDelegate', None) or getattr(
+            sp.lst,
+            'delegate',
+            None,
+        )
+        if delegate is not None:
+            delegate.vScrollBar.scrollValue(bar.maximum() - bar.value())
+
+    def _search_song_to_dict(self, song: SearchSongInfo) -> dict[str, Any]:
+        handle = self._song_handle(song)
+        return {
+            'handle': handle,
+            'id': str(song.id),
+            'title': song.name,
+            'artists': [artist.name for artist in song.artists],
+            'album': song.album.name,
+            'duration': song.duration,
+        }
+
+    def _song_to_dict(
+        self,
+        song: SongStorable | SearchSongInfo,
+        handle: str,
+    ) -> dict[str, Any]:
+        if isinstance(song, SearchSongInfo):
+            return self._search_song_to_dict(song)
+        return {
+            'handle': handle,
+            'id': str(song.id),
+            'title': song.name,
+            'artists': [artist.name for artist in song.artists],
+            'duration': song.duration,
+        }
+
+    def _folder_to_dict(
+        self,
+        handle: str,
+        folder: LocalFolderInfo | CloudFolderInfo,
+    ) -> dict[str, Any]:
+        if isinstance(folder, CloudFolderInfo):
+            return {
+                'handle': handle,
+                'kind': 'cloud',
+                'name': folder.folder_name,
+                'id': folder.id,
+            }
+        return {
+            'handle': handle,
+            'kind': 'local',
+            'name': folder.folder_name,
+            'song_count': len(folder.songs),
+        }
+
+    def _song_handle(self, song: SearchSongInfo | SongStorable) -> str:
+        song_id = str(song.id)
+        handle = f'song:{song_id}'
+        self._song_handles[handle] = song
+        return handle
+
+    def _to_storable(self, song: SearchSongInfo | SongStorable) -> SongStorable:
+        if isinstance(song, SongStorable):
+            return song
+        return SongStorable(
+            SongInfo(
+                name=song.name,
+                artists=song.artists,
+                id=str(song.id),
+                privilege=song.privilege.fee,
+                duration=song.duration,
+            )
+        )
+
+    def _find_section(self, section: str) -> Any | None:
+        for item in self.ctx.setting_page._sections:
+            if item.title == section or tr(item.title) == section:
+                return item
+        return None
+
+    def _section_option_cards(self, section: Any) -> list[QWidget]:
+        result = []
+        layout = section.content_layout
+        for index in range(layout.count()):
+            item = layout.itemAt(index)
+            widget = item.widget()
+            if widget is not None and hasattr(widget, '_llm_setting_name'):
+                result.append(widget)
+        return result
+
+    def _find_option_card(self, section: Any, option: str) -> QWidget | None:
+        for card in self._section_option_cards(section):
+            name = getattr(card, '_llm_setting_name', '')
+            if name == option or tr(name) == option:
+                return card
+        return None
+
+    def _widget_value(self, widget: Any) -> Any:
+        if isinstance(widget, QCheckBox):
+            return widget.isChecked()
+        if isinstance(widget, QComboBox):
+            data = widget.currentData()
+            return data if data is not None else widget.currentText()
+        if isinstance(widget, SettableNumberViewer):
+            return widget.value
+        if hasattr(widget, 'text'):
+            return widget.text()
+        if hasattr(widget, 'cur_text'):
+            return widget.cur_text
+        return None
+
+    def _widget_choices(self, widget: Any) -> list[str]:
+        if isinstance(widget, QComboBox):
+            return [
+                str(widget.itemData(index) or widget.itemText(index))
+                for index in range(widget.count())
+            ]
+        return []
+
+    def _set_widget_value(self, widget: Any, value: Any) -> None:
+        if isinstance(widget, QCheckBox):
+            widget.setChecked(bool(value))
+        elif isinstance(widget, QComboBox):
+            index = widget.findData(value)
+            if index < 0:
+                index = widget.findText(str(value))
+            if index >= 0:
+                widget.setCurrentIndex(index)
+        elif isinstance(widget, SettableNumberViewer):
+            widget.setValue(float(value))
+            widget.valueChanged.emit(widget.value)
+        elif hasattr(widget, 'setText'):
+            widget.setText(str(value))
+
+    def _convert(self, value: str, converter: str) -> Any:
+        if converter == 'int':
+            return int(value)
+        if converter == 'float':
+            return float(value)
+        if converter == 'bool':
+            return value.strip().lower() in ('1', 'true', 'yes', 'on', 'checked')
+        return value
+
+    def _run_main_thread(self, fn: Callable[[], Any]) -> Any:
+        result_queue: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
+
+        def _wrapped() -> None:
+            try:
+                result_queue.put((True, fn()))
+            except Exception as e:
+                result_queue.put((False, e))
+
+        self.ctx.addScheduledTask(_wrapped)
+        ok, result = result_queue.get(timeout=30)
+        if ok:
+            return result
+        raise result
+
+    def _emit(self, name: str, content: str) -> None:
+        if self.callback is not None:
+            self.callback(name, content)
+
+    def _parse_pending_tools(self, tools: str) -> list[dict[str, Any]]:
+        try:
+            raw = json.loads(tools)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(raw, list):
+            return []
+
+        result: list[dict[str, Any]] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            name = item.get('name') or item.get('tool')
+            arguments = item.get('arguments') or item.get('args') or {}
+            function = item.get('function')
+            if isinstance(function, dict):
+                name = name or function.get('name')
+                arguments = function.get('arguments', arguments)
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except json.JSONDecodeError:
+                    arguments = {}
+            if isinstance(name, str) and isinstance(arguments, dict):
+                result.append({'name': name, 'arguments': arguments})
+        return result

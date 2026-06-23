@@ -183,6 +183,6 @@ Python project:
 D:\PythonProjects\SouthsideMusic
 
 Java project:
-D:\Path\To\JavaClient
+D:\downloads\Southside-Legacy
 
 跨端协议任务必须先读两个项目的入口说明，再确认 Python 发出的 JSON 字段和 Java 消费字段是否一致。

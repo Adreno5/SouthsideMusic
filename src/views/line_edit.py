@@ -1,3 +1,6 @@
+from PySide6.QtCore import QEvent
+from PySide6.QtGui import QEnterEvent
+
 from core import theme
 from core.color import mixColor
 from core.config import cfg
@@ -45,6 +48,8 @@ class SearchLineEdit(QLineEdit):
         self._icon_gap = 6
         bindIcon(self.handler, 'search')
 
+        self._hovering = False
+
         self.iconx_timer = EaseOutTimer(0.3, 3)
         self.bgwidth_timer = EaseOutTimer(0.3, 3)
 
@@ -60,6 +65,14 @@ class SearchLineEdit(QLineEdit):
         event_bus.subscribe(POST_THEME_CHANGED, self._onThemeChanged)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._onThemeChanged)
         event_bus.subscribe(REPAINT, self._repaintTick)
+
+    def enterEvent(self, event: QEnterEvent) -> None:
+        self._hovering = True
+        return super().enterEvent(event)
+
+    def leaveEvent(self, event: QEvent) -> None:
+        self._hovering = False
+        return super().leaveEvent(event)
 
     def _onThemeChanged(self, song=None):
         song_theme = self._mwindow.song_theme if self._mwindow else None
@@ -100,7 +113,7 @@ class SearchLineEdit(QLineEdit):
             self.update()
 
     def shouldExpand(self) -> bool:
-        return bool(self.text().strip()) or self.hasFocus()
+        return bool(self.text().strip()) or (self.hasFocus() and self._hovering)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         self.setFocus(Qt.FocusReason.MouseFocusReason)

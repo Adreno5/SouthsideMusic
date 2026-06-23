@@ -253,6 +253,7 @@ class SettingPage(QWidget):
                 tr('setting_page.current_volume_db_value', value=f'{v:.1f}')
             ),
         )
+        QTimer.singleShot(0, self.refreshLlmModels)
 
     @property
     def _dp(self):
@@ -781,6 +782,9 @@ class SettingPage(QWidget):
 
     def addSetting(self, name: str, description: str, widget: QWidget) -> None:
         card = self._createTransparentCard()
+        card._llm_setting_name = name
+        card._llm_setting_description = description
+        card._llm_setting_widget = widget
         global_layout = QHBoxLayout()
         global_layout.setContentsMargins(16, 12, 16, 12)
         global_layout.setSpacing(18)

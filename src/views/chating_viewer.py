@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import re
 
+import time
 from typing import Callable, Literal, override
 
 from imports import (
@@ -15,7 +16,8 @@ from imports import (
     Qt,
     QVBoxLayout,
     QWidget,
-    QLayoutItem
+    QLayoutItem,
+    QEasingCurve
 )
 from qfluentwidgets import FlowLayout, TableWidget, TextEdit
 
@@ -47,6 +49,10 @@ class ChatingViewer(QWidget):
         self._table_lines: list[str] = []
         self._at_line_start = True
 
+        self._append_buffer = ''
+        self._last_flush = time.time()
+        self._finished = False
+
         self._layout = QVBoxLayout()
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(8)
@@ -67,10 +73,18 @@ class ChatingViewer(QWidget):
     def appendChunk(self, chunk_content: str) -> None:
         if not chunk_content:
             return
-        self._buffer += chunk_content
-        self._drain_buffer(False)
+        self._append_buffer += chunk_content
+        if time.time() - self._last_flush > 0.21 and not self._finished:
+            self._buffer += self._append_buffer
+            self._append_buffer = ''
+            self._last_flush = time.time()
+            self._drain_buffer(False)
 
     def finishStream(self) -> None:
+        self._finished = True
+        if self._append_buffer:
+            self._buffer += self._append_buffer
+            self._append_buffer = ''
         self._drain_buffer(True)
         if self._mode == 'table':
             self._finish_table()
@@ -382,7 +396,8 @@ class ChatingViewer(QWidget):
         return self._current_flow
 
     def _new_flow(self) -> FlowLayout:
-        flow = FlowLayout()
+        flow = FlowLayout(needAni=True)
+        flow.setAnimation(200, QEasingCurve.Type.OutCubic)
         flow.setContentsMargins(0, 0, 0, 0)
         flow.setHorizontalSpacing(4)
         flow.setVerticalSpacing(4)

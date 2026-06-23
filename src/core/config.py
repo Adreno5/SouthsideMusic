@@ -4,7 +4,7 @@ import json
 import logging
 import os
 
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import win32crypt
 
@@ -13,7 +13,6 @@ from core.models import SongStorable
 _logger = logging.getLogger(__name__)
 
 cfg_cache: dict[str, Any] = {}
-
 
 @dataclass
 class Config:
@@ -79,10 +78,21 @@ class Config:
     llm_base_url: str = 'https://api.openai.com/v1'
     llm_api_key_encrypted: str = ''
     llm_model: str = ''
+    llm_viewer_expanded: bool = False
 
+    def __init__(self) -> None:
+        super().__init__()
+        global _instance
+        _instance = self
 
-cfg = Config()
+    @staticmethod
+    def instance() -> 'Config':
+        global _instance
+        return _instance
 
+_instance: Config = cast(Config, None)
+Config()
+cfg = Config.instance()
 
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 CONFIG_PATH = os.path.join(_PROJECT_ROOT, 'config.json')
@@ -133,10 +143,10 @@ def _song_from_object(data: Any) -> SongStorable | None:
 
 
 def _config_to_json_object() -> dict[str, Any]:
-    data = cfg.__dict__.copy()
+    data = _instance.__dict__.copy()
     data['last_playlist'] = [
         song.toObject()
-        for song in (cfg.last_playlist or [])
+        for song in (_instance.last_playlist or [])
         if isinstance(song, SongStorable)
     ]
     data.pop('last_playing_song', None)
@@ -169,7 +179,7 @@ def _apply_config_json_object(data: dict[str, Any]) -> None:
         data['last_playlist'] = [song] if song else []
         data['last_playing_index'] = 0 if song else -1
     data.pop('last_playing_song', None)
-    cfg.__dict__.update(data)
+    _instance.__dict__.update(data)
 
 
 def _delete_legacy_pickle_config() -> None:
@@ -192,7 +202,7 @@ def loadConfig() -> None:
 
         if isinstance(data, dict):
             _apply_config_json_object(data)
-            _logger.info(f'loaded config {len(cfg.__dict__)=}')
+            _logger.info(f'loaded config {len(_instance.__dict__)=}')
         else:
             _logger.warning('invalid config.json, using defaults')
             saveConfig()

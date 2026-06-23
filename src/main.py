@@ -11,6 +11,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'views'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'services'))
 sys.path.append(os.path.dirname(__file__))
 
+from core.lyrics import LRCLyricParser, YRCLyricParser
 from views.dependences_window import DependencesWindow
 import logging
 
@@ -29,9 +30,10 @@ import imports as _ims
 from qfluentwidgets import setTheme, Theme
 import shiboken6
 
-from core.config import loadConfig, saveConfig, cfg
+from core.config import loadConfig, saveConfig, Config
 from core.favorites import favorites_manager
 from core.icons import refreshBoundIcons
+from core.llm import LLM
 from core.audio_player import AudioPlayer
 from core.backend import initBackend
 from core.netease_backend import NeteaseCloudMusicBackend
@@ -253,8 +255,8 @@ _ims.event_bus.subscribe(
         {
             'option': 'play_state',
             'is_playing': bool(is_playing),
-            'position': player.getPosition(),
-            'duration': player.getLength()
+            'position': ctx.player.getPosition(),
+            'duration': ctx.player.getLength()
         },
         coalesce_key='play_state',
     ),
@@ -266,6 +268,7 @@ if __name__ == '__main__':
     launchwindow.subtitle('Phase 1 (start core...)')
 
     launchwindow.push('Writting login information...')
+    cfg = Config.instance()
     if cfg.login_status and not ncm.getCurrentSession().is_anonymous:
         apis.login.writeLoginInfo(cfg.login_status)
     else:
@@ -326,15 +329,7 @@ if __name__ == '__main__':
         _ims.QFontDatabase.addApplicationFont('fonts/HARMONYOS_SANS_SC_REGULAR.ttf')
     )[0]
 
-    from core.lyrics import LRCLyricParser, YRCLyricParser
-
     launchwindow.push('Initializing services...')
-
-    mgr = LRCLyricParser()
-    transmgr = LRCLyricParser()
-    ymgr = YRCLyricParser()
-
-    player = AudioPlayer()
 
     launchwindow.push('Loading favorites...')
     favorites_manager.load()
@@ -365,20 +360,20 @@ if __name__ == '__main__':
 
     from core.app_context import AppContext
 
-    ctx = AppContext(
-        app=app,
-        player=player,
-        cfg=cfg,
-        mgr=mgr,
-        transmgr=transmgr,
-        ymgr=ymgr,
-        ws_server=ws_server,
-        ws_handler=ws_handler,
-        harmony_font_family=harmony_font_family,
-        favs=favorites_manager.folders,
-        lock=lock,
-    )
+    ctx = AppContext()
+    ctx.app = app
+    ctx.player = AudioPlayer()
+    ctx.cfg = Config.instance()
+    ctx.mgr = LRCLyricParser()
+    ctx.transmgr = LRCLyricParser()
+    ctx.ymgr = YRCLyricParser()
+    ctx.ws_server = ws_server
+    ctx.ws_handler = ws_handler
+    ctx.harmony_font_family = harmony_font_family
+    ctx.favs = favorites_manager.folders
+    ctx.lock = lock
     ctx.launch_window = launchwindow
+    ctx.llm = LLM()
     ctx.playing_manager = PlayingManager(ctx)
 
     launchwindow.subtitle('Preparing (checking dependences...)')

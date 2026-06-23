@@ -9,11 +9,15 @@ from imports import QObject, Signal
 if TYPE_CHECKING:
     from core.audio_player import AudioPlayer
     from core.config import Config
+    from core.debugging import Debugging
+    from core.llm import LLM
     from core.lyrics import LRCLyricParser, YRCLyricParser
     from core.playing_manager import PlayingManager
     from core.ws_server import WebSocketServer, QObjectHandler
     from PySide6.QtWidgets import QApplication
+    from services.events.events_services import EventsServices
     from views.desktop_lyrics import DesktopLyricsPage
+    from views.dependences_window import DependencesWindow
     from views.favorites_page import FavoritesPage
     from views.launch_window import LaunchWindow
     from views.main_window import MainWindow
@@ -22,9 +26,6 @@ if TYPE_CHECKING:
     from views.search_page import SearchPage
     from views.session_page import SessionPage
     from views.setting_page import SettingPage
-    from core.debugging import Debugging
-    from services.events.events_services import EventsServices
-    from views.dependences_window import DependencesWindow
 
 
 class _ScheduledTaskRunner(QObject):
@@ -58,33 +59,21 @@ class _ScheduledTaskRunner(QObject):
 
 
 class AppContext:
-    def __init__(
-        self,
-        app: QApplication,
-        player: AudioPlayer,
-        cfg: Config,
-        mgr: LRCLyricParser,
-        transmgr: LRCLyricParser,
-        ymgr: YRCLyricParser,
-        ws_server: WebSocketServer,
-        ws_handler: QObjectHandler,
-        harmony_font_family: str,
-        favs: list | None = None,
-        lock: threading.Lock | None = None,
-    ) -> None:
-        self.app = app
-        self.player = player
-        self.cfg = cfg
-        self.mgr = mgr
-        self.transmgr = transmgr
-        self.ymgr = ymgr
-        self.ws_server = ws_server
-        self.ws_handler = ws_handler
-        self.harmony_font_family = harmony_font_family
-        self.favs = favs if favs is not None else []
-        self.lock = lock if lock is not None else threading.Lock()
+    def __init__(self) -> None:
+        self.app: QApplication = cast('QApplication', None)
+        self.player: AudioPlayer = cast('AudioPlayer', None)
+        self.cfg: Config = cast('Config', None)
+        self.mgr: LRCLyricParser = cast('LRCLyricParser', None)
+        self.transmgr: LRCLyricParser = cast('LRCLyricParser', None)
+        self.ymgr: YRCLyricParser = cast('YRCLyricParser', None)
+        self.ws_server: WebSocketServer = cast('WebSocketServer', None)
+        self.ws_handler: QObjectHandler = cast('QObjectHandler', None)
+        self.harmony_font_family: str = ''
+        self.favs: list = []
+        self.lock: threading.Lock = threading.Lock()
         self._scheduled_task_runner = _ScheduledTaskRunner()
         self.playing_manager: PlayingManager = cast('PlayingManager', None)
+        self.llm: LLM = cast('LLM', None)
         self.dependences_available: bool = True
         self.debugging: bool = False
 

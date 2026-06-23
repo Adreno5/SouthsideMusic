@@ -38,6 +38,7 @@ class SouthsideIcon(FluentIconBase, Enum):
     SEARCH = 'search'
     RENAME = 'rename'
     TRANSLATION = 'translation'
+    CHAT_ADD = 'chat_add'
 
     @lru_cache
     def path(self, theme=Theme.AUTO) -> str:

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+import json
 import logging
+import urllib.request
 
-from typing import cast
+from typing import Any, cast
 
 from openai import OpenAI
 from openai.types.chat import (
@@ -35,6 +37,11 @@ Style:
 - Match the user's language.
 - Do not start with a markdown heading, table, code fence, list marker, or math block.
 - Use markdown only when it improves readability.
+- For math, use inline `$...$` or display `$$...$$` formulas.
+- Use ```latex fenced code blocks for full LaTeX source code, including requests
+  like "write LaTeX", "show LaTeX code", or "give me a LaTeX example".
+- Do not leave full LaTeX source code as plain text.
+- Do not wrap standalone formulas in ```latex code blocks.
 - Close every code, table, and LaTeX delimiter because the UI renders streamed output.'''
 
 LLMMessage = dict[str, str]
@@ -56,11 +63,7 @@ class LLM:
         self.timeout = timeout
 
     def listModels(self) -> list[str]:
-        models = self._client().models.list()
-        return sorted(
-            {model.id for model in models.data if model.id},
-            key=str.lower,
-        )
+        return self._parseModelsResponse(self._requestModels())
 
     def chat(
         self,
@@ -79,6 +82,7 @@ class LLM:
         message: str,
         history: Iterable[LLMMessage] | None = None,
     ) -> Iterator[str]:
+        _logger.info('start stream request')
         stream = self._client().chat.completions.create(
             model=self._model(),
             messages=self.buildMessages(message, history),
@@ -146,3 +150,34 @@ class LLM:
         if not model:
             raise ValueError('LLM model is required')
         return model
+
+    def _requestModels(self) -> Any:
+        url = f'{self._baseUrl()}/models'
+        api_key = self.api_key or decryptSecret(cfg.llm_api_key_encrypted)
+        headers = {'Accept': 'application/json'}
+        if api_key:
+            headers['Authorization'] = f'Bearer {api_key}'
+
+        request = urllib.request.Request(url, headers=headers, method='GET')
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            return json.loads(response.read().decode('utf-8'))
+
+    def _parseModelsResponse(self, body: Any) -> list[str]:
+        if isinstance(body, dict):
+            data = body.get('data', body.get('models', []))
+        else:
+            data = body
+
+        if not isinstance(data, list):
+            return []
+
+        models: list[str] = []
+        for item in data:
+            if isinstance(item, str):
+                models.append(item)
+            elif isinstance(item, dict):
+                model_id = item.get('id') or item.get('name') or item.get('model')
+                if isinstance(model_id, str):
+                    models.append(model_id)
+
+        return sorted(set(models), key=str.lower)

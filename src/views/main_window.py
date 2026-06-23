@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+import threading
 import time
 
 from core.app_context import AppContext
@@ -12,6 +13,7 @@ from core.qt_utils import toQtInt
 from core.smooth import EaseOutTimer
 from imports import (
     BACKGROUND_RATIO_CHANGED,
+    QLabel,
     ENDING_NO_SOUND,
     LANGUAGE_CHANGED,
     MWINDOW_REFRESH_FOLDERS,
@@ -35,6 +37,7 @@ from imports import (
     QFont,
     QFontMetricsF,
     QIcon,
+    QFrame,
     QListWidget,
     QListWidgetItem,
     QPropertyAnimation,
@@ -45,15 +48,18 @@ from imports import (
     Qt,
     QTimer,
     TransparentPushButton,
+    TransparentToolButton,
     bindText,
     event_bus,
     tr,
 )
 from imports import QCloseEvent, QColor, QKeyEvent, QPainter
-from views.list_widget import SListWidget
+from views.list_widget import SListWidget, SScrollArea
 from imports import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
+    CardWidget,
     InfoBar,
+    LineEdit,
 )
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 
@@ -65,6 +71,7 @@ from core.favorites import favorites_manager, saveFavorites
 from core.icons import bindIcon
 from core.downloader import asyncTask
 from views.folder_card import CloudFolderCard, LocalFolderCard
+from views.chating_viewer import ChatingViewer
 from views.line_edit import SearchLineEdit
 from views.playing_controller import PlayingController
 from views.song_card import SearchSongCard
@@ -125,6 +132,10 @@ class DebugOverlay(QWidget):
         painter.end()
 
 
+LLM_VIEWER_WIDTH = 350
+LLM_WINDOW_WIDTH_DELTA = 225
+
+
 class MainWindow(FluentWindowBase):
     def __init__(
         self,
@@ -148,6 +159,12 @@ class MainWindow(FluentWindowBase):
         self._loading_song: bool = False
         self._stp = ctx.setting_page
         self._plp = ctx.playlist_page
+        self.llm_viewer_expanded = cfg.llm_viewer_expanded
+        self.llm_viewer_animating = False
+        self.llm_streaming = False
+        self.llm_messages: list[dict[str, str]] = []
+        self.llm_stream_viewer: ChatingViewer | None = None
+        self.llm_stream_thread: threading.Thread | None = None
 
         self.setWindowIcon(
             QIcon(str(Path(__file__).resolve().parent.parent.parent / 'icon.png'))
@@ -162,6 +179,16 @@ class MainWindow(FluentWindowBase):
         self.contents_widget.currentChanged.connect(self.onStackedWidgetChanged)
 
         self.setTitleBar(SouthsideMusicTitleBar(self))
+        self.llm_clear_btn = TransparentToolButton()
+        self.llm_clear_btn.setFixedSize(32, 32)
+        self.llm_clear_btn.setToolTip('Clear chat')
+        bindIcon(self.llm_clear_btn, 'chat_add')
+        self.llm_clear_btn.clicked.connect(self.clearLLMChat)
+        self.llm_viewer_btn = TransparentToolButton(FluentIcon.CHAT)
+        self.llm_viewer_btn.setFixedSize(32, 32)
+        self.llm_viewer_btn.setToolTip('Onerad')
+        self.llm_viewer_btn.clicked.connect(self.toggleLLMViewerExpand)
+        self.titleBar.buttonLayout.insertWidget(0, self.llm_viewer_btn) # type: ignore
 
         contents_layout = QHBoxLayout()
         contents_widget = QWidget(self)
@@ -217,6 +244,55 @@ class MainWindow(FluentWindowBase):
 
         self.hBoxLayout.addLayout(left_layout, 1)
         self.hBoxLayout.addWidget(contents_widget, 5)
+        self.llm_viewer_panel = QFrame()
+        self.llm_viewer_panel.setFixedWidth(
+            LLM_VIEWER_WIDTH if self.llm_viewer_expanded else 0
+        )
+        self.llm_viewer_panel.setVisible(self.llm_viewer_expanded)
+        self.llm_viewer_panel.setObjectName('llm_viewer_panel')
+        self.llm_viewer_panel.setStyleSheet(
+            'QFrame#llm_viewer_panel { border-left: 1px solid rgba(128, 128, 128, 60); }'
+        )
+        llm_panel_layout = QVBoxLayout()
+        llm_panel_layout.setContentsMargins(0, 48, 0, 52)
+        llm_panel_layout.setSpacing(8)
+        self.llm_viewer_panel.setLayout(llm_panel_layout)
+
+        llm_header = QWidget()
+        llm_header_layout = QHBoxLayout()
+        llm_header_layout.setContentsMargins(6, 0, 6, 0)
+        llm_header_layout.addStretch(1)
+        llm_header_layout.addWidget(self.llm_clear_btn)
+        llm_header.setLayout(llm_header_layout)
+        llm_panel_layout.addWidget(llm_header)
+
+        self.llm_chat_scroller = SScrollArea()
+        self.llm_chat_scroller.setWidgetResizable(True)
+        self.llm_chat_widget = QWidget()
+        self.llm_chat_widget.setFixedWidth(LLM_VIEWER_WIDTH)
+        self.llm_chat_layout = QVBoxLayout()
+        self.llm_chat_layout.setContentsMargins(10, 8, 10, 8)
+        self.llm_chat_layout.setSpacing(8)
+        self.llm_chat_layout.addStretch(1)
+        self.llm_chat_widget.setLayout(self.llm_chat_layout)
+        self.llm_chat_scroller.setWidget(self.llm_chat_widget)
+        llm_panel_layout.addWidget(self.llm_chat_scroller, 1)
+
+        self.llm_input_widget = QWidget()
+        llm_input_layout = QHBoxLayout()
+        llm_input_layout.setContentsMargins(6, 0, 6, 0)
+        llm_input_layout.setSpacing(4)
+        self.llm_input_widget.setLayout(llm_input_layout)
+        self.llm_input = LineEdit()
+        self.llm_input.setPlaceholderText('Ask Onerad')
+        self.llm_input.returnPressed.connect(self.sendLLMMessage)
+        self.llm_send_btn = TransparentToolButton(FluentIcon.SEND)
+        self.llm_send_btn.setFixedSize(32, 32)
+        self.llm_send_btn.clicked.connect(self.sendLLMMessage)
+        llm_input_layout.addWidget(self.llm_input, 1)
+        llm_input_layout.addWidget(self.llm_send_btn)
+        llm_panel_layout.addWidget(self.llm_input_widget)
+        self.hBoxLayout.addWidget(self.llm_viewer_panel, 0)
 
         self.search_input = SearchLineEdit(self, ctx.harmony_font_family)
         self.search_input.returnPressed.connect(self.search)
@@ -265,7 +341,11 @@ class MainWindow(FluentWindowBase):
             cfg.window_height = self.height()
         else:
             self.move(cfg.window_x, cfg.window_y)
-            self.resize(cfg.window_width, cfg.window_height)
+            self.resize(
+                cfg.window_width
+                + (LLM_WINDOW_WIDTH_DELTA if self.llm_viewer_expanded else 0),
+                cfg.window_height,
+            )
 
             if cfg.window_maximized:
                 self.showMaximized()
@@ -296,6 +376,9 @@ class MainWindow(FluentWindowBase):
         geo.setWidth(int(self.width() * 0.25))
         self.debug_overlay.setGeometry(geo)
         self.debug_overlay.raise_()
+
+        self.scroll_timer = QTimer(self)
+        self.scroll_timer.timeout.connect(self._scrollLLMChatToBottom)
 
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(REPAINT, self.updateDatas)
@@ -405,6 +488,166 @@ class MainWindow(FluentWindowBase):
             self.controller.showLyrics()
 
         QTimer.singleShot(225, fini)
+
+    def toggleLLMViewerExpand(self) -> None:
+        if self.llm_viewer_animating:
+            return
+        self.llm_viewer_expanded = not self.llm_viewer_expanded
+        self.llm_viewer_animating = True
+
+        start_width = self.llm_viewer_panel.width()
+        end_width = LLM_VIEWER_WIDTH if self.llm_viewer_expanded else 0
+        window_delta = (
+            LLM_WINDOW_WIDTH_DELTA
+            if self.llm_viewer_expanded
+            else -LLM_WINDOW_WIDTH_DELTA
+        )
+        if self.llm_viewer_expanded:
+            self.llm_viewer_panel.show()
+
+        anim = QPropertyAnimation(self.llm_viewer_panel, b'minimumWidth', self)
+        anim.setDuration(200)
+        anim.setEasingCurve(
+            QEasingCurve.Type.OutCirc
+            if self.llm_viewer_expanded
+            else QEasingCurve.Type.InCirc
+        )
+        anim.setStartValue(start_width)
+        anim.setEndValue(end_width)
+
+        width_anim = QPropertyAnimation(self.llm_viewer_panel, b'maximumWidth', self)
+        width_anim.setDuration(200)
+        width_anim.setEasingCurve(anim.easingCurve())
+        width_anim.setStartValue(start_width)
+        width_anim.setEndValue(end_width)
+
+        window_anim: QPropertyAnimation | None = None
+        if not self.isMaximized():
+            geometry = self.geometry()
+            window_anim = QPropertyAnimation(self, b'geometry', self)
+            window_anim.setDuration(200)
+            window_anim.setEasingCurve(anim.easingCurve())
+            window_anim.setStartValue(geometry)
+            window_anim.setEndValue(
+                QRect(
+                    geometry.x(),
+                    geometry.y(),
+                    geometry.width() + window_delta,
+                    geometry.height(),
+                )
+            )
+
+        def fini() -> None:
+            self.llm_viewer_animating = False
+            self.llm_viewer_panel.setFixedWidth(end_width)
+            cfg.llm_viewer_expanded = self.llm_viewer_expanded
+            if not self.llm_viewer_expanded:
+                self.llm_viewer_panel.hide()
+
+        anim.finished.connect(fini)
+        width_anim.finished.connect(fini)
+        anim.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
+        width_anim.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
+        if window_anim is not None:
+            window_anim.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def sendLLMMessage(self) -> None:
+        message = self.llm_input.text().strip()
+        if not message or self.llm_streaming:
+            return
+
+        self.llm_streaming = True
+        self.llm_input.clear()
+        self.llm_input.setEnabled(False)
+        self.llm_send_btn.setEnabled(False)
+
+        user_card = CardWidget()
+        user_card.setFixedWidth(LLM_VIEWER_WIDTH - 20)
+        user_label = QLabel(message)
+        user_label.setWordWrap(True)
+        user_layout = QVBoxLayout()
+        user_layout.setContentsMargins(12, 8, 12, 8)
+        user_layout.addWidget(user_label)
+        user_card.setLayout(user_layout)
+        self._insertBeforeStretch(user_card)
+
+        response_viewer = ChatingViewer()
+        response_viewer.setFixedWidth(LLM_VIEWER_WIDTH - 20)
+        self._insertBeforeStretch(response_viewer)
+        self.llm_stream_viewer = response_viewer
+
+        self.llm_messages.append({'role': 'user', 'content': message})
+        self.llm_messages.append({'role': 'assistant', 'content': ''})
+        response_index = len(self.llm_messages) - 1
+
+        history = self.llm_messages.copy()
+        history.pop()
+        history.pop()
+
+        def _run() -> None:
+            if self.llm_stream_viewer:
+                self.llm_stream_viewer._finished = False
+            response_parts: list[str] = []
+            try:
+                self.ctx.addScheduledTask(lambda: self.scroll_timer.start(200))
+                for chunk in self.ctx.llm.streamChat(message, history):
+                    response_parts.append(chunk)
+                    self.ctx.addScheduledTask(response_viewer.appendChunk, chunk)
+                response = ''.join(response_parts)
+
+                def _done() -> None:
+                    response_viewer.finishStream()
+                    self.llm_messages[response_index]['content'] = response
+                    self.llm_stream_viewer = None
+                    self.llm_streaming = False
+                    self.llm_input.setEnabled(True)
+                    self.llm_send_btn.setEnabled(True)
+                    self.llm_input.setFocus()
+
+                    self.scroll_timer.stop()
+                    self._scrollLLMChatToBottom()
+
+                self.ctx.addScheduledTask(_done)
+            except Exception as e:
+                self._logger.exception(e)
+                error_text = str(e)
+
+                def _error() -> None:
+                    response_viewer.appendChunk(f'\n\nError: {error_text}')
+                    response_viewer.finishStream()
+                    self.llm_messages[response_index]['content'] = f'Error: {error_text}'
+                    self.llm_stream_viewer = None
+                    self.llm_streaming = False
+                    self.llm_input.setEnabled(True)
+                    self.llm_send_btn.setEnabled(True)
+                    self.llm_input.setFocus()
+
+                    self.scroll_timer.stop()
+                    self._scrollLLMChatToBottom()
+
+                self.ctx.addScheduledTask(_error)
+
+        self.llm_stream_thread = threading.Thread(target=_run, daemon=True)
+        self.llm_stream_thread.start()
+
+    def _insertBeforeStretch(self, widget: QWidget) -> None:
+        count = self.llm_chat_layout.count()
+        self.llm_chat_layout.insertWidget(max(0, count - 1), widget)
+
+    def _scrollLLMChatToBottom(self) -> None:
+        bar = self.llm_chat_scroller.verticalScrollBar()
+        self.llm_chat_scroller.delegate.vScrollBar.scrollValue(bar.maximum() - bar.value())
+
+    def clearLLMChat(self) -> None:
+        if self.llm_streaming:
+            return
+        while self.llm_chat_layout.count() > 1:
+            item = self.llm_chat_layout.takeAt(0)
+            widget = item.widget() # type: ignore
+            if widget is not None:
+                widget.deleteLater()
+        self.llm_messages.clear()
+        self.llm_stream_viewer = None
 
     def onStartInterLoading(self):
         self.loading_tasks += 1
@@ -680,9 +923,12 @@ class MainWindow(FluentWindowBase):
 
         cfg.window_x = self.x()
         cfg.window_y = self.y()
-        cfg.window_width = self.width()
+        cfg.window_width = self.width() - (
+            LLM_WINDOW_WIDTH_DELTA if self.llm_viewer_expanded else 0
+        )
         cfg.window_height = self.height()
         cfg.window_maximized = self.isMaximized()
+        cfg.llm_viewer_expanded = self.llm_viewer_expanded
 
         saveConfig()
         saveFavorites()

@@ -43,19 +43,19 @@ Do not use when:
 '''.strip(),
     'search_cloud': '''
 Purpose:
-Search NetEase Cloud Music from the SearchPage and return the first batch.
+Search NetEase Cloud Music and return the first JSON result batch.
 
 Arguments:
 - query: search text. Include artist names when the user gave them.
 
 Behavior:
-- switch to SearchPage.
-- submit the query through the app's normal search flow.
-- after results load, return structured song results with stable result handles.
+- query the cloud backend directly.
+- do not switch pages, scroll views, or create SearchPage result cards.
+- return structured song results with stable result handles.
 - create an active cloud-search session for continue_search_cloud.
 
 Returns:
-- query, result count, and ordered results.
+- query, offset, next_offset, result count, and ordered results.
 - each result should include handle, title, artists, album, duration, and source id.
 
 Use when:
@@ -70,7 +70,7 @@ Rules:
 '''.strip(),
     'continue_search_cloud': '''
 Purpose:
-Continue the active cloud search and return more results.
+Continue the active cloud search and return the next JSON result batch.
 
 Arguments:
 - none.
@@ -79,10 +79,10 @@ Precondition:
 - search_cloud must have been called successfully in the current search session.
 
 Behavior:
-- use the current SearchPage result scroll area.
-- call scroll_area.delegate.scrollValue(bar.maximum() - bar.value()).
-- wait for the next batch to finish loading.
-- return newly loaded results and the total visible result count.
+- use the query and next offset from the last successful search_cloud call.
+- query the cloud backend directly.
+- do not switch pages, scroll views, or create SearchPage result cards.
+- return newly loaded results with stable result handles.
 
 Use when:
 - search_cloud did not return a good enough match.
@@ -181,6 +181,75 @@ Rules:
 - use offset and limit instead of reading huge files at once.
 - this is read-only; it cannot edit files.
 '''.strip(),
+    'grep': '''
+Purpose:
+Search SouthsideMusic source code with a regular expression.
+
+Arguments:
+- path: folder path such as "src/views" or file path such as
+  "src/views/main_window.py".
+- pattern: Python regular expression.
+
+Behavior:
+- if path is a file, search every line in that file.
+- if path is a folder, recursively search all startup-scanned files under it.
+- return every match with path, line, column, matched text, and full line text.
+- access is sandboxed to src only.
+
+Use when:
+- the user asks where a feature is implemented.
+- the user asks how to use a feature and the relevant file is unknown.
+- Onerad needs to locate symbols, labels, event names, settings, or UI actions
+  before reading exact code.
+
+Rules:
+- call get_tool_usage for grep before using it.
+- prefer grep before read when you only know a keyword, UI label, function name,
+  class name, event name, or setting name.
+- after grep finds candidate files, use read on the best file and line range
+  before giving a code-based answer.
+- keep regex patterns focused so results stay useful.
+- this is read-only; it cannot edit files.
+'''.strip(),
+    'get_language': '''
+Purpose:
+Read the current SouthsideMusic UI language.
+
+Arguments:
+- none.
+
+Returns:
+- language code, such as "en_US" or "zh_CN".
+- translated display name for the current language.
+
+Use when:
+- you need to match the app's current UI language.
+- source or tool results contain i18n keys and you need translated UI text.
+
+Rules:
+- this is read-only.
+- use get_translation for actual i18n key translation.
+'''.strip(),
+    'get_translation': '''
+Purpose:
+Translate one SouthsideMusic i18n key in the current UI language.
+
+Arguments:
+- key: exact i18n key, such as "setting_page.loudness".
+
+Returns:
+- key, current language, translated text, and whether the key was found.
+
+Use when:
+- a tool or source-code result contains an i18n key and you need user-facing text.
+- explaining settings, sections, options, pages, buttons, or labels.
+
+Rules:
+- do not show raw i18n keys like "setting_page.target_lufs" in user-facing
+  answers unless the user explicitly asks for the key.
+- prefer translated fields such as title_text, name_text, and description_text
+  when tools already returned them.
+'''.strip(),
     'refresh_folders': '''
 Purpose:
 Refresh the app's folder list.
@@ -213,7 +282,8 @@ Use when:
 
 Rules:
 - do not use this to open a favorite folder; use open_folder for that.
-- search_cloud already switches to the SearchPage by itself.
+- search_cloud does not switch pages; use switch_page only when the user wants to see
+  the Search page.
 '''.strip(),
     'open_folder': '''
 Purpose:
@@ -242,7 +312,8 @@ Arguments:
 - none.
 
 Returns:
-- ordered sections with title, description, and expanded state.
+- ordered sections with translated title, title_text, description_text,
+  title_key, description_key, and expanded state.
 
 Use when:
 - the user asks about settings.
@@ -250,13 +321,17 @@ Use when:
 
 Rules:
 - the LLM section is hidden and must not be returned or targeted.
+- use title or title_text in user-facing answers.
+- use title or title_key as the section argument for follow-up setting tools.
+- when the user asks where a setting section is, call
+  scroll_to_section_and_expend after identifying the section.
 '''.strip(),
     'scroll_to_section_and_expend': '''
 Purpose:
 Scroll to a Settings section, center its title, and expand it.
 
 Arguments:
-- section: exact section title from get_sections.
+- section: section title or title_key from get_sections.
 
 Behavior:
 - switch to Settings page if needed.
@@ -265,6 +340,7 @@ Behavior:
 
 Use when:
 - the user asks to show a settings section.
+- the user asks where a setting lives, for example "在哪" or "where is".
 - a settings workflow should visibly focus the section before changing values.
 
 Rules:
@@ -276,10 +352,11 @@ Purpose:
 Read setting options inside one Settings section.
 
 Arguments:
-- section: exact section title from get_sections.
+- section: section title or title_key from get_sections.
 
 Returns:
-- option name, description, current value, value type, and choices if available.
+- translated option name, name_text, description_text, name_key, current value,
+  value type, and choices if available.
 
 Use when:
 - answering what settings exist in a section.
@@ -287,15 +364,16 @@ Use when:
 
 Rules:
 - the LLM section is hidden and must not be returned.
-- use exact option names from this tool for set_option_value.
+- use name or name_text in user-facing answers.
+- use name or name_key as the option argument for set_option_value.
 '''.strip(),
     'set_option_value': '''
 Purpose:
 Set one Settings option value.
 
 Arguments:
-- section: exact section title from get_sections.
-- option: exact option name from get_options.
+- section: section title or title_key from get_sections.
+- option: option name or name_key from get_options.
 - value: value text supplied by the model.
 - converter: one of "str", "int", "float", or "bool".
 
@@ -387,7 +465,7 @@ Rules:
 '''.strip(),
     'get_confirm': '''
 Purpose:
-Ask the user to confirm a plan before any app-changing tools run.
+Ask the user to confirm a plan before a broad, batch, or high-risk workflow.
 
 Arguments:
 - plan: short user-facing plan.
@@ -398,13 +476,20 @@ Returns:
 - the plan and pending tools.
 
 Use when:
-- the user asks for an action that changes app state.
-- the user asks for broad work such as organizing folders or changing settings.
-- you have a batch of multiple tools that should be executed together.
+- the user asks for broad work such as organizing folders.
+- you plan to execute multiple app-changing tools as one batch.
+- the action is destructive or high-risk, especially remove_song.
+- the user asks to review a plan before execution.
+
+Do not use when:
+- a tool is read-only.
+- search, navigation, or refresh is needed to answer the user.
+- the user explicitly requested a simple safe action and the needed tool usage
+  has already been loaded.
 
 Rules:
-- first call get_tool_usage for every non-trivial tool you plan to use.
-- do not execute action tools before get_confirm returns user approval.
+- first call get_tool_usage for every pending tool in the plan.
+- do not execute pending tools before the user approves the confirmation card.
 - if the user rejects or is unsure, revise the plan and ask again.
 '''.strip(),
 }
@@ -430,18 +515,34 @@ Adreno/Onerad name origin unless the user asks.
 
 Workflow:
 1. Understand the user's request.
-2. If the request requires app state, use read-only tools first.
-3. If the request requires action, call get_tool_usage for each tool you may use,
-   then draft a short plan.
-4. Ask for confirmation with get_confirm before executing app-changing tools.
-5. If the user confirms, execute all needed tools in one batch when possible, then
-   summarize results.
-6. If the user is unsure or rejects the plan, revise the plan and ask again.
+2. Before calling any app tool except get_tool_usage or get_confirm, call
+   get_tool_usage with that exact tool name.
+3. When the user asks how an app feature works, where a control lives, what a
+   function/setting/page does, or how to use something in SouthsideMusic, act as
+   the app wiki: use grep/read to inspect the source before answering unless the
+   answer is already established by tool results in this conversation.
+4. When the user asks where a setting, page, folder, or control is, do not only
+   describe it. Use a navigation or focus tool when available, such as
+   switch_page, open_folder, or scroll_to_section_and_expend, then say what was
+   shown.
+5. When tool or source results contain i18n keys such as
+   "setting_page.target_lufs", use translated fields such as title_text,
+   name_text, and description_text, or call get_language/get_translation. In
+   user-facing answers, show translated text instead of raw keys unless the user
+   explicitly asks for the key.
+6. Use read-only, search, navigation, and refresh tools directly when they are
+   needed to understand the request or show useful context.
+7. For broad planning, batch changes, or destructive/high-risk actions, draft a
+   short plan and call get_confirm with the tools to run after approval.
+8. If the user confirms, execute the pending tools, then summarize results.
+9. If the user is unsure or rejects the plan, revise the plan and ask again.
 
 Style:
 - Warm, precise, and a little alive.
 - Match the user's language.
 - Do not start with a markdown heading, table, code fence, list marker, or math block.
+- Do not use markdown horizontal rules such as `---`, `***`, or `___`; the UI
+  already separates tool cards and answer text with layout spacing.
 - Use markdown only when it improves readability.
 - For math, use inline `$...$` or display `$$...$$` formulas.
 - Use ```latex fenced code blocks for full LaTeX source code, including requests
@@ -454,15 +555,20 @@ Tool use rules:
 - Never invent tool results.
 - Use get_tool_usage to learn exact purpose, arguments, behavior, and safety rules.
 - Do not assume a tool's exact usage from its name.
-- Before any app-changing tool, call get_tool_usage, propose a plan, then call
-  get_confirm. Do not execute the action until the user confirms.
+- get_confirm is for plan approval, batch work, and high-risk actions. It is not
+  required for every tool call.
+- remove_song is destructive and always requires get_confirm before execution.
+- Fields ending in "_key" are internal i18n keys or handles for tool arguments;
+  fields ending in "_text" are translated user-facing text.
+- For "where is", "在哪", "帮我找到", "跳转到", or "show me" requests, prefer
+  a navigation or focus tool over a text-only answer when the app can show it.
 - In one assistant turn, you may request multiple tool calls. The app will execute
   them together and return all results.
 - Available tool names: get_tool_usage, get_confirm, get_current_song, search_cloud,
   continue_search_cloud, get_folders, favorite_song, create_favorite_folder, read,
-  refresh_folders, switch_page, open_folder, get_sections,
-  scroll_to_section_and_expend, get_options, set_option_value, get_nickname, login,
-  remove_song.'''
+  grep, get_language, get_translation, refresh_folders, switch_page, open_folder,
+  get_sections, scroll_to_section_and_expend, get_options, set_option_value,
+  get_nickname, login, remove_song.'''
 
 LLMMessage = dict[str, str]
 ToolRunner = Callable[[str, dict[str, Any]], str]

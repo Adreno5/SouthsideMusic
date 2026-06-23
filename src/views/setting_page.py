@@ -253,8 +253,6 @@ class SettingPage(QWidget):
                 tr('setting_page.current_volume_db_value', value=f'{v:.1f}')
             ),
         )
-        QTimer.singleShot(0, self.refreshLlmModels)
-
     @property
     def _dp(self):
         return self.ctx.playing_page
@@ -355,6 +353,27 @@ class SettingPage(QWidget):
             'setting_page.smart_skip',
             'setting_page.skip_the_no_sound_section_when_song_ends',
             'skip_nosound',
+        )
+        self.addCheckSetting(
+            'setting_page.enable_crossfade',
+            'setting_page.enable_crossfade_effect',
+            'enable_crossfade',
+        )
+        self.addNumberSetting(
+            'setting_page.crossfade_time',
+            'setting_page.crossfade_time_description',
+            0,
+            30,
+            0.5,
+            'crossfade_time',
+        )
+        self.addNumberSetting(
+            'setting_page.crossfade_strength',
+            'setting_page.crossfade_strength_description',
+            0,
+            1,
+            0.05,
+            'crossfade_strength',
         )
         self.addNumberSetting(
             'setting_page.playback_speed',
@@ -990,16 +1009,17 @@ class SettingPage(QWidget):
         if isinstance(model, str):
             cfg.llm_model = model
 
-    def refreshLlmModels(self) -> None:
+    def refreshLlmModels(self, silent: bool = False) -> None:
         self._onLlmBaseUrlChanged()
         self._onLlmApiKeyChanged()
         if not cfg.llm_base_url:
-            InfoBar.error(
-                tr('setting_page.llm_models_refresh_failed'),
-                tr('setting_page.llm_base_url_required'),
-                duration=5000,
-                parent=self._mwindow,
-            )
+            if not silent:
+                InfoBar.error(
+                    tr('setting_page.llm_models_refresh_failed'),
+                    tr('setting_page.llm_base_url_required'),
+                    duration=5000,
+                    parent=self._mwindow,
+                )
             return
         self.llm_refresh_models_btn.setEnabled(False)
         models: list[str] = []
@@ -1016,22 +1036,33 @@ class SettingPage(QWidget):
         def _finish() -> None:
             self.llm_refresh_models_btn.setEnabled(True)
             if error is not None:
-                InfoBar.error(
-                    tr('setting_page.llm_models_refresh_failed'),
-                    str(error),
-                    duration=5000,
-                    parent=self._mwindow,
-                )
+                if not silent:
+                    InfoBar.error(
+                        tr('setting_page.llm_models_refresh_failed'),
+                        str(error),
+                        duration=5000,
+                        parent=self._mwindow,
+                    )
+                return
+            if not models:
+                if not silent:
+                    InfoBar.warning(
+                        tr('setting_page.llm_models_refresh_failed'),
+                        tr('setting_page.loaded_model_count', count=0),
+                        duration=5000,
+                        parent=self._mwindow,
+                    )
                 return
             if cfg.llm_model not in models and models:
                 cfg.llm_model = models[0]
             self._refreshLlmModelBox(models)
-            InfoBar.success(
-                tr('setting_page.llm_models_refreshed'),
-                tr('setting_page.loaded_model_count', count=len(models)),
-                duration=3000,
-                parent=self._mwindow,
-            )
+            if not silent:
+                InfoBar.success(
+                    tr('setting_page.llm_models_refreshed'),
+                    tr('setting_page.loaded_model_count', count=len(models)),
+                    duration=3000,
+                    parent=self._mwindow,
+                )
 
         asyncTask(_fetch, (), self._mwindow, _finish)
 

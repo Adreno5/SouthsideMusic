@@ -339,6 +339,7 @@ class AudioPlayer(QObject):
         self.stream: Optional[sd.OutputStream] = None
         self.volume_gain: float = 1.0
         self.loudness_gain: float = 1.0
+        self._volume_anim: Optional[QPropertyAnimation] = None
         self._gain_anim: Optional[QPropertyAnimation] = None
 
         self.fft_enabled = True
@@ -831,6 +832,7 @@ class AudioPlayer(QObject):
 
     def stop(self, clear_growing_file: bool = True) -> None:
         with self._lock:
+            self.stopVolumeAnimation()
             self.stopGainAnimation()
             self._stop_producer()
             if self.stream and self.stream.active:
@@ -991,10 +993,36 @@ class AudioPlayer(QObject):
         self._gain_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._gain_anim.start()
 
+    def animateVolume(self, target: float, duration_ms: int = 600) -> None:
+        if (
+            self._volume_anim is not None
+            and self._volume_anim.state() == QPropertyAnimation.State.Running
+        ):
+            self._volume_anim.stop()
+        self._volume_anim = QPropertyAnimation(self, b'volumeGain')
+        self._volume_anim.setStartValue(self.volume_gain)
+        self._volume_anim.setEndValue(max(0.0, min(1.0, target)))
+        self._volume_anim.setDuration(duration_ms)
+        self._volume_anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self._volume_anim.start()
+
+    def stopVolumeAnimation(self) -> None:
+        if self._volume_anim is not None:
+            self._volume_anim.stop()
+            self._volume_anim = None
+
     def stopGainAnimation(self) -> None:
         if self._gain_anim is not None:
             self._gain_anim.stop()
             self._gain_anim = None
+
+    @Property(float)
+    def _volumeGain(self) -> float:
+        return self.volume_gain
+
+    @_volumeGain.setter
+    def volumeGain(self, value: float) -> None:
+        self.setVolume(value)
 
     @Property(float)
     def _loudnessGain(self) -> float:

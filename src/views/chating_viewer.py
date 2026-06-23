@@ -49,10 +49,6 @@ class ChatingViewer(QWidget):
         self._table_lines: list[str] = []
         self._at_line_start = True
 
-        self._append_buffer = ''
-        self._last_flush = time.time()
-        self._finished = False
-
         self._layout = QVBoxLayout()
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(8)
@@ -73,18 +69,10 @@ class ChatingViewer(QWidget):
     def appendChunk(self, chunk_content: str) -> None:
         if not chunk_content:
             return
-        self._append_buffer += chunk_content
-        if time.time() - self._last_flush > 0.21 and not self._finished:
-            self._buffer += self._append_buffer
-            self._append_buffer = ''
-            self._last_flush = time.time()
-            self._drain_buffer(False)
+        self._buffer += chunk_content
+        self._drain_buffer(False)
 
     def finishStream(self) -> None:
-        self._finished = True
-        if self._append_buffer:
-            self._buffer += self._append_buffer
-            self._append_buffer = ''
         self._drain_buffer(True)
         if self._mode == 'table':
             self._finish_table()
@@ -397,7 +385,7 @@ class ChatingViewer(QWidget):
 
     def _new_flow(self) -> FlowLayout:
         flow = FlowLayout(needAni=True)
-        flow.setAnimation(200, QEasingCurve.Type.OutCubic)
+        flow.setAnimation(550, QEasingCurve.Type.OutCubic)
         flow.setContentsMargins(0, 0, 0, 0)
         flow.setHorizontalSpacing(4)
         flow.setVerticalSpacing(4)
@@ -447,10 +435,30 @@ class ChatingViewer(QWidget):
             self._at_line_start = False
 
     def _inline_markdown_to_html(self, text: str) -> str:
-        escaped = html.escape(text)
-        lines = escaped.splitlines() or ['']
+        lines = self._drop_horizontal_rule_lines(text.splitlines())
         rendered = [self._render_inline_line(line) for line in lines]
         return '<br>'.join(rendered)
+
+    def _drop_horizontal_rule_lines(self, lines: list[str]) -> list[str]:
+        result: list[str] = []
+        skipping_rule_gap = False
+        for line in lines:
+            if self._is_horizontal_rule_line(line):
+                while result and not result[-1].strip():
+                    result.pop()
+                skipping_rule_gap = True
+                continue
+            if skipping_rule_gap and not line.strip():
+                continue
+            skipping_rule_gap = False
+            result.append(html.escape(line))
+        return result or ['']
+
+    def _is_horizontal_rule_line(self, line: str) -> bool:
+        value = line.strip()
+        if len(value) < 3:
+            return False
+        return value == value[0] * len(value) and value[0] in '-*_'
 
     def _render_inline_line(self, line: str) -> str:
         heading = re.match(r'^(#{1,6})\s+(.+)$', line)

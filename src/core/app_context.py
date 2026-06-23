@@ -12,6 +12,12 @@ if TYPE_CHECKING:
     from core.debugging import Debugging
     from core.llm import LLM
     from core.lyrics import LRCLyricParser, YRCLyricParser
+    from core.models import (
+        CloudFolderInfo,
+        LocalFolderInfo,
+        SearchSongInfo,
+        SongStorable,
+    )
     from core.playing_manager import PlayingManager
     from core.ws_server import WebSocketServer, QObjectHandler
     from PySide6.QtWidgets import QApplication
@@ -74,6 +80,10 @@ class AppContext:
         self._scheduled_task_runner = _ScheduledTaskRunner()
         self.playing_manager: PlayingManager = cast('PlayingManager', None)
         self.llm: LLM = cast('LLM', None)
+        self.llm_song_handles: dict[str, SearchSongInfo | SongStorable] = {}
+        self.llm_folder_handles: dict[str, LocalFolderInfo | CloudFolderInfo] = {}
+        self.llm_cloud_search_query: str = ''
+        self.llm_cloud_search_offset: int = 0
         self.dependences_available: bool = True
         self.debugging: bool = False
 

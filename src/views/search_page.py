@@ -134,6 +134,10 @@ class SearchPage(QWidget):
     def search(self, keywords: str, offset: int = 0) -> None:
         self.last_search = keywords
         self.searching = True
+        search_type = self.ctx.cfg.search_type
+
+        bar = self.lst.verticalScrollBar()
+        bar.setValue(bar.minimum())
 
         if offset == 0:
             self.curr_offset = 0
@@ -145,15 +149,21 @@ class SearchPage(QWidget):
 
         def _do():
             nonlocal result
-            if self.ctx.cfg.search_type == 'Songs':
+            if search_type == 'Songs':
                 result = getBackend().searchSong(keywords, offset=offset)
-                self.fetchedSongs.emit(result)
             else:
                 result = getBackend().searchPlaylist(keywords, offset=offset)
-                self.fetchedPlaylists.emit(result)
 
-            self.curr_offset += len(result)
-            self.searching = False
+            def _apply() -> None:
+                if search_type == 'Songs':
+                    self.addSongs(result) # type: ignore
+                else:
+                    self.addPlaylists(result) # type: ignore
+
+                self.curr_offset += len(result)
+                self.searching = False
+
+            self.ctx.addScheduledTask(_apply)
 
         asyncTask(_do, (), self._mwindow)
 

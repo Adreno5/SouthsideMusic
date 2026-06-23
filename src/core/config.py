@@ -61,6 +61,10 @@ class Config:
     enable_reverb: bool = False
     reverb_intensity: int = 3
 
+    enable_crossfade: bool = True
+    crossfade_time: float = 8
+    crossfade_strength: float = 1
+
     background_ratio: float = 0.4
     volume: float = 1
 

@@ -52,14 +52,14 @@ from imports import (
     bindText,
     event_bus,
     tr,
+    TextEdit
 )
 from imports import QCloseEvent, QColor, QKeyEvent, QPainter
-from views.list_widget import SListWidget, SScrollArea
+from views.list_widget import SListWidget, SScrollArea, SSmoothDelegate
 from imports import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
     CardWidget,
     InfoBar,
-    LineEdit,
 )
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 
@@ -83,8 +83,8 @@ class DebugOverlay(QWidget):
     def __init__(self, ctx: AppContext, parent: QWidget) -> None:
         super().__init__(parent)
         self.ctx = ctx
-        self.title_ft = QFont(ctx.harmony_font_family, 13, QFont.Weight.Bold)
-        self.content_ft = QFont(ctx.harmony_font_family, 10, QFont.Weight.Normal)
+        self.title_ft = QFont(ctx.harmony_font_family, 10, QFont.Weight.Bold)
+        self.content_ft = QFont(ctx.harmony_font_family, 7, QFont.Weight.Normal)
         self.title_height = int(QFontMetricsF(self.title_ft).height())
         self.content_height = int(QFontMetricsF(self.content_ft).height())
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -170,6 +170,9 @@ class MainWindow(FluentWindowBase):
         self.llm_pending_plan: str = ''
         self.llm_pending_tools: list[dict[str, object]] = []
         self.llm_tool_cards: dict[str, tuple[CardWidget, QLabel]] = {}
+        self.llm_confirm_card: CardWidget | None = None
+        self.llm_confirm_buttons: list[TransparentPushButton] = []
+        self.llm_generation = 0
 
         self.setWindowIcon(
             QIcon(str(Path(__file__).resolve().parent.parent.parent / 'icon.png'))
@@ -215,6 +218,7 @@ class MainWindow(FluentWindowBase):
         self.controller = PlayingController(ctx)
         ctx.player.onFullFinished.connect(lambda: event_bus.emit(SONG_FINISH))
         ctx.player.onEndingNoSound.connect(ctx.playing_manager.onEndingNoSound)
+        ctx.player.positionChanged.connect(ctx.playing_manager.onPlayerPositionChanged)
 
         if ctx.launch_window:
             ctx.launch_window.top('  Wiring signal connections...')
@@ -288,10 +292,16 @@ class MainWindow(FluentWindowBase):
         llm_input_layout.setContentsMargins(6, 0, 6, 0)
         llm_input_layout.setSpacing(4)
         self.llm_input_widget.setLayout(llm_input_layout)
-        self.llm_input = LineEdit()
+        self.llm_input = TextEdit()
+        self.llm_input.setFixedHeight(40)
+        self.llm_shifting: bool = False
         self.llm_input.setPlaceholderText('Ask Onerad')
-        self.llm_input.returnPressed.connect(self.sendLLMMessage)
+        self.input_origin_press = self.llm_input.keyPressEvent
+        self.input_origin_release = self.llm_input.keyReleaseEvent
+        self.llm_input.keyPressEvent = self.handleLLMInputKeyPress
+        self.llm_input.keyReleaseEvent = self.handleLLMInputKeyRelease
         self.llm_send_btn = TransparentToolButton(FluentIcon.SEND)
+        self.llm_input.scrollDelegate = SSmoothDelegate(self.llm_input) # type: ignore
         self.llm_send_btn.setFixedSize(32, 32)
         self.llm_send_btn.clicked.connect(self.onLLMSendButtonClicked)
         llm_input_layout.addWidget(self.llm_input, 1)
@@ -397,6 +407,23 @@ class MainWindow(FluentWindowBase):
         event_bus.subscribe(VIEW_FOLDER, self.onViewFolder)
         event_bus.subscribe(MWINDOW_REFRESH_FOLDERS, self.refreshFolders)
         event_bus.subscribe(LANGUAGE_CHANGED, self.updateLanguage)
+        QTimer.singleShot(0, lambda: self._stp.refreshLlmModels(silent=True))
+
+    def handleLLMInputKeyPress(self, event: QKeyEvent):
+        if event.key() == Qt.Key.Key_Return and not self.llm_shifting:
+            self.onLLMSendButtonClicked()
+        elif event.key() == Qt.Key.Key_Shift:
+            self.llm_shifting = True
+            self.llm_input.setFixedHeight(40 + min(150, 30 * max(0, len(self.llm_input.toPlainText().strip().splitlines()) - 1)))
+            self.input_origin_press(event)
+        else:
+            self.llm_input.setFixedHeight(40 + min(150, 30 * max(0, len(self.llm_input.toPlainText().strip().splitlines()) - 1)))
+            self.input_origin_press(event)
+
+    def handleLLMInputKeyRelease(self, event: QKeyEvent):
+        if event.key() == Qt.Key.Key_Shift:
+            self.llm_shifting = False
+        self.input_origin_release(event)
 
     def updateLanguage(self) -> None:
         for item, key in self._folder_header_items:
@@ -563,7 +590,9 @@ class MainWindow(FluentWindowBase):
         self.sendLLMMessage()
 
     def sendLLMMessage(self) -> None:
-        message = self.llm_input.text().strip()
+        message = self.llm_input.toPlainText().strip()
+        self.llm_input.clear()
+        self.llm_input.setFixedHeight(40)
         if not message or self.llm_streaming:
             return
 
@@ -571,8 +600,15 @@ class MainWindow(FluentWindowBase):
             self._executePendingLLMTools(message)
             return
 
+        if self.llm_pending_tools:
+            self._clearPendingLLMTools()
+
+        self.llm_generation += 1
+        generation = self.llm_generation
+        cancel_event = threading.Event()
+        self.llm_tool_cards.clear()
         self.llm_streaming = True
-        self.llm_cancel_event = threading.Event()
+        self.llm_cancel_event = cancel_event
         self.llm_input.clear()
         self._setLLMSendButtonStreaming(True)
 
@@ -586,11 +622,6 @@ class MainWindow(FluentWindowBase):
         user_card.setLayout(user_layout)
         self._insertBeforeStretch(user_card)
 
-        response_viewer = ChatingViewer()
-        response_viewer.setFixedWidth(LLM_VIEWER_WIDTH - 20)
-        self._insertBeforeStretch(response_viewer)
-        self.llm_stream_viewer = response_viewer
-
         self.llm_messages.append({'role': 'user', 'content': message})
         self.llm_messages.append({'role': 'assistant', 'content': ''})
         response_index = len(self.llm_messages) - 1
@@ -600,14 +631,28 @@ class MainWindow(FluentWindowBase):
         history.pop()
 
         def _run() -> None:
-            if self.llm_stream_viewer:
-                self.llm_stream_viewer._finished = False
             response_parts: list[str] = []
             runner = LLMToolRunner(
                 self.ctx,
-                self._onLLMToolMessage,
-                self._setPendingLLMTools,
+                lambda run_id, name, content: self._onLLMToolMessage(
+                    generation,
+                    run_id,
+                    name,
+                    content,
+                ),
+                lambda plan, tools: self._setPendingLLMTools(
+                    generation,
+                    plan,
+                    tools,
+                ),
             )
+
+            def _flush_post_actions() -> None:
+                try:
+                    runner.flushPostActions()
+                except Exception as e:
+                    self._logger.exception(e)
+
             try:
                 self.ctx.addScheduledTask(lambda: self.scroll_timer.start(200))
                 for chunk in self.ctx.llm.streamChat(
@@ -615,18 +660,22 @@ class MainWindow(FluentWindowBase):
                     history,
                     tools=llmToolSchemas(),
                     tool_runner=runner.runTool,
-                    cancel_event=self.llm_cancel_event,
+                    cancel_event=cancel_event,
                 ):
                     response_parts.append(chunk)
-                    self.ctx.addScheduledTask(response_viewer.appendChunk, chunk)
+                    self.ctx.addScheduledTask(self._appendLLMChunk, generation, chunk)
+                _flush_post_actions()
                 response = ''.join(response_parts)
 
                 def _done() -> None:
-                    response_viewer.finishStream()
-                    self.llm_messages[response_index]['content'] = response
+                    if not self._isCurrentLLMGeneration(generation):
+                        return
+                    self._finishLLMViewer(generation)
+                    self._setLLMMessageContent(response_index, response)
                     self.llm_stream_viewer = None
                     self.llm_streaming = False
                     self.llm_cancel_event = None
+                    self.llm_tool_cards.clear()
                     self._setLLMSendButtonStreaming(False)
                     self.llm_input.setFocus()
 
@@ -636,15 +685,19 @@ class MainWindow(FluentWindowBase):
                 self.ctx.addScheduledTask(_done)
             except Exception as e:
                 self._logger.exception(e)
+                _flush_post_actions()
                 error_text = str(e)
 
                 def _error() -> None:
-                    response_viewer.appendChunk(f'\n\nError: {error_text}')
-                    response_viewer.finishStream()
-                    self.llm_messages[response_index]['content'] = f'Error: {error_text}'
+                    if not self._isCurrentLLMGeneration(generation):
+                        return
+                    self._appendLLMChunk(generation, f'\n\nError: {error_text}')
+                    self._finishLLMViewer(generation)
+                    self._setLLMMessageContent(response_index, f'Error: {error_text}')
                     self.llm_stream_viewer = None
                     self.llm_streaming = False
                     self.llm_cancel_event = None
+                    self.llm_tool_cards.clear()
                     self._setLLMSendButtonStreaming(False)
                     self.llm_input.setFocus()
 
@@ -658,11 +711,18 @@ class MainWindow(FluentWindowBase):
 
     def _executePendingLLMTools(self, message: str) -> None:
         tools = self.llm_pending_tools.copy()
-        self.llm_pending_plan = ''
-        self.llm_pending_tools.clear()
+        if not tools:
+            return
+        if self.llm_cancel_event is not None:
+            self.llm_cancel_event.set()
+        self.llm_generation += 1
+        generation = self.llm_generation
+        cancel_event = threading.Event()
+        self._clearPendingLLMTools()
+        self.llm_tool_cards.clear()
         self.llm_input.clear()
         self.llm_streaming = True
-        self.llm_cancel_event = threading.Event()
+        self.llm_cancel_event = cancel_event
         self._setLLMSendButtonStreaming(True)
 
         user_card = CardWidget()
@@ -675,39 +735,50 @@ class MainWindow(FluentWindowBase):
         user_card.setLayout(user_layout)
         self._insertBeforeStretch(user_card)
 
-        response_viewer = ChatingViewer()
-        response_viewer.setFixedWidth(LLM_VIEWER_WIDTH - 20)
-        self._insertBeforeStretch(response_viewer)
-        self.llm_stream_viewer = response_viewer
-
         def _run() -> None:
             runner = LLMToolRunner(
                 self.ctx,
-                self._onLLMToolMessage,
+                lambda run_id, name, content: self._onLLMToolMessage(
+                    generation,
+                    run_id,
+                    name,
+                    content,
+                ),
                 allow_actions=True,
                 require_usage=False,
             )
             results: list[str] = []
+
+            def _flush_post_actions() -> None:
+                try:
+                    runner.flushPostActions()
+                except Exception as e:
+                    self._logger.exception(e)
+
             try:
                 for item in tools:
-                    if self.llm_cancel_event and self.llm_cancel_event.is_set():
+                    if cancel_event.is_set():
                         break
                     name = str(item.get('name', ''))
                     arguments = item.get('arguments', {})
                     if not isinstance(arguments, dict):
                         arguments = {}
                     results.append(runner.runTool(name, arguments))
+                _flush_post_actions()
 
                 summary = 'Done.' if results else 'No tools executed.'
 
                 def _done() -> None:
-                    response_viewer.appendChunk(summary)
-                    response_viewer.finishStream()
+                    if not self._isCurrentLLMGeneration(generation):
+                        return
+                    self._appendLLMChunk(generation, summary)
+                    self._finishLLMViewer(generation)
                     self.llm_messages.append({'role': 'user', 'content': message})
                     self.llm_messages.append({'role': 'assistant', 'content': summary})
                     self.llm_stream_viewer = None
                     self.llm_streaming = False
                     self.llm_cancel_event = None
+                    self.llm_tool_cards.clear()
                     self._setLLMSendButtonStreaming(False)
                     self.scroll_timer.stop()
                     self._scrollLLMChatToBottom()
@@ -715,14 +786,18 @@ class MainWindow(FluentWindowBase):
                 self.ctx.addScheduledTask(_done)
             except Exception as e:
                 self._logger.exception(e)
+                _flush_post_actions()
                 error_text = str(e)
 
                 def _error() -> None:
-                    response_viewer.appendChunk(f'Error: {error_text}')
-                    response_viewer.finishStream()
+                    if not self._isCurrentLLMGeneration(generation):
+                        return
+                    self._appendLLMChunk(generation, f'Error: {error_text}')
+                    self._finishLLMViewer(generation)
                     self.llm_stream_viewer = None
                     self.llm_streaming = False
                     self.llm_cancel_event = None
+                    self.llm_tool_cards.clear()
                     self._setLLMSendButtonStreaming(False)
                     self.scroll_timer.stop()
                     self._scrollLLMChatToBottom()
@@ -754,8 +829,14 @@ class MainWindow(FluentWindowBase):
     def stopLLMMessage(self) -> None:
         if self.llm_cancel_event is not None:
             self.llm_cancel_event.set()
+        self.llm_generation += 1
         self.llm_streaming = False
+        self.llm_cancel_event = None
+        self.llm_tool_cards.clear()
+        self._clearPendingLLMTools()
+        self._finishLLMViewer()
         self._setLLMSendButtonStreaming(False)
+        self.scroll_timer.stop()
 
     def _setLLMSendButtonStreaming(self, streaming: bool) -> None:
         if streaming:
@@ -765,41 +846,190 @@ class MainWindow(FluentWindowBase):
             self.llm_send_btn.setIcon(FluentIcon.SEND)
             self.llm_send_btn.setToolTip('Send')
 
-    def _onLLMToolMessage(self, name: str, content: str) -> None:
-        self.ctx.addScheduledTask(self._addLLMToolCard, name, content)
+    def _onLLMToolMessage(
+        self,
+        generation: int,
+        run_id: str,
+        name: str,
+        content: str,
+    ) -> None:
+        self.ctx.addScheduledTask(
+            self._addLLMToolCard,
+            generation,
+            run_id,
+            name,
+            content,
+        )
 
-    def _setPendingLLMTools(self, plan: str, tools: list[dict[str, object]]) -> None:
+    def _setPendingLLMTools(
+        self,
+        generation: int,
+        plan: str,
+        tools: list[dict[str, object]],
+    ) -> None:
+        self.ctx.addScheduledTask(
+            self._applyPendingLLMTools,
+            generation,
+            plan,
+            tools,
+        )
+
+    def _applyPendingLLMTools(
+        self,
+        generation: int,
+        plan: str,
+        tools: list[dict[str, object]],
+    ) -> None:
+        if not self._isCurrentLLMGeneration(generation):
+            return
         self.llm_pending_plan = plan
         self.llm_pending_tools = tools
+        self._addLLMConfirmCard(generation, plan, tools)
 
-    def _addLLMToolCard(self, name: str, content: str) -> None:
-        card_data = self.llm_tool_cards.get(name)
+    def _addLLMConfirmCard(
+        self,
+        generation: int,
+        plan: str,
+        tools: list[dict[str, object]],
+    ) -> None:
+        if not self._isCurrentLLMGeneration(generation):
+            return
+        self._finishLLMViewer(generation)
+        self._removeLLMConfirmCard()
+
+        card = CardWidget()
+        card.setFixedWidth(LLM_VIEWER_WIDTH - 20)
+
+        title_label = QLabel('需要确认')
+        title_label.setWordWrap(False)
+        plan_label = QLabel(plan.strip() or '确认后执行这些操作。')
+        plan_label.setWordWrap(True)
+
+        tools_text = self._formatLLMPendingTools(tools)
+        tools_label = QLabel()
+        tools_label.setWordWrap(False)
+        tools_label.setToolTip(tools_text)
+        tools_label.setText(self._elideLLMToolText(tools_label, tools_text))
+
+        confirm_btn = TransparentPushButton('确认执行')
+        cancel_btn = TransparentPushButton('取消')
+        confirm_btn.setEnabled(bool(tools))
+        confirm_btn.clicked.connect(self._confirmPendingLLMTools)
+        cancel_btn.clicked.connect(self._cancelPendingLLMTools)
+        self.llm_confirm_buttons = [confirm_btn, cancel_btn]
+
+        button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.addStretch(1)
+        button_layout.addWidget(cancel_btn)
+        button_layout.addWidget(confirm_btn)
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(6)
+        layout.addWidget(title_label)
+        layout.addWidget(plan_label)
+        layout.addWidget(tools_label)
+        layout.addLayout(button_layout)
+        card.setLayout(layout)
+
+        self.llm_confirm_card = card
+        self._insertBeforeStretch(card)
+        self._scrollLLMChatToBottom()
+
+    def _confirmPendingLLMTools(self) -> None:
+        for button in self.llm_confirm_buttons:
+            button.setEnabled(False)
+        self._executePendingLLMTools('确认执行')
+
+    def _cancelPendingLLMTools(self) -> None:
+        self._clearPendingLLMTools()
+        self._scrollLLMChatToBottom()
+
+    def _clearPendingLLMTools(self) -> None:
+        self.llm_pending_plan = ''
+        self.llm_pending_tools.clear()
+        self._removeLLMConfirmCard()
+
+    def _removeLLMConfirmCard(self) -> None:
+        if self.llm_confirm_card is None:
+            self.llm_confirm_buttons.clear()
+            return
+        self.llm_chat_layout.removeWidget(self.llm_confirm_card)
+        self.llm_confirm_card.deleteLater()
+        self.llm_confirm_card = None
+        self.llm_confirm_buttons.clear()
+
+    def _formatLLMPendingTools(self, tools: list[dict[str, object]]) -> str:
+        names = [str(item.get('name', '')).strip() for item in tools]
+        names = [name for name in names if name]
+        if not names:
+            return '无待执行工具'
+        return '工具: ' + ', '.join(names)
+
+    def _addLLMToolCard(
+        self,
+        generation: int,
+        run_id: str,
+        name: str,
+        content: str,
+    ) -> None:
+        if not self._isCurrentLLMGeneration(generation):
+            return
+        card_data = self.llm_tool_cards.get(run_id)
         if card_data is None:
+            self._finishLLMViewer(generation)
             card = CardWidget()
             card.setFixedWidth(LLM_VIEWER_WIDTH - 20)
             label = QLabel()
-            label.setWordWrap(True)
+            label.setWordWrap(False)
             layout = QVBoxLayout()
             layout.setContentsMargins(12, 8, 12, 8)
             layout.addWidget(label)
             card.setLayout(layout)
-            self.llm_tool_cards[name] = (card, label)
-            self._insertBeforeLLMResponse(card)
+            self.llm_tool_cards[run_id] = (card, label)
+            self._insertBeforeStretch(card)
         else:
             card, label = card_data
 
-        label.setText(f'{name}\n{content}')
+        full_text = f'{name}: {content}'.replace('\n', ' ')
+        label.setToolTip(full_text)
+        label.setText(self._elideLLMToolText(label, full_text))
         if content != 'running':
-            self.llm_tool_cards.pop(name, None)
+            self.llm_tool_cards.pop(run_id, None)
         self._scrollLLMChatToBottom()
 
-    def _insertBeforeLLMResponse(self, widget: QWidget) -> None:
-        if self.llm_stream_viewer is not None:
-            index = self.llm_chat_layout.indexOf(self.llm_stream_viewer)
-            if index >= 0:
-                self.llm_chat_layout.insertWidget(index, widget)
-                return
-        self._insertBeforeStretch(widget)
+    def _appendLLMChunk(self, generation: int, chunk: str) -> None:
+        if not self._isCurrentLLMGeneration(generation):
+            return
+        if self.llm_stream_viewer is None:
+            self.llm_stream_viewer = ChatingViewer()
+            self.llm_stream_viewer.setFixedWidth(LLM_VIEWER_WIDTH - 20)
+            self._insertBeforeStretch(self.llm_stream_viewer)
+        self.llm_stream_viewer.appendChunk(chunk)
+
+    def _finishLLMViewer(self, generation: int | None = None) -> None:
+        if generation is not None and not self._isCurrentLLMGeneration(generation):
+            return
+        if self.llm_stream_viewer is None:
+            return
+        self.llm_stream_viewer.finishStream()
+        self.llm_stream_viewer = None
+
+    def _isCurrentLLMGeneration(self, generation: int) -> bool:
+        return generation == self.llm_generation
+
+    def _setLLMMessageContent(self, index: int, content: str) -> None:
+        if 0 <= index < len(self.llm_messages):
+            self.llm_messages[index]['content'] = content
+
+    def _elideLLMToolText(self, label: QLabel, text: str) -> str:
+        width = max(40, LLM_VIEWER_WIDTH - 48)
+        return label.fontMetrics().elidedText(
+            text,
+            Qt.TextElideMode.ElideRight,
+            width,
+        )
 
     def _insertBeforeStretch(self, widget: QWidget) -> None:
         count = self.llm_chat_layout.count()
@@ -812,6 +1042,7 @@ class MainWindow(FluentWindowBase):
     def clearLLMChat(self) -> None:
         if self.llm_streaming:
             return
+        self.llm_generation += 1
         while self.llm_chat_layout.count() > 1:
             item = self.llm_chat_layout.takeAt(0)
             widget = item.widget() # type: ignore
@@ -821,6 +1052,7 @@ class MainWindow(FluentWindowBase):
         self.llm_stream_viewer = None
         self.llm_cancel_event = None
         self.llm_tool_cards.clear()
+        self._clearPendingLLMTools()
 
     def onStartInterLoading(self):
         self.loading_tasks += 1

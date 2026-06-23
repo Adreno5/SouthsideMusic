@@ -26,7 +26,7 @@ from imports import (
     Property,
     event_bus,
 )
-from qfluentwidgets import ListWidget, ScrollBar, SmoothScrollArea
+from qfluentwidgets import ListWidget, ScrollBar, SmoothScrollArea, TextEdit
 
 
 def _debugging_enabled(widget: QWidget) -> bool:
@@ -133,7 +133,7 @@ class SSmoothScrollBar(ScrollBar):
 
 
 class SSmoothDelegate(QObject):
-    def __init__(self, parent: 'SListWidget | SScrollArea'):
+    def __init__(self, parent: 'SListWidget | SScrollArea | TextEdit'):
         super().__init__(parent)
         self.par = parent
         self.vScrollBar = SSmoothScrollBar(Qt.Orientation.Vertical, parent)
@@ -172,7 +172,7 @@ class SSmoothDelegate(QObject):
                 and self.hScrollBar.value() == self.hScrollBar.minimum()
             )
 
-            if vdlimited or vulimited or hdlimited or hulimited:
+            if (vdlimited or vulimited or hdlimited or hulimited) and not isinstance(self.par, TextEdit):
                 if vulimited:
                     self.par._trigger_limit_anim(self.par._top_anim)
                 if vdlimited:

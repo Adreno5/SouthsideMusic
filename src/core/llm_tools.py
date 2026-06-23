@@ -4,12 +4,14 @@ from dataclasses import dataclass
 import json
 import os
 import queue
+import re
 from typing import Any, Callable
 
 from core.app_context import AppContext
 from core.backend import getBackend
 from core.config import cfg
 from core.favorites import favorites_manager
+from core.i18n import language
 from core.llm import TOOL_USAGE, getToolUsage
 from core.models import (
     CloudFolderInfo,
@@ -18,28 +20,16 @@ from core.models import (
     SongInfo,
     SongStorable,
 )
-from imports import QCheckBox, QComboBox, QWidget, event_bus, tr
+from imports import QApplication, QCheckBox, QComboBox, QThread, QWidget, event_bus, tr
 from services.events.events import FAVORITES_CHANGED, MWINDOW_REFRESH_FOLDERS
 from views.number_viewer import SettableNumberViewer
 
 
-ToolCallback = Callable[[str, str], None]
+ToolCallback = Callable[[str, str, str], None]
 PendingCallback = Callable[[str, list[dict[str, Any]]], None]
 
 USAGE_FREE_TOOLS = {'get_tool_usage', 'get_confirm'}
-ACTION_TOOLS = {
-    'refresh_folders',
-    'switch_page',
-    'open_folder',
-    'search_cloud',
-    'continue_search_cloud',
-    'favorite_song',
-    'create_favorite_folder',
-    'scroll_to_section_and_expend',
-    'set_option_value',
-    'login',
-    'remove_song',
-}
+CONFIRM_REQUIRED_TOOLS = {'remove_song'}
 KNOWN_TOOLS = set(TOOL_USAGE)
 TOOL_SCHEMA_DESCRIPTION = (
     'Available app tool. Call get_tool_usage with this exact name before use.'
@@ -108,6 +98,14 @@ def llmToolSchemas() -> list[dict[str, Any]]:
             'path': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
             'offset': _prop('integer', TOOL_ARG_DESCRIPTION),
             'limit': _prop('integer', TOOL_ARG_DESCRIPTION),
+        }),
+        _schema('grep', TOOL_SCHEMA_DESCRIPTION, {
+            'path': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            'pattern': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+        }),
+        _schema('get_language', TOOL_SCHEMA_DESCRIPTION, {}),
+        _schema('get_translation', TOOL_SCHEMA_DESCRIPTION, {
+            'key': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
         }),
         _schema('refresh_folders', TOOL_SCHEMA_DESCRIPTION, {}),
         _schema('switch_page', TOOL_SCHEMA_DESCRIPTION, {
@@ -230,6 +228,42 @@ class SourceTree:
             }
         return {'path': rel, 'error': 'Path not found under src'}
 
+    def grep(self, path: str, pattern: str) -> dict[str, Any]:
+        rel = self._normalize(path)
+        if not pattern:
+            return {'path': rel, 'pattern': pattern, 'error': 'pattern is required'}
+        try:
+            regex = re.compile(pattern)
+        except re.error as e:
+            return {'path': rel, 'pattern': pattern, 'error': f'invalid regex: {e}'}
+
+        files = self._grep_files(rel)
+        if files is None:
+            return {'path': rel, 'pattern': pattern, 'error': 'Path not found under src'}
+
+        matches = []
+        for source in files:
+            if source.lines == ['<binary file>']:
+                continue
+            for line_index, line in enumerate(source.lines):
+                for match in regex.finditer(line):
+                    matches.append(
+                        {
+                            'path': source.path,
+                            'line': line_index + 1,
+                            'column': match.start() + 1,
+                            'match': match.group(0),
+                            'text': line,
+                        }
+                    )
+        return {
+            'path': rel,
+            'pattern': pattern,
+            'files_scanned': len(files),
+            'count': len(matches),
+            'matches': matches,
+        }
+
     def _normalize(self, path: str) -> str:
         cleaned = path.replace('\\', '/').strip().strip('/')
         if not cleaned:
@@ -253,6 +287,18 @@ class SourceTree:
         rel = os.path.relpath(path, os.path.dirname(self.root))
         return rel.replace('\\', '/')
 
+    def _grep_files(self, rel: str) -> list[SourceFile] | None:
+        if rel in self.files:
+            return [self.files[rel]]
+        if rel not in self.dirs:
+            return None
+        prefix = rel.rstrip('/') + '/'
+        return [
+            source
+            for path, source in sorted(self.files.items())
+            if path.startswith(prefix)
+        ]
+
 
 class LLMToolRunner:
     def __init__(
@@ -269,18 +315,24 @@ class LLMToolRunner:
         self.allow_actions = allow_actions
         self.require_usage = require_usage
         self.source_tree = SourceTree(os.path.join(os.getcwd(), 'src'))
-        self._song_handles: dict[str, SearchSongInfo | SongStorable] = {}
-        self._folder_handles: dict[str, LocalFolderInfo | CloudFolderInfo] = {}
+        self._song_handles = ctx.llm_song_handles
+        self._folder_handles = ctx.llm_folder_handles
         self._loaded_usage: set[str] = set()
+        self._pending_favorite_folders: set[str] = set()
+        self._pending_refresh_folders = False
+        self._pending_open_folder: LocalFolderInfo | CloudFolderInfo | None = None
+        self._tool_run_index = 0
 
     def runTool(self, name: str, arguments: dict[str, Any]) -> str:
-        self._emit(name, 'running')
+        self._tool_run_index += 1
+        run_id = f'{name}:{self._tool_run_index}'
+        self._emit(run_id, name, 'running')
         try:
             result = self._run_tool(name, arguments)
         except Exception as e:
             result = {'error': str(e)}
         text = json.dumps(result, ensure_ascii=False)
-        self._emit(name, text)
+        self._emit(run_id, name, text)
         return text
 
     def _run_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -296,11 +348,11 @@ class LLMToolRunner:
                 'tool_name': name,
                 'error': f'Call get_tool_usage with tool_name="{name}" before using this tool.',
             }
-        if name in ACTION_TOOLS and not self.allow_actions:
+        if name in CONFIRM_REQUIRED_TOOLS and not self.allow_actions:
             return {
                 'requires_user_confirmation': True,
                 'tool_name': name,
-                'error': 'Draft a plan and call get_confirm before running app-changing tools.',
+                'error': 'Draft a plan and call get_confirm before running this high-risk tool.',
             }
         if name == 'get_tool_usage':
             tool_name = str(arguments.get('tool_name', ''))
@@ -322,6 +374,15 @@ class LLMToolRunner:
                 int(arguments.get('offset', 0) or 0),
                 int(arguments.get('limit', 80) or 80),
             )
+        if name == 'grep':
+            return self.grep(
+                str(arguments.get('path', 'src')),
+                str(arguments.get('pattern', '')),
+            )
+        if name == 'get_language':
+            return self.getLanguage()
+        if name == 'get_translation':
+            return self.getTranslation(str(arguments.get('key', '')))
         if name == 'refresh_folders':
             return self.refreshFolders()
         if name == 'switch_page':
@@ -446,6 +507,28 @@ class LLMToolRunner:
     def read(self, path: str, offset: int = 0, limit: int = 80) -> dict[str, Any]:
         return self.source_tree.read(path, offset, limit)
 
+    def grep(self, path: str, pattern: str) -> dict[str, Any]:
+        return self.source_tree.grep(path, pattern)
+
+    def getLanguage(self) -> dict[str, Any]:
+        current_language = language()
+        return {
+            'language': current_language,
+            'text': tr(f'language.{current_language}'),
+        }
+
+    def getTranslation(self, key: str) -> dict[str, Any]:
+        key = key.strip()
+        if not key:
+            return {'error': 'key is required'}
+        text = tr(key)
+        return {
+            'key': key,
+            'language': language(),
+            'text': text,
+            'found': text != key,
+        }
+
     def refreshFolders(self) -> dict[str, Any]:
         self._run_main_thread(lambda: self.ctx.main_window.refreshFolders())
         return self.getFolders()
@@ -476,28 +559,31 @@ class LLMToolRunner:
         return {'opened': self._folder_to_dict(folder, folder_obj)}
 
     def searchCloud(self, query: str) -> dict[str, Any]:
-        if not query.strip():
+        query = query.strip()
+        if not query:
             return {'error': 'query is required'}
         results = getBackend().searchSong(query, offset=0)
-        self._run_main_thread(lambda: self._apply_search_results(query, results, 0))
+        self.ctx.llm_cloud_search_query = query
+        self.ctx.llm_cloud_search_offset = len(results)
         return {
             'query': query,
             'offset': 0,
+            'next_offset': self.ctx.llm_cloud_search_offset,
             'count': len(results),
             'results': [self._search_song_to_dict(song) for song in results],
         }
 
     def continueSearchCloud(self) -> dict[str, Any]:
-        sp = self.ctx.search_page
-        query = sp.last_search
+        query = self.ctx.llm_cloud_search_query
+        offset = self.ctx.llm_cloud_search_offset
         if not query:
             return {'error': 'search_cloud must be called first'}
-        offset = sp.curr_offset
         results = getBackend().searchSong(query, offset=offset)
-        self._run_main_thread(lambda: self._apply_search_results(query, results, offset))
+        self.ctx.llm_cloud_search_offset += len(results)
         return {
             'query': query,
             'offset': offset,
+            'next_offset': self.ctx.llm_cloud_search_offset,
             'count': len(results),
             'results': [self._search_song_to_dict(song) for song in results],
         }
@@ -521,10 +607,10 @@ class LLMToolRunner:
         else:
             if not favorites_manager.addSong(folder_obj.folder_name, storable):
                 return {'error': 'local favorite failed'}
-            event_bus.emit(FAVORITES_CHANGED, folder_obj.folder_name)
+            self._pending_favorite_folders.add(folder_obj.folder_name)
 
-        event_bus.emit(MWINDOW_REFRESH_FOLDERS)
-        self._run_main_thread(lambda: self.ctx.main_window._openFolder(folder_obj))
+        self._pending_refresh_folders = True
+        self._pending_open_folder = folder_obj
         return {
             'favorited': self._song_to_dict(storable, song),
             'folder': self._folder_to_dict(folder, folder_obj),
@@ -545,62 +631,51 @@ class LLMToolRunner:
             folder_obj = favorites_manager.addFolder(name)
             handle = f'local:new:{folder_obj.folder_name}'
         self._folder_handles[handle] = folder_obj
-        self._run_main_thread(lambda: self.ctx.main_window.refreshFolders())
+        self._pending_refresh_folders = True
+        self._pending_open_folder = folder_obj
         return {'created': self._folder_to_dict(handle, folder_obj)}
 
+    def flushPostActions(self) -> None:
+        favorite_folders = sorted(self._pending_favorite_folders)
+        refresh_folders = self._pending_refresh_folders
+        open_folder = self._pending_open_folder
+        if not favorite_folders and not refresh_folders and open_folder is None:
+            return
+        self._pending_favorite_folders.clear()
+        self._pending_refresh_folders = False
+        self._pending_open_folder = None
+
+        def _apply() -> None:
+            for folder_name in favorite_folders:
+                event_bus.emit(FAVORITES_CHANGED, folder_name)
+            if refresh_folders:
+                event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+            if open_folder is not None:
+                self.ctx.main_window._openFolder(open_folder)
+
+        self._run_main_thread(_apply)
+
     def getSections(self) -> dict[str, Any]:
-        sections = []
-        for section in self.ctx.setting_page._sections:
-            if section.title == 'setting_page.llm':
-                continue
-            sections.append(
-                {
-                    'title': section.title,
-                    'title_text': tr(section.title),
-                    'description': section._title,
-                    'expanded': section.isExpanded(),
-                }
-            )
-        return {'sections': sections}
+        return self._run_main_thread(self._get_sections)
 
     def scrollToSectionAndExpend(self, section: str) -> dict[str, Any]:
-        target = self._find_section(section)
-        if target is None:
-            return {'error': f'section not found: {section}'}
-
         def _show() -> None:
+            target = self._find_section(section)
+            if target is None:
+                return
             self.ctx.main_window.contents_widget.setCurrentWidget(self.ctx.setting_page)
             target.setExpanded(True)
             center = target.y() - self.ctx.setting_page.scroller.height() // 2
             bar = self.ctx.setting_page.scroller.verticalScrollBar()
             bar.setValue(max(0, center))
 
+        if not self._run_main_thread(lambda: self._has_section(section)):
+            return {'error': f'section not found: {section}'}
         self._run_main_thread(_show)
         return {'section': section, 'expanded': True}
 
     def getOptions(self, section: str) -> dict[str, Any]:
-        target = self._find_section(section)
-        if target is None:
-            return {'error': f'section not found: {section}'}
-        if target.title == 'setting_page.llm':
-            return {'error': 'LLM section is hidden from tools'}
-        options = []
-        for widget in self._section_option_cards(target):
-            name = getattr(widget, '_llm_setting_name', '')
-            desc = getattr(widget, '_llm_setting_description', '')
-            value_widget = getattr(widget, '_llm_setting_widget', None)
-            options.append(
-                {
-                    'name': name,
-                    'name_text': tr(name),
-                    'description': desc,
-                    'description_text': tr(desc),
-                    'value': self._widget_value(value_widget),
-                    'value_type': type(self._widget_value(value_widget)).__name__,
-                    'choices': self._widget_choices(value_widget),
-                }
-            )
-        return {'section': section, 'options': options}
+        return self._run_main_thread(lambda: self._get_options(section))
 
     def setOptionValue(
         self,
@@ -609,24 +684,15 @@ class LLMToolRunner:
         value: str,
         converter: str,
     ) -> dict[str, Any]:
-        target = self._find_section(section)
-        if target is None or target.title == 'setting_page.llm':
-            return {'error': 'section not found or hidden'}
-        card = self._find_option_card(target, option)
-        if card is None:
-            return {'error': f'option not found: {option}'}
-        widget = getattr(card, '_llm_setting_widget', None)
-        old = self._widget_value(widget)
         converted = self._convert(value, converter)
-        self._run_main_thread(lambda: self._set_widget_value(widget, converted))
-        return {
-            'section': section,
-            'option': option,
-            'old_value': old,
-            'new_value': self._widget_value(widget),
-        }
+        return self._run_main_thread(
+            lambda: self._set_option_value(section, option, converted)
+        )
 
     def getNickname(self) -> dict[str, Any]:
+        return self._run_main_thread(self._get_nickname)
+
+    def _get_nickname(self) -> dict[str, Any]:
         page = self.ctx.session_page
         return {
             'logged_in': page._nickname != 'Anonymous User',
@@ -643,33 +709,80 @@ class LLMToolRunner:
         self._run_main_thread(lambda: self.ctx.session_page.login())
         return self.getNickname()
 
-    def _apply_search_results(
+    def _get_sections(self) -> dict[str, Any]:
+        sections = []
+        for section in self.ctx.setting_page._sections:
+            if section.title == 'setting_page.llm':
+                continue
+            title_text = tr(section.title)
+            description_text = tr(section._title)
+            sections.append(
+                {
+                    'title': title_text,
+                    'title_text': title_text,
+                    'title_key': section.title,
+                    'description': description_text,
+                    'description_text': description_text,
+                    'description_key': section._title,
+                    'expanded': section.isExpanded(),
+                }
+            )
+        return {'sections': sections}
+
+    def _has_section(self, section: str) -> bool:
+        target = self._find_section(section)
+        return target is not None and target.title != 'setting_page.llm'
+
+    def _get_options(self, section: str) -> dict[str, Any]:
+        target = self._find_section(section)
+        if target is None:
+            return {'error': f'section not found: {section}'}
+        if target.title == 'setting_page.llm':
+            return {'error': 'LLM section is hidden from tools'}
+        options = []
+        for widget in self._section_option_cards(target):
+            name = getattr(widget, '_llm_setting_name', '')
+            desc = getattr(widget, '_llm_setting_description', '')
+            value_widget = getattr(widget, '_llm_setting_widget', None)
+            value = self._widget_value(value_widget)
+            name_text = tr(name)
+            description_text = tr(desc)
+            options.append(
+                {
+                    'name': name_text,
+                    'name_text': name_text,
+                    'name_key': name,
+                    'description': description_text,
+                    'description_text': description_text,
+                    'description_key': desc,
+                    'value': value,
+                    'value_type': type(value).__name__,
+                    'choices': self._widget_choices(value_widget),
+                }
+            )
+        return {'section': section, 'options': options}
+
+    def _set_option_value(
         self,
-        query: str,
-        results: list[SearchSongInfo],
-        offset: int,
-    ) -> None:
-        mw = self.ctx.main_window
-        sp = self.ctx.search_page
-        mw.contents_widget.setCurrentWidget(sp)
-        mw.search_input.setText(query)
-        sp.last_search = query
-        sp.searching = False
-        if offset == 0:
-            sp.curr_offset = 0
-            sp.lst.clear()
-            sp.cards.clear()
-            sp.img_card_map.clear()
-        sp.addSongs(results)
-        sp.curr_offset = offset + len(results)
-        bar = sp.lst.verticalScrollBar()
-        delegate = getattr(sp.lst, 'scrollDelegate', None) or getattr(
-            sp.lst,
-            'delegate',
-            None,
-        )
-        if delegate is not None:
-            delegate.vScrollBar.scrollValue(bar.maximum() - bar.value())
+        section: str,
+        option: str,
+        converted: Any,
+    ) -> dict[str, Any]:
+        target = self._find_section(section)
+        if target is None or target.title == 'setting_page.llm':
+            return {'error': 'section not found or hidden'}
+        card = self._find_option_card(target, option)
+        if card is None:
+            return {'error': f'option not found: {option}'}
+        widget = getattr(card, '_llm_setting_widget', None)
+        old = self._widget_value(widget)
+        self._set_widget_value(widget, converted)
+        return {
+            'section': section,
+            'option': option,
+            'old_value': old,
+            'new_value': self._widget_value(widget),
+        }
 
     def _search_song_to_dict(self, song: SearchSongInfo) -> dict[str, Any]:
         handle = self._song_handle(song)
@@ -805,6 +918,10 @@ class LLMToolRunner:
         return value
 
     def _run_main_thread(self, fn: Callable[[], Any]) -> Any:
+        app = QApplication.instance()
+        if app is not None and QThread.currentThread() == app.thread():
+            return fn()
+
         result_queue: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
 
         def _wrapped() -> None:
@@ -819,9 +936,9 @@ class LLMToolRunner:
             return result
         raise result
 
-    def _emit(self, name: str, content: str) -> None:
+    def _emit(self, run_id: str, name: str, content: str) -> None:
         if self.callback is not None:
-            self.callback(name, content)
+            self.callback(run_id, name, content)
 
     def _parse_pending_tools(self, tools: str) -> list[dict[str, Any]]:
         try:

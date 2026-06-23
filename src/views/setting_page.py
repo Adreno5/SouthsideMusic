@@ -4,8 +4,6 @@ import logging
 
 from typing import Callable, cast
 
-from openai import OpenAI
-
 from core.app_context import AppContext
 
 from imports import (
@@ -58,6 +56,7 @@ from core.audio_player import getAudioDevices
 from core.config import cfg, decryptSecret, encryptSecret, saveConfig
 from core.downloader import asyncTask
 from core.i18n import Language, setLanguage
+from core.llm import LLM
 from core.ws_server import (
     WebSocketServer,
     QObjectHandler,
@@ -1005,15 +1004,7 @@ class SettingPage(QWidget):
         def _fetch() -> None:
             nonlocal error, models
             try:
-                client = OpenAI(
-                    api_key=decryptSecret(cfg.llm_api_key_encrypted) or 'unused',
-                    base_url=cfg.llm_base_url,
-                    timeout=20,
-                )
-                models = sorted(
-                    {model.id for model in client.models.list().data if model.id},
-                    key=str.lower,
-                )
+                models = LLM(timeout=20).listModels()
             except Exception as e:
                 error = e
                 self._logger.exception(e)

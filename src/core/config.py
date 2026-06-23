@@ -1,9 +1,12 @@
+import base64
 from dataclasses import dataclass, field
 import json
 import logging
 import os
 
 from typing import Any, Literal
+
+import win32crypt
 
 from core.models import SongStorable
 
@@ -73,6 +76,10 @@ class Config:
 
     download_concurrent_threads: int = 16
 
+    llm_base_url: str = 'https://api.openai.com/v1'
+    llm_api_key_encrypted: str = ''
+    llm_model: str = ''
+
 
 cfg = Config()
 
@@ -80,6 +87,39 @@ cfg = Config()
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 CONFIG_PATH = os.path.join(_PROJECT_ROOT, 'config.json')
 LEGACY_PICKLE_CONFIG_PATH = os.path.join(_PROJECT_ROOT, 'config.pkl')
+SECRET_PREFIX = 'win32crypt:'
+
+
+def encryptSecret(value: str) -> str:
+    if not value:
+        return ''
+    encrypted = win32crypt.CryptProtectData(
+        value.encode('utf-8'),
+        'SouthsideMusic',
+        None,
+        None,
+        None,
+        0,
+    )
+    return f'{SECRET_PREFIX}{base64.b64encode(encrypted).decode("ascii")}'
+
+
+def decryptSecret(value: str) -> str:
+    if not value or not value.startswith(SECRET_PREFIX):
+        return ''
+    try:
+        encrypted = base64.b64decode(value[len(SECRET_PREFIX) :].encode('ascii'))
+        _desc, data = win32crypt.CryptUnprotectData(
+            encrypted,
+            None,
+            None,
+            None,
+            0,
+        )
+        return data.decode('utf-8')
+    except Exception as e:
+        _logger.exception(e)
+        return ''
 
 
 def _song_from_object(data: Any) -> SongStorable | None:

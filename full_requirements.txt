@@ -4,6 +4,7 @@ darkdetect==0.8.0
 hpyt==1.4.0
 mutagen==1.47.0
 numpy==2.4.2
+openai==2.43.0
 pillow==12.2.0
 pycryptodome==3.23.0
 pydub==0.25.1

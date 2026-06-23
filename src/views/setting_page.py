@@ -4,6 +4,8 @@ import logging
 
 from typing import Callable, cast
 
+from openai import OpenAI
+
 from core.app_context import AppContext
 
 from imports import (
@@ -40,8 +42,9 @@ from qfluentwidgets import (
     CardWidget,
     CheckBox,
     ComboBox,
-    DoubleSpinBox,
     FluentIcon,
+    LineEdit,
+    PasswordLineEdit,
     PushButton,
     Slider,
     SubtitleLabel,
@@ -52,7 +55,8 @@ from qfluentwidgets import (
 from core.icons import bindIcon
 from core import theme
 from core.audio_player import getAudioDevices
-from core.config import cfg, saveConfig
+from core.config import cfg, decryptSecret, encryptSecret, saveConfig
+from core.downloader import asyncTask
 from core.i18n import Language, setLanguage
 from core.ws_server import (
     WebSocketServer,
@@ -404,6 +408,52 @@ class SettingPage(QWidget):
             'setting_page.output_device',
             'setting_page.the_device_to_output_audio',
             self.device_selector,
+        )
+
+        if lw:
+            lw.top('Setting up LLM options...')
+        self.addSection(
+            'setting_page.llm',
+            'setting_page.llm_provider_model_and_authentication',
+        )
+
+        self.llm_base_url_edit = LineEdit()
+        self.llm_base_url_edit.setFixedWidth(360)
+        self.llm_base_url_edit.setText(cfg.llm_base_url)
+        self.llm_base_url_edit.editingFinished.connect(self._onLlmBaseUrlChanged)
+        self.addSetting(
+            'setting_page.llm_base_url',
+            'setting_page.openai_compatible_base_url',
+            self.llm_base_url_edit,
+        )
+
+        self.llm_api_key_edit = PasswordLineEdit()
+        self.llm_api_key_edit.setFixedWidth(360)
+        self.llm_api_key_edit.setText(decryptSecret(cfg.llm_api_key_encrypted))
+        self.llm_api_key_edit.editingFinished.connect(self._onLlmApiKeyChanged)
+        self.addSetting(
+            'setting_page.llm_api_key',
+            'setting_page.llm_api_key_stored_encrypted',
+            self.llm_api_key_edit,
+        )
+
+        self.llm_model_box = ComboBox()
+        self.llm_model_box.setFixedWidth(260)
+        self._refreshLlmModelBox()
+        self.llm_model_box.currentIndexChanged.connect(self._onLlmModelChanged)
+        self.addSetting(
+            'setting_page.llm_model',
+            'setting_page.select_model_after_refreshing_models',
+            self.llm_model_box,
+        )
+
+        self.llm_refresh_models_btn = PushButton(FluentIcon.SYNC, '')
+        bindText(self.llm_refresh_models_btn, 'setting_page.refresh_models')
+        self.llm_refresh_models_btn.clicked.connect(self.refreshLlmModels)
+        self.addSetting(
+            'setting_page.llm_refresh_models',
+            'setting_page.fetch_models_from_the_configured_base_url',
+            self.llm_refresh_models_btn,
         )
 
         if lw:
@@ -912,6 +962,83 @@ class SettingPage(QWidget):
         mode = self.play_method_box.currentData()
         if mode in ('Repeat one', 'Repeat list', 'Shuffle', 'Play in order'):
             cfg.play_method = mode
+
+    def _onLlmBaseUrlChanged(self) -> None:
+        cfg.llm_base_url = self.llm_base_url_edit.text().strip().rstrip('/')
+
+    def _onLlmApiKeyChanged(self) -> None:
+        cfg.llm_api_key_encrypted = encryptSecret(self.llm_api_key_edit.text().strip())
+
+    def _refreshLlmModelBox(self, models: list[str] | None = None) -> None:
+        current = cfg.llm_model
+        if models is None:
+            models = [current] if current else []
+
+        self.llm_model_box.blockSignals(True)
+        self.llm_model_box.clear()
+        for model in models:
+            self.llm_model_box.addItem(model, userData=model)
+        index = self.llm_model_box.findData(current)
+        self.llm_model_box.setCurrentIndex(index if index >= 0 else 0)
+        self.llm_model_box.blockSignals(False)
+
+    def _onLlmModelChanged(self) -> None:
+        model = self.llm_model_box.currentData()
+        if isinstance(model, str):
+            cfg.llm_model = model
+
+    def refreshLlmModels(self) -> None:
+        self._onLlmBaseUrlChanged()
+        self._onLlmApiKeyChanged()
+        if not cfg.llm_base_url:
+            InfoBar.error(
+                tr('setting_page.llm_models_refresh_failed'),
+                tr('setting_page.llm_base_url_required'),
+                duration=5000,
+                parent=self._mwindow,
+            )
+            return
+        self.llm_refresh_models_btn.setEnabled(False)
+        models: list[str] = []
+        error: Exception | None = None
+
+        def _fetch() -> None:
+            nonlocal error, models
+            try:
+                client = OpenAI(
+                    api_key=decryptSecret(cfg.llm_api_key_encrypted) or 'unused',
+                    base_url=cfg.llm_base_url,
+                    timeout=20,
+                )
+                models = sorted(
+                    {model.id for model in client.models.list().data if model.id},
+                    key=str.lower,
+                )
+            except Exception as e:
+                error = e
+                self._logger.exception(e)
+
+        def _finish() -> None:
+            self.llm_refresh_models_btn.setEnabled(True)
+            if error is not None:
+                InfoBar.error(
+                    tr('setting_page.llm_models_refresh_failed'),
+                    str(error),
+                    duration=5000,
+                    parent=self._mwindow,
+                )
+                return
+            if cfg.llm_model not in models and models:
+                cfg.llm_model = models[0]
+            self._refreshLlmModelBox(models)
+            InfoBar.success(
+                tr('setting_page.llm_models_refreshed'),
+                tr('setting_page.loaded_model_count', count=len(models)),
+                duration=3000,
+                parent=self._mwindow,
+            )
+
+        asyncTask(_fetch, (), self._mwindow, _finish)
 
     def _refreshConnectionStatus(self, connected: bool | None = None) -> None:
         if connected is None:

@@ -391,6 +391,21 @@ TRANSLATIONS: dict[Language, dict[str, str]] = {'en_US': {'dependences_window.au
            'setting_page.playback_pitch': 'Playback Pitch',
            'setting_page.playback_speed': 'Playback Speed',
            'setting_page.playing': 'Playing',
+           'setting_page.llm': 'LLM',
+           'setting_page.llm_provider_model_and_authentication': 'OpenAI-compatible provider, model and authentication.',
+           'setting_page.llm_base_url': 'Base URL',
+           'setting_page.openai_compatible_base_url': 'OpenAI-compatible API base URL',
+           'setting_page.llm_api_key': 'Api Key',
+           'setting_page.llm_api_key_stored_encrypted': 'stored encrypted in config.json',
+           'setting_page.llm_model': 'Model',
+           'setting_page.select_model_after_refreshing_models': 'select a model after refreshing the model list',
+           'setting_page.refresh_models': 'Refresh Models',
+           'setting_page.llm_refresh_models': 'Refresh model list',
+           'setting_page.fetch_models_from_the_configured_base_url': 'fetch models from the configured Base URL',
+           'setting_page.llm_models_refresh_failed': 'Failed to refresh models',
+           'setting_page.llm_base_url_required': 'Base URL is required',
+           'setting_page.llm_models_refreshed': 'Models refreshed',
+           'setting_page.loaded_model_count': 'Loaded {count} model(s)',
            'setting_page.range_60_quietest_0_loudest_recommend_16_18_youtube_14_lufs_netflix_27': 'Range: '
                                                                                                   '-60(quietest)~0(loudest)\n'
                                                                                                   'Recommend: '
@@ -731,6 +746,21 @@ TRANSLATIONS: dict[Language, dict[str, str]] = {'en_US': {'dependences_window.au
            'setting_page.playback_pitch': '播放音调',
            'setting_page.playback_speed': '播放速度',
            'setting_page.playing': '播放',
+           'setting_page.llm': 'LLM',
+           'setting_page.llm_provider_model_and_authentication': 'OpenAI 兼容服务、模型和认证配置。',
+           'setting_page.llm_base_url': 'Base URL',
+           'setting_page.openai_compatible_base_url': 'OpenAI 兼容 API Base URL',
+           'setting_page.llm_api_key': 'Api Key',
+           'setting_page.llm_api_key_stored_encrypted': '加密存储在 config.json 中',
+           'setting_page.llm_model': 'Model',
+           'setting_page.select_model_after_refreshing_models': '刷新模型列表后选择模型',
+           'setting_page.refresh_models': '刷新模型',
+           'setting_page.llm_refresh_models': '刷新模型列表',
+           'setting_page.fetch_models_from_the_configured_base_url': '从当前 Base URL 获取模型列表',
+           'setting_page.llm_models_refresh_failed': '刷新模型失败',
+           'setting_page.llm_base_url_required': 'Base URL 不能为空',
+           'setting_page.llm_models_refreshed': '模型已刷新',
+           'setting_page.loaded_model_count': '已加载 {count} 个模型',
            'setting_page.range_60_quietest_0_loudest_recommend_16_18_youtube_14_lufs_netflix_27': '范围：-60（最安静）~0（最响）\n'
                                                                                                   '推荐：-16~-18\n'
                                                                                                   'YouTube：-14 '

@@ -24,4 +24,6 @@ dependencies = [
     "tornado>=6.5.4",
     "tqdm>=4.67.3",
     "audioop-lts>=0.2.2",
+    "openai>=2.43.0",
+    "pywin32>=311",
 ]

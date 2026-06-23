@@ -508,11 +508,11 @@ class MainWindow(FluentWindowBase):
             if cfg.last_playlist:
                 last_playlist = cfg.last_playlist
                 last_playing_index = cfg.last_playing_index
-                self._dp.playlist.extend(last_playlist)
 
         def _finish_init():
             if last_playlist:
                 self._launchwindow.top('restore playlist...')
+                self._dp.playlist = list(last_playlist)
                 if 0 <= last_playing_index < len(last_playlist):
                     self._launchwindow.top('continue last song...')
 

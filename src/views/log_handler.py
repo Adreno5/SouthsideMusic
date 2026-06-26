@@ -51,6 +51,9 @@ class LogHandler(logging.Handler):
         self.buffer: str = ''
 
     def emit(self, record: logging.LogRecord) -> None:
+        if record.name in ('openai._base_client', 'httpcore.http11', 'httpcore.connection', 'httpcore.proxy'):
+            return
+
         message = record.getMessage()
 
         color = {
@@ -152,10 +155,6 @@ class LoggingStream:
             if not line:
                 continue
             self._in_logging = True
-
-            if 'QFluentWidgets' in line.strip():
-                continue
-
             try:
                 if self.source == 'stderr':
                     self._logger.error(line.strip())

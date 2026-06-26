@@ -93,7 +93,15 @@ def llmToolSchemas() -> list[dict[str, Any]]:
             ),
         }),
         _schema('get_current_song', TOOL_SCHEMA_DESCRIPTION, {}),
+        _schema('get_song_details', TOOL_SCHEMA_DESCRIPTION, {
+            'song': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+        }),
         _schema('get_folders', TOOL_SCHEMA_DESCRIPTION, {}),
+        _schema('get_folder_songs', TOOL_SCHEMA_DESCRIPTION, {
+            'folder': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            'offset': _prop('integer', TOOL_ARG_DESCRIPTION),
+            'limit': _prop('integer', TOOL_ARG_DESCRIPTION),
+        }),
         _schema('read', TOOL_SCHEMA_DESCRIPTION, {
             'path': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
             'offset': _prop('integer', TOOL_ARG_DESCRIPTION),
@@ -366,8 +374,16 @@ class LLMToolRunner:
             )
         if name == 'get_current_song':
             return self.getCurrentSong()
+        if name == 'get_song_details':
+            return self.getSongDetails(str(arguments.get('song', '')))
         if name == 'get_folders':
             return self.getFolders()
+        if name == 'get_folder_songs':
+            return self.getFolderSongs(
+                str(arguments.get('folder', '')),
+                int(arguments.get('offset', 0) or 0),
+                int(arguments.get('limit', 30) or 30),
+            )
         if name == 'read':
             return self.read(
                 str(arguments.get('path', 'src')),
@@ -475,6 +491,30 @@ class LLMToolRunner:
             },
         }
 
+    def getSongDetails(self, song: str) -> dict[str, Any]:
+        song_id = self._song_id_from_handle_or_id(song)
+        if not song_id:
+            return {'error': 'song handle or id is required'}
+        detail = getBackend().getTrackDetail(song_id)
+        style_hints = self._style_hints(detail)
+        return {
+            'id': str(song_id),
+            'title': detail.name,
+            'artists': [artist.name for artist in detail.artists],
+            'album': detail.album_name,
+            'duration': detail.duration,
+            'publish_time': detail.publish_time,
+            'track_no': detail.track_no,
+            'cd': detail.cd,
+            'aliases': detail.aliases,
+            'style_hints': style_hints,
+            'display_tags': detail.display_tags,
+            'entertainment_tags': detail.entertainment_tags,
+            'award_tags': detail.award_tags,
+            'mark_tags': detail.mark_tags,
+            'song_feature': detail.song_feature,
+        }
+
     def getFolders(self) -> dict[str, Any]:
         local = []
         for index, local_folder in enumerate(favorites_manager.folders):
@@ -498,11 +538,43 @@ class LLMToolRunner:
                         'handle': handle,
                         'name': cloud_folder.folder_name,
                         'kind': 'cloud',
-                        'song_count': None,
+                        'song_count': self._cloud_song_count(cloud_folder),
                         'id': cloud_folder.id,
                     }
                 )
         return {'local': local, 'cloud': cloud}
+
+    def getFolderSongs(
+        self,
+        folder: str,
+        offset: int = 0,
+        limit: int = 30,
+    ) -> dict[str, Any]:
+        folder_obj = self._folder_handles.get(folder)
+        if folder_obj is None:
+            self.getFolders()
+            folder_obj = self._folder_handles.get(folder)
+        if folder_obj is None:
+            return {'error': f'folder handle not found: {folder}'}
+
+        offset = max(0, offset)
+        limit = max(1, min(100, limit))
+        if isinstance(folder_obj, CloudFolderInfo):
+            songs = getBackend().getPlaylistTracks(folder_obj.id)
+            if self._cloud_song_count(folder_obj) is None:
+                self._set_cloud_song_count(folder_obj, len(songs))
+        else:
+            songs = folder_obj.songs
+
+        sliced = songs[offset : offset + limit]
+        return {
+            'folder': self._folder_to_dict(folder, folder_obj),
+            'offset': offset,
+            'limit': limit,
+            'total': len(songs),
+            'next_offset': offset + len(sliced),
+            'songs': [self._song_to_dict(song, self._song_handle(song)) for song in sliced],
+        }
 
     def read(self, path: str, offset: int = 0, limit: int = 80) -> dict[str, Any]:
         return self.source_tree.read(path, offset, limit)
@@ -821,6 +893,7 @@ class LLMToolRunner:
                 'kind': 'cloud',
                 'name': folder.folder_name,
                 'id': folder.id,
+                'song_count': self._cloud_song_count(folder),
             }
         return {
             'handle': handle,
@@ -828,6 +901,37 @@ class LLMToolRunner:
             'name': folder.folder_name,
             'song_count': len(folder.songs),
         }
+
+    def _cloud_song_count(self, folder: CloudFolderInfo) -> int | None:
+        count = getattr(folder, 'song_count', None)
+        return count if isinstance(count, int) else None
+
+    def _set_cloud_song_count(self, folder: CloudFolderInfo, count: int) -> None:
+        setattr(folder, 'song_count', count)
+
+    def _song_id_from_handle_or_id(self, song: str) -> str:
+        song = song.strip()
+        song_obj = self._song_handles.get(song)
+        if song_obj is not None:
+            return str(song_obj.id)
+        if song.startswith('song:'):
+            return song.removeprefix('song:').strip()
+        return song
+
+    def _style_hints(self, detail: Any) -> list[str]:
+        hints: list[str] = []
+        for item in (
+            *detail.display_tags,
+            *detail.entertainment_tags,
+            *detail.award_tags,
+            *detail.mark_tags,
+        ):
+            if item and item not in hints:
+                hints.append(item)
+        feature = detail.song_feature
+        if isinstance(feature, str) and feature and feature not in hints:
+            hints.append(feature)
+        return hints
 
     def _song_handle(self, song: SearchSongInfo | SongStorable) -> str:
         song_id = str(song.id)

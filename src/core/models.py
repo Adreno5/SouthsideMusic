@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, field
+from typing import Any, Literal
 import base64
 import hashlib
 import json
@@ -505,6 +505,7 @@ class CloudFolderInfo:
     folder_name: str
     image_url: str
     id: str
+    song_count: int | None = None
 
 
 @dataclass
@@ -548,6 +549,13 @@ class TrackDetailInfo:
     publish_time: int
     artists: list[ArtistInfo]
     duration: int = 0
+    name: str = ''
+    aliases: list[str] = field(default_factory=list)
+    display_tags: list[str] = field(default_factory=list)
+    entertainment_tags: list[str] = field(default_factory=list)
+    award_tags: list[str] = field(default_factory=list)
+    mark_tags: list[str] = field(default_factory=list)
+    song_feature: Any | None = None
 
 
 @dataclass

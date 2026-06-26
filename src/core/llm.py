@@ -41,6 +41,29 @@ Use when:
 Do not use when:
 - the user has already provided a specific song name that should be searched.
 '''.strip(),
+    'get_song_details': '''
+Purpose:
+Read detailed metadata for one song, including style or tag-like fields when the
+NetEase detail API returns them.
+
+Arguments:
+- song: a song handle from get_current_song, search_cloud, continue_search_cloud,
+  or get_folder_songs. A raw song id is also accepted.
+
+Returns:
+- song identity, artists, album, duration, publish time, disc/track number.
+- style_hints plus raw tag groups such as display_tags, entertainment_tags,
+  award_tags, mark_tags, and song_feature.
+
+Use when:
+- the user asks about a song's style, genre, tags, vibe, or metadata.
+- you need extra context for recommendations or playlist organization.
+
+Rules:
+- call get_current_song, search_cloud, or get_folder_songs first when you only
+  know the song by user-facing name.
+- style_hints may be empty because NetEase often omits genre/style fields.
+'''.strip(),
     'search_cloud': '''
 Purpose:
 Search NetEase Cloud Music and return the first JSON result batch.
@@ -112,6 +135,31 @@ Use when:
 Rules:
 - use folder handles from this tool for later folder actions.
 - if a folder name is ambiguous, ask the user to choose.
+- use get_folder_songs when you need the songs inside a folder.
+'''.strip(),
+    'get_folder_songs': '''
+Purpose:
+Read songs from one favorite folder with pagination.
+
+Arguments:
+- folder: a folder handle from get_folders or create_favorite_folder.
+- offset: optional zero-based song offset.
+- limit: optional maximum song count.
+
+Returns:
+- folder summary, offset, limit, total, next_offset, and songs.
+- each song includes a handle, id, title, artists, duration, and cached metadata
+  when available.
+
+Use when:
+- the user asks what songs are in a folder.
+- remove_song needs a concrete song handle from a folder.
+- you need to inspect a folder without opening it in the UI.
+
+Rules:
+- call get_folders first if you only know the folder name.
+- use offset and limit for large folders instead of reading everything at once.
+- for cloud folders, this may fetch the playlist tracks from the backend.
 '''.strip(),
     'favorite_song': '''
 Purpose:
@@ -565,13 +613,15 @@ Tool use rules:
 - In one assistant turn, you may request multiple tool calls. The app will execute
   them together and return all results.
 - Available tool names: get_tool_usage, get_confirm, get_current_song, search_cloud,
-  continue_search_cloud, get_folders, favorite_song, create_favorite_folder, read,
-  grep, get_language, get_translation, refresh_folders, switch_page, open_folder,
-  get_sections, scroll_to_section_and_expend, get_options, set_option_value,
-  get_nickname, login, remove_song.'''
+  continue_search_cloud, get_song_details, get_folders, get_folder_songs,
+  favorite_song, create_favorite_folder, read, grep, get_language,
+  get_translation, refresh_folders, switch_page, open_folder, get_sections,
+  scroll_to_section_and_expend, get_options, set_option_value, get_nickname,
+  login, remove_song.'''
 
 LLMMessage = dict[str, str]
 ToolRunner = Callable[[str, dict[str, Any]], str]
+AfterToolRound = Callable[[], None]
 
 
 class LLM:
@@ -610,6 +660,7 @@ class LLM:
         history: Iterable[LLMMessage] | None = None,
         tools: list[dict[str, Any]] | None = None,
         tool_runner: ToolRunner | None = None,
+        after_tool_round: AfterToolRound | None = None,
         cancel_event: threading.Event | None = None,
     ) -> Iterator[str]:
         _logger.info('start stream request')
@@ -695,6 +746,8 @@ class LLM:
                     'content': result,
                 }
                 messages.append(tool_message)
+            if after_tool_round is not None:
+                after_tool_round()
 
     def buildMessages(
         self,

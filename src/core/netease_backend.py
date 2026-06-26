@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 import pyncm
 from pyncm import apis
@@ -107,6 +107,13 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
                 for obj in detail.get('ar', [])
             ],
             duration=detail.get('dt', 0),
+            name=detail.get('name', ''),
+            aliases=[str(alias) for alias in detail.get('alia', []) if alias],
+            display_tags=_tag_texts(detail.get('displayTags')),
+            entertainment_tags=_tag_texts(detail.get('entertainmentTags')),
+            award_tags=_tag_texts(detail.get('awardTags')),
+            mark_tags=_tag_texts(detail.get('markTags')),
+            song_feature=detail.get('songFeature'),
         )
 
     def getTrackAudio(
@@ -157,7 +164,10 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
 
             return [
                 CloudFolderInfo(
-                    folder_name=p['name'], image_url=p['coverImgUrl'], id=str(p['id'])
+                    folder_name=p['name'],
+                    image_url=p['coverImgUrl'],
+                    id=str(p['id']),
+                    song_count=p.get('trackCount'),
                 )
                 for p in data
             ]
@@ -217,3 +227,31 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
 
     def getUserVipType(self) -> int | str:
         return pyncm.getCurrentSession().vipType
+
+
+def _tag_texts(value: Any) -> list[str]:
+    result: list[str] = []
+
+    def _append(item: Any) -> None:
+        if item is None:
+            return
+        if isinstance(item, str):
+            if item:
+                result.append(item)
+            return
+        if isinstance(item, int | float):
+            result.append(str(item))
+            return
+        if isinstance(item, dict):
+            for key in ('name', 'tagName', 'title', 'text', 'label', 'value'):
+                text = item.get(key)
+                if isinstance(text, str) and text:
+                    result.append(text)
+                    return
+            return
+        if isinstance(item, list | tuple):
+            for child in item:
+                _append(child)
+
+    _append(value)
+    return list(dict.fromkeys(result))

@@ -27,7 +27,7 @@ from imports import (
     Property,
 )
 from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
-from typing import Optional, override
+from typing import Any, Optional, override
 import threading
 from scipy.fft import rfft, rfftfreq
 from scipy.signal import resample_poly
@@ -315,6 +315,35 @@ class PatchedAudioSegment(AudioSegment):
         )
 
 
+def decode_audio_with_sidecar(
+    file: bytes | str | Path | io.BytesIO,
+    sidecar: Any | None = None,
+    *,
+    timeout: float = 90.0,
+) -> PatchedAudioSegment:
+    if sidecar is None:
+        return PatchedAudioSegment.from_file(file)
+
+    payload: dict[str, object]
+    if isinstance(file, bytes):
+        payload = {'data': file}
+    elif isinstance(file, io.BytesIO):
+        file.seek(0)
+        payload = {'data': file.read()}
+    else:
+        payload = {'path': str(file)}
+
+    try:
+        decoded = sidecar.call('decode_audio', payload, timeout=timeout)
+    except Exception as e:
+        logging.getLogger(__name__).debug('sidecar audio decode failed: %s', e)
+        decoded = None
+
+    if isinstance(decoded, bytes):
+        return PatchedAudioSegment(decoded)
+    return PatchedAudioSegment.from_file(file)
+
+
 class AudioPlayer(QObject):
     onFullFinished = Signal()
     onEndingNoSound = Signal()
@@ -341,6 +370,8 @@ class AudioPlayer(QObject):
         self.loudness_gain: float = 1.0
         self._volume_anim: Optional[QPropertyAnimation] = None
         self._gain_anim: Optional[QPropertyAnimation] = None
+        self._speed_anim: Optional[QPropertyAnimation] = None
+        self._speed_animating_flag: bool = False
 
         self.fft_enabled = True
         self.fft_size = 1024
@@ -1016,6 +1047,12 @@ class AudioPlayer(QObject):
             self._gain_anim.stop()
             self._gain_anim = None
 
+    def stopPlaySpeedAnimation(self) -> None:
+        if self._speed_anim is not None:
+            self._speed_anim.stop()
+            self._speed_anim = None
+        self._speed_animating_flag = False
+
     @Property(float)
     def _volumeGain(self) -> float:
         return self.volume_gain
@@ -1031,6 +1068,32 @@ class AudioPlayer(QObject):
     @_loudnessGain.setter
     def loudnessGain(self, value: float) -> None:
         self.loudness_gain = value
+
+    @Property(float)
+    def _animPlaySpeed(self) -> float:
+        return self.play_speed
+
+    @_animPlaySpeed.setter
+    def animPlaySpeed(self, value: float) -> None:
+        self.play_speed = max(0.1, value)
+
+    def animatePlaySpeed(self, target: float, duration_ms: int) -> None:
+        if (
+            self._speed_anim is not None
+            and self._speed_anim.state() == QPropertyAnimation.State.Running
+        ):
+            self._speed_anim.stop()
+        self._speed_animating_flag = True
+        self._speed_anim = QPropertyAnimation(self, b'animPlaySpeed')
+        self._speed_anim.setStartValue(self.play_speed)
+        self._speed_anim.setEndValue(max(0.1, target))
+        self._speed_anim.setDuration(duration_ms)
+        self._speed_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._speed_anim.finished.connect(self._onSpeedAnimFinished)
+        self._speed_anim.start()
+
+    def _onSpeedAnimFinished(self) -> None:
+        self._speed_animating_flag = False
 
     def _fft_worker(self):
         while self.fft_thread_running:
@@ -1289,6 +1352,9 @@ class AudioPlayer(QObject):
             src_frames = self._speed_source_frames(start_idx, frames)
             return self.samples[start_idx : start_idx + frames].copy(), src_frames
 
+        if self._speed_animating_flag:
+            return self._read_speed_resample(start_idx, frames, speed)
+
         intermediate_frames = max(1, int(round(frames * pitch_ratio)))
         tempo_speed = speed / pitch_ratio
         chunk = self._read_wsola(start_idx, intermediate_frames, tempo_speed)
@@ -1299,6 +1365,28 @@ class AudioPlayer(QObject):
             start_idx, intermediate_frames, tempo_speed
         )
         return chunk, src_frames
+
+    def _read_speed_resample(
+        self, start_idx: int, frames: int, speed: float
+    ) -> tuple[np.ndarray, int]:
+        n = len(self.samples)
+        src_frames = max(1, int(round(frames * speed)))
+        end_idx = min(start_idx + src_frames, n)
+        src_region = self.samples[start_idx:end_idx]
+        if len(src_region) < 2:
+            return (
+                np.zeros((frames, self.channels), dtype=np.float32),
+                src_frames,
+            )
+        src_x = np.linspace(0.0, 1.0, len(src_region), dtype=np.float64)
+        dst_x = np.linspace(0.0, 1.0, frames, dtype=np.float64)
+        ch = min(self.channels, src_region.shape[1])
+        result = np.zeros((frames, ch), dtype=np.float32)
+        for c in range(ch):
+            result[:, c] = np.interp(dst_x, src_x, src_region[:, c]).astype(
+                np.float32, copy=False
+            )
+        return result, src_frames
 
     def _audio_callback(self, outdata, frames, _time_info, _status):
         outdata[:] = 0

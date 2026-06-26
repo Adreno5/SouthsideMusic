@@ -142,6 +142,123 @@ def _loudness_gain(payload: dict[str, Any]) -> float:
     )
 
 
+def _fix_wav_headers(data: bytearray) -> None:
+    pos = 12
+    data_position = -1
+    data_size = 0
+    while pos + 8 <= len(data):
+        subchunk_id = data[pos : pos + 4]
+        subchunk_size = struct.unpack_from('<I', data, pos + 4)[0]
+        if subchunk_id == b'data':
+            data_position = pos
+            data_size = subchunk_size
+            break
+        pos += subchunk_size + 8
+
+    if data_position < 0 or data_size < 0:
+        return
+    if len(data) > 2**32:
+        raise ValueError('Unable to process >4GB files')
+
+    data[4:8] = struct.pack('<I', len(data) - 8)
+    data[data_position + 4 : data_position + 8] = struct.pack(
+        '<I',
+        len(data) - data_position - 8,
+    )
+
+
+def _decode_audio(payload: dict[str, Any]) -> bytes:
+    import json
+
+    from pydub import AudioSegment
+    from pydub.exceptions import CouldntDecodeError
+    from pydub.utils import get_prober_name, mediainfo_json
+
+    filename_value = payload.get('path')
+    filename = str(filename_value) if filename_value else None
+    stdin_data = payload.get('data')
+    if filename is None:
+        if not isinstance(stdin_data, bytes):
+            raise TypeError('decode_audio requires path or bytes data')
+    else:
+        stdin_data = None
+
+    conversion_command = [AudioSegment.converter, '-y']
+    stdin_parameter = None
+    if filename:
+        conversion_command += ['-i', filename]
+    else:
+        stdin_parameter = subprocess.PIPE
+        conversion_command += ['-i', 'pipe:0']
+
+    info = None
+    if filename:
+        info = mediainfo_json(filename, read_ahead_limit=-1)
+    elif isinstance(stdin_data, bytes):
+        probe = subprocess.Popen(
+            [
+                get_prober_name(),
+                '-of',
+                'json',
+                '-v',
+                'info',
+                '-show_format',
+                '-show_streams',
+                'pipe:0',
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        probe_out, _probe_err = probe.communicate(input=stdin_data)
+        if probe.returncode == 0 and probe_out:
+            info = json.loads(probe_out.decode('utf-8', 'ignore'))
+
+    if info:
+        audio_streams = [
+            stream for stream in info['streams'] if stream['codec_type'] == 'audio'
+        ]
+        audio_codec = audio_streams[0].get('codec_name')
+        if audio_streams[0].get('sample_fmt') == 'fltp' and audio_codec in [
+            'mp3',
+            'mp4',
+            'aac',
+            'webm',
+            'ogg',
+        ]:
+            bits_per_sample = 16
+        else:
+            bits_per_sample = int(
+                audio_streams[0].get('bits_per_sample')
+                or audio_streams[0].get('bits_per_raw_sample')
+                or 0
+            )
+        if bits_per_sample == 8:
+            conversion_command += ['-acodec', 'pcm_u8']
+        elif bits_per_sample > 0:
+            conversion_command += ['-acodec', f'pcm_s{bits_per_sample}le']
+
+    conversion_command += ['-vn', '-f', 'wav', '-']
+    process = subprocess.Popen(
+        conversion_command,
+        stdin=stdin_parameter,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    stdout, stderr = process.communicate(input=stdin_data)
+    if process.returncode != 0 or len(stdout) == 0:
+        raise CouldntDecodeError(
+            'Decoding failed. ffmpeg returned error code: {0}\n\nOutput from ffmpeg/avlib:\n\n{1}'.format(
+                process.returncode,
+                stderr.decode(errors='ignore'),
+            )
+        )
+
+    wav_bytes = bytearray(stdout)
+    _fix_wav_headers(wav_bytes)
+    return bytes(wav_bytes)
+
+
 def _handle_worker_request(request: dict[str, Any]) -> Any:
     op = request.get('op')
     payload = request.get('payload', {})
@@ -160,6 +277,8 @@ def _handle_worker_request(request: dict[str, Any]) -> Any:
         return _average_color(image_bytes)
     if op == 'loudness_gain':
         return _loudness_gain(payload)
+    if op == 'decode_audio':
+        return _decode_audio(payload)
 
     raise ValueError(f'unsupported worker op: {op}')
 

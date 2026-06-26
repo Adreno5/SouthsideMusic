@@ -52,9 +52,10 @@ from imports import (
     bindText,
     event_bus,
     tr,
-    TextEdit
+    TextEdit,
 )
 from imports import QCloseEvent, QColor, QKeyEvent, QPainter
+from views.animated_layout import SFlowLayout
 from views.list_widget import SListWidget, SScrollArea, SSmoothDelegate
 from imports import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
@@ -72,7 +73,7 @@ from core.icons import bindIcon
 from core.downloader import asyncTask
 from core.llm_tools import LLMToolRunner, llmToolSchemas
 from views.folder_card import CloudFolderCard, LocalFolderCard
-from views.chating_viewer import ChatingViewer
+from views.chatting_viewer import ChattingViewer
 from views.line_edit import SearchLineEdit
 from views.playing_controller import PlayingController
 from views.song_card import SearchSongCard
@@ -146,7 +147,7 @@ class MainWindow(FluentWindowBase):
         super().__init__(parent)
         self._logger = logging.getLogger(__name__)
         self.ctx = ctx
-        ctx.main_window = self # type: ignore
+        ctx.main_window = self  # type: ignore
         self._app = ctx.app
         self._dp = ctx.playing_page
         self._sp = ctx.search_page
@@ -164,7 +165,7 @@ class MainWindow(FluentWindowBase):
         self.llm_viewer_animating = False
         self.llm_streaming = False
         self.llm_messages: list[dict[str, str]] = []
-        self.llm_stream_viewer: ChatingViewer | None = None
+        self.llm_stream_viewer: ChattingViewer | None = None
         self.llm_stream_thread: threading.Thread | None = None
         self.llm_cancel_event: threading.Event | None = None
         self.llm_pending_plan: str = ''
@@ -196,7 +197,7 @@ class MainWindow(FluentWindowBase):
         self.llm_viewer_btn.setFixedSize(32, 32)
         self.llm_viewer_btn.setToolTip('Onerad')
         self.llm_viewer_btn.clicked.connect(self.toggleLLMViewerExpand)
-        self.titleBar.buttonLayout.insertWidget(0, self.llm_viewer_btn) # type: ignore
+        self.titleBar.buttonLayout.insertWidget(0, self.llm_viewer_btn)  # type: ignore
 
         contents_layout = QHBoxLayout()
         contents_widget = QWidget(self)
@@ -279,7 +280,8 @@ class MainWindow(FluentWindowBase):
         self.llm_chat_scroller.setWidgetResizable(True)
         self.llm_chat_widget = QWidget()
         self.llm_chat_widget.setFixedWidth(LLM_VIEWER_WIDTH)
-        self.llm_chat_layout = QVBoxLayout()
+        self.llm_chat_layout = SFlowLayout(needAni=True)
+        self.llm_chat_layout.setAnimation(400, QEasingCurve.Type.OutCubic)
         self.llm_chat_layout.setContentsMargins(10, 8, 10, 8)
         self.llm_chat_layout.setSpacing(8)
         self.llm_chat_layout.addStretch(1)
@@ -301,7 +303,7 @@ class MainWindow(FluentWindowBase):
         self.llm_input.keyPressEvent = self.handleLLMInputKeyPress
         self.llm_input.keyReleaseEvent = self.handleLLMInputKeyRelease
         self.llm_send_btn = TransparentToolButton(FluentIcon.SEND)
-        self.llm_input.scrollDelegate = SSmoothDelegate(self.llm_input) # type: ignore
+        self.llm_input.scrollDelegate = SSmoothDelegate(self.llm_input)  # type: ignore
         self.llm_send_btn.setFixedSize(32, 32)
         self.llm_send_btn.clicked.connect(self.onLLMSendButtonClicked)
         llm_input_layout.addWidget(self.llm_input, 1)
@@ -414,10 +416,28 @@ class MainWindow(FluentWindowBase):
             self.onLLMSendButtonClicked()
         elif event.key() == Qt.Key.Key_Shift:
             self.llm_shifting = True
-            self.llm_input.setFixedHeight(40 + min(150, 30 * max(0, len(self.llm_input.toPlainText().strip().splitlines()) - 1)))
+            self.llm_input.setFixedHeight(
+                40
+                + min(
+                    150,
+                    30
+                    * max(
+                        0, len(self.llm_input.toPlainText().strip().splitlines()) - 1
+                    ),
+                )
+            )
             self.input_origin_press(event)
         else:
-            self.llm_input.setFixedHeight(40 + min(150, 30 * max(0, len(self.llm_input.toPlainText().strip().splitlines()) - 1)))
+            self.llm_input.setFixedHeight(
+                40
+                + min(
+                    150,
+                    30
+                    * max(
+                        0, len(self.llm_input.toPlainText().strip().splitlines()) - 1
+                    ),
+                )
+            )
             self.input_origin_press(event)
 
     def handleLLMInputKeyRelease(self, event: QKeyEvent):
@@ -660,11 +680,11 @@ class MainWindow(FluentWindowBase):
                     history,
                     tools=llmToolSchemas(),
                     tool_runner=runner.runTool,
+                    after_tool_round=_flush_post_actions,
                     cancel_event=cancel_event,
                 ):
                     response_parts.append(chunk)
                     self.ctx.addScheduledTask(self._appendLLMChunk, generation, chunk)
-                _flush_post_actions()
                 response = ''.join(response_parts)
 
                 def _done() -> None:
@@ -764,7 +784,7 @@ class MainWindow(FluentWindowBase):
                     if not isinstance(arguments, dict):
                         arguments = {}
                     results.append(runner.runTool(name, arguments))
-                _flush_post_actions()
+                    _flush_post_actions()
 
                 summary = 'Done.' if results else 'No tools executed.'
 
@@ -1003,7 +1023,7 @@ class MainWindow(FluentWindowBase):
         if not self._isCurrentLLMGeneration(generation):
             return
         if self.llm_stream_viewer is None:
-            self.llm_stream_viewer = ChatingViewer()
+            self.llm_stream_viewer = ChattingViewer()
             self.llm_stream_viewer.setFixedWidth(LLM_VIEWER_WIDTH - 20)
             self._insertBeforeStretch(self.llm_stream_viewer)
         self.llm_stream_viewer.appendChunk(chunk)
@@ -1032,20 +1052,21 @@ class MainWindow(FluentWindowBase):
         )
 
     def _insertBeforeStretch(self, widget: QWidget) -> None:
-        count = self.llm_chat_layout.count()
-        self.llm_chat_layout.insertWidget(max(0, count - 1), widget)
+        self.llm_chat_layout.addWidget(widget)
 
     def _scrollLLMChatToBottom(self) -> None:
         bar = self.llm_chat_scroller.verticalScrollBar()
-        self.llm_chat_scroller.delegate.vScrollBar.scrollValue(bar.maximum() - bar.value())
+        self.llm_chat_scroller.delegate.vScrollBar.scrollValue(
+            bar.maximum() - bar.value()
+        )
 
     def clearLLMChat(self) -> None:
         if self.llm_streaming:
             return
         self.llm_generation += 1
-        while self.llm_chat_layout.count() > 1:
+        while self.llm_chat_layout.count() > 0:
             item = self.llm_chat_layout.takeAt(0)
-            widget = item.widget() # type: ignore
+            widget = item.widget()  # type: ignore
             if widget is not None:
                 widget.deleteLater()
         self.llm_messages.clear()
@@ -1454,7 +1475,10 @@ class MainWindow(FluentWindowBase):
                 )
             else:
                 painter.drawRect(
-                    0, 0, toQtInt(self.width() * self.draw_progress), toQtInt(self.bar_height)
+                    0,
+                    0,
+                    toQtInt(self.width() * self.draw_progress),
+                    toQtInt(self.bar_height),
                 )
             painter.setPen(QColor(255, 255, 255) if theme.isDark() else QColor(0, 0, 0))
 

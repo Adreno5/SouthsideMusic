@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import io
 import logging
 import os
 from pathlib import Path
@@ -18,6 +17,7 @@ from core.audio_player import (
     AudioPlayer,
     PatchedAudioSegment as AudioSegment_,
     cache_decoded_audio,
+    decode_audio_with_sidecar,
     get_cached_audio,
     getAudioDevices,
 )
@@ -207,7 +207,7 @@ class PlayingManager:
         self.playNext(False)
 
     def _schedule(self, func: Callable, *args) -> None:
-        self.ctx.addScheduledTask(func, *args) # type: ignore
+        self.ctx.addScheduledTask(func, *args)  # type: ignore
 
     def shutdownWorkers(self) -> None:
         self._play_seq += 1
@@ -539,7 +539,8 @@ class PlayingManager:
             'crossfade computed -> '
             f'start={info.start_seconds:.3f}s '
             f'fade={info.fade_seconds:.3f}s '
-            f'end={info.end_seconds:.3f}s'
+            f'end={info.end_seconds:.3f}s '
+            f'speed={info.target_speed:.2f}x'
         )
         if info.fade_seconds <= 0:
             self._logger.info('crossfade skipped -> fade=0.000s')
@@ -715,7 +716,10 @@ class PlayingManager:
                     if cached is not None:
                         audio = cached
                     else:
-                        audio = AudioSegment_.from_file(io.BytesIO(song_bytes))
+                        audio = decode_audio_with_sidecar(
+                            song_bytes,
+                            self._ft_worker,
+                        )
                         if cache_key:
                             cache_decoded_audio(cache_key, audio)
                 except Exception as e:
@@ -739,7 +743,7 @@ class PlayingManager:
                 self.next_song_audio = audio  # type: ignore
                 self.crossfade_info = self._computeCrossfadeInfo(
                     self.current_song_audio,
-                    self.next_song_audio, # type: ignore
+                    self.next_song_audio,  # type: ignore
                 )
                 if not self._hasLoadedLoudnessGain(next_song):
                     gain = self._computeLoudnessGain(
@@ -863,6 +867,8 @@ class PlayingManager:
 
         player.animateVolume(0.0, duration_ms)
         crossfade_player.animateVolume(1.0, duration_ms)
+        if info.target_speed != 1.0:
+            player.animatePlaySpeed(info.target_speed, duration_ms)
 
         def _finish() -> None:
             self._finishCrossfade(selection, generation)
@@ -879,6 +885,10 @@ class PlayingManager:
             return
 
         self._shutdownCrossfadePlayer()
+        player = self._player
+        if player is not None:
+            player.stopPlaySpeedAnimation()
+            player.setPlaySpeed(cfg.play_speed)
         self.playStorable(
             selection.song,
             preloaded_audio=self.next_song_audio,
@@ -1103,7 +1113,7 @@ class PlayingManager:
         cached = get_cached_audio(cache_key) if cache_key else None
         if cached is not None:
             return cached
-        audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
+        audio = decode_audio_with_sidecar(music_bytes, self._ft_worker)
         if cache_key:
             cache_decoded_audio(cache_key, audio)
         return audio
@@ -1481,11 +1491,11 @@ class PlayingManager:
                 )
                 return
             threading.Thread(
-                target=lambda: _decode_stream(temp_path, process), # type: ignore
+                target=lambda: _decode_stream(temp_path, process),  # type: ignore
                 daemon=True,
             ).start()
             threading.Thread(
-                target=lambda: _download(temp_path, music_url, process), # type: ignore
+                target=lambda: _download(temp_path, music_url, process),  # type: ignore
                 daemon=True,
             ).start()
 
@@ -1635,7 +1645,7 @@ class PlayingManager:
             gain = self._computeLoudnessGain(cfg.target_lufs, raw_audio)
             self._setStorableLoudness(song_storable, cfg.target_lufs, gain)
             if self.current_song is song_storable:
-                self.ctx.addScheduledTask( # type: ignore
+                self.ctx.addScheduledTask(  # type: ignore
                     lambda g=gain: player.animateLoudnessGain(g)
                 )
 
@@ -1708,10 +1718,10 @@ class PlayingManager:
         self._logger.debug(f'loading data {len(music_bytes)}')
         lock = self._lock
         if lock is None:
-            audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
+            audio = decode_audio_with_sidecar(music_bytes, self._ft_worker)
         else:
             with lock:
-                audio = AudioSegment_.from_file(io.BytesIO(music_bytes))
+                audio = decode_audio_with_sidecar(music_bytes, self._ft_worker)
 
         self._logger.debug(f'applying gain {gain} {cfg.target_lufs=}')
         audio = audio.apply_gain(20 * np.log10(gain))

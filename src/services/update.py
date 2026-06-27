@@ -20,6 +20,7 @@ from imports import (
     START_PROGRESS_LOADING,
     STOP_PROGRESS_LOADING,
     UPDATE_LOADING_PROGRESS,
+    tr,
 )
 
 if TYPE_CHECKING:
@@ -218,12 +219,12 @@ def startUpdateCheck(mwindow: MainWindow) -> None:
 
     def _checked(update_result: UpdateInfo):
         dialog = MessageBox(
-            'Update Available',
-            f'{update_result.tag_name} is available! Do you want to update now?',
+            tr('update.update_available'),
+            tr('update.version_available', tag_name=update_result.tag_name),
             mwindow,
         )
-        dialog.cancelButton.setText('Skip')
-        dialog.yesButton.setText('Update')
+        dialog.cancelButton.setText(tr('update.skip'))
+        dialog.yesButton.setText(tr('update.update'))
         if dialog.exec():
             applyUpdateImmediately(update_result, mwindow)
         else:
@@ -239,22 +240,22 @@ def applyUpdateImmediately(update_info: UpdateInfo, mwindow=None) -> None:
     def _show_result():
         if success:
             dialog = MessageBox(
-                'Update Complete',
-                'Update completed. Click ok to restart',
+                tr('update.update_complete'),
+                tr('update.update_completed_restart'),
                 mwindow,
             )
             dialog.cancelButton.hide()
-            dialog.yesButton.setText('OK')
+            dialog.yesButton.setText(tr('dependences_window.ok'))
             dialog.exec()
             _restart_app()
         else:
             dialog = MessageBox(
-                'Update Failed',
-                'Failed to update. Please try again later.',
+                tr('update.update_failed'),
+                tr('update.failed_try_again_later'),
                 mwindow,
             )
             dialog.cancelButton.hide()
-            dialog.yesButton.setText('OK')
+            dialog.yesButton.setText(tr('dependences_window.ok'))
             dialog.exec()
 
     if mwindow:

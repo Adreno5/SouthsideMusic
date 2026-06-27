@@ -366,6 +366,12 @@ class PlayingManager:
         self._preload_download_song_id = None
         self._pending_play_selection = None
 
+    def _cancelCrossfadePlayback(self) -> None:
+        self._crossfade_generation += 1
+        self.crossfading = False
+        self._shutdownCrossfadePlayer()
+        self._clearCrossfadePlaybackLoad()
+
     def isSelectionCurrent(self, selection: PlaySelection | None) -> bool:
         if selection is None:
             return False
@@ -902,8 +908,15 @@ class PlayingManager:
         gain = self.next_song_gain
         info = self.crossfade_info
         current_audio = self.current_song_audio
+        selection_ready = (
+            0 <= selection.index < len(self.playlist)
+            and self.playlist[selection.index] is selection.song
+            and self.current_index in (selection.base_index, selection.index)
+        )
         if (
             player is None
+            or not selection_ready
+            or self.next_song_selection != selection
             or not isinstance(audio, AudioSegment_)
             or not isinstance(gain, float)
             or not isinstance(current_audio, AudioSegment_)
@@ -958,12 +971,19 @@ class PlayingManager:
             crossfade_player.animatePlaySpeed(info.target_speed, duration_ms)
 
         def _finish() -> None:
-            self._finishCrossfade(selection, generation)
+            self._finishCrossfade(selection, generation, play_seq)
 
         QTimer.singleShot(duration_ms, _finish)
 
-    def _finishCrossfade(self, selection: PlaySelection, generation: int) -> None:
+    def _finishCrossfade(
+        self,
+        selection: PlaySelection,
+        generation: int,
+        play_seq: int,
+    ) -> None:
         if generation != self._crossfade_generation:
+            return
+        if play_seq != self._play_seq:
             return
         if self._crossfade_selection != selection:
             return
@@ -1026,6 +1046,8 @@ class PlayingManager:
         if index < 0 or index >= len(self.playlist):
             return
 
+        self._cancelCrossfadePlayback()
+        self.clearPreload()
         self.current_index = index
         self.playStorable(self.playlist[index])
 
@@ -1034,6 +1056,8 @@ class PlayingManager:
             self.current_index = self.playlist.index(storable)
         except ValueError:
             return
+        self._cancelCrossfadePlayback()
+        self.clearPreload()
         self.playStorable(storable)
 
     def _storable_asset_missing(self, song_storable: SongStorable) -> tuple[bool, bool]:
@@ -1634,6 +1658,8 @@ class PlayingManager:
         if player is None:
             return
 
+        if preloaded_audio is None:
+            self._cancelCrossfadePlayback()
         image_missing, music_missing = self._storable_asset_missing(song_storable)
         player.stop()
         player.setVolume(1.0)

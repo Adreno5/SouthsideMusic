@@ -194,6 +194,15 @@ wheels = [
 ]
 
 [[package]]
+name = "clipboard"
+version = "0.0.4"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+dependencies = [
+    { name = "pyperclip" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/8a/38/17f3885713d0f39994563029942b1d31c93d4e56d80da505abfbfb3a3bc4/clipboard-0.0.4.tar.gz", hash = "sha256:a72a78e9c9bf68da1c3f29ee022417d13ec9e3824b511559fd2b702b1dd5b817" }
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
@@ -3228,6 +3237,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyperclip"
+version = "1.11.0"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/e8/52/d87eba7cb129b81563019d1679026e7a112ef76855d6159d24754dbd2a51/pyperclip-1.11.0.tar.gz", hash = "sha256:244035963e4428530d9e3a6101a1ef97209c6825edab1567beac148ccc1db1b6" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/df/80/fc9d01d5ed37ba4c42ca2b55b4339ae6e200b456be3a1aaddf4a9fa99b8c/pyperclip-1.11.0-py3-none-any.whl", hash = "sha256:299403e9ff44581cb9ba2ffeed69c7aa96a008622ad0c46cb575ca75b5b84273" },
+]
+
+[[package]]
 name = "pyside6"
 version = "6.10.2"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
@@ -3438,6 +3456,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "anthropic" },
     { name = "audioop-lts" },
+    { name = "clipboard" },
     { name = "colorama" },
     { name = "darkdetect" },
     { name = "hpyt" },
@@ -3464,6 +3483,7 @@ dependencies = [
 requires-dist = [
     { name = "anthropic", specifier = ">=0.112.0" },
     { name = "audioop-lts", specifier = ">=0.2.2" },
+    { name = "clipboard", specifier = ">=0.0.4" },
     { name = "colorama", specifier = ">=0.4.6" },
     { name = "darkdetect", specifier = ">=0.8.0" },
     { name = "hpyt", specifier = ">=1.4.0" },

@@ -154,6 +154,10 @@ class SFlowLayout(QLayout):
             self._items[-1].setAlignment(alignment)
         self._onWidgetAdded(widget)
 
+    def addLayout(self, layout: QLayout) -> None:  # type: ignore[override]
+        self.addChildLayout(layout)
+        self.addItem(layout)
+
     def insertWidget(  # type: ignore[override]
         self,
         index: int,

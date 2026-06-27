@@ -42,6 +42,8 @@ from collections import namedtuple, OrderedDict
 _AUDIO_DECODE_CACHE: OrderedDict[str, AudioSegment] = OrderedDict()
 _AUDIO_CACHE_LOCK = threading.Lock()
 _AUDIO_CACHE_MAX = 10
+_MAX_HAAS_DELAY_MS = 30
+_MIN_AUDIBLE_PITCH_SHIFT = 0.25
 _REVERB_DELAY_MS = (29, 43, 61, 79)
 _REVERB_TAP_GAINS = (0.42, 0.31, 0.22, 0.15)
 _PRODUCER_QUEUE_BLOCKS = 32768
@@ -497,7 +499,10 @@ class AudioPlayer(QObject):
             self._reset_stereo_effect()
             return stereo_chunk
 
-        delay_ms = cfg.stereo_haas_index
+        delay_ms = min(max(0, cfg.stereo_haas_index), _MAX_HAAS_DELAY_MS)
+        if delay_ms == 0:
+            self._reset_stereo_effect()
+            return stereo_chunk
         delay = min(
             max(1, int(self.sample_rate * delay_ms / 1000)),
             max(1, len(self.samples) // 8),
@@ -1154,6 +1159,8 @@ class AudioPlayer(QObject):
         self._wsola_speed = 1.0
 
     def _pitch_ratio(self) -> float:
+        if abs(self.play_pitch) < _MIN_AUDIBLE_PITCH_SHIFT:
+            return 1.0
         return 2 ** (self.play_pitch / 12.0)
 
     def _wsola_hop_size(self) -> int:
@@ -1205,7 +1212,7 @@ class AudioPlayer(QObject):
         scores /= np.maximum(powers * tail_power, 1e-6)
         positions = np.arange(len(scores), dtype=np.float32) + min_start
         center_bias = np.abs(positions - ideal_start) / max(1, search)
-        scores -= center_bias * 0.03
+        scores -= center_bias * 0.12
         return min_start + int(np.argmax(scores))
 
     def _wsola_reset_for(self, start_idx: int, speed: float) -> None:

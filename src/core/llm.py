@@ -553,7 +553,7 @@ def getToolUsage(tool_name: str) -> str:
     return f'Unknown tool: {tool_name}. Available tools: {names}'
 
 
-ONERAD_SYSTEM_PROMPT = '''You are Onerad, the AI assistant inside SouthsideMusic.
+ONERAD_SYSTEM_PROMPT = '''You are Onerad, the AI assistant inside SouthsideMusic(南方音乐).
 You are built to help the user explore music, lyrics, playback, library organization,
 local files, and creative listening workflows without getting in the way of the app.
 Onerad is your in-app assistant identity. If the user asks whether you are DeepSeek,
@@ -588,7 +588,6 @@ Workflow:
 9. If the user is unsure or rejects the plan, revise the plan and ask again.
 
 Style:
-- Warm, precise, and a little alive.
 - Match the user's language.
 - Do not start with a markdown heading, table, code fence, list marker, or math block.
 - Do not use markdown horizontal rules such as `---`, `***`, or `___`; the UI
@@ -865,6 +864,21 @@ class LLM:
             raise ValueError('LLM model is required')
         return model
 
+    def _anthropicModelEnable1mContext(self) -> bool:
+        provider = self._provider()
+        if provider is None:
+            return False
+        models = provider.get('models', [])
+        if not isinstance(models, list):
+            return False
+        current_model = self._model()
+        for item in models:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get('id', '')).strip() == current_model:
+                return bool(item.get('enable_1m_context', False))
+        return False
+
     def _requestModels(self) -> Any:
         base_url = self._baseUrl()
         urls = [f'{base_url}/models']
@@ -891,11 +905,15 @@ class LLM:
                 return error
         return errors[-1] if errors else 'unknown error'
 
-    def _requestModelsUrl(self, url: str) -> Any:
+    def _requestModelsUrl(
+        self,
+        url: str,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
         api_key = self._apiKey()
-        headers = {'Accept': 'application/json'}
+        headers = dict(headers or {'Accept': 'application/json'})
         if api_key:
-            headers['Authorization'] = f'Bearer {api_key}'
+            headers.setdefault('Authorization', f'Bearer {api_key}')
 
         request = urllib.request.Request(url, headers=headers, method='GET')
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
@@ -1051,7 +1069,7 @@ class LLM:
         if self.base_url:
             kwargs['base_url'] = self._baseUrl()
         elif self._provider() is not None:
-            base_url = str(self._provider().get('base_url', '')).strip()
+            base_url = str(self._provider().get('base_url', '')).strip() # type: ignore
             if base_url:
                 kwargs['base_url'] = base_url.rstrip('/')
         return Anthropic(**kwargs)
@@ -1068,22 +1086,52 @@ class LLM:
             if item.get('role') in ('user', 'assistant') and item.get('content')
         ]
         messages.append({'role': 'user', 'content': message})
-        with self._anthropicClient().messages.stream(
-            model=self._model(),
-            system=self.system_prompt,
-            messages=messages,
-            max_tokens=4096,
-        ) as stream:
+        stream_kwargs: dict[str, Any] = {
+            'model': self._model(),
+            'system': self.system_prompt,
+            'messages': messages,
+            'max_tokens': 4096,
+        }
+        if self._anthropicModelEnable1mContext():
+            stream_kwargs['extra_headers'] = {
+                'anthropic-beta': 'context-1m-2025-08-07',
+            }
+        with self._anthropicClient().messages.stream(**stream_kwargs) as stream:
             for text in stream.text_stream:
                 if cancel_event is not None and cancel_event.is_set():
                     return
                 yield text
 
     def _requestAnthropicModels(self) -> list[str]:
-        models = self._anthropicClient().models.list()
-        result: list[str] = []
-        for model in models.data:
-            model_id = getattr(model, 'id', '')
-            if model_id:
-                result.append(model_id)
-        return sorted(set(result), key=str.lower)
+        api_key = self._apiKey()
+        if not api_key:
+            raise ValueError('LLM Api Key is required')
+        base_url = (self.base_url or '').strip().rstrip('/')
+        if not base_url and self._provider() is not None:
+            base_url = str(self._provider().get('base_url', '')).strip().rstrip('/') # type: ignore
+        if not base_url:
+            base_url = 'https://api.anthropic.com/v1'
+        urls = [f'{base_url}/models']
+        if not base_url.endswith('/v1'):
+            urls.append(f'{base_url}/v1/models')
+        headers = {
+            'Accept': 'application/json',
+            'Authorization': f'Bearer {api_key}',
+            'anthropic-version': '2023-06-01',
+            'x-api-key': api_key,
+        }
+        errors: list[Exception] = []
+        for url in urls:
+            try:
+                body = self._requestModelsUrl(url, headers)
+                return self._parseModelsResponse(body)
+            except (
+                json.JSONDecodeError,
+                TimeoutError,
+                urllib.error.URLError,
+                ValueError,
+            ) as e:
+                errors.append(e)
+                _logger.debug('failed to fetch Anthropic models from %s: %s', url, e)
+        error = self._bestModelsError(errors)
+        raise RuntimeError(f'Failed to fetch models: {error}')

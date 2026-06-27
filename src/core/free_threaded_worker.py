@@ -514,6 +514,8 @@ class FreeThreadedJsonSender:
             if value:
                 candidates.append(Path(value))
 
+        candidates.append(root / '.python-ft-pyside-blocked' / 'python.exe')
+
         for name in (
             '.venv-ft',
             '.venv-ft-pyside-blocked',

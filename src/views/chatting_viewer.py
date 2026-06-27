@@ -13,12 +13,11 @@ from imports import (
     QSizePolicy,
     QTableWidgetItem,
     Qt,
-    QVBoxLayout,
     QWidget,
     QLayoutItem,
-    QLayout,
+    QLayout
 )
-from qfluentwidgets import TableWidget, TextEdit
+from qfluentwidgets import TableWidget, TextBrowser
 
 from core import theme
 from views.animated_layout import SFlowLayout
@@ -36,7 +35,7 @@ Mode = Literal[
 class ChattingViewer(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.cur_widget: QLabel | TextEdit | TableWidget | None = None
+        self.cur_widget: QLabel | TextBrowser | TableWidget | None = None
         self.cur_text = ''
 
         self._mode: Mode = 'text'
@@ -49,7 +48,7 @@ class ChattingViewer(QWidget):
         self._table_column_count = 0
         self._at_line_start = True
 
-        self._layout = QVBoxLayout()
+        self._layout = SFlowLayout()
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(8)
         self.setLayout(self._layout)
@@ -275,15 +274,31 @@ class ChattingViewer(QWidget):
     def _append_normal_text(self, text: str) -> None:
         if not text:
             return
-        if not isinstance(self.cur_widget, QLabel) or self.cur_widget.property(
+
+        lines = text.split('\n')
+        for index, line in enumerate(lines):
+            if line:
+                self._append_normal_text_line(line)
+            if index < len(lines) - 1:
+                self._finish_normal_text_line()
+        self._update_line_state(text)
+
+    def _append_normal_text_line(self, text: str) -> None:
+        if not isinstance(self.cur_widget, TextBrowser) or self.cur_widget.property(
             'viewerRole'
-        ) == 'code':
-            self.cur_widget = self._create_label('text')
+        ) != 'text':
+            self.cur_widget = self._create_text_browser()
             self.cur_text = ''
 
         self.cur_text += text
-        self.cur_widget.setText(self._inline_markdown_to_html(self.cur_text))
-        self._update_line_state(text)
+        self._update_text_browser_html(self._inline_markdown_to_html(self.cur_text))
+
+    def _finish_normal_text_line(self) -> None:
+        if isinstance(self.cur_widget, TextBrowser) and self.cur_widget.property(
+            'viewerRole'
+        ) == 'text':
+            self.cur_widget = None
+            self.cur_text = ''
 
     def _append_inline_code(self, text: str) -> None:
         if not isinstance(self.cur_widget, QLabel):
@@ -294,14 +309,14 @@ class ChattingViewer(QWidget):
         self._update_line_state(text)
 
     def _append_code_block(self, text: str) -> None:
-        if not isinstance(self.cur_widget, TextEdit):
+        if not isinstance(self.cur_widget, TextBrowser):
             self.cur_widget = self._create_text_edit()
             self.cur_text = '```'
         self.cur_text += text
         self._update_text_edit(self._code_block_markdown())
 
     def _append_latex(self, text: str) -> None:
-        if not isinstance(self.cur_widget, TextEdit):
+        if not isinstance(self.cur_widget, TextBrowser):
             self.cur_widget = self._create_text_edit()
             self.cur_text = ''
         self.cur_text += text
@@ -397,7 +412,7 @@ class ChattingViewer(QWidget):
             )
 
     def _create_label(self, role: Literal['text', 'code']) -> QLabel:
-        flow = self._ensure_layout()
+        flow = self._new_layout()
         label = QLabel()
         label.setProperty('viewerRole', role)
         label.setWordWrap(True)
@@ -412,29 +427,36 @@ class ChattingViewer(QWidget):
             label.setOpenExternalLinks(True)
             label.setStyleSheet('font-size: 15px; line-height: 1.4;')
         flow.addWidget(label)
+        self._current_layout = flow
         return label
 
-    def _create_text_edit(self) -> TextEdit:
-        editor = TextEdit()
+    def _create_text_edit(self) -> TextBrowser:
+        editor = TextBrowser()
+        editor.setProperty('viewerRole', 'block')
         editor.setReadOnly(True)
-        editor.setLineWrapMode(TextEdit.LineWrapMode.WidgetWidth)
+        editor.setLineWrapMode(TextBrowser.LineWrapMode.WidgetWidth)
         editor.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         editor.setStyleSheet(self._text_edit_style())
         self._add_block_widget(editor)
         return editor
 
+    def _create_text_browser(self) -> TextBrowser:
+        browser = TextBrowser()
+        browser.setProperty('viewerRole', 'text')
+        browser.setReadOnly(True)
+        browser.setLineWrapMode(TextBrowser.LineWrapMode.WidgetWidth)
+        browser.setOpenExternalLinks(True)
+        browser.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        browser.setStyleSheet(self._text_browser_style())
+        self._add_block_widget(browser)
+        return browser
+
     def _add_block_widget(self, widget: QWidget) -> None:
-        self._current_layout = None
         flow = self._new_layout()
         flow.addWidget(widget)
         self._block_widgets.append(widget)
         self._sync_block_width(widget)
-        self._current_layout = None
-
-    def _ensure_layout(self) -> QLayout:
-        if self._current_layout is None:
-            self._current_layout = self._new_layout()
-        return self._current_layout
+        self._current_layout = flow
 
     def _new_layout(self) -> QLayout:
         flow = SFlowLayout()
@@ -443,9 +465,15 @@ class ChattingViewer(QWidget):
         return flow
 
     def _update_text_edit(self, markdown: str) -> None:
-        if not isinstance(self.cur_widget, TextEdit):
+        if not isinstance(self.cur_widget, TextBrowser):
             return
         self.cur_widget.setMarkdown(markdown)
+        self._fit_text_edit(self.cur_widget)
+
+    def _update_text_browser_html(self, html_text: str) -> None:
+        if not isinstance(self.cur_widget, TextBrowser):
+            return
+        self.cur_widget.setHtml(html_text)
         self._fit_text_edit(self.cur_widget)
 
     def _code_block_markdown(self) -> str:
@@ -453,17 +481,20 @@ class ChattingViewer(QWidget):
             return self.cur_text
         return f'{self.cur_text}\n```'
 
-    def _fit_text_edit(self, editor: TextEdit) -> None:
+    def _fit_text_edit(self, editor: TextBrowser) -> None:
         self._sync_block_width(editor)
         document = editor.document()
         document.setTextWidth(max(80, editor.viewport().width()))
         height = int(document.size().height()) + 22
+        if editor.property('viewerRole') == 'text':
+            editor.setFixedHeight(max(24, height - 16))
+            return
         editor.setFixedHeight(min(max(48, height), 520))
 
     def _sync_block_widths(self) -> None:
         for widget in self._block_widgets:
             self._sync_block_width(widget)
-            if isinstance(widget, TextEdit):
+            if isinstance(widget, TextBrowser):
                 self._fit_text_edit(widget)
             elif isinstance(widget, TableWidget):
                 self._fit_table(widget)
@@ -603,6 +634,9 @@ class ChattingViewer(QWidget):
             'TextEdit { background: #ffffff; border: 1px solid #dddddd; '
             'border-radius: 6px; padding: 6px; }'
         )
+
+    def _text_browser_style(self) -> str:
+        return 'background: transparent; border: none; padding: 0px; font-size: 15px;'
 
     def _clear_layout(self, layout: QLayout) -> None:
         while layout.count():

@@ -10,6 +10,9 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+BPM_MIN = 50.0
+BPM_MAX = 210.0
+
 
 @dataclass
 class CrossFadeInfo:
@@ -44,10 +47,7 @@ def getCrossfade(
 
     current_bpm = _detect_bpm(current_samples, sample_rate)
     next_bpm = _detect_bpm(next_samples, sample_rate)
-    if current_bpm > 0 and next_bpm > 0:
-        target_speed = _clamp(next_bpm / current_bpm, 0.1, 3)
-    else:
-        target_speed = 1.0
+    target_speed = _tempo_transition_speed(current_bpm, next_bpm)
     _logger.debug(
         'crossfade bpm current=%.2f next=%.2f speed=%.3f',
         current_bpm,
@@ -91,6 +91,21 @@ def getCrossfade(
 
 def _clamp(value: float, lower: float, upper: float) -> float:
     return max(lower, min(upper, value))
+
+
+def _tempo_transition_speed(current_bpm: float, next_bpm: float) -> float:
+    if current_bpm <= 0 or next_bpm <= 0:
+        return 1.0
+
+    ratio = next_bpm / current_bpm
+    while ratio < 0.75:
+        ratio *= 2
+    while ratio > 1.5:
+        ratio /= 2
+
+    if ratio < 0.85 or ratio > 1.15:
+        return 1.0
+    return ratio
 
 
 def _target_channels(current: AudioSegment, next: AudioSegment) -> int:
@@ -242,40 +257,106 @@ def _limit_samples(samples: np.ndarray) -> np.ndarray:
 
 
 def _detect_bpm(samples: np.ndarray, sample_rate: int) -> float:
-    analysis_frames = min(len(samples), sample_rate * 20)
-    if analysis_frames < sample_rate:
+    analysis_frames = min(len(samples), sample_rate * 45)
+    if analysis_frames < sample_rate * 4:
         return 0.0
 
     mono = np.mean(samples[:analysis_frames], axis=1).astype(np.float64)
+    mono -= float(np.mean(mono))
+    peak = float(np.max(np.abs(mono)))
+    if peak < 1e-5:
+        return 0.0
+    mono /= peak
 
-    onset = np.abs(np.diff(mono))
-
-    target_rate = 200
-    decimate_factor = max(1, sample_rate // target_rate)
-    trimmed = onset[: len(onset) // decimate_factor * decimate_factor]
-    onset_dec = trimmed.reshape(-1, decimate_factor).max(axis=1).astype(np.float64)
-
-    window = max(1, int(target_rate * 0.03))
-    onset_dec = _moving_average(onset_dec, window)
-
-    effective_sr = sample_rate / decimate_factor
-
-    corr = np.correlate(onset_dec, onset_dec, mode='full')
-    corr = corr[len(corr) // 2 + 1 :]
-
-    if len(corr) < 2:
+    envelope_rate = 200
+    envelope = _onset_envelope(mono, sample_rate, envelope_rate)
+    if len(envelope) < envelope_rate * 4:
+        return 0.0
+    envelope -= float(np.mean(envelope))
+    envelope = np.maximum(envelope, 0.0)
+    energy = float(np.sum(envelope * envelope))
+    if energy < 1e-6:
         return 0.0
 
-    min_lag = int(effective_sr * 60 / 200)
-    max_lag = int(effective_sr * 60 / 40)
+    corr = np.correlate(envelope, envelope, mode='full')
+    corr = corr[len(corr) // 2 + 1 :]
+    if len(corr) < 2:
+        return 0.0
+    corr /= max(float(np.max(corr)), 1e-6)
+
+    min_lag = int(envelope_rate * 60 / BPM_MAX)
+    max_lag = int(envelope_rate * 60 / BPM_MIN)
     min_lag = max(1, min_lag)
     max_lag = min(len(corr), max_lag)
     if max_lag <= min_lag:
         return 0.0
 
-    region = corr[min_lag : max_lag + 1]
-    peak_idx = int(np.argmax(region)) + min_lag
-    bpm = 60.0 * effective_sr / peak_idx
+    candidates = _tempo_candidates(corr, min_lag, max_lag, envelope_rate)
+    if not candidates:
+        return 0.0
+    return _canonical_bpm(_select_tempo(candidates))
+
+
+def _onset_envelope(
+    mono: np.ndarray,
+    sample_rate: int,
+    envelope_rate: int,
+) -> np.ndarray:
+    hop = max(1, sample_rate // envelope_rate)
+    usable = len(mono) // hop * hop
+    if usable <= hop:
+        return np.array([], dtype=np.float64)
+
+    frames = mono[:usable].reshape(-1, hop)
+    rms = np.sqrt(np.mean(frames * frames, axis=1))
+    flux = np.maximum(np.diff(rms, prepend=rms[0]), 0.0)
+    return _moving_average(flux, max(1, int(envelope_rate * 0.04)))
+
+
+def _tempo_candidates(
+    corr: np.ndarray,
+    min_lag: int,
+    max_lag: int,
+    envelope_rate: int,
+) -> list[tuple[float, float]]:
+    scores: list[tuple[float, float]] = []
+    lag_span = max(1, max_lag - min_lag)
+    for lag in range(min_lag, max_lag + 1):
+        score = float(corr[lag])
+        if lag > min_lag:
+            score += float(corr[lag - 1]) * 0.25
+        if lag + 1 < len(corr):
+            score += float(corr[lag + 1]) * 0.25
+        score *= 1.0 + (max_lag - lag) / lag_span * 0.35
+        bpm = 60.0 * envelope_rate / lag
+        scores.append((score, bpm))
+    scores.sort(reverse=True, key=lambda item: item[0])
+    return scores[:8]
+
+
+def _select_tempo(candidates: list[tuple[float, float]]) -> float:
+    best_score, best_bpm = candidates[0]
+    octave_min = best_bpm * 1.85
+    octave_max = best_bpm * 2.15
+    octave_candidates = [
+        (score, bpm)
+        for score, bpm in candidates[1:]
+        if octave_min <= bpm <= octave_max and bpm <= BPM_MAX * 1.03
+    ]
+    if not octave_candidates:
+        return best_bpm
+
+    octave_score, octave_bpm = max(octave_candidates, key=lambda item: item[0])
+    if octave_score >= best_score * 0.88:
+        return octave_bpm
+    return best_bpm
+
+
+def _canonical_bpm(bpm: float) -> float:
+    while bpm < BPM_MIN:
+        bpm *= 2.0
+    while bpm > BPM_MAX * 1.03:
+        bpm /= 2.0
     return float(bpm)
 
 

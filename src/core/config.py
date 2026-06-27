@@ -212,7 +212,7 @@ def _normalize_llm_provider(data: Any) -> dict[str, Any] | None:
     if api_format not in ('openai_chat', 'openai_responses', 'anthropic'):
         api_format = 'openai_chat'
     models_data = data.get('models')
-    models: list[dict[str, str]] = []
+    models: list[dict[str, Any]] = []
     if isinstance(models_data, list):
         for item in models_data:
             if not isinstance(item, dict):
@@ -221,7 +221,13 @@ def _normalize_llm_provider(data: Any) -> dict[str, Any] | None:
             display_name = str(item.get('display_name', '')).strip()
             if not model_id or not display_name:
                 continue
-            models.append({'id': model_id, 'display_name': display_name})
+            models.append(
+                {
+                    'id': model_id,
+                    'display_name': display_name,
+                    'enable_1m_context': bool(item.get('enable_1m_context', False)),
+                }
+            )
     return {
         'name': name,
         'api_format': api_format,

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-import logging
-
 import threading
 import time
+from typing import Callable
+
+import clipboard
+import logging
 
 from core.app_context import AppContext
 
@@ -44,6 +46,7 @@ from imports import (
     QRect,
     QSize,
     QStackedWidget,
+    QTextCursor,
     QWheelEvent,
     Qt,
     QTimer,
@@ -53,8 +56,12 @@ from imports import (
     event_bus,
     tr,
     TextEdit,
+    QSizePolicy,
+    QSpacerItem
 )
 from imports import QCloseEvent, QColor, QKeyEvent, QPainter
+from imports import QMouseEvent
+from services.events.events import POST_THEME_CHANGED
 from views.animated_layout import SFlowLayout
 from views.list_widget import SListWidget, SScrollArea, SSmoothDelegate
 from imports import QHBoxLayout, QVBoxLayout, QWidget
@@ -62,6 +69,7 @@ from qfluentwidgets import (
     CardWidget,
     ComboBox,
     InfoBar,
+    TextBrowser,
 )
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 
@@ -139,6 +147,34 @@ LLM_VIEWER_WIDTH = 475
 LLM_WINDOW_WIDTH_DELTA = 350
 
 
+class LLMMessageCard(CardWidget):
+    def __init__(
+        self,
+        index: int,
+        content: str,
+        on_edit: Callable[[int], None],
+    ) -> None:
+        super().__init__()
+        self.message_index = index
+        self.setProperty('llmMessageIndex', index)
+        self.setFixedWidth(LLM_VIEWER_WIDTH - 20)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        label = QLabel(content)
+        label.setWordWrap(True)
+        layout = QVBoxLayout()
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.addWidget(label)
+        self.setLayout(layout)
+
+        self._on_edit = on_edit
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._on_edit(self.message_index)
+        return super().mouseReleaseEvent(event)
+
+
 class MainWindow(FluentWindowBase):
     def __init__(
         self,
@@ -175,6 +211,7 @@ class MainWindow(FluentWindowBase):
         self.llm_confirm_card: CardWidget | None = None
         self.llm_confirm_buttons: list[TransparentPushButton] = []
         self.llm_generation = 0
+        self.llm_editing_message_index: int | None = None
 
         self.setWindowIcon(
             QIcon(str(Path(__file__).resolve().parent.parent.parent / 'icon.png'))
@@ -259,13 +296,12 @@ class MainWindow(FluentWindowBase):
         self.llm_viewer_panel.setFixedWidth(
             LLM_VIEWER_WIDTH if self.llm_viewer_expanded else 0
         )
-        self.llm_viewer_panel.setVisible(self.llm_viewer_expanded)
         self.llm_viewer_panel.setObjectName('llm_viewer_panel')
         self.llm_viewer_panel.setStyleSheet(
             'QFrame#llm_viewer_panel { border-left: 1px solid rgba(128, 128, 128, 60); }'
         )
         llm_panel_layout = QVBoxLayout()
-        llm_panel_layout.setContentsMargins(0, 48, 0, 52)
+        llm_panel_layout.setContentsMargins(0, 48, 0, 0)
         llm_panel_layout.setSpacing(8)
         self.llm_viewer_panel.setLayout(llm_panel_layout)
 
@@ -291,11 +327,23 @@ class MainWindow(FluentWindowBase):
         llm_panel_layout.addWidget(self.llm_chat_scroller, 1)
 
         self.llm_input_widget = QWidget()
-        llm_input_layout = QHBoxLayout()
+        llm_input_layout = QVBoxLayout()
         llm_input_layout.setContentsMargins(6, 0, 6, 0)
         llm_input_layout.setSpacing(4)
         self.llm_input_widget.setLayout(llm_input_layout)
         self.llm_input = TextEdit()
+        self.llm_input.setProperty('viewerRole', 'block')
+        self.llm_input.setLineWrapMode(TextBrowser.LineWrapMode.WidgetWidth)
+        self.llm_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.llm_input.setStyleSheet(
+            (
+                'TextEdit { background: #101010; border: 1px solid #303030; '
+                'border-radius: 6px; padding: 6px; }'
+            ) if theme.isDark() else (
+                'TextEdit { background: #ffffff; border: 1px solid #dddddd; '
+                'border-radius: 6px; padding: 6px; }'
+            )
+        )
         self.llm_input.setFixedHeight(40)
         self.llm_shifting: bool = False
         self.llm_input.setPlaceholderText('Ask Onerad')
@@ -304,16 +352,18 @@ class MainWindow(FluentWindowBase):
         self.llm_input.keyPressEvent = self.handleLLMInputKeyPress
         self.llm_input.keyReleaseEvent = self.handleLLMInputKeyRelease
         self.llm_model_box = ComboBox()
-        self.llm_model_box.setFixedWidth(150)
         self.refreshLLMModelBox()
         self.llm_model_box.currentIndexChanged.connect(self._onLLMModelChanged)
         self.llm_send_btn = TransparentToolButton(FluentIcon.SEND)
         self.llm_input.scrollDelegate = SSmoothDelegate(self.llm_input)  # type: ignore
         self.llm_send_btn.setFixedSize(32, 32)
         self.llm_send_btn.clicked.connect(self.onLLMSendButtonClicked)
-        llm_input_layout.addWidget(self.llm_model_box)
-        llm_input_layout.addWidget(self.llm_input, 1)
-        llm_input_layout.addWidget(self.llm_send_btn)
+        buttons_layout = QHBoxLayout()
+        llm_input_layout.addWidget(self.llm_input)
+        buttons_layout.addWidget(self.llm_model_box)
+        buttons_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        buttons_layout.addWidget(self.llm_send_btn)
+        llm_input_layout.addLayout(buttons_layout)
         llm_panel_layout.addWidget(self.llm_input_widget)
         self.hBoxLayout.addWidget(self.llm_viewer_panel, 0)
 
@@ -415,6 +465,18 @@ class MainWindow(FluentWindowBase):
         event_bus.subscribe(VIEW_FOLDER, self.onViewFolder)
         event_bus.subscribe(MWINDOW_REFRESH_FOLDERS, self.refreshFolders)
         event_bus.subscribe(LANGUAGE_CHANGED, self.updateLanguage)
+        event_bus.subscribe(POST_THEME_CHANGED, self.onPostThemeChanged)
+    
+    def onPostThemeChanged(self):
+        self.llm_input.setStyleSheet(
+            (
+                'TextEdit { background: #101010; border: 1px solid #303030; '
+                'border-radius: 6px; padding: 6px; }'
+            ) if theme.isDark() else (
+                'TextEdit { background: #ffffff; border: 1px solid #dddddd; '
+                'border-radius: 6px; padding: 6px; }'
+            )
+        )
 
     def handleLLMInputKeyPress(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_Return and not self.llm_shifting:
@@ -686,23 +748,26 @@ class MainWindow(FluentWindowBase):
         if self.llm_pending_tools:
             self._clearPendingLLMTools()
 
+        if self.llm_editing_message_index is not None:
+            index = self.llm_editing_message_index
+            self.llm_editing_message_index = None
+            self._truncateLLMChatFrom(index)
+            self._sendLLMMessageText(message)
+            return
+
+        self._sendLLMMessageText(message)
+
+    def _sendLLMMessageText(self, message: str) -> None:
         self.llm_generation += 1
         generation = self.llm_generation
         cancel_event = threading.Event()
         self.llm_tool_cards.clear()
         self.llm_streaming = True
         self.llm_cancel_event = cancel_event
-        self.llm_input.clear()
         self._setLLMSendButtonStreaming(True)
 
-        user_card = CardWidget()
-        user_card.setFixedWidth(LLM_VIEWER_WIDTH - 20)
-        user_label = QLabel(message)
-        user_label.setWordWrap(True)
-        user_layout = QVBoxLayout()
-        user_layout.setContentsMargins(12, 8, 12, 8)
-        user_layout.addWidget(user_label)
-        user_card.setLayout(user_layout)
+        user_index = len(self.llm_messages)
+        user_card = LLMMessageCard(user_index, message, self.editLLMMessage)
         self._insertBeforeStretch(user_card)
 
         self.llm_messages.append({'role': 'user', 'content': message})
@@ -753,8 +818,10 @@ class MainWindow(FluentWindowBase):
                 def _done() -> None:
                     if not self._isCurrentLLMGeneration(generation):
                         return
+                    self._tagLLMStreamViewer(response_index)
                     self._finishLLMViewer(generation)
                     self._setLLMMessageContent(response_index, response)
+                    self._addLLMCopyButton(response_index)
                     self.llm_stream_viewer = None
                     self.llm_streaming = False
                     self.llm_cancel_event = None
@@ -775,8 +842,10 @@ class MainWindow(FluentWindowBase):
                     if not self._isCurrentLLMGeneration(generation):
                         return
                     self._appendLLMChunk(generation, f'\n\nError: {error_text}')
+                    self._tagLLMStreamViewer(response_index)
                     self._finishLLMViewer(generation)
                     self._setLLMMessageContent(response_index, f'Error: {error_text}')
+                    self._addLLMCopyButton(response_index)
                     self.llm_stream_viewer = None
                     self.llm_streaming = False
                     self.llm_cancel_event = None
@@ -808,15 +877,12 @@ class MainWindow(FluentWindowBase):
         self.llm_cancel_event = cancel_event
         self._setLLMSendButtonStreaming(True)
 
-        user_card = CardWidget()
-        user_card.setFixedWidth(LLM_VIEWER_WIDTH - 20)
-        user_label = QLabel(message)
-        user_label.setWordWrap(True)
-        user_layout = QVBoxLayout()
-        user_layout.setContentsMargins(12, 8, 12, 8)
-        user_layout.addWidget(user_label)
-        user_card.setLayout(user_layout)
+        user_index = len(self.llm_messages)
+        user_card = LLMMessageCard(user_index, message, self.editLLMMessage)
         self._insertBeforeStretch(user_card)
+        self.llm_messages.append({'role': 'user', 'content': message})
+        self.llm_messages.append({'role': 'assistant', 'content': ''})
+        response_index = len(self.llm_messages) - 1
 
         def _run() -> None:
             runner = LLMToolRunner(
@@ -855,9 +921,10 @@ class MainWindow(FluentWindowBase):
                     if not self._isCurrentLLMGeneration(generation):
                         return
                     self._appendLLMChunk(generation, summary)
+                    self._tagLLMStreamViewer(response_index)
                     self._finishLLMViewer(generation)
-                    self.llm_messages.append({'role': 'user', 'content': message})
-                    self.llm_messages.append({'role': 'assistant', 'content': summary})
+                    self._setLLMMessageContent(response_index, summary)
+                    self._addLLMCopyButton(response_index)
                     self.llm_stream_viewer = None
                     self.llm_streaming = False
                     self.llm_cancel_event = None
@@ -876,7 +943,10 @@ class MainWindow(FluentWindowBase):
                     if not self._isCurrentLLMGeneration(generation):
                         return
                     self._appendLLMChunk(generation, f'Error: {error_text}')
+                    self._tagLLMStreamViewer(response_index)
                     self._finishLLMViewer(generation)
+                    self._setLLMMessageContent(response_index, f'Error: {error_text}')
+                    self._addLLMCopyButton(response_index)
                     self.llm_stream_viewer = None
                     self.llm_streaming = False
                     self.llm_cancel_event = None
@@ -920,6 +990,84 @@ class MainWindow(FluentWindowBase):
         self._finishLLMViewer()
         self._setLLMSendButtonStreaming(False)
         self.scroll_timer.stop()
+
+    def editLLMMessage(self, index: int) -> None:
+        if self.llm_streaming:
+            return
+        if not (0 <= index < len(self.llm_messages)):
+            return
+        message = self.llm_messages[index]
+        if message.get('role') != 'user':
+            return
+        self.llm_editing_message_index = index
+        self.llm_input.setPlainText(message.get('content', ''))
+        self.llm_input.setFocus()
+        self.llm_input.moveCursor(QTextCursor.MoveOperation.End)
+
+    def _truncateLLMChatFrom(self, index: int) -> None:
+        self.llm_generation += 1
+        self.llm_messages = self.llm_messages[:index]
+        self.llm_stream_viewer = None
+        self.llm_cancel_event = None
+        self.llm_tool_cards.clear()
+        self._clearPendingLLMTools()
+
+        remove_from = self.llm_chat_layout.count()
+        for layout_index in range(self.llm_chat_layout.count()):
+            item = self.llm_chat_layout.itemAt(layout_index)
+            widget = item.widget() if item is not None else None
+            message_index = widget.property('llmMessageIndex') if widget else None
+            if isinstance(message_index, int) and message_index >= index:
+                remove_from = layout_index
+                break
+
+        while self.llm_chat_layout.count() > remove_from:
+            item = self.llm_chat_layout.takeAt(remove_from)
+            if item is None:
+                break
+            widget = item.widget()
+            child_layout = item.layout()
+            if widget is not None:
+                widget.deleteLater()
+            elif child_layout is not None:
+                self._clearLayout(child_layout)
+
+    def _clearLayout(self, layout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            if item is None:
+                continue
+            widget = item.widget()
+            child_layout = item.layout()
+            if widget is not None:
+                widget.deleteLater()
+            elif child_layout is not None:
+                self._clearLayout(child_layout)
+
+    def copyLLMMarkdown(self) -> None:
+        parts: list[str] = []
+        for browser in self.llm_chat_widget.findChildren(TextBrowser):
+            markdown = browser.toMarkdown().strip()
+            if markdown:
+                parts.append(markdown)
+        if not parts:
+            return
+        clipboard.copy('\n\n'.join(parts))
+
+    def _addLLMCopyButton(self, message_index: int) -> None:
+        wrapper = QWidget()
+        wrapper.setProperty('llmMessageIndex', message_index)
+        wrapper.setFixedWidth(LLM_VIEWER_WIDTH - 20)
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addStretch(1)
+        button = TransparentToolButton(FluentIcon.COPY)
+        button.setFixedSize(28, 28)
+        button.setToolTip('Copy chat')
+        button.clicked.connect(self.copyLLMMarkdown)
+        layout.addWidget(button)
+        wrapper.setLayout(layout)
+        self._insertBeforeStretch(wrapper)
 
     def _setLLMSendButtonStreaming(self, streaming: bool) -> None:
         if streaming:
@@ -1091,6 +1239,10 @@ class MainWindow(FluentWindowBase):
             self._insertBeforeStretch(self.llm_stream_viewer)
         self.llm_stream_viewer.appendChunk(chunk)
 
+    def _tagLLMStreamViewer(self, index: int) -> None:
+        if self.llm_stream_viewer is not None:
+            self.llm_stream_viewer.setProperty('llmMessageIndex', index)
+
     def _finishLLMViewer(self, generation: int | None = None) -> None:
         if generation is not None and not self._isCurrentLLMGeneration(generation):
             return
@@ -1259,6 +1411,9 @@ class MainWindow(FluentWindowBase):
             def _show():
                 self.show()
                 self.raise_()
+
+                if self.llm_viewer_expanded:
+                    self.toggleLLMViewerExpand()
 
                 event_bus._lw = None
                 self._launchwindow.deleteLater()
@@ -1429,11 +1584,11 @@ class MainWindow(FluentWindowBase):
         self.titleBar.resize(self.width() - 20, self.titleBar.height())
 
         if hasattr(self, 'controller'):
-            self.controller.setFixedSize(max(1, self.width()), 52)
+            self.controller.setFixedSize(max(1, self.width() - self.llm_viewer_panel.maximumWidth()), 52)
             self.controller.move(0, self.height() - self.controller.height())
 
         if hasattr(self, '_dp'):
-            self._dp.setFixedSize(self.size() - QSize(0, 100))
+            self._dp.setFixedSize(self.size() - QSize(self.llm_viewer_panel.maximumWidth(), 100))
             self._dp.move(0, 48)
 
         if hasattr(self, '_plp'):

@@ -31,7 +31,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PYTHON_ZIP = os.path.join(SCRIPT_DIR, 'python.zip')
 EMBED_DIR = os.path.join(SCRIPT_DIR, 'embed_python')
 BUILD_VENV = os.path.join(SCRIPT_DIR, 'build_venv')
-FREE_THREADED_VENV = os.path.join(SCRIPT_DIR, '.venv-ft-pyside-blocked')
+FREE_THREADED_PYTHON = os.path.join(SCRIPT_DIR, '.python-ft-pyside-blocked')
 GET_PIP = os.path.join(SCRIPT_DIR, 'get-pip.py')
 REQUIREMENTS = os.path.join(SCRIPT_DIR, 'embed_python_requirements.txt')
 REQUIREMENTS_HASH = os.path.join(SCRIPT_DIR, '.requirements_sha256')
@@ -369,7 +369,7 @@ def main() -> None:
     _uv_sync_with_retry()
 
     # 7. Set up free-threaded worker environment
-    _setup_free_threaded_worker_venv()
+    _setup_free_threaded_worker_python()
 
     # 8. Set up embedded Python
     _setup_embed_python(tqdm, requests, zipfile)
@@ -445,44 +445,84 @@ def _uv_sync_with_retry(retries: int = 3) -> None:
                 raise SetupError(f'uv sync failed after {retries} attempts.')
 
 
-def _setup_free_threaded_worker_venv() -> None:
-    print('\n[2/6] Setting up free-threaded worker venv...')
+def _free_threaded_python_exe() -> str:
+    return os.path.join(FREE_THREADED_PYTHON, 'python.exe')
 
-    ft_python = os.path.join(FREE_THREADED_VENV, 'Scripts', 'python.exe')
-    needs_create = True
-    if os.path.isfile(ft_python):
-        try:
-            result = run(
-                [
-                    ft_python,
-                    '-c',
-                    (
-                        'import sys, sysconfig; '
-                        'print(int(not sys._is_gil_enabled())); '
-                        'print(sysconfig.get_config_var("Py_GIL_DISABLED"))'
-                    ),
-                ],
-                capture_output=True,
-                text=True,
-            )
-            values = [line.strip() for line in result.stdout.splitlines()]
-            needs_create = values[:2] != ['1', '1']
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            needs_create = True
 
-    if needs_create:
-        _safe_remove(FREE_THREADED_VENV)
-        run(['uv', 'venv', '--python', '3.14t', FREE_THREADED_VENV], cwd=SCRIPT_DIR)
+def _is_free_threaded_python(python_exe: str) -> bool:
+    if not os.path.isfile(python_exe):
+        return False
+    try:
+        result = run(
+            [
+                python_exe,
+                '-c',
+                (
+                    'import sys, sysconfig; '
+                    'print(int(not sys._is_gil_enabled())); '
+                    'print(sysconfig.get_config_var("Py_GIL_DISABLED"))'
+                ),
+            ],
+            capture_output=True,
+            text=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+    values = [line.strip() for line in result.stdout.splitlines()]
+    return values[:2] == ['1', '1']
+
+
+def _locate_uv_free_threaded_python() -> str:
+    result = run(
+        ['uv', 'python', 'find', '3.14t'],
+        cwd=SCRIPT_DIR,
+        capture_output=True,
+        text=True,
+    )
+    python_exe = result.stdout.strip()
+    if not _is_free_threaded_python(python_exe):
+        raise SetupError(f'uv returned a non-free-threaded Python: {python_exe}')
+    return python_exe
+
+
+def _copy_free_threaded_runtime(source_python: str) -> None:
+    source_root = os.path.dirname(os.path.abspath(source_python))
+    if os.path.abspath(source_root) == os.path.abspath(FREE_THREADED_PYTHON):
+        return
+    _safe_remove(FREE_THREADED_PYTHON)
+    print(f'  Copying free-threaded Python from {source_root}...')
+    shutil.copytree(
+        source_root,
+        FREE_THREADED_PYTHON,
+        ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyo'),
+    )
+
+
+def _setup_free_threaded_worker_python() -> None:
+    print('\n[2/6] Setting up free-threaded worker Python...')
+
+    ft_python = _free_threaded_python_exe()
+    if not _is_free_threaded_python(ft_python):
+        source_python = _locate_uv_free_threaded_python()
+        _copy_free_threaded_runtime(source_python)
+        if not _is_free_threaded_python(ft_python):
+            raise SetupError('Portable free-threaded Python failed validation.')
 
     env = os.environ.copy()
     env['PYTHON_GIL'] = '0'
+    site_packages = os.path.join(FREE_THREADED_PYTHON, 'Lib', 'site-packages')
+    os.makedirs(site_packages, exist_ok=True)
     run(
         [
-            'uv',
+            ft_python,
+            '-m',
             'pip',
             'install',
-            '--python',
-            ft_python,
+            '--no-input',
+            '--no-cache-dir',
+            '--upgrade',
+            '--target',
+            site_packages,
             *FREE_THREADED_WORKER_PACKAGES,
         ],
         cwd=SCRIPT_DIR,

@@ -338,7 +338,7 @@ class SettingPage(QWidget):
             'setting_page.stereo_haas_index_ms',
             'setting_page.adjust_the_right_channel_delay_of_stereo_haas_effect',
             0,
-            200,
+            30,
             5,
             'stereo_haas_index',
             lambda val: self._player.restartProducer(),
@@ -711,6 +711,8 @@ class SettingPage(QWidget):
         box.setRange(min, max_v)
         box.setSingleStep(step)
         box.setValue(getattr(cfg, configurationName))
+        if getattr(cfg, configurationName) != box.value:
+            setattr(cfg, configurationName, box.value)
 
         def _valueChanged(value: float | int):
             setattr(cfg, configurationName, value)
@@ -1089,14 +1091,15 @@ class SettingPage(QWidget):
                     self._addLlmModelRow(
                         str(item.get('id', '')),
                         str(item.get('display_name', '')),
+                        bool(item.get('enable_1m_context', False)),
                     )
         if not self.llm_model_rows_layout.count():
-            self._addLlmModelRow('', '')
+            self._addLlmModelRow('', '', False)
         layout.addLayout(self.llm_model_rows_layout)
 
         model_add_btn = TransparentPushButton(FluentIcon.ADD_TO, '')
         bindText(model_add_btn, 'setting_page.add_model_mapping')
-        model_add_btn.clicked.connect(lambda: self._addLlmModelRow('', ''))
+        model_add_btn.clicked.connect(lambda: self._addLlmModelRow('', '', False))
         layout.addWidget(model_add_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
         buttons = QHBoxLayout()
@@ -1116,7 +1119,12 @@ class SettingPage(QWidget):
         form_widget.setLayout(layout)
         return form_widget
 
-    def _addLlmModelRow(self, model_id: str, display_name: str) -> None:
+    def _addLlmModelRow(
+        self,
+        model_id: str,
+        display_name: str,
+        enable_1m_context: bool = False,
+    ) -> None:
         row = QWidget()
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1135,15 +1143,19 @@ class SettingPage(QWidget):
         display_edit = LineEdit()
         display_edit.setFixedWidth(220)
         display_edit.setText(display_name)
+        context_box = CheckBox('1m context')
+        context_box.setChecked(enable_1m_context)
         remove_btn = TransparentPushButton('')
         bindIcon(remove_btn, 'trash')
         remove_btn.clicked.connect(lambda: self._removeLlmModelRow(row))
         row._llm_model_id_widget = model_widget
         row._llm_display_name_edit = display_edit
+        row._llm_enable_1m_context_box = context_box
         layout.addWidget(QLabel(tr('setting_page.model_id')))
         layout.addWidget(model_widget)
         layout.addWidget(QLabel(tr('setting_page.display_name')))
         layout.addWidget(display_edit)
+        layout.addWidget(context_box)
         layout.addWidget(remove_btn)
         row.setLayout(layout)
         self.llm_model_rows_layout.addWidget(row)
@@ -1156,21 +1168,28 @@ class SettingPage(QWidget):
         row.deleteLater()
         self._refreshCurrentSectionHeight()
 
-    def _readLlmModelRows(self) -> list[dict[str, str]]:
-        models: list[dict[str, str]] = []
+    def _readLlmModelRows(self) -> list[dict[str, object]]:
+        models: list[dict[str, object]] = []
         for i in range(self.llm_model_rows_layout.count()):
             row = self.llm_model_rows_layout.itemAt(i).widget()
             if row is None:
                 continue
             model_widget = getattr(row, '_llm_model_id_widget')
             display_edit = getattr(row, '_llm_display_name_edit')
+            context_box = getattr(row, '_llm_enable_1m_context_box')
             if isinstance(model_widget, ComboBox):
                 model_id = str(model_widget.currentData() or '').strip()
             else:
                 model_id = model_widget.text().strip()
             display_name = display_edit.text().strip()
             if model_id or display_name:
-                models.append({'id': model_id, 'display_name': display_name})
+                models.append(
+                    {
+                        'id': model_id,
+                        'display_name': display_name,
+                        'enable_1m_context': context_box.isChecked(),
+                    }
+                )
         return models
 
     def _saveLlmProviderForm(self) -> None:
@@ -1186,8 +1205,8 @@ class SettingPage(QWidget):
                 self._showLlmError(tr('setting_page.provider_name_duplicated'))
                 return
         models = self._readLlmModelRows()
-        model_ids = [item['id'] for item in models]
-        display_names = [item['display_name'] for item in models]
+        model_ids = [str(item['id']) for item in models]
+        display_names = [str(item['display_name']) for item in models]
         if any(not item['id'] or not item['display_name'] for item in models):
             self._showLlmError(tr('setting_page.model_mapping_required'))
             return
@@ -1211,7 +1230,7 @@ class SettingPage(QWidget):
         if not replaced:
             cfg.llm_providers.append(new_provider)
         cfg.llm_current_provider = name
-        cfg.llm_current_model = models[0]['id'] if models else ''
+        cfg.llm_current_model = str(models[0]['id']) if models else ''
         self._syncLegacyLlmConfig()
         saveConfig()
         self._hideLlmProviderForm()
@@ -1258,14 +1277,18 @@ class SettingPage(QWidget):
         asyncTask(_fetch, (), self._mwindow, _finish)
 
     def _replaceModelIdEditorsWithCombos(self) -> None:
-        rows: list[dict[str, str]] = self._readLlmModelRows()
+        rows = self._readLlmModelRows()
         while self.llm_model_rows_layout.count():
             item = self.llm_model_rows_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
         for row in rows or [{'id': '', 'display_name': ''}]:
-            self._addLlmModelRow(row['id'], row['display_name'])
+            self._addLlmModelRow(
+                str(row['id']),
+                str(row['display_name']),
+                bool(row.get('enable_1m_context', False)),
+            )
         self._refreshCurrentSectionHeight()
 
     def _deleteLlmProvider(self, name: str) -> None:

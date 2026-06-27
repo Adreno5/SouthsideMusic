@@ -228,7 +228,7 @@ class MainWindow(FluentWindowBase):
         self.setTitleBar(SouthsideMusicTitleBar(self))
         self.llm_clear_btn = TransparentToolButton()
         self.llm_clear_btn.setFixedSize(32, 32)
-        self.llm_clear_btn.setToolTip('Clear chat')
+        self.llm_clear_btn.setToolTip(tr('main_window.llm_clear_chat'))
         bindIcon(self.llm_clear_btn, 'chat_add')
         self.llm_clear_btn.clicked.connect(self.clearLLMChat)
         self.llm_viewer_btn = TransparentToolButton(FluentIcon.CHAT)
@@ -346,7 +346,7 @@ class MainWindow(FluentWindowBase):
         )
         self.llm_input.setFixedHeight(40)
         self.llm_shifting: bool = False
-        self.llm_input.setPlaceholderText('Ask Onerad')
+        self.llm_input.setPlaceholderText(tr('main_window.llm_ask_onerad'))
         self.input_origin_press = self.llm_input.keyPressEvent
         self.input_origin_release = self.llm_input.keyReleaseEvent
         self.llm_input.keyPressEvent = self.handleLLMInputKeyPress
@@ -915,7 +915,11 @@ class MainWindow(FluentWindowBase):
                     results.append(runner.runTool(name, arguments))
                     _flush_post_actions()
 
-                summary = 'Done.' if results else 'No tools executed.'
+                summary = tr(
+                    'main_window.llm_done'
+                    if results
+                    else 'main_window.llm_no_tools_executed'
+                )
 
                 def _done() -> None:
                     if not self._isCurrentLLMGeneration(generation):
@@ -1063,7 +1067,7 @@ class MainWindow(FluentWindowBase):
         layout.addStretch(1)
         button = TransparentToolButton(FluentIcon.COPY)
         button.setFixedSize(28, 28)
-        button.setToolTip('Copy chat')
+        button.setToolTip(tr('main_window.llm_copy_chat'))
         button.clicked.connect(self.copyLLMMarkdown)
         layout.addWidget(button)
         wrapper.setLayout(layout)
@@ -1072,10 +1076,10 @@ class MainWindow(FluentWindowBase):
     def _setLLMSendButtonStreaming(self, streaming: bool) -> None:
         if streaming:
             bindIcon(self.llm_send_btn, 'stop_gen')
-            self.llm_send_btn.setToolTip('Stop')
+            self.llm_send_btn.setToolTip(tr('main_window.llm_stop'))
         else:
             self.llm_send_btn.setIcon(FluentIcon.SEND)
-            self.llm_send_btn.setToolTip('Send')
+            self.llm_send_btn.setToolTip(tr('main_window.llm_send'))
 
     def _onLLMToolMessage(
         self,
@@ -1131,9 +1135,11 @@ class MainWindow(FluentWindowBase):
         card = CardWidget()
         card.setFixedWidth(LLM_VIEWER_WIDTH - 20)
 
-        title_label = QLabel('需要确认')
+        title_label = QLabel(tr('main_window.llm_needs_confirmation'))
         title_label.setWordWrap(False)
-        plan_label = QLabel(plan.strip() or '确认后执行这些操作。')
+        plan_label = QLabel(
+            plan.strip() or tr('main_window.llm_confirm_then_execute')
+        )
         plan_label.setWordWrap(True)
 
         tools_text = self._formatLLMPendingTools(tools)
@@ -1142,8 +1148,8 @@ class MainWindow(FluentWindowBase):
         tools_label.setToolTip(tools_text)
         tools_label.setText(self._elideLLMToolText(tools_label, tools_text))
 
-        confirm_btn = TransparentPushButton('确认执行')
-        cancel_btn = TransparentPushButton('取消')
+        confirm_btn = TransparentPushButton(tr('main_window.llm_confirm_execute'))
+        cancel_btn = TransparentPushButton(tr('main_window.llm_cancel'))
         confirm_btn.setEnabled(bool(tools))
         confirm_btn.clicked.connect(self._confirmPendingLLMTools)
         cancel_btn.clicked.connect(self._cancelPendingLLMTools)
@@ -1171,7 +1177,7 @@ class MainWindow(FluentWindowBase):
     def _confirmPendingLLMTools(self) -> None:
         for button in self.llm_confirm_buttons:
             button.setEnabled(False)
-        self._executePendingLLMTools('确认执行')
+        self._executePendingLLMTools(tr('main_window.llm_confirm_execute'))
 
     def _cancelPendingLLMTools(self) -> None:
         self._clearPendingLLMTools()
@@ -1195,8 +1201,8 @@ class MainWindow(FluentWindowBase):
         names = [str(item.get('name', '')).strip() for item in tools]
         names = [name for name in names if name]
         if not names:
-            return '无待执行工具'
-        return '工具: ' + ', '.join(names)
+            return tr('main_window.llm_no_pending_tools_parsed')
+        return tr('main_window.llm_tools_prefix') + ', '.join(names)
 
     def _addLLMToolCard(
         self,
@@ -1701,3 +1707,4 @@ class MainWindow(FluentWindowBase):
             painter.setPen(QColor(255, 255, 255) if theme.isDark() else QColor(0, 0, 0))
 
         painter.end()
+

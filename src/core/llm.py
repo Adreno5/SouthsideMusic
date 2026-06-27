@@ -528,6 +528,7 @@ Returns:
 Use when:
 - the user asks for broad work such as organizing folders.
 - you plan to execute multiple app-changing tools as one batch.
+- you plan to add, remove, move, or rename multiple songs/folders/playlists.
 - the action is destructive or high-risk, especially remove_song.
 - the user asks to review a plan before execution.
 
@@ -540,6 +541,8 @@ Do not use when:
 Rules:
 - first call get_tool_usage for every pending tool in the plan.
 - do not execute pending tools before the user approves the confirmation card.
+- do not ask for confirmation only in natural language; call get_confirm with
+  the exact pending tools JSON so the app can show an executable confirmation card.
 - if the user rejects or is unsure, revise the plan and ask again.
 '''.strip(),
 }
@@ -583,7 +586,9 @@ Workflow:
 6. Use read-only, search, navigation, and refresh tools directly when they are
    needed to understand the request or show useful context.
 7. For broad planning, batch changes, or destructive/high-risk actions, draft a
-   short plan and call get_confirm with the tools to run after approval.
+   short plan and call get_confirm with the tools to run after approval. This is
+   mandatory before adding, removing, moving, or renaming multiple songs,
+   folders, or playlists.
 8. If the user confirms, execute the pending tools, then summarize results.
 9. If the user is unsure or rejects the plan, revise the plan and ask again.
 
@@ -606,6 +611,9 @@ Tool use rules:
 - Do not assume a tool's exact usage from its name.
 - get_confirm is for plan approval, batch work, and high-risk actions. It is not
   required for every tool call.
+- If the next step would run multiple app-changing tool calls, especially many
+  favorite_song calls, you must call get_confirm. Do not end with only natural
+  language like "要开始添加吗?".
 - remove_song is destructive and always requires get_confirm before execution.
 - Fields ending in "_key" are internal i18n keys or handles for tool arguments;
   fields ending in "_text" are translated user-facing text.

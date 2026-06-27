@@ -1045,10 +1045,20 @@ class LLMToolRunner:
             self.callback(run_id, name, content)
 
     def _parse_pending_tools(self, tools: str) -> list[dict[str, Any]]:
+        text = tools.strip()
+        fenced = re.search(r'```(?:json)?\s*(.*?)```', text, re.DOTALL)
+        if fenced:
+            text = fenced.group(1).strip()
         try:
-            raw = json.loads(tools)
+            raw = json.loads(text)
         except json.JSONDecodeError:
             return []
+        if isinstance(raw, dict):
+            for key in ('tools', 'tool_calls', 'calls', 'actions'):
+                value = raw.get(key)
+                if isinstance(value, list):
+                    raw = value
+                    break
         if not isinstance(raw, list):
             return []
 
@@ -1062,6 +1072,8 @@ class LLMToolRunner:
             if isinstance(function, dict):
                 name = name or function.get('name')
                 arguments = function.get('arguments', arguments)
+            if 'parameters' in item and not arguments:
+                arguments = item.get('parameters')
             if isinstance(arguments, str):
                 try:
                     arguments = json.loads(arguments)

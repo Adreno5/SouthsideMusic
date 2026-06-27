@@ -65,7 +65,7 @@ from services.events.events import (
     STOP_PROGRESS_LOADING,
     UPDATE_LOADING_PROGRESS,
 )
-from imports import QTimer
+from imports import QTimer, tr
 
 if TYPE_CHECKING:
     from core.app_context import AppContext
@@ -753,8 +753,8 @@ class PlayingManager:
                         if self._pending_play_selection:
                             self._pending_play_selection = None
                             self._emitError(
-                                'Playback failed',
-                                'Failed to download song assets.',
+                                tr('playing_manager.playback_failed'),
+                                tr('playing_manager.failed_to_download_song_assets'),
                             )
                         return
                     _start_preload(False)
@@ -854,7 +854,10 @@ class PlayingManager:
 
         selection = self.getNextSelection(self.play_mode, by_user=byuser)
         if selection is None:
-            self._emitError('Warning', 'This song is the last song in the playlist.')
+            self._emitError(
+                tr('playing_manager.warning'),
+                tr('playing_manager.last_song_in_playlist'),
+            )
             player = self._player
             if player is not None:
                 player.setPosition(0)
@@ -1018,8 +1021,8 @@ class PlayingManager:
         selection = self.consumePreviousSelection(self.play_mode)
         if selection is None:
             self._emitError(
-                'Warning',
-                'This song is the first song in the playlist.',
+                tr('playing_manager.warning'),
+                tr('playing_manager.first_song_in_playlist'),
             )
             player = self._player
             if player is not None:
@@ -1174,8 +1177,8 @@ class PlayingManager:
         def _play_after_download(success: bool) -> None:
             if not success:
                 self._emitError(
-                    'Playback failed',
-                    'Failed to download missing cached files.',
+                    tr('playing_manager.playback_failed'),
+                    tr('playing_manager.failed_to_download_missing_cached_files'),
                 )
                 return
             if after_download is not None:
@@ -1499,8 +1502,10 @@ class PlayingManager:
                         self.playStorable(song_storable)
                     else:
                         self._emitError(
-                            'Playback failed',
-                            'Failed to download missing cached files.',
+                            tr('playing_manager.playback_failed'),
+                            tr(
+                                'playing_manager.failed_to_download_missing_cached_files'
+                            ),
                         )
                 return
 
@@ -1538,8 +1543,8 @@ class PlayingManager:
                     f'failed to prepare streaming playback: {prepared["error"]}'
                 )
                 self._emitError(
-                    'Playback failed',
-                    'Failed to download missing cached files.',
+                    tr('playing_manager.playback_failed'),
+                    tr('playing_manager.failed_to_download_missing_cached_files'),
                 )
                 return
 
@@ -1547,8 +1552,8 @@ class PlayingManager:
                 image_bytes = prepared.get('image')
                 if not isinstance(image_bytes, bytes) or not image_bytes:
                     self._emitError(
-                        'Playback failed',
-                        'Failed to download missing cached files.',
+                        tr('playing_manager.playback_failed'),
+                        tr('playing_manager.failed_to_download_missing_cached_files'),
                     )
                     return
                 song_storable.cache_image(image_bytes)
@@ -1558,8 +1563,8 @@ class PlayingManager:
             music_url = prepared.get('music_url')
             if not isinstance(music_url, str) or not music_url:
                 self._emitError(
-                    'Playback failed',
-                    'Failed to download missing cached files.',
+                    tr('playing_manager.playback_failed'),
+                    tr('playing_manager.failed_to_download_missing_cached_files'),
                 )
                 return
 
@@ -1609,8 +1614,8 @@ class PlayingManager:
                 _cleanup(temp_path)
                 self._logger.exception('failed to start streaming decoder')
                 self._emitError(
-                    'Playback failed',
-                    'Failed to start streaming playback.',
+                    tr('playing_manager.playback_failed'),
+                    tr('playing_manager.failed_to_start_streaming_playback'),
                 )
                 return
             threading.Thread(

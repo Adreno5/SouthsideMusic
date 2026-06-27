@@ -83,8 +83,11 @@ class EventsServices(QObject):
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)
             self._ctx.addScheduledTask(
                 lambda: InfoBar.success(
-                    'Imported successfully',
-                    f'Folder {folder_name} was added to local',
+                    tr('events_services.imported_successfully'),
+                    tr(
+                        'events_services.folder_added_to_local',
+                        folder_name=folder_name,
+                    ),
                     duration=5000,
                     parent=self._ctx.main_window,
                 )
@@ -105,8 +108,11 @@ class EventsServices(QObject):
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)
             self._ctx.addScheduledTask(
                 lambda: InfoBar.success(
-                    'Imported successfully',
-                    f'Folder {folder_name} was added to cloud',
+                    tr('events_services.imported_successfully'),
+                    tr(
+                        'events_services.folder_added_to_cloud',
+                        folder_name=folder_name,
+                    ),
                     duration=5000,
                     parent=self._ctx.main_window,
                 )
@@ -141,9 +147,9 @@ class EventsServices(QObject):
 
     def cloudRenameFolder(self, card: CloudFolderCard):
         new_name = getTextLineedit(
-            'Rename Folder',
-            'enter new name of your folder',
-            'my folder',
+            'events_services.rename_folder',
+            'events_services.enter_new_name_of_your_folder',
+            'events_services.my_folder',
             self._ctx.main_window,
         )
         if not new_name:
@@ -161,8 +167,12 @@ class EventsServices(QObject):
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)
             self._ctx.addScheduledTask(
                 lambda: InfoBar.success(
-                    'Renamed successfully',
-                    f'Folder {folder_name} was renamed to {new_name}',
+                    tr('events_services.renamed_successfully'),
+                    tr(
+                        'events_services.folder_renamed_to',
+                        folder_name=folder_name,
+                        new_name=new_name,
+                    ),
                     duration=5000,
                     parent=self._ctx.main_window,
                 )
@@ -178,9 +188,9 @@ class EventsServices(QObject):
 
     def localRenameFolder(self, card: LocalFolderCard):
         new = getTextLineedit(
-            'Rename Folder',
-            'enter new name of your folder',
-            'my folder',
+            'events_services.rename_folder',
+            'events_services.enter_new_name_of_your_folder',
+            'events_services.my_folder',
             self._ctx.main_window,
         )
         if new:

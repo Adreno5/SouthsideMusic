@@ -37,6 +37,7 @@ from imports import (
     QVBoxLayout,
     QWidget,
     event_bus,
+    tr,
 )
 from imports import QColor, QImage, QPixmap
 from qfluentwidgets import (
@@ -335,7 +336,7 @@ class PlayingPage(QWidget):
 
     def _onPlaybackError(self, title: str, message: str) -> None:
         self.ring.hide()
-        if title == 'Warning':
+        if title == tr('playing_manager.warning'):
             InfoBar.warning(title, message, parent=self._mwindow_obj)
         else:
             InfoBar.error(title, message, parent=self._mwindow_obj)

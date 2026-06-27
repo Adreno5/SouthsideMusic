@@ -373,29 +373,29 @@ Rules:
 - the LLM section is hidden and must not be returned or targeted.
 - use title or title_text in user-facing answers.
 - use title or title_key as the section argument for follow-up setting tools.
-- when the user asks where a setting section is, call
-  scroll_to_section_and_expend after identifying the section.
+- when the user asks where a setting option is, call jump_to_option after
+  identifying the option.
 '''.strip(),
-    'scroll_to_section_and_expend': '''
+    'jump_to_option': '''
 Purpose:
-Scroll to a Settings section, center its title, and expand it.
+Jump to one Settings option, expand its section, and smoothly scroll to it.
 
 Arguments:
-- section: section title or title_key from get_sections.
+- option: option name, translated option name, or name_key from get_options.
 
 Behavior:
 - switch to Settings page if needed.
-- scroll until the section title is near the middle of the visible area.
-- expand the section.
+- expand the section containing the option.
+- scroll until the option card is near the middle of the visible area.
 
 Use when:
-- the user asks to show a settings section.
+- the user asks to show a concrete settings option.
 - the user asks where a setting lives, for example "在哪" or "where is".
-- a settings workflow should visibly focus the section before changing values.
+- a settings workflow should visibly focus the option before changing values.
 
 Rules:
-- call get_sections first when the exact section title is unknown.
-- the LLM section is hidden and must not be targeted.
+- call get_sections and get_options first when the exact option is unknown.
+- the LLM section is hidden and must not be targeted by this navigation tool.
 '''.strip(),
     'get_options': '''
 Purpose:
@@ -441,6 +441,143 @@ Rules:
 - for numeric options, respect the range returned by get_options.
 - the LLM section is hidden and must not be changed through this tool.
 - never treat converter as arbitrary code; it is a safe built-in conversion name.
+'''.strip(),
+    'get_llm_providers': '''
+Purpose:
+Read configured LLM providers and model mappings.
+
+Arguments:
+- none.
+
+Returns:
+- current provider and model.
+- provider list with api_format, base_url, model ids, display names, and current flag.
+- API keys are never returned.
+
+Use when:
+- the user asks what model/provider is configured.
+- add_llm_provider or set_llm_provider_model may duplicate an existing provider.
+'''.strip(),
+    'fetch_llm_models': '''
+Purpose:
+Fetch model ids from one LLM provider API endpoint.
+
+Arguments:
+- api_format: one of "openai_chat", "openai_responses", or "anthropic".
+- api_key: provider API key. It is used for this request only and is not returned.
+- base_url: provider base URL. Required for OpenAI-compatible providers.
+
+Returns:
+- count and models: a list of provider model ids.
+- model_mappings: ready-to-pass JSON objects for add_llm_provider.
+
+Use when:
+- the user is adding a provider but does not know the supported model ids.
+- add_llm_provider needs the models argument and credentials/base URL are known.
+
+Rules:
+- call this before asking the user to manually provide model ids when credentials
+  and endpoint are available.
+- do not expose the API key in the final answer or tool result summary.
+'''.strip(),
+    'add_llm_provider': '''
+Purpose:
+Add one LLM provider to Settings.
+
+Arguments:
+- name: provider display name.
+- api_format: one of "openai_chat", "openai_responses", or "anthropic".
+- api_key: provider API key. It is encrypted before saving.
+- base_url: provider base URL. Required for non-Anthropic providers.
+- models: JSON array of model mappings. Each item may be a string model id or
+  an object with id, display_name, and optional enable_1m_context.
+
+Behavior:
+- save the provider through the app config.
+- update the Settings provider list and main-window model selector.
+- keep the current provider/model unchanged when one already exists.
+- select the new provider only when no current provider is configured.
+
+Use when:
+- the user asks to add or configure an LLM supplier/provider.
+- the user gives enough provider credentials and model mapping details.
+
+Rules:
+- call get_llm_providers first to avoid duplicate names.
+- never invent API keys, base URLs, or model ids.
+- call set_llm_provider_model afterward only if the user explicitly wants to
+  switch to the newly added provider.
+'''.strip(),
+    'set_llm_provider_model': '''
+Purpose:
+Select the current LLM provider and model.
+
+Arguments:
+- provider: provider name from get_llm_providers or add_llm_provider.
+- model: model id under that provider.
+
+Behavior:
+- update current provider/model in config.
+- refresh the main-window model selector.
+
+Use when:
+- the user asks to switch Onerad to a configured model.
+'''.strip(),
+    'get_southside_legacy_connection': '''
+Purpose:
+Read Southside Legacy websocket connection state.
+
+Arguments:
+- none.
+
+Returns:
+- connected flag, sent/received counters, and latency.
+
+Use when:
+- the user asks whether Southside Legacy is connected.
+- deciding whether connect_southside_legacy or disconnect_southside_legacy is needed.
+'''.strip(),
+    'connect_southside_legacy': '''
+Purpose:
+Try to connect/start the Southside Legacy websocket bridge.
+
+Arguments:
+- none.
+
+Behavior:
+- performs the same action as Settings -> connection -> try connect.
+- returns the connection state immediately after starting the server.
+
+Use when:
+- the user asks to connect or retry Southside Legacy.
+'''.strip(),
+    'disconnect_southside_legacy': '''
+Purpose:
+Disconnect Southside Legacy websocket bridge.
+
+Arguments:
+- none.
+
+Behavior:
+- performs the same action as Settings -> connection -> disconnect.
+- returns the connection state afterward.
+
+Use when:
+- the user asks to disconnect Southside Legacy.
+'''.strip(),
+    'reset_desktop_lyrics_position': '''
+Purpose:
+Reset the floating desktop lyrics window position.
+
+Arguments:
+- none.
+
+Behavior:
+- performs the same action as the reset position button.
+- saves the desktop lyrics position as x=0, y=0, anchor="normal".
+
+Use when:
+- the user asks to reset desktop lyrics position.
 '''.strip(),
     'get_nickname': '''
 Purpose:
@@ -576,7 +713,7 @@ Workflow:
    answer is already established by tool results in this conversation.
 4. When the user asks where a setting, page, folder, or control is, do not only
    describe it. Use a navigation or focus tool when available, such as
-   switch_page, open_folder, or scroll_to_section_and_expend, then say what was
+   switch_page, open_folder, or jump_to_option, then say what was
    shown.
 5. When tool or source results contain i18n keys such as
    "setting_page.target_lufs", use translated fields such as title_text,
@@ -625,8 +762,10 @@ Tool use rules:
   continue_search_cloud, get_song_details, get_folders, get_folder_songs,
   favorite_song, create_favorite_folder, read, grep, get_language,
   get_translation, refresh_folders, switch_page, open_folder, get_sections,
-  scroll_to_section_and_expend, get_options, set_option_value, get_nickname,
-  login, remove_song.'''
+  jump_to_option, get_options, set_option_value, get_llm_providers,
+  fetch_llm_models, add_llm_provider, set_llm_provider_model,
+  get_southside_legacy_connection, connect_southside_legacy, disconnect_southside_legacy,
+  reset_desktop_lyrics_position, get_nickname, login, remove_song.'''
 
 LLMMessage = dict[str, str]
 ToolRunner = Callable[[str, dict[str, Any]], str]

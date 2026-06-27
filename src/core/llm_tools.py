@@ -9,10 +9,10 @@ from typing import Any, Callable
 
 from core.app_context import AppContext
 from core.backend import getBackend
-from core.config import cfg
+from core.config import cfg, encryptSecret, saveConfig
 from core.favorites import favorites_manager
 from core.i18n import language
-from core.llm import TOOL_USAGE, getToolUsage
+from core.llm import LLM, TOOL_USAGE, getToolUsage
 from core.models import (
     CloudFolderInfo,
     LocalFolderInfo,
@@ -145,8 +145,8 @@ def llmToolSchemas() -> list[dict[str, Any]]:
             ),
         }),
         _schema('get_sections', TOOL_SCHEMA_DESCRIPTION, {}),
-        _schema('scroll_to_section_and_expend', TOOL_SCHEMA_DESCRIPTION, {
-            'section': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+        _schema('jump_to_option', TOOL_SCHEMA_DESCRIPTION, {
+            'option': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
         }),
         _schema('get_options', TOOL_SCHEMA_DESCRIPTION, {
             'section': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
@@ -162,6 +162,41 @@ def llmToolSchemas() -> list[dict[str, Any]]:
                 required=True,
             ),
         }),
+        _schema('get_llm_providers', TOOL_SCHEMA_DESCRIPTION, {}),
+        _schema('fetch_llm_models', TOOL_SCHEMA_DESCRIPTION, {
+            'api_format': _prop(
+                'string',
+                TOOL_ARG_DESCRIPTION,
+                enum=['openai_chat', 'openai_responses', 'anthropic'],
+                required=True,
+            ),
+            'api_key': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            'base_url': _prop('string', TOOL_ARG_DESCRIPTION),
+        }),
+        _schema('add_llm_provider', TOOL_SCHEMA_DESCRIPTION, {
+            'name': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            'api_format': _prop(
+                'string',
+                TOOL_ARG_DESCRIPTION,
+                enum=['openai_chat', 'openai_responses', 'anthropic'],
+                required=True,
+            ),
+            'api_key': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            'base_url': _prop('string', TOOL_ARG_DESCRIPTION),
+            'models': _prop(
+                'string',
+                TOOL_ARG_DESCRIPTION,
+                required=True,
+            ),
+        }),
+        _schema('set_llm_provider_model', TOOL_SCHEMA_DESCRIPTION, {
+            'provider': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            'model': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+        }),
+        _schema('get_southside_legacy_connection', TOOL_SCHEMA_DESCRIPTION, {}),
+        _schema('connect_southside_legacy', TOOL_SCHEMA_DESCRIPTION, {}),
+        _schema('disconnect_southside_legacy', TOOL_SCHEMA_DESCRIPTION, {}),
+        _schema('reset_desktop_lyrics_position', TOOL_SCHEMA_DESCRIPTION, {}),
         _schema('get_nickname', TOOL_SCHEMA_DESCRIPTION, {}),
         _schema('login', TOOL_SCHEMA_DESCRIPTION, {}),
         _schema('remove_song', TOOL_SCHEMA_DESCRIPTION, {
@@ -421,8 +456,8 @@ class LLMToolRunner:
             )
         if name == 'get_sections':
             return self.getSections()
-        if name == 'scroll_to_section_and_expend':
-            return self.scrollToSectionAndExpend(str(arguments.get('section', '')))
+        if name == 'jump_to_option':
+            return self.jumpToOption(str(arguments.get('option', '')))
         if name == 'get_options':
             return self.getOptions(str(arguments.get('section', '')))
         if name == 'set_option_value':
@@ -432,6 +467,35 @@ class LLMToolRunner:
                 str(arguments.get('value', '')),
                 str(arguments.get('converter', 'str')),
             )
+        if name == 'get_llm_providers':
+            return self.getLlmProviders()
+        if name == 'fetch_llm_models':
+            return self.fetchLlmModels(
+                str(arguments.get('api_format', 'openai_chat')),
+                str(arguments.get('api_key', '')),
+                str(arguments.get('base_url', '')),
+            )
+        if name == 'add_llm_provider':
+            return self.addLlmProvider(
+                str(arguments.get('name', '')),
+                str(arguments.get('api_format', 'openai_chat')),
+                str(arguments.get('api_key', '')),
+                str(arguments.get('base_url', '')),
+                str(arguments.get('models', '[]')),
+            )
+        if name == 'set_llm_provider_model':
+            return self.setLlmProviderModel(
+                str(arguments.get('provider', '')),
+                str(arguments.get('model', '')),
+            )
+        if name == 'get_southside_legacy_connection':
+            return self.getSouthsideLegacyConnection()
+        if name == 'connect_southside_legacy':
+            return self.connectSouthsideLegacy()
+        if name == 'disconnect_southside_legacy':
+            return self.disconnectSouthsideLegacy()
+        if name == 'reset_desktop_lyrics_position':
+            return self.resetDesktopLyricsPosition()
         if name == 'get_nickname':
             return self.getNickname()
         if name == 'login':
@@ -730,21 +794,42 @@ class LLMToolRunner:
     def getSections(self) -> dict[str, Any]:
         return self._run_main_thread(self._get_sections)
 
-    def scrollToSectionAndExpend(self, section: str) -> dict[str, Any]:
+    def jumpToOption(self, option: str) -> dict[str, Any]:
         def _show() -> None:
-            target = self._find_section(section)
-            if target is None:
+            found = self._find_option_anywhere(option)
+            if found is None:
                 return
+            target, card = found
             self.ctx.main_window.contents_widget.setCurrentWidget(self.ctx.setting_page)
             target.setExpanded(True)
-            center = target.y() - self.ctx.setting_page.scroller.height() // 2
-            bar = self.ctx.setting_page.scroller.verticalScrollBar()
-            bar.setValue(max(0, center))
+            target.refreshContentHeight()
+            scroller = self.ctx.setting_page.scroller
+            card_y = card.mapTo(self.ctx.setting_page.options_widget, card.rect().topLeft()).y()
+            center = card_y - scroller.viewport().height() // 2 + card.height() // 2
+            bar = scroller.verticalScrollBar()
+            value = max(0, min(bar.maximum(), center))
+            delegate = getattr(scroller, 'delegate', None)
+            smooth_bar = getattr(delegate, 'vScrollBar', None)
+            if smooth_bar is not None:
+                smooth_bar.scrollValue(value - smooth_bar.value())
+            else:
+                bar.setValue(value)
 
-        if not self._run_main_thread(lambda: self._has_section(section)):
-            return {'error': f'section not found: {section}'}
+        found = self._run_main_thread(lambda: self._find_option_anywhere(option))
+        if found is None:
+            return {'error': f'option not found: {option}'}
+        section, card = found
+        if section.title == 'setting_page.llm':
+            return {'error': 'LLM section is hidden from navigation tools'}
         self._run_main_thread(_show)
-        return {'section': section, 'expanded': True}
+        return {
+            'option': option,
+            'option_key': getattr(card, '_llm_setting_name', ''),
+            'option_text': tr(getattr(card, '_llm_setting_name', '')),
+            'section_key': section.title,
+            'section_text': tr(section.title),
+            'expanded': True,
+        }
 
     def getOptions(self, section: str) -> dict[str, Any]:
         return self._run_main_thread(lambda: self._get_options(section))
@@ -761,6 +846,61 @@ class LLMToolRunner:
             lambda: self._set_option_value(section, option, converted)
         )
 
+    def getLlmProviders(self) -> dict[str, Any]:
+        return self._run_main_thread(self._get_llm_providers)
+
+    def fetchLlmModels(
+        self,
+        api_format: str,
+        api_key: str,
+        base_url: str,
+    ) -> dict[str, Any]:
+        return self._fetch_llm_models(api_format, api_key, base_url)
+
+    def addLlmProvider(
+        self,
+        name: str,
+        api_format: str,
+        api_key: str,
+        base_url: str,
+        models: str,
+    ) -> dict[str, Any]:
+        return self._run_main_thread(
+            lambda: self._add_llm_provider(name, api_format, api_key, base_url, models)
+        )
+
+    def setLlmProviderModel(self, provider: str, model: str) -> dict[str, Any]:
+        return self._run_main_thread(
+            lambda: self._set_llm_provider_model(provider, model)
+        )
+
+    def getSouthsideLegacyConnection(self) -> dict[str, Any]:
+        return self._run_main_thread(self._get_southside_legacy_connection)
+
+    def connectSouthsideLegacy(self) -> dict[str, Any]:
+        self._run_main_thread(self.ctx.setting_page.connectToSouthsideClient)
+        return self.getSouthsideLegacyConnection()
+
+    def disconnectSouthsideLegacy(self) -> dict[str, Any]:
+        self._run_main_thread(self.ctx.setting_page.disconnectFromSouthsideClient)
+        return self.getSouthsideLegacyConnection()
+
+    def resetDesktopLyricsPosition(self) -> dict[str, Any]:
+        def _reset() -> None:
+            self.ctx.desktop_lyrics_page.onResetPos()
+            cfg.desktop_lyrics_x = 0
+            cfg.desktop_lyrics_y = 0
+            cfg.desktop_lyrics_anchor = 'normal'
+            saveConfig()
+
+        self._run_main_thread(_reset)
+        return {
+            'reset': True,
+            'x': cfg.desktop_lyrics_x,
+            'y': cfg.desktop_lyrics_y,
+            'anchor': cfg.desktop_lyrics_anchor,
+        }
+
     def getNickname(self) -> dict[str, Any]:
         return self._run_main_thread(self._get_nickname)
 
@@ -770,6 +910,195 @@ class LLMToolRunner:
             'logged_in': page._nickname != 'Anonymous User',
             'nickname': page._nickname,
             'vip_level': page._vip_level,
+        }
+
+    def _get_llm_providers(self) -> dict[str, Any]:
+        providers = []
+        for provider in cfg.llm_providers:
+            models = provider.get('models', [])
+            model_items = models if isinstance(models, list) else []
+            providers.append(
+                {
+                    'name': str(provider.get('name', '')),
+                    'api_format': str(provider.get('api_format', 'openai_chat')),
+                    'base_url': str(provider.get('base_url', '')),
+                    'models': [
+                        {
+                            'id': str(item.get('id', '')),
+                            'display_name': str(item.get('display_name', '')),
+                            'enable_1m_context': bool(
+                                item.get('enable_1m_context', False)
+                            ),
+                        }
+                        for item in model_items
+                        if isinstance(item, dict)
+                    ],
+                    'current': str(provider.get('name', ''))
+                    == cfg.llm_current_provider,
+                }
+            )
+        return {
+            'current_provider': cfg.llm_current_provider,
+            'current_model': cfg.llm_current_model,
+            'providers': providers,
+        }
+
+    def _fetch_llm_models(
+        self,
+        api_format: str,
+        api_key: str,
+        base_url: str,
+    ) -> dict[str, Any]:
+        api_format = api_format.strip()
+        base_url = base_url.strip().rstrip('/')
+        if api_format not in ('openai_chat', 'openai_responses', 'anthropic'):
+            return {'error': f'unsupported api_format: {api_format}'}
+        if api_format != 'anthropic' and not base_url:
+            return {'error': 'base_url is required for this api_format'}
+        models = LLM(
+            base_url=base_url,
+            api_key=api_key.strip(),
+            api_format=api_format,
+            timeout=20,
+        ).listModels()
+        return {
+            'api_format': api_format,
+            'base_url': base_url,
+            'count': len(models),
+            'models': models,
+            'model_mappings': [
+                {'id': model, 'display_name': model} for model in models
+            ],
+        }
+
+    def _add_llm_provider(
+        self,
+        name: str,
+        api_format: str,
+        api_key: str,
+        base_url: str,
+        models_text: str,
+    ) -> dict[str, Any]:
+        name = name.strip()
+        if not name:
+            return {'error': 'provider name is required'}
+        if api_format not in ('openai_chat', 'openai_responses', 'anthropic'):
+            return {'error': f'unsupported api_format: {api_format}'}
+        if api_format != 'anthropic' and not base_url.strip():
+            return {'error': 'base_url is required for this api_format'}
+        models = self._parse_llm_models(models_text)
+        if not models:
+            return {'error': 'models must include at least one model mapping'}
+        existing_names = {
+            str(provider.get('name', '')).strip() for provider in cfg.llm_providers
+        }
+        if name in existing_names:
+            return {'error': f'provider already exists: {name}'}
+
+        current_provider_exists = any(
+            str(provider.get('name', '')).strip() == cfg.llm_current_provider
+            for provider in cfg.llm_providers
+        )
+        should_select = not cfg.llm_current_provider or not current_provider_exists
+
+        provider = {
+            'name': name,
+            'api_format': api_format,
+            'api_key_encrypted': encryptSecret(api_key.strip()),
+            'base_url': base_url.strip().rstrip('/'),
+            'models': models,
+        }
+        cfg.llm_providers.append(provider)
+        if should_select:
+            cfg.llm_current_provider = name
+            cfg.llm_current_model = str(models[0]['id'])
+        self.ctx.setting_page._syncLegacyLlmConfig()
+        saveConfig()
+        self.ctx.setting_page._refreshLlmProvidersView()
+        self.ctx.setting_page._refreshMainWindowLlmModels()
+        return {
+            'added': True,
+            'provider': name,
+            'selected_as_current': should_select,
+            'current_provider': cfg.llm_current_provider,
+            'current_model': cfg.llm_current_model,
+            'model_count': len(models),
+        }
+
+    def _set_llm_provider_model(self, provider: str, model: str) -> dict[str, Any]:
+        provider = provider.strip()
+        model = model.strip()
+        for item in cfg.llm_providers:
+            if str(item.get('name', '')).strip() != provider:
+                continue
+            models = item.get('models', [])
+            if not isinstance(models, list):
+                return {'error': f'provider has no models: {provider}'}
+            model_ids = [
+                str(model_item.get('id', '')).strip()
+                for model_item in models
+                if isinstance(model_item, dict)
+            ]
+            if model not in model_ids:
+                return {'error': f'model not found for provider {provider}: {model}'}
+            cfg.llm_current_provider = provider
+            cfg.llm_current_model = model
+            self.ctx.setting_page._syncLegacyLlmConfig()
+            saveConfig()
+            self.ctx.setting_page._refreshMainWindowLlmModels()
+            return {'provider': provider, 'model': model, 'selected': True}
+        return {'error': f'provider not found: {provider}'}
+
+    def _parse_llm_models(self, models_text: str) -> list[dict[str, object]]:
+        try:
+            raw = json.loads(models_text)
+        except json.JSONDecodeError:
+            raw = [
+                {'id': item.strip(), 'display_name': item.strip()}
+                for item in models_text.split(',')
+                if item.strip()
+            ]
+        if isinstance(raw, dict):
+            raw = raw.get('models', [])
+        if not isinstance(raw, list):
+            return []
+
+        models: list[dict[str, object]] = []
+        seen_ids: set[str] = set()
+        seen_names: set[str] = set()
+        for item in raw:
+            if isinstance(item, str):
+                model_id = item.strip()
+                display_name = model_id
+                enable_1m_context = False
+            elif isinstance(item, dict):
+                model_id = str(item.get('id', '')).strip()
+                display_name = str(item.get('display_name', model_id)).strip()
+                enable_1m_context = bool(item.get('enable_1m_context', False))
+            else:
+                continue
+            if not model_id or not display_name:
+                continue
+            if model_id in seen_ids or display_name in seen_names:
+                continue
+            seen_ids.add(model_id)
+            seen_names.add(display_name)
+            models.append(
+                {
+                    'id': model_id,
+                    'display_name': display_name,
+                    'enable_1m_context': enable_1m_context,
+                }
+            )
+        return models
+
+    def _get_southside_legacy_connection(self) -> dict[str, Any]:
+        handler = self.ctx.ws_handler
+        return {
+            'connected': handler.is_open,
+            'sent_mb': handler.sent,
+            'received_kb': handler.received,
+            'latency_ms': handler.ping,
         }
 
     def login(self) -> dict[str, Any]:
@@ -973,6 +1302,14 @@ class LLMToolRunner:
             name = getattr(card, '_llm_setting_name', '')
             if name == option or tr(name) == option:
                 return card
+        return None
+
+    def _find_option_anywhere(self, option: str) -> tuple[Any, QWidget] | None:
+        option = option.strip()
+        for section in self.ctx.setting_page._sections:
+            card = self._find_option_card(section, option)
+            if card is not None:
+                return section, card
         return None
 
     def _widget_value(self, widget: Any) -> Any:

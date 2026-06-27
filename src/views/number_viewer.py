@@ -9,11 +9,14 @@ from services.events.events import REPAINT
 
 
 class NumberViewer(QWidget):
-    def __init__(self, font: str, ctx: AppContext, point_size=14):
+    def __init__(self, font: str, ctx: AppContext, point_size=14, animation_time: float = 0.3, power_number: int = 3):
         super().__init__()
         self.ft = QFont(font, point_size)
         self.metri = QFontMetricsF(self.ft)
         self.ctx = ctx
+
+        self.animation_time = animation_time
+        self.power_number = power_number
 
         self.cur_text: str = ''
         self.numbers = '1234567890'
@@ -22,8 +25,6 @@ class NumberViewer(QWidget):
         self.full_height = self.metri.ascent() + self.metri.descent()
 
         self.width_timer = EaseOutTimer(0.3, 2)
-
-        self.alpha_timer: dict[int, dict[int, EaseOutTimer]] = {}
 
         for char in self.numbers:
             self.width_map[char] = self.metri.horizontalAdvance(char)
@@ -38,7 +39,7 @@ class NumberViewer(QWidget):
                 continue
             digit = int(char)
             if not self.y_map.get(i):
-                self.y_map[i] = EaseOutTimer(0.3, 3)
+                self.y_map[i] = EaseOutTimer(self.animation_time, self.power_number)
             self.y_map[i].target_value = self.full_height * digit
 
         self.width_timer.target_value = self.metri.horizontalAdvance(self.cur_text)
@@ -58,7 +59,6 @@ class NumberViewer(QWidget):
     
     def hideEvent(self, event: QHideEvent) -> None:
         self.updateGeometry()
-        self.alpha_timer.clear()
         return super().hideEvent(event)
 
     def setText(self, text: str):
@@ -84,21 +84,14 @@ class NumberViewer(QWidget):
             if char not in self.width_map:
                 self.width_map[char] = self.metri.horizontalAdvance(char)
             width = self.width_map[char]
+            painter.setClipRect(int(x), 0, int(width), self.height())
             if char not in self.numbers:
-                painter.setOpacity(1)
                 painter.drawText(int(x), int(baseline), char)
                 x += width
                 continue
             if pos not in self.y_map:
                 self.y_map[pos] = EaseOutTimer(0.3, 3)
             for digit in range(10):
-                if not self.alpha_timer.get(pos):
-                    self.alpha_timer[pos] = {}
-                if not self.alpha_timer[pos].get(digit):
-                    self.alpha_timer[pos][digit] = EaseOutTimer(0.3, 2)
-                    self.alpha_timer[pos][digit].target_value = 1
-                self.alpha_timer[pos][digit].target_value = 1 if digit == int(char) else 0
-                painter.setOpacity(self.alpha_timer[pos][digit].current_value)
                 painter.drawText(
                     int(x),
                     int(
@@ -118,9 +111,6 @@ class SettableNumberViewer(NumberViewer):
 
     def __init__(self, font: str, ctx: AppContext):
         super().__init__(font, ctx, 22)
-        self._debounce_timer = QTimer(self)
-        self._debounce_timer.setSingleShot(True)
-        self._debounce_timer.timeout.connect(lambda: self.alpha_timer.clear())
 
     def setRange(self, min, max):
         self.min = min
@@ -146,7 +136,6 @@ class SettableNumberViewer(NumberViewer):
         return f'{value:.{self._decimal_places()}f}'
 
     def wheelEvent(self, event: QWheelEvent) -> None:
-        self._debounce_timer.start(1000)
         if event.angleDelta().y() > 0:
             self.value = self.clamp(self.value + self.step)
         else:

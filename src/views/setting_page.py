@@ -768,18 +768,13 @@ class SettingPage(QWidget):
     def _createTransparentCard(self) -> CardWidget:
         card = CardWidget()
         card.paintEvent = lambda e: self._patched_paint_event(card, e)
-        card.setBackgroundColor(QColor(255, 255, 255, 0))
-        card._normalBackgroundColor = lambda: QColor(255, 255, 255, 0)
-        card._hoverBackgroundColor = lambda: QColor(255, 255, 255, 0)
-        card._pressedBackgroundColor = lambda: QColor(255, 255, 255, 0)
-        card._focusInBackgroundColor = lambda: QColor(255, 255, 255, 0)
         return card
 
     def addSetting(self, name: str, description: str, widget: QWidget) -> None:
         card = self._createTransparentCard()
-        card._llm_setting_name = name
-        card._llm_setting_description = description
-        card._llm_setting_widget = widget
+        card._llm_setting_name = name # type: ignore
+        card._llm_setting_description = description # type: ignore
+        card._llm_setting_widget = widget # type: ignore
         global_layout = QHBoxLayout()
         global_layout.setContentsMargins(16, 12, 16, 12)
         global_layout.setSpacing(18)
@@ -964,7 +959,7 @@ class SettingPage(QWidget):
     def _refreshLlmProvidersView(self) -> None:
         while self.llm_provider_list_layout.count():
             item = self.llm_provider_list_layout.takeAt(0)
-            widget = item.widget()
+            widget = item.widget() # type: ignore
             if widget is not None:
                 widget.deleteLater()
 
@@ -1148,9 +1143,9 @@ class SettingPage(QWidget):
         remove_btn = TransparentPushButton('')
         bindIcon(remove_btn, 'trash')
         remove_btn.clicked.connect(lambda: self._removeLlmModelRow(row))
-        row._llm_model_id_widget = model_widget
-        row._llm_display_name_edit = display_edit
-        row._llm_enable_1m_context_box = context_box
+        row._llm_model_id_widget = model_widget # type: ignore
+        row._llm_display_name_edit = display_edit # type: ignore
+        row._llm_enable_1m_context_box = context_box # type: ignore
         layout.addWidget(QLabel(tr('setting_page.model_id')))
         layout.addWidget(model_widget)
         layout.addWidget(QLabel(tr('setting_page.display_name')))
@@ -1171,7 +1166,7 @@ class SettingPage(QWidget):
     def _readLlmModelRows(self) -> list[dict[str, object]]:
         models: list[dict[str, object]] = []
         for i in range(self.llm_model_rows_layout.count()):
-            row = self.llm_model_rows_layout.itemAt(i).widget()
+            row = self.llm_model_rows_layout.itemAt(i).widget() # type: ignore
             if row is None:
                 continue
             model_widget = getattr(row, '_llm_model_id_widget')
@@ -1280,7 +1275,7 @@ class SettingPage(QWidget):
         rows = self._readLlmModelRows()
         while self.llm_model_rows_layout.count():
             item = self.llm_model_rows_layout.takeAt(0)
-            widget = item.widget()
+            widget = item.widget() # type: ignore
             if widget is not None:
                 widget.deleteLater()
         for row in rows or [{'id': '', 'display_name': ''}]:

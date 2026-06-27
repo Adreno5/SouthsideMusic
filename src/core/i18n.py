@@ -244,6 +244,7 @@ TRANSLATIONS: dict[Language, dict[str, str]] = {'en_US': {'dependences_window.au
            'main_window.llm_no_tools_executed': 'No tools executed.',
            'main_window.llm_send': 'Send',
            'main_window.llm_stop': 'Stop',
+           'main_window.llm_tools_failed': 'Failed: {error}',
            'main_window.llm_tools_prefix': 'Tools: ',
            'main_window.southside_client_connection': 'SouthsideClient connection',
            'main_window.southside_music_was_been_disconnected_from_southsidclient': 'SouthsideMusic '
@@ -258,6 +259,8 @@ TRANSLATIONS: dict[Language, dict[str, str]] = {'en_US': {'dependences_window.au
                                                                           'to '
                                                                           'SouthsidClient',
            'main_window.the_keyword_is_empty': 'the keyword is empty!',
+           'main_window.char_outputed_suffix': 'chars',
+           'main_window.tool_calls_suffix': 'tool calls',
            'playlist_page.are_you_sure_you_want_to_remove_all_songs_from_playlist': 'Are '
                                                                                     'you '
                                                                                     'sure '
@@ -735,6 +738,7 @@ TRANSLATIONS: dict[Language, dict[str, str]] = {'en_US': {'dependences_window.au
            'main_window.llm_no_tools_executed': '没有执行工具。',
            'main_window.llm_send': '发送',
            'main_window.llm_stop': '停止',
+           'main_window.llm_tools_failed': '执行失败：{error}',
            'main_window.llm_tools_prefix': '工具: ',
            'main_window.southside_client_connection': 'SouthsideClient 连接',
            'main_window.southside_music_was_been_disconnected_from_southsidclient': 'SouthsideMusic '
@@ -745,6 +749,8 @@ TRANSLATIONS: dict[Language, dict[str, str]] = {'en_US': {'dependences_window.au
                                                                           '已连接到 '
                                                                           'SouthsideClient',
            'main_window.the_keyword_is_empty': '关键词为空！',
+           'main_window.char_outputed_suffix': '字',
+            'main_window.tool_calls_suffix': '工具调用',
            'playlist_page.are_you_sure_you_want_to_remove_all_songs_from_playlist': '确定要移除播放列表中的所有歌曲吗？',
            'playlist_page.confirm_delete': '确认删除',
            'playlist_page.initializing_sidebar': '正在初始化侧边栏...',

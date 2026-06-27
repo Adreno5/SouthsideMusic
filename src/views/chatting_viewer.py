@@ -8,14 +8,16 @@ from typing import Callable, Literal, override
 from imports import (
     QAbstractItemView,
     QHeaderView,
+    QLayout,
+    QLayoutItem,
     QLabel,
     QResizeEvent,
     QSizePolicy,
     QTableWidgetItem,
+    QTimer,
     Qt,
+    Signal,
     QWidget,
-    QLayoutItem,
-    QLayout
 )
 from qfluentwidgets import TableWidget, TextBrowser
 
@@ -33,6 +35,9 @@ Mode = Literal[
 
 
 class ChattingViewer(QWidget):
+    finished = Signal()
+    charReceived = Signal(int)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.cur_widget: QLabel | TextBrowser | TableWidget | None = None
@@ -44,16 +49,53 @@ class ChattingViewer(QWidget):
         self._block_widgets: list[QWidget] = []
         self._latex_end = ''
         self._table_lines: list[str] = []
+        self._table_current_line = ''
+        self._table_current_row_index: int | None = None
+        self._table_current_cell_labels: list[QLabel] = []
         self._table_widget: TableWidget | None = None
         self._table_column_count = 0
         self._at_line_start = True
+
+        self._append_buffer = ''
+        self._stream_finished = False
+        self._append_timer = QTimer(self)
+        self._append_timer.setSingleShot(True)
+        self._append_timer.timeout.connect(self._drain_append_buffer)
 
         self._layout = SFlowLayout()
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(8)
         self.setLayout(self._layout)
 
+    def _drain_append_buffer(self) -> None:
+        if self._append_buffer:
+            take = min(1, len(self._append_buffer))
+            append_str = self._append_buffer[:take]
+            self.charReceived.emit(len(append_str))
+            self._buffer += append_str
+            self._append_buffer = self._append_buffer[take:]
+
+        final = self._stream_finished and not self._append_buffer
+        if self._buffer:
+            self._drain_buffer(final)
+
+        if self._append_buffer or self._buffer:
+            self._append_timer.start(int(150 / max(1, len(self._append_buffer))))
+        elif self._stream_finished:
+            self._finish_pending_stream()
+            self._stream_finished = False
+            self.finished.emit()
+
+    def _finish_pending_stream(self) -> None:
+        if self._mode == 'table':
+            self._finish_table()
+        elif self._mode in ('inline_code', 'code_block', 'latex_inline', 'latex_block'):
+            self._mode = 'text'
+            self.cur_widget = None
+            self.cur_text = ''
+
     def reset(self) -> None:
+        self._append_timer.stop()
         self._clear_layout(self._layout)
         self.cur_widget = None
         self.cur_text = ''
@@ -63,23 +105,27 @@ class ChattingViewer(QWidget):
         self._block_widgets.clear()
         self._latex_end = ''
         self._table_lines.clear()
+        self._table_current_line = ''
+        self._table_current_row_index = None
+        self._table_current_cell_labels.clear()
         self._table_widget = None
         self._table_column_count = 0
         self._at_line_start = True
+        self._append_buffer = ''
+        self._stream_finished = False
 
     def appendChunk(self, chunk_content: str) -> None:
         if not chunk_content:
             return
-        self._buffer += chunk_content
-        self._drain_buffer(False)
+        self._stream_finished = False
+        self._append_buffer += chunk_content
+        if not self._append_timer.isActive() and self._append_buffer:
+            self._append_timer.start(0)
 
     def finishStream(self) -> None:
-        if self._mode == 'table':
-            self._drain_buffer(True)
-        elif self._mode in ('inline_code', 'code_block', 'latex_inline', 'latex_block'):
-            self._mode = 'text'
-            self.cur_widget = None
-            self.cur_text = ''
+        self._stream_finished = True
+        if not self._append_timer.isActive():
+            self._append_timer.start(0)
 
     @override
     def resizeEvent(self, event: QResizeEvent) -> None:
@@ -182,27 +228,32 @@ class ChattingViewer(QWidget):
         return True
 
     def _drain_table(self, final: bool) -> bool:
-        if self._table_lines and self._buffer and not self._buffer.startswith('|'):
+        if (
+            self._table_lines
+            and not self._table_current_line
+            and self._buffer
+            and not self._buffer.startswith('|')
+        ):
             self._finish_table()
             return True
 
         newline_index = self._buffer.find('\n')
         if newline_index < 0:
-            if not final:
-                return False
             if self._buffer:
-                self._append_table_line(self._buffer)
+                self._append_table_text(self._buffer)
                 self._buffer = ''
-            self._finish_table()
+            if final:
+                self._commit_table_line()
+                self._finish_table()
             return True
 
-        line = self._buffer[:newline_index]
-        if not line.startswith('|'):
-            self._finish_table()
-            return True
-
-        self._append_table_line(line)
+        self._append_table_text(self._buffer[:newline_index])
         self._buffer = self._buffer[newline_index + 1 :]
+        if not self._table_current_line.startswith('|'):
+            self._finish_table()
+            return True
+
+        self._commit_table_line()
         return True
 
     def _find_next_text_token(self) -> tuple[int | None, str | None]:
@@ -324,8 +375,12 @@ class ChattingViewer(QWidget):
         self._update_line_state(text)
 
     def _finish_table(self) -> None:
+        self._commit_table_line()
         lines = [line for line in self._table_lines if line.strip()]
         self._table_lines.clear()
+        self._table_current_line = ''
+        self._table_current_row_index = None
+        self._table_current_cell_labels.clear()
         self._mode = 'text'
         self.cur_widget = None
         self.cur_text = ''
@@ -356,7 +411,24 @@ class ChattingViewer(QWidget):
         self.cur_widget = table
         self._at_line_start = True
 
-    def _append_table_line(self, line: str) -> None:
+    def _append_table_text(self, text: str) -> None:
+        if not text:
+            return
+        self._table_current_line += text
+        self._update_current_table_row()
+
+    def _commit_table_line(self) -> None:
+        if not self._table_current_line:
+            return
+
+        line = self._table_current_line
+        self._table_current_line = ''
+        row_index = self._table_current_row_index
+        self._table_current_row_index = None
+        self._table_current_cell_labels.clear()
+        self._append_table_line(line, row_index)
+
+    def _append_table_line(self, line: str, row_index: int | None = None) -> None:
         if not line.strip():
             return
         self._table_lines.append(line)
@@ -372,7 +444,8 @@ class ChattingViewer(QWidget):
 
         if len(self._table_lines) <= 2:
             return
-        self._append_table_row(table, self._split_table_row(line))
+        if row_index is None:
+            self._append_table_row(table, self._split_table_row(line))
         self._fit_table(table)
 
     def _create_table(self, headers: list[str], column_count: int) -> TableWidget:
@@ -410,6 +483,42 @@ class ChattingViewer(QWidget):
                 column_index,
                 self._create_table_cell_label(value),
             )
+
+    def _update_current_table_row(self) -> None:
+        table = self._table_widget
+        if table is None or len(self._table_lines) < 2:
+            return
+        if not self._table_current_line.startswith('|'):
+            return
+
+        row = self._split_table_row(self._table_current_line)
+        if len(row) > self._table_column_count:
+            self._table_column_count = len(row)
+            table.setColumnCount(self._table_column_count)
+        row.extend([''] * (self._table_column_count - len(row)))
+
+        if self._table_current_row_index is None:
+            self._table_current_row_index = table.rowCount()
+            table.insertRow(self._table_current_row_index)
+
+        for column_index, value in enumerate(row):
+            label = self._table_cell_label(table, column_index)
+            self._update_table_cell_label(label, value)
+        self._fit_table(table)
+
+    def _table_cell_label(self, table: TableWidget, column_index: int) -> QLabel:
+        row_index = self._table_current_row_index
+        if row_index is None:
+            raise RuntimeError('table row has not been created')
+
+        while len(self._table_current_cell_labels) <= column_index:
+            item = QTableWidgetItem()
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            table.setItem(row_index, len(self._table_current_cell_labels), item)
+            label = self._create_table_cell_label('')
+            table.setCellWidget(row_index, len(self._table_current_cell_labels), label)
+            self._table_current_cell_labels.append(label)
+        return self._table_current_cell_labels[column_index]
 
     def _create_label(self, role: Literal['text', 'code']) -> QLabel:
         flow = self._new_layout()
@@ -582,14 +691,18 @@ class ChattingViewer(QWidget):
         return text
 
     def _create_table_cell_label(self, markdown: str) -> QLabel:
-        label = QLabel(self._render_inline_tokens(html.escape(markdown)))
+        label = QLabel()
         label.setTextFormat(Qt.TextFormat.RichText)
         label.setOpenExternalLinks(True)
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         label.setContentsMargins(8, 6, 8, 6)
         label.setStyleSheet('background: transparent; font-size: 15px;')
+        self._update_table_cell_label(label, markdown)
         return label
+
+    def _update_table_cell_label(self, label: QLabel, markdown: str) -> None:
+        label.setText(self._render_inline_tokens(html.escape(markdown)))
 
     def _is_markdown_table(self, lines: list[str]) -> bool:
         if len(lines) < 2:

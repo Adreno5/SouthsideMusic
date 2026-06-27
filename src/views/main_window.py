@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import math
 import threading
 import time
 from typing import Callable
@@ -84,6 +86,7 @@ from core.llm_tools import LLMToolRunner, llmToolSchemas
 from views.folder_card import CloudFolderCard, LocalFolderCard
 from views.chatting_viewer import ChattingViewer
 from views.line_edit import SearchLineEdit
+from views.number_viewer import NumberViewer
 from views.playing_controller import PlayingController
 from views.song_card import SearchSongCard
 from views.title_bar import SouthsideMusicTitleBar
@@ -203,6 +206,7 @@ class MainWindow(FluentWindowBase):
         self.llm_streaming = False
         self.llm_messages: list[dict[str, str]] = []
         self.llm_stream_viewer: ChattingViewer | None = None
+        self.llm_typing_viewers: set[ChattingViewer] = set()
         self.llm_stream_thread: threading.Thread | None = None
         self.llm_cancel_event: threading.Event | None = None
         self.llm_pending_plan: str = ''
@@ -328,8 +332,33 @@ class MainWindow(FluentWindowBase):
 
         self.llm_input_widget = QWidget()
         llm_input_layout = QVBoxLayout()
-        llm_input_layout.setContentsMargins(6, 0, 6, 0)
+        llm_input_layout.setContentsMargins(6, 0, 6, 6)
         llm_input_layout.setSpacing(4)
+
+        self.info_widget = QWidget()
+        info_layout = QHBoxLayout()
+        info_layout.setContentsMargins(0, 0, 0, 0)
+        self.info_widget.setLayout(info_layout)
+        info_layout.setSpacing(6)
+
+        self.chars_viewer = NumberViewer(self.ctx.harmony_font_family, self.ctx, 15, 0.17)
+        info_layout.addWidget(self.chars_viewer)
+        suffix_label = QLabel('')
+        bindText(suffix_label, 'main_window.char_outputed_suffix')
+        info_layout.addWidget(suffix_label)
+
+        info_layout.addSpacerItem(QSpacerItem(15, 0, QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum))
+
+        self.tools_viewer = NumberViewer(self.ctx.harmony_font_family, self.ctx, 15, 0.17)
+        info_layout.addWidget(self.tools_viewer)
+        suffix_label = QLabel('')
+        bindText(suffix_label, 'main_window.tool_calls_suffix')
+        info_layout.addWidget(suffix_label)
+
+        info_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        self.info_widget.hide()
+        llm_input_layout.addWidget(self.info_widget)
+
         self.llm_input_widget.setLayout(llm_input_layout)
         self.llm_input = TextEdit()
         self.llm_input.setProperty('viewerRole', 'block')
@@ -366,6 +395,9 @@ class MainWindow(FluentWindowBase):
         llm_input_layout.addLayout(buttons_layout)
         llm_panel_layout.addWidget(self.llm_input_widget)
         self.hBoxLayout.addWidget(self.llm_viewer_panel, 0)
+
+        self.llm_chars = 0
+        self.llm_tool_calls = 0
 
         self.search_input = SearchLineEdit(self, ctx.harmony_font_family)
         self.search_input.returnPressed.connect(self.search)
@@ -735,6 +767,9 @@ class MainWindow(FluentWindowBase):
         self.sendLLMMessage()
 
     def sendLLMMessage(self) -> None:
+        if not self.info_widget.isVisible():
+            self.info_widget.show()
+
         message = self.llm_input.toPlainText().strip()
         self.llm_input.clear()
         self.llm_input.setFixedHeight(40)
@@ -822,14 +857,12 @@ class MainWindow(FluentWindowBase):
                     self._finishLLMViewer(generation)
                     self._setLLMMessageContent(response_index, response)
                     self._addLLMCopyButton(response_index)
-                    self.llm_stream_viewer = None
                     self.llm_streaming = False
                     self.llm_cancel_event = None
                     self.llm_tool_cards.clear()
                     self._setLLMSendButtonStreaming(False)
                     self.llm_input.setFocus()
 
-                    self.scroll_timer.stop()
                     self._scrollLLMChatToBottom()
 
                 self.ctx.addScheduledTask(_done)
@@ -846,14 +879,12 @@ class MainWindow(FluentWindowBase):
                     self._finishLLMViewer(generation)
                     self._setLLMMessageContent(response_index, f'Error: {error_text}')
                     self._addLLMCopyButton(response_index)
-                    self.llm_stream_viewer = None
                     self.llm_streaming = False
                     self.llm_cancel_event = None
                     self.llm_tool_cards.clear()
                     self._setLLMSendButtonStreaming(False)
                     self.llm_input.setFocus()
 
-                    self.scroll_timer.stop()
                     self._scrollLLMChatToBottom()
 
                 self.ctx.addScheduledTask(_error)
@@ -915,11 +946,7 @@ class MainWindow(FluentWindowBase):
                     results.append(runner.runTool(name, arguments))
                     _flush_post_actions()
 
-                summary = tr(
-                    'main_window.llm_done'
-                    if results
-                    else 'main_window.llm_no_tools_executed'
-                )
+                summary = self._formatLLMToolExecutionSummary(results)
 
                 def _done() -> None:
                     if not self._isCurrentLLMGeneration(generation):
@@ -929,12 +956,10 @@ class MainWindow(FluentWindowBase):
                     self._finishLLMViewer(generation)
                     self._setLLMMessageContent(response_index, summary)
                     self._addLLMCopyButton(response_index)
-                    self.llm_stream_viewer = None
                     self.llm_streaming = False
                     self.llm_cancel_event = None
                     self.llm_tool_cards.clear()
                     self._setLLMSendButtonStreaming(False)
-                    self.scroll_timer.stop()
                     self._scrollLLMChatToBottom()
 
                 self.ctx.addScheduledTask(_done)
@@ -951,18 +976,31 @@ class MainWindow(FluentWindowBase):
                     self._finishLLMViewer(generation)
                     self._setLLMMessageContent(response_index, f'Error: {error_text}')
                     self._addLLMCopyButton(response_index)
-                    self.llm_stream_viewer = None
                     self.llm_streaming = False
                     self.llm_cancel_event = None
                     self.llm_tool_cards.clear()
                     self._setLLMSendButtonStreaming(False)
-                    self.scroll_timer.stop()
                     self._scrollLLMChatToBottom()
 
                 self.ctx.addScheduledTask(_error)
 
         self.llm_stream_thread = threading.Thread(target=_run, daemon=True)
         self.llm_stream_thread.start()
+
+    def _formatLLMToolExecutionSummary(self, results: list[str]) -> str:
+        if not results:
+            return tr('main_window.llm_no_tools_executed')
+        errors: list[str] = []
+        for result in results:
+            try:
+                payload = json.loads(result)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict) and payload.get('error'):
+                errors.append(str(payload['error']))
+        if errors:
+            return tr('main_window.llm_tools_failed', error=errors[0])
+        return tr('main_window.llm_done')
 
     def _orderedPendingLLMTools(
         self,
@@ -1026,6 +1064,8 @@ class MainWindow(FluentWindowBase):
         self.llm_tool_cards.clear()
         self._clearPendingLLMTools()
         self._finishLLMViewer()
+        self.llm_stream_viewer = None
+        self.llm_typing_viewers.clear()
         self._setLLMSendButtonStreaming(False)
         self.scroll_timer.stop()
 
@@ -1046,6 +1086,7 @@ class MainWindow(FluentWindowBase):
         self.llm_generation += 1
         self.llm_messages = self.llm_messages[:index]
         self.llm_stream_viewer = None
+        self.llm_typing_viewers.clear()
         self.llm_cancel_event = None
         self.llm_tool_cards.clear()
         self._clearPendingLLMTools()
@@ -1247,6 +1288,7 @@ class MainWindow(FluentWindowBase):
     ) -> None:
         if not self._isCurrentLLMGeneration(generation):
             return
+        self.llm_tool_calls += 0.5
         card_data = self.llm_tool_cards.get(run_id)
         if card_data is None:
             self._finishLLMViewer(generation)
@@ -1275,6 +1317,12 @@ class MainWindow(FluentWindowBase):
             return
         if self.llm_stream_viewer is None:
             self.llm_stream_viewer = ChattingViewer()
+            self.llm_stream_viewer.charReceived.connect(lambda length: setattr(self, 'llm_chars', self.llm_chars + length))
+            viewer = self.llm_stream_viewer
+            self.llm_typing_viewers.add(viewer)
+            viewer.finished.connect(
+                lambda g=generation, v=viewer: self._onLLMViewerFinished(g, v)
+            )
             self.llm_stream_viewer.setFixedWidth(LLM_VIEWER_WIDTH - 20)
             self._insertBeforeStretch(self.llm_stream_viewer)
         self.llm_stream_viewer.appendChunk(chunk)
@@ -1288,8 +1336,22 @@ class MainWindow(FluentWindowBase):
             return
         if self.llm_stream_viewer is None:
             return
-        self.llm_stream_viewer.finishStream()
+        viewer = self.llm_stream_viewer
         self.llm_stream_viewer = None
+        viewer.finishStream()
+
+    def _onLLMViewerFinished(
+        self,
+        generation: int,
+        viewer: ChattingViewer,
+    ) -> None:
+        if not self._isCurrentLLMGeneration(generation):
+            return
+        self.llm_typing_viewers.discard(viewer)
+        if not self.llm_streaming:
+            if not self.llm_typing_viewers:
+                self.scroll_timer.stop()
+        self._scrollLLMChatToBottom()
 
     def _isCurrentLLMGeneration(self, generation: int) -> bool:
         return generation == self.llm_generation
@@ -1314,8 +1376,16 @@ class MainWindow(FluentWindowBase):
         self.llm_chat_scroller.delegate.vScrollBar.scrollValue(
             bar.maximum() - bar.value()
         )
+        
+        self.chars_viewer.setText(str(self.llm_chars))
+        self.tools_viewer.setText(str(math.floor(self.llm_tool_calls)))
 
     def clearLLMChat(self) -> None:
+        if self.info_widget.isVisible():
+            self.info_widget.hide()
+            self.llm_chars = 0
+            self.llm_tool_calls = 0
+
         if self.llm_streaming:
             return
         self.llm_generation += 1
@@ -1326,6 +1396,7 @@ class MainWindow(FluentWindowBase):
                 widget.deleteLater()
         self.llm_messages.clear()
         self.llm_stream_viewer = None
+        self.llm_typing_viewers.clear()
         self.llm_cancel_event = None
         self.llm_tool_cards.clear()
         self._clearPendingLLMTools()

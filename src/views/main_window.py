@@ -862,7 +862,7 @@ class MainWindow(FluentWindowBase):
         self.llm_stream_thread.start()
 
     def _executePendingLLMTools(self, message: str) -> None:
-        tools = self.llm_pending_tools.copy()
+        tools = self._orderedPendingLLMTools(self.llm_pending_tools.copy())
         if not tools:
             return
         if self.llm_cancel_event is not None:
@@ -963,6 +963,40 @@ class MainWindow(FluentWindowBase):
 
         self.llm_stream_thread = threading.Thread(target=_run, daemon=True)
         self.llm_stream_thread.start()
+
+    def _orderedPendingLLMTools(
+        self,
+        tools: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        grouped: dict[object, list[dict[str, object]]] = {}
+        for item in tools:
+            folder = self._llmFavoriteToolFolder(item)
+            if folder is None:
+                continue
+            grouped.setdefault(folder, []).append(item)
+
+        for items in grouped.values():
+            items.reverse()
+
+        ordered: list[dict[str, object]] = []
+        for item in tools:
+            folder = self._llmFavoriteToolFolder(item)
+            if folder is None:
+                ordered.append(item)
+            else:
+                ordered.append(grouped[folder].pop(0))
+        return ordered
+
+    def _llmFavoriteToolFolder(self, item: dict[str, object]) -> str | None:
+        if str(item.get('name', '')) != 'favorite_song':
+            return None
+        arguments = item.get('arguments', {})
+        if not isinstance(arguments, dict):
+            return None
+        folder = arguments.get('folder')
+        if not isinstance(folder, str):
+            return None
+        return folder
 
     def _isLLMConfirmMessage(self, message: str) -> bool:
         text = message.strip().lower()

@@ -160,7 +160,9 @@ class EventsServices(QObject):
         def _rename():
             songs = getBackend().getPlaylistTracks(folder_id)
             new_id = getBackend().createPlaylist(new_name)
-            getBackend().editPlaylist('add', [song.id for song in songs], new_id)
+            getBackend().editPlaylist(
+                'add', [song.id for song in reversed(songs)], new_id
+            )
             getBackend().removePlaylist(folder_id)
 
         def _finished():

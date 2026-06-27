@@ -1471,7 +1471,7 @@ class MainWindow(FluentWindowBase):
                 }
             ),
         )
-        QTimer.singleShot(500, self._dp.sendSongFMAndInfo)
+        QTimer.singleShot(500, self._dp.sendSongCoverAndInfo)
 
         self.connected = True
 

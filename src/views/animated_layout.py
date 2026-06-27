@@ -107,11 +107,6 @@ class SFlowLayout(QLayout):
         self._reflowEasing: QEasingCurve.Type = QEasingCurve.Type.Linear
         self._needAni = needAni
         self._isTight = isTight
-        self._deBounceTimer = QTimer(self)
-        self._deBounceTimer.setSingleShot(True)
-        self._deBounceTimer.timeout.connect(
-            lambda: self._doLayout(self.geometry(), True)
-        )
         self._wParent: QWidget | None = None
         self._eventFilterInstalled = False
 
@@ -262,10 +257,7 @@ class SFlowLayout(QLayout):
 
     def setGeometry(self, rect: QRect) -> None:
         super().setGeometry(rect)
-        if self._needAni:
-            self._deBounceTimer.start(80)
-        else:
-            self._doLayout(rect, True)
+        self._doLayout(rect, True)
 
     def sizeHint(self) -> QSize:
         return self.minimumSize()
@@ -329,7 +321,7 @@ class SFlowLayout(QLayout):
                         ani.stop()
                         current = w.geometry()
                         start = QRect(
-                            QPoint(target.x(), current.y()),
+                            QPoint(current.x(), target.y()),
                             current.size(),
                         )
                         if current != start:

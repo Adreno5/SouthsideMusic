@@ -62,7 +62,6 @@ class Config:
     reverb_intensity: int = 3
 
     enable_crossfade: bool = True
-    crossfade_time: float = 8
     crossfade_strength: float = 1
 
     background_ratio: float = 0.4
@@ -82,10 +81,15 @@ class Config:
     llm_base_url: str = 'https://api.openai.com/v1'
     llm_api_key_encrypted: str = ''
     llm_model: str = ''
+    llm_providers: list[dict[str, Any]] = field(default_factory=list)
+    llm_current_provider: str = ''
+    llm_current_model: str = ''
     llm_viewer_expanded: bool = False
 
     def __init__(self) -> None:
         super().__init__()
+        self.setting_section_expanded = {}
+        self.llm_providers = []
         global _instance
         _instance = self
 
@@ -183,7 +187,74 @@ def _apply_config_json_object(data: dict[str, Any]) -> None:
         data['last_playlist'] = [song] if song else []
         data['last_playing_index'] = 0 if song else -1
     data.pop('last_playing_song', None)
+
+    providers = data.get('llm_providers')
+    if isinstance(providers, list):
+        data['llm_providers'] = [
+            provider
+            for provider in (_normalize_llm_provider(item) for item in providers)
+            if provider is not None
+        ]
+    else:
+        data['llm_providers'] = []
+
     _instance.__dict__.update(data)
+    _migrate_legacy_llm_config()
+
+
+def _normalize_llm_provider(data: Any) -> dict[str, Any] | None:
+    if not isinstance(data, dict):
+        return None
+    name = str(data.get('name', '')).strip()
+    if not name:
+        return None
+    api_format = str(data.get('api_format', 'openai_chat'))
+    if api_format not in ('openai_chat', 'openai_responses', 'anthropic'):
+        api_format = 'openai_chat'
+    models_data = data.get('models')
+    models: list[dict[str, str]] = []
+    if isinstance(models_data, list):
+        for item in models_data:
+            if not isinstance(item, dict):
+                continue
+            model_id = str(item.get('id', '')).strip()
+            display_name = str(item.get('display_name', '')).strip()
+            if not model_id or not display_name:
+                continue
+            models.append({'id': model_id, 'display_name': display_name})
+    return {
+        'name': name,
+        'api_format': api_format,
+        'api_key_encrypted': str(data.get('api_key_encrypted', '')),
+        'base_url': str(data.get('base_url', '')).strip().rstrip('/'),
+        'models': models,
+    }
+
+
+def _migrate_legacy_llm_config() -> None:
+    if _instance.llm_providers:
+        return
+    if not (_instance.llm_base_url or _instance.llm_api_key_encrypted or _instance.llm_model):
+        return
+    models: list[dict[str, str]] = []
+    if _instance.llm_model:
+        models.append(
+            {
+                'id': _instance.llm_model,
+                'display_name': _instance.llm_model,
+            }
+        )
+    _instance.llm_providers = [
+        {
+            'name': 'Default',
+            'api_format': 'openai_chat',
+            'api_key_encrypted': _instance.llm_api_key_encrypted,
+            'base_url': _instance.llm_base_url,
+            'models': models,
+        }
+    ]
+    _instance.llm_current_provider = 'Default'
+    _instance.llm_current_model = _instance.llm_model
 
 
 def _delete_legacy_pickle_config() -> None:

@@ -455,7 +455,7 @@ class LyricsViewer(QWidget):
         multiple_factor: float = 1.0,
     ) -> dict[str, object]:
         if position is None:
-            position = self._player.getPosition()
+            position = self.ctx.playing_manager.getDisplayPosition()
 
         if not self._lyrics_ready:
             return {'schema': 'southside_lyric_layout_v1', 'ready': False, 'lines': []}

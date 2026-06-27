@@ -26,4 +26,5 @@ dependencies = [
     "audioop-lts>=0.2.2",
     "openai>=2.43.0",
     "pywin32>=311",
+    "anthropic>=0.112.0",
 ]

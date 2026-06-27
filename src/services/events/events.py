@@ -36,7 +36,7 @@ LYRIC_LINE_CHANGED = 'lyric_line_changed'
 REFRESH_RATE_CHANGED = 'refresh_rate_changed'
 REPAINT = 'repaint'
 
-UPDATE_FM = 'update_fm'
+UPDATE_COVER = 'update_cover'
 
 VIEW_FOLDER = 'view_folder'
 MWINDOW_REFRESH_FOLDERS = 'mwindow_refresh_folders'
@@ -57,3 +57,6 @@ DB_CHANGED = 'db_changed'
 
 COLLECT_DEBUG_INFO = 'collect_debug_info'
 EMIT_DEBUG_INFO = 'emit_debug_info'
+
+START_CROSSFADE = 'start_crossfade'
+FINISH_CROSSFADE = 'stop_crossfade'

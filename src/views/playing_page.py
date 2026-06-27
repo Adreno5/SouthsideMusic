@@ -21,7 +21,7 @@ from imports import (
     POST_PLAY_STORABLE,
     POST_THEME_CHANGED,
     SONG_CHANGED,
-    UPDATE_FM,
+    UPDATE_COVER,
     QBuffer,
     QHBoxLayout,
     QIODevice,
@@ -195,6 +195,10 @@ class PlayingPage(QWidget):
             else QColor(0, 0, 0),
             1 - cfg.background_ratio * 0.5,
         )
+        if song is not None:
+            self.cur = DummyCard(song)
+            self.title_label.setText(song.name)
+            self.artists_label.setText(_artists_text(song))
         self.translation_button.setVisible(bool(song and song.translated_lyric))
 
         self.update()
@@ -204,7 +208,7 @@ class PlayingPage(QWidget):
             return
 
         event_bus.emit(
-            UPDATE_FM,
+            UPDATE_COVER,
             self.img_label.pixmap(),
             self.cur.info.name if self.cur else '',
         )
@@ -321,7 +325,7 @@ class PlayingPage(QWidget):
     def _onPostPlayStorable(self, song: SongStorable) -> None:
         if self.cur is not None and self.cur.storable.id != song.id:
             return
-        self.sendSongFMAndInfo()
+        self.sendSongCoverAndInfo()
 
     def _onPlaybackLyricsUpdated(self, song: SongStorable) -> None:
         if self.cur is not None and self.cur.storable.id != song.id:
@@ -336,7 +340,7 @@ class PlayingPage(QWidget):
         else:
             InfoBar.error(title, message, parent=self._mwindow_obj)
 
-    def sendSongFMAndInfo(self) -> None:
+    def sendSongCoverAndInfo(self) -> None:
         if not self._ws_handler.is_open:
             return
         if self.cur is None:
@@ -357,8 +361,8 @@ class PlayingPage(QWidget):
         buffer.close()
 
         song_name = self.cur.storable.name
-        position = self.ctx.player.getPosition()
-        duration = self.ctx.player.getLength()
+        position = self.playing_manager.getDisplayPosition()
+        duration = self.playing_manager.getDisplayLength()
         translation_enabled = bool(cfg.show_translation)
         use_yrc = bool(self._ymgr.parsed)
         artists = _artists_text(self.cur.storable)
@@ -372,7 +376,7 @@ class PlayingPage(QWidget):
             use_yrc=use_yrc,
             artists=artists,
             is_playing=is_playing: {
-                'option': 'fm',
+                'option': 'cover',
                 'image': json_base64_bytes(img_bytes),
                 'song_name': song_name,
                 'position': position,
@@ -382,7 +386,7 @@ class PlayingPage(QWidget):
                 'artists': artists,
                 'is_playing': is_playing,
             },
-            coalesce_key='fm',
+            coalesce_key='cover',
         )
 
     def resizeEvent(self, event: QResizeEvent) -> None:

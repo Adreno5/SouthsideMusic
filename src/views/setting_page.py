@@ -27,6 +27,7 @@ from imports import (
 )
 from imports import QColor
 from imports import (
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QSlider,
@@ -122,6 +123,14 @@ class SectionContainer(QWidget):
         if self._expanded:
             self.content_view.setFixedHeight(self._contentHeightHint())
         self._syncContentGeometry()
+
+    def refreshContentHeight(self) -> None:
+        self.content_widget.adjustSize()
+        self._content_height = self._contentHeightHint()
+        if self._expanded:
+            self.content_view.setFixedHeight(self._content_height)
+        self._syncContentGeometry()
+        self.updateGeometry()
 
     def collapseNow(self) -> None:
         self._expanded = False
@@ -360,14 +369,6 @@ class SettingPage(QWidget):
             'enable_crossfade',
         )
         self.addNumberSetting(
-            'setting_page.crossfade_time',
-            'setting_page.crossfade_time_description',
-            0,
-            30,
-            0.5,
-            'crossfade_time',
-        )
-        self.addNumberSetting(
             'setting_page.crossfade_strength',
             'setting_page.crossfade_strength_description',
             0,
@@ -435,45 +436,18 @@ class SettingPage(QWidget):
             'setting_page.llm',
             'setting_page.llm_provider_model_and_authentication',
         )
+        self.llm_section = self._current_section
 
-        self.llm_base_url_edit = LineEdit()
-        self.llm_base_url_edit.setFixedWidth(360)
-        self.llm_base_url_edit.setText(cfg.llm_base_url)
-        self.llm_base_url_edit.editingFinished.connect(self._onLlmBaseUrlChanged)
-        self.addSetting(
-            'setting_page.llm_base_url',
-            'setting_page.openai_compatible_base_url',
-            self.llm_base_url_edit,
-        )
-
-        self.llm_api_key_edit = PasswordLineEdit()
-        self.llm_api_key_edit.setFixedWidth(360)
-        self.llm_api_key_edit.setText(decryptSecret(cfg.llm_api_key_encrypted))
-        self.llm_api_key_edit.editingFinished.connect(self._onLlmApiKeyChanged)
-        self.addSetting(
-            'setting_page.llm_api_key',
-            'setting_page.llm_api_key_stored_encrypted',
-            self.llm_api_key_edit,
-        )
-
-        self.llm_model_box = ComboBox()
-        self.llm_model_box.setFixedWidth(260)
-        self._refreshLlmModelBox()
-        self.llm_model_box.currentIndexChanged.connect(self._onLlmModelChanged)
-        self.addSetting(
-            'setting_page.llm_model',
-            'setting_page.select_model_after_refreshing_models',
-            self.llm_model_box,
-        )
-
-        self.llm_refresh_models_btn = PushButton(FluentIcon.SYNC, '')
-        bindText(self.llm_refresh_models_btn, 'setting_page.refresh_models')
-        self.llm_refresh_models_btn.clicked.connect(self.refreshLlmModels)
-        self.addSetting(
-            'setting_page.llm_refresh_models',
-            'setting_page.fetch_models_from_the_configured_base_url',
-            self.llm_refresh_models_btn,
-        )
+        self.llm_provider_form: QWidget | None = None
+        self.llm_editing_provider_name = ''
+        self.llm_fetched_models: list[str] = []
+        self.llm_provider_list_widget = QWidget()
+        self.llm_provider_list_layout = QVBoxLayout()
+        self.llm_provider_list_layout.setContentsMargins(0, 0, 0, 0)
+        self.llm_provider_list_layout.setSpacing(6)
+        self.llm_provider_list_widget.setLayout(self.llm_provider_list_layout)
+        self._refreshLlmProvidersView()
+        self.addSeparateWidget(self.llm_provider_list_widget)
 
         if lw:
             lw.top('Setting up window options...')
@@ -985,34 +959,382 @@ class SettingPage(QWidget):
         if mode in ('Repeat one', 'Repeat list', 'Shuffle', 'Play in order'):
             cfg.play_method = mode
 
-    def _onLlmBaseUrlChanged(self) -> None:
-        cfg.llm_base_url = self.llm_base_url_edit.text().strip().rstrip('/')
+    def _refreshLlmProvidersView(self) -> None:
+        while self.llm_provider_list_layout.count():
+            item = self.llm_provider_list_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
 
-    def _onLlmApiKeyChanged(self) -> None:
-        cfg.llm_api_key_encrypted = encryptSecret(self.llm_api_key_edit.text().strip())
+        header = QWidget()
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(16, 8, 16, 8)
+        title = QLabel('Providers')
+        title.setStyleSheet('font-weight: bold;')
+        add_btn = TransparentPushButton(FluentIcon.ADD_TO, '')
+        bindText(add_btn, 'setting_page.add_provider')
+        add_btn.clicked.connect(lambda: self._showLlmProviderForm())
+        header_layout.addWidget(title)
+        header_layout.addStretch(1)
+        header_layout.addWidget(add_btn)
+        header.setLayout(header_layout)
+        self.llm_provider_list_layout.addWidget(header)
 
-    def _refreshLlmModelBox(self, models: list[str] | None = None) -> None:
-        current = cfg.llm_model
-        if models is None:
-            models = [current] if current else []
+        for provider in cfg.llm_providers:
+            self.llm_provider_list_layout.addWidget(
+                self._createLlmProviderRow(provider)
+            )
+        if self.llm_provider_form is not None:
+            self.llm_provider_list_layout.addWidget(self.llm_provider_form)
+        self._refreshCurrentSectionHeight()
 
-        self.llm_model_box.blockSignals(True)
-        self.llm_model_box.clear()
-        for model in models:
-            self.llm_model_box.addItem(model, userData=model)
-        index = self.llm_model_box.findData(current)
-        self.llm_model_box.setCurrentIndex(index if index >= 0 else 0)
-        self.llm_model_box.blockSignals(False)
+    def _createLlmProviderRow(self, provider: dict[str, object]) -> QWidget:
+        row = QWidget()
+        layout = QHBoxLayout()
+        layout.setContentsMargins(16, 6, 16, 6)
+        layout.setSpacing(8)
+        name = str(provider.get('name', ''))
+        models = provider.get('models', [])
+        count = len(models) if isinstance(models, list) else 0
+        name_l = QLabel(name)
+        name_l.setStyleSheet(
+            f'color: {"#FFFFFF" if theme.isDark() else "#000000"}; font-weight: bold;'
+        )
+        count_l = QLabel(tr('setting_page.provider_model_count', count=count))
+        count_l.setStyleSheet(f'color: {"#A8A8A8" if theme.isDark() else "#666666"};')
+        edit_btn = TransparentPushButton('')
+        bindText(edit_btn, 'setting_page.edit')
+        bindIcon(edit_btn, 'edit')
+        edit_btn.clicked.connect(lambda: self._showLlmProviderForm(provider))
+        delete_btn = TransparentPushButton('')
+        bindText(delete_btn, 'setting_page.delete')
+        bindIcon(delete_btn, 'trash')
+        delete_btn.clicked.connect(lambda: self._deleteLlmProvider(name))
+        layout.addWidget(name_l)
+        layout.addWidget(count_l)
+        layout.addStretch(1)
+        layout.addWidget(edit_btn)
+        layout.addWidget(delete_btn)
+        row.setLayout(layout)
+        return row
 
-    def _onLlmModelChanged(self) -> None:
-        model = self.llm_model_box.currentData()
-        if isinstance(model, str):
-            cfg.llm_model = model
+    def _showLlmProviderForm(
+        self,
+        provider: dict[str, object] | None = None,
+    ) -> None:
+        if self.llm_provider_form is not None:
+            self.llm_provider_form.deleteLater()
+            self.llm_provider_form = None
+        self.llm_editing_provider_name = str(provider.get('name', '')) if provider else ''
+        self.llm_fetched_models = []
+        self.llm_provider_form = self._createLlmProviderForm(provider)
+        self._refreshLlmProvidersView()
+
+    def _createLlmProviderForm(
+        self,
+        provider: dict[str, object] | None = None,
+    ) -> QWidget:
+        form_widget = CardWidget()
+        form_widget.setBackgroundColor(QColor(255, 255, 255, 0))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(8)
+        form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(8)
+
+        self.llm_provider_name_edit = LineEdit()
+        self.llm_provider_name_edit.setText(str(provider.get('name', '')) if provider else '')
+        self.llm_provider_name_edit.setFixedWidth(320)
+        form.addRow(QLabel(tr('setting_page.provider_name')), self.llm_provider_name_edit)
+
+        self.llm_api_format_box = ComboBox()
+        self.llm_api_format_box.setFixedWidth(320)
+        formats = (
+            ('OpenAI Chat Completions', 'openai_chat'),
+            ('OpenAI Responses', 'openai_responses'),
+            ('Anthropic', 'anthropic'),
+        )
+        for label, value in formats:
+            self.llm_api_format_box.addItem(label, userData=value)
+        current_format = str(provider.get('api_format', 'openai_chat')) if provider else 'openai_chat'
+        index = self.llm_api_format_box.findData(current_format)
+        self.llm_api_format_box.setCurrentIndex(max(index, 0))
+        form.addRow(QLabel(tr('setting_page.api_format')), self.llm_api_format_box)
+
+        self.llm_provider_api_key_edit = PasswordLineEdit()
+        self.llm_provider_api_key_edit.setFixedWidth(320)
+        encrypted = str(provider.get('api_key_encrypted', '')) if provider else ''
+        self.llm_provider_api_key_edit.setText(decryptSecret(encrypted))
+        form.addRow(QLabel(tr('setting_page.llm_api_key')), self.llm_provider_api_key_edit)
+
+        self.llm_provider_base_url_edit = LineEdit()
+        self.llm_provider_base_url_edit.setFixedWidth(320)
+        self.llm_provider_base_url_edit.setText(str(provider.get('base_url', '')) if provider else '')
+        form.addRow(QLabel(tr('setting_page.llm_base_url')), self.llm_provider_base_url_edit)
+        layout.addLayout(form)
+
+        fetch_btn = PushButton(FluentIcon.SYNC, '')
+        bindText(fetch_btn, 'setting_page.fetch_models')
+        fetch_btn.clicked.connect(lambda: self._fetchLlmProviderModels(fetch_btn))
+        layout.addWidget(fetch_btn, 0, Qt.AlignmentFlag.AlignLeft)
+
+        self.llm_model_rows_layout = QVBoxLayout()
+        self.llm_model_rows_layout.setContentsMargins(0, 0, 0, 0)
+        self.llm_model_rows_layout.setSpacing(6)
+        model_items = provider.get('models', []) if provider else []
+        if isinstance(model_items, list):
+            for item in model_items:
+                if isinstance(item, dict):
+                    self._addLlmModelRow(
+                        str(item.get('id', '')),
+                        str(item.get('display_name', '')),
+                    )
+        if not self.llm_model_rows_layout.count():
+            self._addLlmModelRow('', '')
+        layout.addLayout(self.llm_model_rows_layout)
+
+        model_add_btn = TransparentPushButton(FluentIcon.ADD_TO, '')
+        bindText(model_add_btn, 'setting_page.add_model_mapping')
+        model_add_btn.clicked.connect(lambda: self._addLlmModelRow('', ''))
+        layout.addWidget(model_add_btn, 0, Qt.AlignmentFlag.AlignLeft)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        cancel_btn = TransparentPushButton('')
+        bindText(cancel_btn, 'setting_page.cancel')
+        cancel_btn.clicked.connect(self._hideLlmProviderForm)
+        add_btn = PushButton(FluentIcon.ADD_TO, '')
+        bindText(
+            add_btn,
+            'setting_page.save' if self.llm_editing_provider_name else 'setting_page.add',
+        )
+        add_btn.clicked.connect(self._saveLlmProviderForm)
+        buttons.addWidget(cancel_btn)
+        buttons.addWidget(add_btn)
+        layout.addLayout(buttons)
+        form_widget.setLayout(layout)
+        return form_widget
+
+    def _addLlmModelRow(self, model_id: str, display_name: str) -> None:
+        row = QWidget()
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        if self.llm_fetched_models:
+            model_widget = ComboBox()
+            model_widget.setFixedWidth(220)
+            for item in self.llm_fetched_models:
+                model_widget.addItem(item, userData=item)
+            index = model_widget.findData(model_id)
+            model_widget.setCurrentIndex(max(index, 0))
+        else:
+            model_widget = LineEdit()
+            model_widget.setFixedWidth(220)
+            model_widget.setText(model_id)
+        display_edit = LineEdit()
+        display_edit.setFixedWidth(220)
+        display_edit.setText(display_name)
+        remove_btn = TransparentPushButton('')
+        bindIcon(remove_btn, 'trash')
+        remove_btn.clicked.connect(lambda: self._removeLlmModelRow(row))
+        row._llm_model_id_widget = model_widget
+        row._llm_display_name_edit = display_edit
+        layout.addWidget(QLabel(tr('setting_page.model_id')))
+        layout.addWidget(model_widget)
+        layout.addWidget(QLabel(tr('setting_page.display_name')))
+        layout.addWidget(display_edit)
+        layout.addWidget(remove_btn)
+        row.setLayout(layout)
+        self.llm_model_rows_layout.addWidget(row)
+        self._refreshCurrentSectionHeight()
+
+    def _removeLlmModelRow(self, row: QWidget) -> None:
+        if self.llm_model_rows_layout.count() <= 1:
+            return
+        self.llm_model_rows_layout.removeWidget(row)
+        row.deleteLater()
+        self._refreshCurrentSectionHeight()
+
+    def _readLlmModelRows(self) -> list[dict[str, str]]:
+        models: list[dict[str, str]] = []
+        for i in range(self.llm_model_rows_layout.count()):
+            row = self.llm_model_rows_layout.itemAt(i).widget()
+            if row is None:
+                continue
+            model_widget = getattr(row, '_llm_model_id_widget')
+            display_edit = getattr(row, '_llm_display_name_edit')
+            if isinstance(model_widget, ComboBox):
+                model_id = str(model_widget.currentData() or '').strip()
+            else:
+                model_id = model_widget.text().strip()
+            display_name = display_edit.text().strip()
+            if model_id or display_name:
+                models.append({'id': model_id, 'display_name': display_name})
+        return models
+
+    def _saveLlmProviderForm(self) -> None:
+        name = self.llm_provider_name_edit.text().strip()
+        if not name:
+            self._showLlmError(tr('setting_page.provider_name_required'))
+            return
+        for provider in cfg.llm_providers:
+            provider_name = str(provider.get('name', '')).strip()
+            if provider_name == self.llm_editing_provider_name:
+                continue
+            if provider_name == name:
+                self._showLlmError(tr('setting_page.provider_name_duplicated'))
+                return
+        models = self._readLlmModelRows()
+        model_ids = [item['id'] for item in models]
+        display_names = [item['display_name'] for item in models]
+        if any(not item['id'] or not item['display_name'] for item in models):
+            self._showLlmError(tr('setting_page.model_mapping_required'))
+            return
+        if len(set(model_ids)) != len(model_ids) or len(set(display_names)) != len(display_names):
+            self._showLlmError(tr('setting_page.model_mapping_duplicated'))
+            return
+
+        new_provider = {
+            'name': name,
+            'api_format': str(self.llm_api_format_box.currentData() or 'openai_chat'),
+            'api_key_encrypted': encryptSecret(self.llm_provider_api_key_edit.text().strip()),
+            'base_url': self.llm_provider_base_url_edit.text().strip().rstrip('/'),
+            'models': models,
+        }
+        replaced = False
+        for index, provider in enumerate(cfg.llm_providers):
+            if str(provider.get('name', '')) == self.llm_editing_provider_name:
+                cfg.llm_providers[index] = new_provider
+                replaced = True
+                break
+        if not replaced:
+            cfg.llm_providers.append(new_provider)
+        cfg.llm_current_provider = name
+        cfg.llm_current_model = models[0]['id'] if models else ''
+        self._syncLegacyLlmConfig()
+        saveConfig()
+        self._hideLlmProviderForm()
+        self._refreshMainWindowLlmModels()
+
+    def _fetchLlmProviderModels(self, button: PushButton) -> None:
+        base_url = self.llm_provider_base_url_edit.text().strip().rstrip('/')
+        api_key = self.llm_provider_api_key_edit.text().strip()
+        api_format = str(self.llm_api_format_box.currentData() or 'openai_chat')
+        if api_format != 'anthropic' and not base_url:
+            self._showLlmError(tr('setting_page.llm_base_url_required'))
+            return
+        button.setEnabled(False)
+        models: list[str] = []
+        error: Exception | None = None
+
+        def _fetch() -> None:
+            nonlocal error, models
+            try:
+                models = LLM(
+                    base_url=base_url,
+                    api_key=api_key,
+                    api_format=api_format,
+                    timeout=20,
+                ).listModels()
+            except Exception as e:
+                error = e
+                self._logger.exception(e)
+
+        def _finish() -> None:
+            button.setEnabled(True)
+            if error is not None:
+                self._showLlmError(str(error))
+                return
+            self.llm_fetched_models = models
+            self._replaceModelIdEditorsWithCombos()
+            InfoBar.success(
+                tr('setting_page.llm_models_refreshed'),
+                tr('setting_page.loaded_model_count', count=len(models)),
+                duration=3000,
+                parent=self._mwindow,
+            )
+
+        asyncTask(_fetch, (), self._mwindow, _finish)
+
+    def _replaceModelIdEditorsWithCombos(self) -> None:
+        rows: list[dict[str, str]] = self._readLlmModelRows()
+        while self.llm_model_rows_layout.count():
+            item = self.llm_model_rows_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        for row in rows or [{'id': '', 'display_name': ''}]:
+            self._addLlmModelRow(row['id'], row['display_name'])
+        self._refreshCurrentSectionHeight()
+
+    def _deleteLlmProvider(self, name: str) -> None:
+        cfg.llm_providers = [
+            provider
+            for provider in cfg.llm_providers
+            if str(provider.get('name', '')) != name
+        ]
+        if cfg.llm_current_provider == name:
+            provider = cfg.llm_providers[0] if cfg.llm_providers else None
+            cfg.llm_current_provider = str(provider.get('name', '')) if provider else ''
+            models = provider.get('models', []) if provider else []
+            first = models[0] if isinstance(models, list) and models else {}
+            cfg.llm_current_model = str(first.get('id', '')) if isinstance(first, dict) else ''
+        self._syncLegacyLlmConfig()
+        saveConfig()
+        self._refreshLlmProvidersView()
+        self._refreshMainWindowLlmModels()
+
+    def _hideLlmProviderForm(self) -> None:
+        self.llm_provider_form = None
+        self.llm_editing_provider_name = ''
+        self.llm_fetched_models = []
+        self._refreshLlmProvidersView()
+
+    def _syncLegacyLlmConfig(self) -> None:
+        provider = self._currentLlmProvider()
+        if provider is None:
+            cfg.llm_base_url = 'https://api.openai.com/v1'
+            cfg.llm_api_key_encrypted = ''
+            cfg.llm_model = ''
+            return
+        cfg.llm_base_url = str(provider.get('base_url', ''))
+        cfg.llm_api_key_encrypted = str(provider.get('api_key_encrypted', ''))
+        cfg.llm_model = cfg.llm_current_model
+
+    def _currentLlmProvider(self) -> dict[str, object] | None:
+        for provider in cfg.llm_providers:
+            if str(provider.get('name', '')) == cfg.llm_current_provider:
+                return provider
+        return cfg.llm_providers[0] if cfg.llm_providers else None
+
+    def _refreshMainWindowLlmModels(self) -> None:
+        main_window = self._mwindow
+        if main_window is not None and hasattr(main_window, 'refreshLLMModelBox'):
+            main_window.refreshLLMModelBox()
+
+    def _showLlmError(self, message: str) -> None:
+        InfoBar.error(
+            tr('setting_page.llm_models_refresh_failed'),
+            message,
+            duration=5000,
+            parent=self._mwindow,
+        )
+
+    def _refreshCurrentSectionHeight(self) -> None:
+        section = self.llm_section
+        if section is None:
+            return
+        self.llm_provider_list_widget.adjustSize()
+        self.llm_provider_list_widget.updateGeometry()
+        section.refreshContentHeight()
+        QTimer.singleShot(0, section.refreshContentHeight)
 
     def refreshLlmModels(self, silent: bool = False) -> None:
-        self._onLlmBaseUrlChanged()
-        self._onLlmApiKeyChanged()
-        if not cfg.llm_base_url:
+        provider = self._currentLlmProvider()
+        if provider is None:
+            return
+        if str(provider.get('api_format', 'openai_chat')) != 'anthropic' and not str(provider.get('base_url', '')).strip():
             if not silent:
                 InfoBar.error(
                     tr('setting_page.llm_models_refresh_failed'),
@@ -1021,7 +1343,6 @@ class SettingPage(QWidget):
                     parent=self._mwindow,
                 )
             return
-        self.llm_refresh_models_btn.setEnabled(False)
         models: list[str] = []
         error: Exception | None = None
 
@@ -1034,7 +1355,6 @@ class SettingPage(QWidget):
                 self._logger.exception(e)
 
         def _finish() -> None:
-            self.llm_refresh_models_btn.setEnabled(True)
             if error is not None:
                 if not silent:
                     InfoBar.error(
@@ -1053,9 +1373,24 @@ class SettingPage(QWidget):
                         parent=self._mwindow,
                     )
                 return
-            if cfg.llm_model not in models and models:
-                cfg.llm_model = models[0]
-            self._refreshLlmModelBox(models)
+            if silent:
+                return
+            known = provider.get('models', [])
+            known_ids = {
+                str(item.get('id', ''))
+                for item in known
+                if isinstance(item, dict)
+            } if isinstance(known, list) else set()
+            if isinstance(known, list):
+                for model in models:
+                    if model not in known_ids:
+                        known.append({'id': model, 'display_name': model})
+                provider['models'] = known
+            if not cfg.llm_current_model and models:
+                cfg.llm_current_model = models[0]
+            self._syncLegacyLlmConfig()
+            self._refreshLlmProvidersView()
+            self._refreshMainWindowLlmModels()
             if not silent:
                 InfoBar.success(
                     tr('setting_page.llm_models_refreshed'),

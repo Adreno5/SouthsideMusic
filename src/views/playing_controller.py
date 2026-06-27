@@ -7,6 +7,7 @@ import time
 from typing import TYPE_CHECKING, cast as _cast
 
 from core.app_context import AppContext
+from core.i18n import bindText
 from core.models import SongStorable
 from core.qt_utils import toQtInt
 from core.smooth import EaseOutTimer
@@ -24,6 +25,8 @@ from imports import (
     REFRESH_RATE_CHANGED,
     REPAINT,
     SONG_CHANGED,
+    START_CROSSFADE,
+    FINISH_CROSSFADE,
     QFont,
     QFontMetricsF,
     QImage,
@@ -127,7 +130,7 @@ class PlayingControllerLyricsViewer(QWidget):
         self.update()
 
     def _onRepaintTick(self, _multiple_factor: float = 1.0) -> None:
-        position = self._player.getPosition()
+        position = self.ctx.playing_manager.getDisplayPosition()
         if self._ymgr.parsed:
             current = self._ymgr.getCurrentLyric(position)
         elif self._mgr.parsed:
@@ -270,6 +273,12 @@ class PlayingControllerLyricsViewer(QWidget):
 
         painter.end()
 
+class TranslationHandler:
+    def __init__(self):
+        self.current_text = ''
+
+    def setText(self, text):
+        self.current_text = text
 
 class PlayingController(QWidget):
     def __init__(
@@ -296,7 +305,7 @@ class PlayingController(QWidget):
         self.prepared_ratio_timer = EaseOutTimer(0.35, 4)
         self.overlay_alpha_timer = EaseOutTimer(0.4, 2)
 
-        self.lastfm = time.time()
+        self.last_cover = time.time()
         self.last_draw: int = time.perf_counter_ns()
         self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
         self.delta = 1 / self.refresh_rate
@@ -317,7 +326,7 @@ class PlayingController(QWidget):
         self._overlay_alpha = 0
         self._draw_fft = False
 
-        self.fm_label = QLabel()
+        self.cover_label = QLabel()
         self.song_title_label = QLabel()
         self.lyrics_viewer = PlayingControllerLyricsViewer(ctx)
 
@@ -349,7 +358,7 @@ class PlayingController(QWidget):
         self.next_btn.clicked.connect(lambda: event_bus.emit(PLAYNEXT))
         self.last_btn.clicked.connect(lambda: event_bus.emit(PLAYLAST))
 
-        global_layout.addWidget(self.fm_label)
+        global_layout.addWidget(self.cover_label)
         global_layout.addWidget(self.middle_widget)
         global_layout.addSpacerItem(
             QSpacerItem(
@@ -373,11 +382,18 @@ class PlayingController(QWidget):
 
         self._player.fftDataReady.connect(self.updateFFTData)
 
+        self.bar_alpha_timer = EaseOutTimer(0.3, 2)
+        self.bar_alpha_timer.target_value = 1
+        self.tip_handler = TranslationHandler()
+        bindText(self.tip_handler, 'playing_controller.crossfading_tip')
+
         event_bus.subscribe(PLAY_STATE_CHANGED, self._onPlayStateChanged)
         event_bus.subscribe(SONG_CHANGED, self._updateDatas)
         event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
+        event_bus.subscribe(START_CROSSFADE, lambda: setattr(self.bar_alpha_timer, 'target_value', 0.2))
+        event_bus.subscribe(FINISH_CROSSFADE, lambda: setattr(self.bar_alpha_timer, 'target_value', 1))
 
         if self._mwindow:
             self.bg_color = mixColor(
@@ -403,12 +419,12 @@ class PlayingController(QWidget):
     def hideLyrics(self):
         self.lyrics_viewer.hide()
         self.song_title_label.hide()
-        self.fm_label.hide()
+        self.cover_label.hide()
 
     def showLyrics(self):
         self.lyrics_viewer.show()
         self.song_title_label.show()
-        self.fm_label.show()
+        self.cover_label.show()
 
     def _updateDatas(self, song: SongStorable | None = None):
         self.bg_color = mixColor(
@@ -427,7 +443,7 @@ class PlayingController(QWidget):
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
-            self.fm_label.setPixmap(pixmap)
+            self.cover_label.setPixmap(pixmap)
 
             self.song_title_label.setText(song.name)
 
@@ -501,9 +517,13 @@ class PlayingController(QWidget):
         self._prepared_draw_end_x = progress_left
         self._overlay_alpha = 0
         if self._dp.total_length > 0:
-            loaded_time = self._player.getLoadedTime()
+            loaded_time = self.ctx.playing_manager.getDisplayLoadedTime()
             current_time = max(
-                0.0, min(self._player.getPosition(), self._dp.total_length)
+                0.0,
+                min(
+                    self.ctx.playing_manager.getDisplayPosition(),
+                    self._dp.total_length,
+                ),
             )
             self.draw_ratio_timer.target_value = current_time / self._dp.total_length
             draw_ratio = max(0.0, min(self.draw_ratio_timer.current_value, 1.0))
@@ -613,7 +633,7 @@ class PlayingController(QWidget):
         return payload_lines, current_line, current_index, use_yrc
 
     def _updateLyric(self, _multiple_factor: float = 1.0) -> None:
-        position = self._player.getPosition()
+        position = self.ctx.playing_manager.getDisplayPosition()
         lines, current_line, current_index, use_yrc = self._lyricWindowPayload(position)
         if self._ws_handler.is_open:
             now = time.perf_counter()
@@ -664,7 +684,7 @@ class PlayingController(QWidget):
             bindIcon(self.play_pausebtn, 'playa')
 
     def _progressLeft(self) -> int:
-        return 52 if self.fm_label.isVisible() else 0
+        return 52 if self.cover_label.isVisible() else 0
 
     def _eventPlayingTime(self, event: QMouseEvent) -> float:
         progress_left = self._progressLeft()
@@ -678,6 +698,7 @@ class PlayingController(QWidget):
             event.position().y() < 8
             and event.position().x() > self._progressLeft()
             and self._dp.preloaded
+            and not self.ctx.playing_manager.crossfading
         ):
             self.dragging = True
             self._player.setPosition(self._eventPlayingTime(event))
@@ -687,13 +708,13 @@ class PlayingController(QWidget):
         return super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if self.dragging and self._dp.preloaded:
+        if self.dragging and self._dp.preloaded and not self.ctx.playing_manager.crossfading:
             self._player.setPosition(self._eventPlayingTime(event))
             self.dragging = False
         return super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        if self.dragging and self._dp.preloaded:
+        if self.dragging and self._dp.preloaded and not self.ctx.playing_manager.crossfading:
             self._player.setPosition(self._eventPlayingTime(event))
         return super().mouseMoveEvent(event)
 
@@ -723,8 +744,8 @@ class PlayingController(QWidget):
             path = QPainterPath(QPointF(0, 0))
             total = int(self.cur_magnitudes.size * 0.67)
             for i in range(total):
-                x = (52 if self.fm_label.isVisible() else 0) + ((i + 1) / total) * (
-                    self.width() - (52 if self.fm_label.isVisible() else 0)
+                x = (52 if self.cover_label.isVisible() else 0) + ((i + 1) / total) * (
+                    self.width() - (52 if self.cover_label.isVisible() else 0)
                 )
                 path.lineTo(
                     QPointF(
@@ -750,9 +771,19 @@ class PlayingController(QWidget):
             painter.fillRect(0, 0, self.width(), self.height(), gradient)
             painter.setClipPath(path, Qt.ClipOperation.NoClip)
 
-        painter.setPen(QPen(QColor(120, 120, 120), 8))
+        bar_alpha = int(self.bar_alpha_timer.current_value * 255)
+        painter.setPen(QPen(QColor(120, 120, 120, bar_alpha), 8))
         progress_left = self._progressLeft()
         painter.drawLine(progress_left, 0, self.width(), 0)
+
+        if self.ctx.playing_manager.crossfading or bar_alpha < 255:
+            painter.setPen(QPen(QColor(255, 255, 255, 255 - bar_alpha) if isDark else QColor(0, 0, 0, 255 - bar_alpha), 8))
+            metrics = QFontMetricsF(painter.font())
+            painter.drawText(
+                int((self.width() - metrics.horizontalAdvance(self.tip_handler.current_text)) * 0.5),
+                int(10 + metrics.ascent()), self.tip_handler.current_text
+            )
+
         if self._dp.total_length > 0:
             painter.setPen(
                 QPen(
@@ -770,7 +801,7 @@ class PlayingController(QWidget):
             )
 
             painter.setPen(
-                QPen(QColor(255, 255, 255) if isDark else QColor(0, 0, 0), 8)
+                QPen(QColor(255, 255, 255, bar_alpha) if isDark else QColor(0, 0, 0, bar_alpha), 8)
             )
             painter.drawLine(
                 progress_left,

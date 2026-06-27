@@ -4,10 +4,12 @@ from collections.abc import Callable, Iterable, Iterator
 import json
 import logging
 import threading
+import urllib.error
 import urllib.request
 
 from typing import Any, cast
 
+from anthropic import Anthropic
 from openai import OpenAI
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
@@ -632,14 +634,18 @@ class LLM:
         model: str | None = None,
         system_prompt: str = ONERAD_SYSTEM_PROMPT,
         timeout: float = 60,
+        api_format: str | None = None,
     ) -> None:
         self.base_url = base_url
         self.api_key = api_key
         self.model = model
         self.system_prompt = system_prompt
         self.timeout = timeout
+        self.api_format = api_format
 
     def listModels(self) -> list[str]:
+        if self._apiFormat() == 'anthropic':
+            return self._requestAnthropicModels()
         return self._parseModelsResponse(self._requestModels())
 
     def chat(
@@ -664,6 +670,19 @@ class LLM:
         cancel_event: threading.Event | None = None,
     ) -> Iterator[str]:
         _logger.info('start stream request')
+        if self._apiFormat() == 'openai_responses':
+            yield from self._streamResponses(
+                message,
+                history,
+                tools,
+                tool_runner,
+                after_tool_round,
+                cancel_event,
+            )
+            return
+        if self._apiFormat() == 'anthropic':
+            yield from self._streamAnthropic(message, history, cancel_event)
+            return
         messages = self.buildMessages(message, history)
         while True:
             if cancel_event is not None and cancel_event.is_set():
@@ -784,36 +803,106 @@ class LLM:
         return messages
 
     def _client(self) -> OpenAI:
-        base_url = self._baseUrl()
-        api_key = self.api_key or decryptSecret(cfg.llm_api_key_encrypted) or 'unused'
+        base_url = self._openAIBaseUrl()
+        api_key = self._apiKey() or 'unused'
         return OpenAI(
             api_key=api_key,
             base_url=base_url,
             timeout=self.timeout,
         )
 
+    def _provider(self) -> dict[str, Any] | None:
+        name = cfg.llm_current_provider.strip()
+        providers = cfg.llm_providers
+        if name:
+            for provider in providers:
+                if str(provider.get('name', '')).strip() == name:
+                    return provider
+        return providers[0] if providers else None
+
+    def _apiFormat(self) -> str:
+        if self.api_format:
+            return self.api_format
+        provider = self._provider()
+        if provider is None:
+            return 'openai_chat'
+        api_format = str(provider.get('api_format', 'openai_chat'))
+        if api_format in ('openai_chat', 'openai_responses', 'anthropic'):
+            return api_format
+        return 'openai_chat'
+
+    def _apiKey(self) -> str:
+        if self.api_key is not None:
+            return self.api_key
+        provider = self._provider()
+        if provider is not None:
+            return decryptSecret(str(provider.get('api_key_encrypted', '')))
+        return decryptSecret(cfg.llm_api_key_encrypted)
+
     def _baseUrl(self) -> str:
-        base_url = (self.base_url or cfg.llm_base_url).strip().rstrip('/')
+        provider = self._provider()
+        default_base_url = cfg.llm_base_url
+        if provider is not None:
+            default_base_url = str(provider.get('base_url', ''))
+        base_url = (self.base_url or default_base_url).strip().rstrip('/')
         if not base_url:
             raise ValueError('LLM Base URL is required')
         return base_url
 
+    def _openAIBaseUrl(self) -> str:
+        base_url = self._baseUrl()
+        if base_url.endswith('/v1'):
+            return base_url
+        return f'{base_url}/v1'
+
     def _model(self) -> str:
-        model = (self.model or cfg.llm_model).strip()
+        provider = self._provider()
+        default_model = cfg.llm_model
+        if provider is not None:
+            default_model = cfg.llm_current_model
+        model = (self.model or default_model).strip()
         if not model:
             raise ValueError('LLM model is required')
         return model
 
     def _requestModels(self) -> Any:
-        url = f'{self._baseUrl()}/models'
-        api_key = self.api_key or decryptSecret(cfg.llm_api_key_encrypted)
+        base_url = self._baseUrl()
+        urls = [f'{base_url}/models']
+        if not base_url.endswith('/v1'):
+            urls.append(f'{base_url}/v1/models')
+        errors: list[Exception] = []
+        for url in urls:
+            try:
+                return self._requestModelsUrl(url)
+            except (
+                json.JSONDecodeError,
+                TimeoutError,
+                urllib.error.URLError,
+                ValueError,
+            ) as e:
+                errors.append(e)
+                _logger.debug('failed to fetch models from %s: %s', url, e)
+        error = self._bestModelsError(errors)
+        raise RuntimeError(f'Failed to fetch models: {error}')
+
+    def _bestModelsError(self, errors: list[Exception]) -> Exception | str:
+        for error in reversed(errors):
+            if isinstance(error, urllib.error.HTTPError):
+                return error
+        return errors[-1] if errors else 'unknown error'
+
+    def _requestModelsUrl(self, url: str) -> Any:
+        api_key = self._apiKey()
         headers = {'Accept': 'application/json'}
         if api_key:
             headers['Authorization'] = f'Bearer {api_key}'
 
         request = urllib.request.Request(url, headers=headers, method='GET')
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            return json.loads(response.read().decode('utf-8'))
+            body = response.read().decode('utf-8')
+            if not body.strip():
+                raise ValueError('Empty response')
+            return json.loads(body)
 
     def _parseModelsResponse(self, body: Any) -> list[str]:
         if isinstance(body, dict):
@@ -834,3 +923,167 @@ class LLM:
                     models.append(model_id)
 
         return sorted(set(models), key=str.lower)
+
+    def _streamResponses(
+        self,
+        message: str,
+        history: Iterable[LLMMessage] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_runner: ToolRunner | None = None,
+        after_tool_round: AfterToolRound | None = None,
+        cancel_event: threading.Event | None = None,
+    ) -> Iterator[str]:
+        input_items = [
+            {'role': item.get('role', ''), 'content': item.get('content', '')}
+            for item in (history or [])
+            if item.get('role') in ('user', 'assistant') and item.get('content')
+        ]
+        input_items.append({'role': 'user', 'content': message})
+        response_tools = self._responsesTools(tools or [])
+        while True:
+            response = None
+            stream_kwargs: dict[str, Any] = {
+                'model': self._model(),
+                'instructions': self.system_prompt,
+                'input': input_items,
+            }
+            if response_tools:
+                stream_kwargs['tools'] = response_tools
+            with self._client().responses.stream(**stream_kwargs) as stream:
+                for event in stream:
+                    if cancel_event is not None and cancel_event.is_set():
+                        return
+                    if event.type == 'response.output_text.delta':
+                        yield event.delta
+                response = stream.get_final_response()
+            tool_outputs = self._responsesToolOutputs(response, tool_runner)
+            if not tool_outputs:
+                return
+            input_items.extend(self._responsesOutputItems(response))
+            input_items.extend(tool_outputs)
+            if after_tool_round is not None:
+                after_tool_round()
+
+    def _responsesTools(self, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        response_tools: list[dict[str, Any]] = []
+        for tool in tools:
+            if tool.get('type') != 'function':
+                continue
+            function = tool.get('function', {})
+            if not isinstance(function, dict):
+                continue
+            name = str(function.get('name', '')).strip()
+            if not name:
+                continue
+            response_tools.append(
+                {
+                    'type': 'function',
+                    'name': name,
+                    'description': str(function.get('description', '')),
+                    'parameters': function.get('parameters', {'type': 'object'}),
+                }
+            )
+        return response_tools
+
+    def _responsesOutputItems(self, response: Any) -> list[dict[str, Any]]:
+        output_items: list[dict[str, Any]] = []
+        for item in getattr(response, 'output', []) or []:
+            item_type = getattr(item, 'type', '')
+            if item_type == 'function_call':
+                output_items.append(
+                    {
+                        'type': 'function_call',
+                        'call_id': getattr(item, 'call_id', ''),
+                        'name': getattr(item, 'name', ''),
+                        'arguments': getattr(item, 'arguments', '{}'),
+                    }
+                )
+            elif item_type == 'message':
+                content: list[dict[str, str]] = []
+                for part in getattr(item, 'content', []) or []:
+                    text = getattr(part, 'text', '')
+                    if text:
+                        content.append({'type': 'output_text', 'text': text})
+                if content:
+                    output_items.append(
+                        {
+                            'type': 'message',
+                            'role': 'assistant',
+                            'content': content,
+                        }
+                    )
+        return output_items
+
+    def _responsesToolOutputs(
+        self,
+        response: Any,
+        tool_runner: ToolRunner | None,
+    ) -> list[dict[str, str]]:
+        if tool_runner is None:
+            return []
+        outputs: list[dict[str, str]] = []
+        for item in getattr(response, 'output', []) or []:
+            if getattr(item, 'type', '') != 'function_call':
+                continue
+            try:
+                arguments = json.loads(getattr(item, 'arguments', '') or '{}')
+            except json.JSONDecodeError as e:
+                result = json.dumps({'error': str(e)}, ensure_ascii=False)
+            else:
+                result = tool_runner(getattr(item, 'name', ''), arguments)
+            outputs.append(
+                {
+                    'type': 'function_call_output',
+                    'call_id': getattr(item, 'call_id', ''),
+                    'output': result,
+                }
+            )
+        return outputs
+
+    def _anthropicClient(self) -> Anthropic:
+        api_key = self._apiKey()
+        if not api_key:
+            raise ValueError('LLM Api Key is required')
+        kwargs: dict[str, Any] = {
+            'api_key': api_key,
+            'timeout': self.timeout,
+        }
+        if self.base_url:
+            kwargs['base_url'] = self._baseUrl()
+        elif self._provider() is not None:
+            base_url = str(self._provider().get('base_url', '')).strip()
+            if base_url:
+                kwargs['base_url'] = base_url.rstrip('/')
+        return Anthropic(**kwargs)
+
+    def _streamAnthropic(
+        self,
+        message: str,
+        history: Iterable[LLMMessage] | None = None,
+        cancel_event: threading.Event | None = None,
+    ) -> Iterator[str]:
+        messages = [
+            {'role': item.get('role', ''), 'content': item.get('content', '')}
+            for item in (history or [])
+            if item.get('role') in ('user', 'assistant') and item.get('content')
+        ]
+        messages.append({'role': 'user', 'content': message})
+        with self._anthropicClient().messages.stream(
+            model=self._model(),
+            system=self.system_prompt,
+            messages=messages,
+            max_tokens=4096,
+        ) as stream:
+            for text in stream.text_stream:
+                if cancel_event is not None and cancel_event.is_set():
+                    return
+                yield text
+
+    def _requestAnthropicModels(self) -> list[str]:
+        models = self._anthropicClient().models.list()
+        result: list[str] = []
+        for model in models.data:
+            model_id = getattr(model, 'id', '')
+            if model_id:
+                result.append(model_id)
+        return sorted(set(result), key=str.lower)

@@ -45,9 +45,15 @@ def getCrossfade(
     current_bpm = _detect_bpm(current_samples, sample_rate)
     next_bpm = _detect_bpm(next_samples, sample_rate)
     if current_bpm > 0 and next_bpm > 0:
-        target_speed = _clamp(next_bpm / current_bpm, 0.1, 10.0)
+        target_speed = _clamp(next_bpm / current_bpm, 0.1, 3)
     else:
         target_speed = 1.0
+    _logger.debug(
+        'crossfade bpm current=%.2f next=%.2f speed=%.3f',
+        current_bpm,
+        next_bpm,
+        target_speed,
+    )
 
     if fade_frames <= 0:
         return CrossFadeInfo(
@@ -131,9 +137,86 @@ def _fade_frames(
     crossfade_seconds: float,
     strength: float,
 ) -> int:
-    requested_seconds = max(0.0, crossfade_seconds) * strength
+    requested_seconds = _adaptive_crossfade_seconds(
+        current_samples,
+        next_samples,
+        sample_rate,
+        crossfade_seconds,
+        strength,
+    )
     requested_frames = int(round(requested_seconds * sample_rate))
     return min(requested_frames, len(current_samples), len(next_samples))
+
+
+def _adaptive_crossfade_seconds(
+    current_samples: np.ndarray,
+    next_samples: np.ndarray,
+    sample_rate: int,
+    crossfade_seconds: float,
+    strength: float,
+) -> float:
+    max_seconds = min(
+        12.0,
+        len(current_samples) / sample_rate,
+        len(next_samples) / sample_rate,
+    )
+    if max_seconds <= 0:
+        return 0.0
+    if crossfade_seconds > 0:
+        return min(max_seconds, max(0.0, crossfade_seconds) * strength)
+
+    tail_seconds = _active_tail_seconds(current_samples, sample_rate, max_seconds)
+    intro_seconds = _active_intro_seconds(next_samples, sample_rate, max_seconds)
+    base_seconds = max(2.0, min(8.0, (tail_seconds + intro_seconds) * 0.5))
+    return min(max_seconds, base_seconds * (0.5 + strength * 0.5))
+
+
+def _active_tail_seconds(
+    samples: np.ndarray,
+    sample_rate: int,
+    max_seconds: float,
+) -> float:
+    frames = min(len(samples), int(max_seconds * sample_rate))
+    if frames <= 0:
+        return 0.0
+    tail = samples[-frames:]
+    window = max(1, sample_rate // 10)
+    energy = _window_energy(tail, window)
+    if len(energy) == 0:
+        return 0.0
+    peak = max(float(np.max(energy)), 1e-6)
+    active = np.flatnonzero(energy >= peak * 0.08)
+    if len(active) == 0:
+        return min(max_seconds, 3.0)
+    return min(max_seconds, (len(energy) - int(active[0])) * window / sample_rate)
+
+
+def _active_intro_seconds(
+    samples: np.ndarray,
+    sample_rate: int,
+    max_seconds: float,
+) -> float:
+    frames = min(len(samples), int(max_seconds * sample_rate))
+    if frames <= 0:
+        return 0.0
+    intro = samples[:frames]
+    window = max(1, sample_rate // 10)
+    energy = _window_energy(intro, window)
+    if len(energy) == 0:
+        return 0.0
+    peak = max(float(np.max(energy)), 1e-6)
+    active = np.flatnonzero(energy >= peak * 0.08)
+    if len(active) == 0:
+        return min(max_seconds, 3.0)
+    return min(max_seconds, (int(active[-1]) + 1) * window / sample_rate)
+
+
+def _window_energy(samples: np.ndarray, window: int) -> np.ndarray:
+    mono = np.mean(np.abs(samples), axis=1)
+    usable = len(mono) // window * window
+    if usable <= 0:
+        return np.array([], dtype=np.float32)
+    return mono[:usable].reshape(-1, window).mean(axis=1)
 
 
 def _equal_power_fades(frames: int) -> tuple[np.ndarray, np.ndarray]:

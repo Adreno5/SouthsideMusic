@@ -51,7 +51,7 @@ class LogHandler(logging.Handler):
         self.buffer: str = ''
 
     def emit(self, record: logging.LogRecord) -> None:
-        if record.name in ('openai._base_client', 'httpcore.http11', 'httpcore.connection', 'httpcore.proxy'):
+        if record.name in ('openai._base_client', 'httpcore.http11', 'httpcore.connection', 'httpcore.proxy', 'views.log_handler'):
             return
 
         message = record.getMessage()

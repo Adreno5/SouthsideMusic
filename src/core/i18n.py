@@ -408,10 +408,27 @@ TRANSLATIONS: dict[Language, dict[str, str]] = {'en_US': {'dependences_window.au
            'setting_page.refresh_models': 'Refresh Models',
            'setting_page.llm_refresh_models': 'Refresh model list',
            'setting_page.fetch_models_from_the_configured_base_url': 'fetch models from the configured Base URL',
-           'setting_page.llm_models_refresh_failed': 'Failed to refresh models',
+           'setting_page.llm_models_refresh_failed': 'Failed to fetch models',
            'setting_page.llm_base_url_required': 'Base URL is required',
            'setting_page.llm_models_refreshed': 'Models refreshed',
            'setting_page.loaded_model_count': 'Loaded {count} model(s)',
+           'setting_page.add_provider': 'Add Provider',
+           'setting_page.provider_model_count': '{count} Model(s)',
+           'setting_page.edit': 'Edit',
+           'setting_page.delete': 'Delete',
+           'setting_page.provider_name': 'Provider Name',
+           'setting_page.api_format': 'API Format',
+           'setting_page.fetch_models': 'Fetch Models',
+           'setting_page.model_id': 'Model ID',
+           'setting_page.display_name': 'Display Name',
+           'setting_page.add_model_mapping': 'Add',
+           'setting_page.cancel': 'Cancel',
+           'setting_page.add': 'Add',
+           'setting_page.save': 'Save',
+           'setting_page.provider_name_required': 'Provider name is required',
+           'setting_page.provider_name_duplicated': 'Provider name already exists',
+           'setting_page.model_mapping_required': 'Model ID and display name are required',
+           'setting_page.model_mapping_duplicated': 'Model ID or display name is duplicated',
            'setting_page.range_60_quietest_0_loudest_recommend_16_18_youtube_14_lufs_netflix_27': 'Range: '
                                                                                                   '-60(quietest)~0(loudest)\n'
                                                                                                   'Recommend: '
@@ -544,7 +561,8 @@ TRANSLATIONS: dict[Language, dict[str, str]] = {'en_US': {'dependences_window.au
                                                                      'has been added '
                                                                      'to {folder_name}',
            'song_card.this_song_is_already_in_all_folders': 'This song is already in '
-                                                            'all folders'},
+                                                            'all folders',
+            'playing_controller.crossfading_tip': 'Crossfading'},
  'zh_CN': {'dependences_window.audio_output_checking': '音频输出：检查中',
            'dependences_window.available': '可用',
            'dependences_window.count_device_s': '{count} 个设备',
@@ -769,10 +787,27 @@ TRANSLATIONS: dict[Language, dict[str, str]] = {'en_US': {'dependences_window.au
            'setting_page.refresh_models': '刷新模型',
            'setting_page.llm_refresh_models': '刷新模型列表',
            'setting_page.fetch_models_from_the_configured_base_url': '从当前 Base URL 获取模型列表',
-           'setting_page.llm_models_refresh_failed': '刷新模型失败',
+           'setting_page.llm_models_refresh_failed': '获取模型列表失败',
            'setting_page.llm_base_url_required': 'Base URL 不能为空',
            'setting_page.llm_models_refreshed': '模型已刷新',
            'setting_page.loaded_model_count': '已加载 {count} 个模型',
+           'setting_page.add_provider': '添加提供商',
+           'setting_page.provider_model_count': '{count} 个模型',
+           'setting_page.edit': '编辑',
+           'setting_page.delete': '删除',
+           'setting_page.provider_name': '供应商名称',
+           'setting_page.api_format': 'API 格式',
+           'setting_page.fetch_models': '获取模型列表',
+           'setting_page.model_id': 'Model ID',
+           'setting_page.display_name': '显示名称',
+           'setting_page.add_model_mapping': '添加',
+           'setting_page.cancel': '取消',
+           'setting_page.add': '添加',
+           'setting_page.save': '保存',
+           'setting_page.provider_name_required': '供应商名称不能为空',
+           'setting_page.provider_name_duplicated': '供应商名称已存在',
+           'setting_page.model_mapping_required': 'Model ID 和显示名称不能为空',
+           'setting_page.model_mapping_duplicated': 'Model ID 或显示名称重复',
            'setting_page.range_60_quietest_0_loudest_recommend_16_18_youtube_14_lufs_netflix_27': '范围：-60（最安静）~0（最响）\n'
                                                                                                   '推荐：-16~-18\n'
                                                                                                   'YouTube：-14 '
@@ -863,7 +898,8 @@ TRANSLATIONS: dict[Language, dict[str, str]] = {'en_US': {'dependences_window.au
            'song_card.song_song_name_has_been_added_to_folder_name': '歌曲 {song_name} '
                                                                      '已添加到 '
                                                                      '{folder_name}',
-           'song_card.this_song_is_already_in_all_folders': '这首歌已在所有文件夹中'}}
+           'song_card.this_song_is_already_in_all_folders': '这首歌已在所有文件夹中',
+           'playing_controller.crossfading_tip': '正在交叉淡化'}}
 
 def language() -> Language:
     if cfg.language in ('en_US', 'zh_CN'):

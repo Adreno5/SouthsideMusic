@@ -60,6 +60,7 @@ from views.list_widget import SListWidget, SScrollArea, SSmoothDelegate
 from imports import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
     CardWidget,
+    ComboBox,
     InfoBar,
 )
 from qfluentwidgets.window.fluent_window import FluentWindowBase
@@ -134,8 +135,8 @@ class DebugOverlay(QWidget):
         painter.end()
 
 
-LLM_VIEWER_WIDTH = 350
-LLM_WINDOW_WIDTH_DELTA = 225
+LLM_VIEWER_WIDTH = 475
+LLM_WINDOW_WIDTH_DELTA = 350
 
 
 class MainWindow(FluentWindowBase):
@@ -302,10 +303,15 @@ class MainWindow(FluentWindowBase):
         self.input_origin_release = self.llm_input.keyReleaseEvent
         self.llm_input.keyPressEvent = self.handleLLMInputKeyPress
         self.llm_input.keyReleaseEvent = self.handleLLMInputKeyRelease
+        self.llm_model_box = ComboBox()
+        self.llm_model_box.setFixedWidth(150)
+        self.refreshLLMModelBox()
+        self.llm_model_box.currentIndexChanged.connect(self._onLLMModelChanged)
         self.llm_send_btn = TransparentToolButton(FluentIcon.SEND)
         self.llm_input.scrollDelegate = SSmoothDelegate(self.llm_input)  # type: ignore
         self.llm_send_btn.setFixedSize(32, 32)
         self.llm_send_btn.clicked.connect(self.onLLMSendButtonClicked)
+        llm_input_layout.addWidget(self.llm_model_box)
         llm_input_layout.addWidget(self.llm_input, 1)
         llm_input_layout.addWidget(self.llm_send_btn)
         llm_panel_layout.addWidget(self.llm_input_widget)
@@ -409,7 +415,6 @@ class MainWindow(FluentWindowBase):
         event_bus.subscribe(VIEW_FOLDER, self.onViewFolder)
         event_bus.subscribe(MWINDOW_REFRESH_FOLDERS, self.refreshFolders)
         event_bus.subscribe(LANGUAGE_CHANGED, self.updateLanguage)
-        QTimer.singleShot(0, lambda: self._stp.refreshLlmModels(silent=True))
 
     def handleLLMInputKeyPress(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_Return and not self.llm_shifting:
@@ -448,6 +453,64 @@ class MainWindow(FluentWindowBase):
     def updateLanguage(self) -> None:
         for item, key in self._folder_header_items:
             item.setText(tr(key))
+
+    def refreshLLMModelBox(self) -> None:
+        if not hasattr(self, 'llm_model_box'):
+            return
+        options: list[tuple[str, str, str]] = []
+        display_counts: dict[str, int] = {}
+        for provider in cfg.llm_providers:
+            provider_name = str(provider.get('name', '')).strip()
+            models = provider.get('models', [])
+            if not provider_name or not isinstance(models, list):
+                continue
+            for item in models:
+                if not isinstance(item, dict):
+                    continue
+                model_id = str(item.get('id', '')).strip()
+                display_name = str(item.get('display_name', '')).strip()
+                if not model_id or not display_name:
+                    continue
+                options.append((provider_name, model_id, display_name))
+                display_counts[display_name] = display_counts.get(display_name, 0) + 1
+
+        self.llm_model_box.blockSignals(True)
+        self.llm_model_box.clear()
+        for provider_name, model_id, display_name in options:
+            text = (
+                f'{display_name} ({provider_name})'
+                if display_counts.get(display_name, 0) > 1
+                else display_name
+            )
+            self.llm_model_box.addItem(text, userData=(provider_name, model_id))
+        current = (cfg.llm_current_provider, cfg.llm_current_model)
+        index = self.llm_model_box.findData(current)
+        if index < 0 and self.llm_model_box.count():
+            index = 0
+            data = self.llm_model_box.itemData(index)
+            if isinstance(data, tuple) and len(data) == 2:
+                cfg.llm_current_provider = str(data[0])
+                cfg.llm_current_model = str(data[1])
+        self.llm_model_box.setCurrentIndex(index if index >= 0 else -1)
+        self.llm_model_box.blockSignals(False)
+
+    def _onLLMModelChanged(self) -> None:
+        data = self.llm_model_box.currentData()
+        if not isinstance(data, tuple) or len(data) != 2:
+            return
+        cfg.llm_current_provider = str(data[0])
+        cfg.llm_current_model = str(data[1])
+        self._syncLegacyLlmConfig()
+        saveConfig()
+
+    def _syncLegacyLlmConfig(self) -> None:
+        for provider in cfg.llm_providers:
+            if str(provider.get('name', '')) != cfg.llm_current_provider:
+                continue
+            cfg.llm_base_url = str(provider.get('base_url', ''))
+            cfg.llm_api_key_encrypted = str(provider.get('api_key_encrypted', ''))
+            cfg.llm_model = cfg.llm_current_model
+            return
 
     def onStackedWidgetChanged(self):
         if self.dp_expanded and not self.dp_animating:

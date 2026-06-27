@@ -35,7 +35,13 @@ FREE_THREADED_VENV = os.path.join(SCRIPT_DIR, '.venv-ft-pyside-blocked')
 GET_PIP = os.path.join(SCRIPT_DIR, 'get-pip.py')
 REQUIREMENTS = os.path.join(SCRIPT_DIR, 'embed_python_requirements.txt')
 REQUIREMENTS_HASH = os.path.join(SCRIPT_DIR, '.requirements_sha256')
-FREE_THREADED_WORKER_PACKAGES = ['numpy', 'scipy', 'pillow']
+FREE_THREADED_WORKER_PACKAGES = [
+    'numpy',
+    'scipy',
+    'pillow',
+    'pydub',
+    'audioop-lts',
+]
 
 PYTHON_VERSION = '3.14.2'
 DOWNLOAD_BASE = 'https://www.python.org/ftp/python/3.14.2'

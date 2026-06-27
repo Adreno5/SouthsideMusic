@@ -79,7 +79,7 @@ class DesktopLyricsViewer(LyricsViewer):
         position: float | None = None,
     ) -> YRCLyricInfo | LyricInfo | None:
         if position is None:
-            position = self._player.getPosition()
+            position = self.ctx.playing_manager.getDisplayPosition()
         if self._ymgr.parsed:
             line = self._ymgr.getCurrentLyric(position)
             if line.content.strip():
@@ -130,7 +130,7 @@ class DesktopLyricsViewer(LyricsViewer):
             (-self.height() + 8 if self.indentation else 0) - self.indentation_y
         ) * 0.2 * multiple_factor
 
-        position = self._player.getPosition()
+        position = self.ctx.playing_manager.getDisplayPosition()
         cur_line = self._currentLyricLine(position)
         meta = cur_line.isMetadata if cur_line else False
 
@@ -170,7 +170,11 @@ class DesktopLyricsViewer(LyricsViewer):
         if self._dp.total_length > 0:
             self._draw_progress_ratio = max(
                 0.0,
-                min(1.0, self._player.getPosition() / self._dp.total_length),
+                min(
+                    1.0,
+                    self.ctx.playing_manager.getDisplayPosition()
+                    / self._dp.total_length,
+                ),
             )
         else:
             self._draw_progress_ratio = 0.0

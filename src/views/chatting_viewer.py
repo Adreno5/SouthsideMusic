@@ -16,13 +16,12 @@ from imports import (
     QVBoxLayout,
     QWidget,
     QLayoutItem,
-    QTimer,
     QLayout,
 )
 from qfluentwidgets import TableWidget, TextEdit
 
 from core import theme
-from views.animated_layout import SVAnimatedLayout
+from views.animated_layout import SFlowLayout
 
 Mode = Literal[
     'text',
@@ -46,11 +45,9 @@ class ChattingViewer(QWidget):
         self._block_widgets: list[QWidget] = []
         self._latex_end = ''
         self._table_lines: list[str] = []
+        self._table_widget: TableWidget | None = None
+        self._table_column_count = 0
         self._at_line_start = True
-
-        self._append_buffer = ''
-        self._append_buffer_timer = QTimer(self)
-        self._append_buffer_timer.timeout.connect(self._flush_append_buffer)
 
         self._layout = QVBoxLayout()
         self._layout.setContentsMargins(0, 0, 0, 0)
@@ -67,28 +64,19 @@ class ChattingViewer(QWidget):
         self._block_widgets.clear()
         self._latex_end = ''
         self._table_lines.clear()
+        self._table_widget = None
+        self._table_column_count = 0
         self._at_line_start = True
-
-    def _flush_append_buffer(self):
-        for char in self._append_buffer:
-            self._buffer += char
-            self._drain_buffer(False)
-        self._append_buffer = ''
 
     def appendChunk(self, chunk_content: str) -> None:
         if not chunk_content:
             return
-        self._append_buffer += chunk_content
-        if not self._append_buffer_timer.isActive():
-            self._append_buffer_timer.start(210)
+        self._buffer += chunk_content
+        self._drain_buffer(False)
 
     def finishStream(self) -> None:
-        self._flush_append_buffer()
-        self._drain_buffer(True)
-        if self._append_buffer_timer.isActive():
-            self._append_buffer_timer.stop()
         if self._mode == 'table':
-            self._finish_table()
+            self._drain_buffer(True)
         elif self._mode in ('inline_code', 'code_block', 'latex_inline', 'latex_block'):
             self._mode = 'text'
             self.cur_widget = None
@@ -119,6 +107,9 @@ class ChattingViewer(QWidget):
 
             if not changed:
                 break
+
+        if isinstance(self._current_layout, SFlowLayout):
+            self._current_layout._doLayout(self._current_layout.geometry(), True)
 
     def _drain_text(self, final: bool) -> bool:
         if not final and self._should_wait_for_text_token():
@@ -201,7 +192,7 @@ class ChattingViewer(QWidget):
             if not final:
                 return False
             if self._buffer:
-                self._table_lines.append(self._buffer)
+                self._append_table_line(self._buffer)
                 self._buffer = ''
             self._finish_table()
             return True
@@ -211,7 +202,7 @@ class ChattingViewer(QWidget):
             self._finish_table()
             return True
 
-        self._table_lines.append(line)
+        self._append_table_line(line)
         self._buffer = self._buffer[newline_index + 1 :]
         return True
 
@@ -323,8 +314,15 @@ class ChattingViewer(QWidget):
         self._mode = 'text'
         self.cur_widget = None
         self.cur_text = ''
+        table = self._table_widget
+        self._table_widget = None
+        self._table_column_count = 0
 
         if not lines:
+            return
+        if table is not None:
+            self._fit_table(table)
+            self._at_line_start = True
             return
         if not self._is_markdown_table(lines):
             self._append_normal_text('\n'.join(lines) + '\n')
@@ -335,9 +333,38 @@ class ChattingViewer(QWidget):
         column_count = max(len(headers), *(len(row) for row in rows), 1)
         headers.extend([''] * (column_count - len(headers)))
 
+        table = self._create_table(headers, column_count)
+        for row in rows:
+            self._append_table_row(table, row)
+
+        self._fit_table(table)
+        self.cur_widget = table
+        self._at_line_start = True
+
+    def _append_table_line(self, line: str) -> None:
+        if not line.strip():
+            return
+        self._table_lines.append(line)
+        table = self._table_widget
+        if table is None:
+            if len(self._table_lines) == 2 and self._is_markdown_table(
+                self._table_lines
+            ):
+                headers = self._split_table_row(self._table_lines[0])
+                column_count = max(len(headers), 1)
+                self._table_widget = self._create_table(headers, column_count)
+            return
+
+        if len(self._table_lines) <= 2:
+            return
+        self._append_table_row(table, self._split_table_row(line))
+        self._fit_table(table)
+
+    def _create_table(self, headers: list[str], column_count: int) -> TableWidget:
+        headers.extend([''] * (column_count - len(headers)))
         table = TableWidget()
         table.setColumnCount(column_count)
-        table.setRowCount(len(rows))
+        table.setRowCount(0)
         table.setHorizontalHeaderLabels(headers)
         table.verticalHeader().hide()
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -347,23 +374,27 @@ class ChattingViewer(QWidget):
         table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        for row_index, row in enumerate(rows):
-            row.extend([''] * (column_count - len(row)))
-            for column_index, value in enumerate(row):
-                item = QTableWidgetItem()
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                table.setItem(row_index, column_index, item)
-                table.setCellWidget(
-                    row_index,
-                    column_index,
-                    self._create_table_cell_label(value),
-                )
-
-        self._fit_table(table)
         table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._add_block_widget(table)
-        self.cur_widget = table
-        self._at_line_start = True
+        self._table_column_count = column_count
+        return table
+
+    def _append_table_row(self, table: TableWidget, row: list[str]) -> None:
+        if len(row) > self._table_column_count:
+            self._table_column_count = len(row)
+            table.setColumnCount(self._table_column_count)
+        row.extend([''] * (self._table_column_count - len(row)))
+        row_index = table.rowCount()
+        table.insertRow(row_index)
+        for column_index, value in enumerate(row):
+            item = QTableWidgetItem()
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            table.setItem(row_index, column_index, item)
+            table.setCellWidget(
+                row_index,
+                column_index,
+                self._create_table_cell_label(value),
+            )
 
     def _create_label(self, role: Literal['text', 'code']) -> QLabel:
         flow = self._ensure_layout()
@@ -406,7 +437,7 @@ class ChattingViewer(QWidget):
         return self._current_layout
 
     def _new_layout(self) -> QLayout:
-        flow = SVAnimatedLayout()
+        flow = SFlowLayout()
         flow.setContentsMargins(0, 0, 0, 0)
         self._layout.addLayout(flow)
         return flow

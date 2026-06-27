@@ -155,12 +155,13 @@ class MainWindow(FluentWindowBase):
         )
 
         self.contents_widget = QStackedWidget()
-        for w in [self._fp, self._sp, self._stp]:
+        for w in [self._fp, self._sp, self._stp, self.ctx.home_page, self.ctx.library_page]:
             if ctx.launch_window:
                 ctx.launch_window.push(f'Adding {w} to stacked widget...')
             self.contents_widget.addWidget(w)
 
         self.contents_widget.currentChanged.connect(self.onStackedWidgetChanged)
+        self.contents_widget.setCurrentWidget(self.ctx.home_page)
 
         self.setTitleBar(SouthsideMusicTitleBar(self))
         self.llm_viewer_btn = TransparentToolButton(FluentIcon.CHAT)
@@ -204,21 +205,37 @@ class MainWindow(FluentWindowBase):
         left_layout = QVBoxLayout()
         left_layout.setContentsMargins(0, 48, 0, 52)
 
+        self.home_button = TransparentPushButton(FluentIcon.HOME, '')
+        bindText(self.home_button, 'main_window.home')
+        self.home_button.clicked.connect(self._onHomeClicked)
+        left_layout.addWidget(self.home_button)
+
         self.settings_btn = TransparentPushButton('')
         bindText(self.settings_btn, 'main_window.settings')
         bindIcon(self.settings_btn, 'settings')
         self.settings_btn.clicked.connect(self._onSettingsClicked)
 
+        button_layout = QHBoxLayout()
+
         self.refresh_button = TransparentPushButton(FluentIcon.SYNC, '')
         bindText(self.refresh_button, 'main_window.refresh')
         self.refresh_button.clicked.connect(lambda: self.refreshFolders())
+        button_layout.addWidget(self.refresh_button)
 
-        left_layout.addWidget(self.refresh_button)
+        self.library_button = TransparentPushButton('')
+        bindText(self.library_button, 'main_window.library')
+        bindIcon(self.library_button, 'library')
+        self.library_button.clicked.connect(self._onLibraryClicked)
+        button_layout.addWidget(self.library_button)
+
+        left_layout.addLayout(button_layout)
         left_layout.addWidget(self.folders_list, 1)
         left_layout.addWidget(self.settings_btn)
 
-        self.account_widget = AccountWidget(self)
-        self.account_widget.loginChanged.connect(self.refreshFolders)
+        self.account_widget = AccountWidget(self, self.ctx)
+        self.account_widget.setFixedHeight(40)
+        self.account_widget.avatar_widget.setRadius(18)
+        self.account_widget.loginChanged.connect(self._onLoginChanged)
         left_layout.addWidget(self.account_widget)
 
         left_layout.addSpacerItem(
@@ -342,11 +359,21 @@ class MainWindow(FluentWindowBase):
         self.llm_viewer_panel.refreshLLMModelBox()
 
     def onStackedWidgetChanged(self):
-        if self.dp_expanded and not self.dp_animating:
+        if getattr(self, 'dp_expanded', False) and not getattr(
+            self, 'dp_animating', False
+        ):
             self.togglePlayingPageExpand()
 
     def _onSettingsClicked(self):
         self.contents_widget.setCurrentWidget(self._stp)
+
+    def _onHomeClicked(self):
+        self.contents_widget.setCurrentWidget(self.ctx.home_page)
+        self.ctx.home_page.fetchDailyRecommend()
+
+    def _onLibraryClicked(self):
+        self.contents_widget.setCurrentWidget(self.ctx.library_page)
+        self.ctx.library_page.fetchSongs()
 
     def search(self):
         if not self.search_input.text().strip():
@@ -558,6 +585,8 @@ class MainWindow(FluentWindowBase):
                 self.show()
                 self.raise_()
 
+                self.ctx.home_page.fetchDailyRecommend()
+
                 if self.llm_viewer_panel.expanded:
                     self.toggleLLMViewerExpand()
 
@@ -567,6 +596,7 @@ class MainWindow(FluentWindowBase):
                 self.refreshFolders()
                 if favorites_manager.folders:
                     self._fp.setDisplayFolder(favorites_manager.folders[0])
+                self.contents_widget.setCurrentWidget(self.ctx.home_page)
 
             self.ctx.addScheduledTask(_show)
 
@@ -645,7 +675,7 @@ class MainWindow(FluentWindowBase):
             self.ctx.addScheduledTask(add)
 
         def _dailyRecommend():
-            songs = getBackend().getDailyRecommend()
+            songs = getBackend().getDailyRecommendSongs()
 
             def add():
                 nonlocal songs
@@ -668,6 +698,26 @@ class MainWindow(FluentWindowBase):
 
     def refreshLoginInformations(self) -> None:
         self.account_widget.refreshLoginInformations()
+        self.ctx.home_page.accounter.refreshLoginInformations()
+
+    def _replaceHomePage(self) -> None:
+        was_home_page = self.contents_widget.currentWidget() == self.ctx.home_page
+        old_home_page = self.ctx.home_page
+        self.contents_widget.removeWidget(old_home_page)
+        old_home_page.deleteLater()
+
+        from views.home_page import HomePage
+
+        self.ctx.home_page = HomePage(self.ctx)
+        self.contents_widget.addWidget(self.ctx.home_page)
+        self.ctx.home_page.accounter.refreshLoginInformations()
+        if was_home_page:
+            self.contents_widget.setCurrentWidget(self.ctx.home_page)
+
+    def _onLoginChanged(self) -> None:
+        self._replaceHomePage()
+        self.refreshLoginInformations()
+        self.refreshFolders()
 
     def logout(self) -> None:
         self.account_widget.logout()

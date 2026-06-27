@@ -51,6 +51,7 @@ from qfluentwidgets import (
 )
 
 from core.models import (
+    IMAGE_DATA_DIR,
     MUSIC_DATA_DIR,
     CloudFolderInfo,
     SearchSongInfo,
@@ -70,6 +71,7 @@ from views.list_widget import SListWidget
 from views.folder_card import CloudFolderCard, LocalFolderCard
 
 
+_image_download_locks: dict[str, threading.Lock] = {}
 SONG_CARD_HEIGHT = 70
 
 
@@ -82,6 +84,12 @@ def _export_default_path(storable: SongStorable, fmt: str) -> str:
     if artists_text:
         return f'./{storable.name} - {artists_text}{fmt}'
     return f'./{storable.name}{fmt}'
+
+
+def _get_image_download_lock(song_id: str) -> threading.Lock:
+    if song_id not in _image_download_locks:
+        _image_download_locks[song_id] = threading.Lock()
+    return _image_download_locks[song_id]
 
 
 class DummyCard:
@@ -510,6 +518,10 @@ class _SongCardItem(QWidget):
                 event_bus.subscribe(
                     IMAGE_ASSET_PERSISTED, self._on_image_asset_persisted
                 )
+            if self.img_label.pixmap() is None or self.img_label.pixmap().isNull():
+                threading.Thread(
+                    target=self._auto_download_missing_image, daemon=True
+                ).start()
 
     def loadDetailAndImage(self):
         if self.load:
@@ -518,6 +530,16 @@ class _SongCardItem(QWidget):
         self.loadImage()
         if self._dp:
             event_bus.subscribe(IMAGE_ASSET_PERSISTED, self._on_image_asset_persisted)
+        try:
+            needs_download = (
+                self.img_label.pixmap() is None or self.img_label.pixmap().isNull()
+            )
+        except RuntimeError:
+            return
+        if needs_download:
+            threading.Thread(
+                target=self._auto_download_missing_image, daemon=True
+            ).start()
 
     def _on_image_asset_persisted(self, storable: SongStorable):
         if storable is self.storable:
@@ -540,6 +562,40 @@ class _SongCardItem(QWidget):
 
     def _onSelectionChanged(self, state: int) -> None:
         self.selectionChanged.emit(self.storable, self.select_box.isChecked())
+
+    def _auto_download_missing_image(self):
+        storable = self.storable
+        if storable.image_cached():
+            return
+
+        lock = _get_image_download_lock(storable.id)
+        if not lock.acquire(blocking=False):
+            return
+        try:
+            if storable.image_cached():
+                return
+            try:
+                detail = getBackend().getTrackDetail(storable.id)
+                image_url = detail.cover_url
+                image_bytes = requests.get(image_url).content
+            except Exception as e:
+                self._logger.warning(
+                    f'failed to auto-download image for {storable.id}: {e}'
+                )
+                return
+
+            if not image_bytes:
+                return
+            storable._write_cache(image_bytes, IMAGE_DATA_DIR, 'image_cache_hash')
+            favorites_manager._save()
+            if self._mwindow:
+                self._mwindow.ctx.addScheduledTask(
+                    lambda s=storable: event_bus.emit(IMAGE_ASSET_PERSISTED, s)
+                )
+            else:
+                event_bus.emit(IMAGE_ASSET_PERSISTED, storable)
+        finally:
+            lock.release()
 
     def loadImage(self):
         if self._mwindow is None:
@@ -765,8 +821,9 @@ class FavoriteSongCard(_SongCardItem):
         move_callback=None,
         parent=None,
         lazy=False,
+        sortable=True,
     ):
-        super().__init__(storable, dp, mwindow, plp, parent, lazy=lazy)
+        super().__init__(storable, dp, mwindow, plp, parent, lazy=lazy, sortable=sortable)
         self._remove_callback = remove_callback
         self._move_callback = move_callback
 

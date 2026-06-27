@@ -31,7 +31,8 @@ if TYPE_CHECKING:
     from views.playlist_page import PlaylistPage
     from views.search_page import SearchPage
     from views.setting_page import SettingPage
-
+    from views.home_page import HomePage
+    from views.library_page import LibraryPage
 
 class _ScheduledTaskRunner(QObject):
     scheduledTaskRequested = Signal()
@@ -74,7 +75,7 @@ class AppContext:
         self.ws_server: WebSocketServer = cast('WebSocketServer', None)
         self.ws_handler: QObjectHandler = cast('QObjectHandler', None)
         self.harmony_font_family: str = ''
-        self.favs: list = []
+        self.favs: list[LocalFolderInfo | CloudFolderInfo] = []
         self.lock: threading.Lock = threading.Lock()
         self._scheduled_task_runner = _ScheduledTaskRunner()
         self.playing_manager: PlayingManager = cast('PlayingManager', None)
@@ -94,6 +95,8 @@ class AppContext:
         self.favorites_page: FavoritesPage = cast('FavoritesPage', None)
         self.setting_page: SettingPage = cast('SettingPage', None)
         self.playlist_page: PlaylistPage = cast('PlaylistPage', None)
+        self.home_page: HomePage = cast('HomePage', None)
+        self.library_page: LibraryPage = cast('LibraryPage', None)
         self.dependences_window: DependencesWindow = cast('DependencesWindow', None)
         self.debugging_obj: Debugging = cast('Debugging', None)
         self.events_service: EventsServices = cast('EventsServices', None)

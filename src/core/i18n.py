@@ -355,6 +355,15 @@ TRANSLATIONS: dict[str, list[str]] = {'dependences_window.audio_output_checking'
  'main_window.verification_code_sent': ['Verification Code Sent', '验证码已发送'],
  'main_window.logout': ['Log out', '登出账号'],
  'main_window.logout_successful': ['Logged out successfully', '已成功登出账号'],
+ 'main_window.home': ['Home', '首页'],
+ 'main_window.library': ['Library', '库'],
+ 'home_page.title': ['Home', '首页'],
+ 'home_page.recommend_folders': ['Recommend Folders', '推荐歌单'],
+ 'home_page.recommend_songs': ['Recommend Songs', '每日推荐'],
+ 'home_page.welcome_back': ['Welcome back,', '欢迎回来，'],
+ 'library_page.title': ['Library', '库'],
+ 'library_page.number_prefix': ['You have', '你一共有'],
+ 'library_page.number_suffix': ['songs in total', '首歌'],
  'setting_page.acceleration_smooth_factor': ['Acceleration Smooth Factor', '加速度平滑系数'],
  'setting_page.adjust_the_right_channel_delay_of_stereo_haas_effect': ['adjust the '
                                                                        'right-channel '

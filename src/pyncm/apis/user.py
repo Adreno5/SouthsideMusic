@@ -123,3 +123,12 @@ def getDailyRecommend():
         dict
     '''
     return weapi('/weapi/v2/discovery/recommend/songs', {})
+
+
+def getDailyRecommendResource() -> dict:
+    '''get daily recommend playlists (web api).
+
+    Returns:
+        dict
+    '''
+    return weapi('/weapi/v1/discovery/recommend/resource', {})

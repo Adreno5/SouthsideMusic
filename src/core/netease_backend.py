@@ -228,7 +228,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
     def getUserVipType(self) -> int | str:
         return pyncm.getCurrentSession().vipType
     
-    def getDailyRecommend(self) -> list[SongStorable]:
+    def getDailyRecommendSongs(self) -> list[SongStorable]:
         with pyncm.getCurrentSession():
             response = apis.user.getDailyRecommend()
             assert isinstance(response, dict), 'Invalid Response'
@@ -248,6 +248,21 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
                 image_cache_hash=getCachedHashes(str(obj['id'])).get('image_cache_hash', ''),
                 content_cache_hash=getCachedHashes(str(obj['id'])).get('content_cache_hash', ''),
             ) for obj in response['recommend']]
+        
+    def getDailyRecommendFolders(self) -> list[CloudFolderInfo]:
+        with pyncm.getCurrentSession():
+            response = apis.user.getDailyRecommendResource()
+            assert isinstance(response, dict), 'Invalid Response'
+            assert response.get('code') == 200, f'API Error: {response}'
+            return [
+                CloudFolderInfo(
+                    folder_name=obj['name'],
+                    image_url=obj.get('picUrl', ''),
+                    id=str(obj['id']),
+                    song_count=obj.get('trackCount'),
+                )
+                for obj in response.get('recommend') or []
+            ]
     
     def scrobble(self, song_id: str, time: float):
         return apis.user.setScrobble(song_id, time)

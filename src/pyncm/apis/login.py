@@ -34,8 +34,8 @@ def loginQrcodeUnikey(dtype=1) -> dict:
     Returns:
         dict
     '''
-    return weapi(
-        '/weapi/login/qrcode/unikey',
+    return eapi(
+        '/eapi/login/qrcode/unikey',
         {
             'type': str(dtype),
             'noCheckToken': True,
@@ -54,8 +54,8 @@ def loginQrcodeCheck(unikey, type=1) -> dict:
     Returns:
         dict
     '''
-    return weapi(
-        '/weapi/login/qrcode/client/login',
+    return eapi(
+        '/eapi/login/qrcode/client/login',
         {
             'type': type,
             'noCheckToken': True,

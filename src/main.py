@@ -6,6 +6,9 @@ import os
 import traceback
 from pathlib import Path
 
+from views.home_page import HomePage
+from views.library_page import LibraryPage
+
 sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'views'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'services'))
@@ -407,6 +410,12 @@ if __name__ == '__main__':
         launchwindow.push('Initializing playlist page...')
         plp = PlaylistPage(ctx)
         ctx.playlist_page = plp
+        launchwindow.push('Initializing home page...')
+        hp = HomePage(ctx)
+        ctx.home_page = hp
+        launchwindow.push('Initializing library page...')
+        lrp = LibraryPage(ctx)
+        ctx.library_page = lrp
 
         ctx.playing_page = dp
         ctx.search_page = sp
@@ -414,6 +423,8 @@ if __name__ == '__main__':
         ctx.favorites_page = fp
         ctx.setting_page = stp
         ctx.playlist_page = plp
+        ctx.home_page = hp
+        ctx.library_page = lrp
 
         launchwindow.push('Initializing main window...')
         mwindow = MainWindow(ctx)

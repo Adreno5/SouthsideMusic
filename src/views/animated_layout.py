@@ -95,6 +95,7 @@ class SFlowLayout(QLayout):
         parent: QWidget | None = None,
         needAni: bool = True,
         isTight: bool = False,
+        yAnimations: bool = False,
     ) -> None:
         super().__init__(parent)
         self._items: list[QLayoutItem] = []
@@ -104,14 +105,15 @@ class SFlowLayout(QLayout):
         self._slideDuration = 300
         self._slideEasing: QEasingCurve.Type = QEasingCurve.Type.OutCubic
         self._reflowDuration = 300
-        self._reflowEasing: QEasingCurve.Type = QEasingCurve.Type.Linear
+        self._reflowEasing: QEasingCurve.Type = QEasingCurve.Type.OutCubic
         self._needAni = needAni
         self._isTight = isTight
+        self._yAnimations = yAnimations
         self._wParent: QWidget | None = None
         self._eventFilterInstalled = False
 
     def setAnimation(
-        self, duration: int, ease: QEasingCurve.Type = QEasingCurve.Type.Linear
+        self, duration: int, ease: QEasingCurve.Type = QEasingCurve.Type.OutCubic
     ) -> None:
         if not self._needAni:
             return
@@ -324,8 +326,9 @@ class SFlowLayout(QLayout):
                     if pending or target != ani.endValue():
                         ani.stop()
                         current = w.geometry()
+                        start_y = current.y() if self._yAnimations else target.y()
                         start = QRect(
-                            QPoint(current.x(), target.y()),
+                            QPoint(current.x(), start_y),
                             current.size(),
                         )
                         if current != start:

@@ -5,6 +5,7 @@ import os
 
 import requests
 
+from core.app_context import AppContext
 from core.backend import getBackend
 from core.config import cfg, saveConfig
 from core.dialogs import QRCodeLoginDialog, getTextLineedit, getValueBylist
@@ -35,8 +36,9 @@ from pyncm import apis
 class AccountWidget(QWidget):
     loginChanged = Signal()
 
-    def __init__(self, parent: QWidget) -> None:
+    def __init__(self, parent: QWidget, ctx: AppContext) -> None:
         super().__init__(parent)
+        self.ctx = ctx
         self._logger = logging.getLogger(__name__)
         self._mwindow = parent
         self._nickname = 'Anonymous User'
@@ -48,7 +50,6 @@ class AccountWidget(QWidget):
         self.avatar_widget = AvatarWidget(
             str(Path('./images/def_avatar.png').resolve())
         )
-        self.avatar_widget.setRadius(18)
         account_layout.addWidget(self.avatar_widget)
         self.nickname_label = BodyLabel('')
         account_layout.addWidget(self.nickname_label)
@@ -61,7 +62,6 @@ class AccountWidget(QWidget):
             )
         )
         self.setLayout(account_layout)
-        self.setFixedHeight(40)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if getBackend().loggedIn():
@@ -126,13 +126,7 @@ class AccountWidget(QWidget):
         else:
             pixmap = QPixmap('./images/avatar.png')
         if not pixmap.isNull():
-            scaled = pixmap.scaled(
-                52,
-                52,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            self.avatar_widget.setPixmap(scaled)
+            self.avatar_widget.setPixmap(pixmap)
 
     def logout(self) -> None:
         apis.login.loginLogout()
@@ -141,6 +135,7 @@ class AccountWidget(QWidget):
         saveConfig()
 
         self.refreshLoginInformations()
+        self.loginChanged.emit()
         InfoBar.success(
             '',
             tr('main_window.logout_successful'),

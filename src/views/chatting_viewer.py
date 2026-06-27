@@ -62,7 +62,7 @@ class ChattingViewer(QWidget):
         self._append_timer.setSingleShot(True)
         self._append_timer.timeout.connect(self._drain_append_buffer)
 
-        self._layout = SFlowLayout()
+        self._layout = SFlowLayout(yAnimations=True)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(8)
         self.setLayout(self._layout)

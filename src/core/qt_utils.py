@@ -10,9 +10,15 @@ def removeWidgets(layout: QLayout) -> None:
     if layout is None:
         return
 
-    for w in layout.findChildren(QWidget):
-        w.deleteLater()
-
+    while layout.count():
+        item = layout.takeAt(0)
+        if not item:
+            continue
+        widget = item.widget()
+        if widget is not None:
+            widget.deleteLater()
+        elif item.layout() is not None:
+            removeWidgets(item.layout())
 
 def toQtInt(value: float | int) -> int:
     with _lock:

@@ -51,7 +51,6 @@ from qfluentwidgets import (
 )
 
 from core.models import (
-    IMAGE_DATA_DIR,
     MUSIC_DATA_DIR,
     CloudFolderInfo,
     SearchSongInfo,
@@ -71,7 +70,6 @@ from views.list_widget import SListWidget
 from views.folder_card import CloudFolderCard, LocalFolderCard
 
 
-_image_download_locks: dict[str, threading.Lock] = {}
 SONG_CARD_HEIGHT = 70
 
 
@@ -84,13 +82,6 @@ def _export_default_path(storable: SongStorable, fmt: str) -> str:
     if artists_text:
         return f'./{storable.name} - {artists_text}{fmt}'
     return f'./{storable.name}{fmt}'
-
-
-def _get_image_download_lock(song_id: str) -> threading.Lock:
-    global _image_download_locks
-    if song_id not in _image_download_locks:
-        _image_download_locks[song_id] = threading.Lock()
-    return _image_download_locks[song_id]
 
 
 class DummyCard:
@@ -152,8 +143,8 @@ class FolderSelectDialog(MessageBoxBase):
         self.list_widget.addItem(create_item)
         self.list_widget.setItemWidget(create_item, create_btn)
 
-        anonymous = getBackend().userAnonymous()
-        if not anonymous:
+        logged = getBackend().loggedIn()
+        if logged:
             self.list_widget.addItem(QListWidgetItem(tr('song_card.cloud')))
             self._cloud_section_idx = self.list_widget.count()
             loading_item = QListWidgetItem(tr('song_card.loading'))
@@ -279,11 +270,11 @@ class SearchSongCard(QWidget):
 
     def addToFavorites(self):
         song_id = str(self.info.id)
-        anonymous = getBackend().userAnonymous()
+        logged = getBackend().loggedIn()
         all_local_have = bool(favorites_manager.folders) and all(
             any(s.id == song_id for s in f.songs) for f in favorites_manager.folders
         )
-        if all_local_have and anonymous:
+        if all_local_have and not logged:
             InfoBar.info(
                 tr('song_card.already_saved'),
                 tr('song_card.this_song_is_already_in_all_folders'),
@@ -519,10 +510,6 @@ class _SongCardItem(QWidget):
                 event_bus.subscribe(
                     IMAGE_ASSET_PERSISTED, self._on_image_asset_persisted
                 )
-            if self.img_label.pixmap() is None or self.img_label.pixmap().isNull():
-                threading.Thread(
-                    target=self._auto_download_missing_image, daemon=True
-                ).start()
 
     def loadDetailAndImage(self):
         if self.load:
@@ -531,16 +518,6 @@ class _SongCardItem(QWidget):
         self.loadImage()
         if self._dp:
             event_bus.subscribe(IMAGE_ASSET_PERSISTED, self._on_image_asset_persisted)
-        try:
-            needs_download = (
-                self.img_label.pixmap() is None or self.img_label.pixmap().isNull()
-            )
-        except RuntimeError:
-            return
-        if needs_download:
-            threading.Thread(
-                target=self._auto_download_missing_image, daemon=True
-            ).start()
 
     def _on_image_asset_persisted(self, storable: SongStorable):
         if storable is self.storable:
@@ -563,40 +540,6 @@ class _SongCardItem(QWidget):
 
     def _onSelectionChanged(self, state: int) -> None:
         self.selectionChanged.emit(self.storable, self.select_box.isChecked())
-
-    def _auto_download_missing_image(self):
-        storable = self.storable
-        if storable.image_cached():
-            return
-
-        lock = _get_image_download_lock(storable.id)
-        if not lock.acquire(blocking=False):
-            return
-        try:
-            if storable.image_cached():
-                return
-            try:
-                detail = getBackend().getTrackDetail(storable.id)
-                image_url = detail.cover_url
-                image_bytes = requests.get(image_url).content
-            except Exception as e:
-                self._logger.warning(
-                    f'failed to auto-download image for {storable.id}: {e}'
-                )
-                return
-
-            if not image_bytes:
-                return
-            storable._write_cache(image_bytes, IMAGE_DATA_DIR, 'image_cache_hash')
-            favorites_manager._save()
-            if self._mwindow:
-                self._mwindow.ctx.addScheduledTask(
-                    lambda s=storable: event_bus.emit(IMAGE_ASSET_PERSISTED, s)
-                )
-            else:
-                event_bus.emit(IMAGE_ASSET_PERSISTED, storable)
-        finally:
-            lock.release()
 
     def loadImage(self):
         if self._mwindow is None:
@@ -657,11 +600,11 @@ class _SongCardItem(QWidget):
 
     def _addTo(self):
         song_id = str(self.storable.id)
-        anonymous = getBackend().userAnonymous()
+        logged = getBackend().loggedIn()
         all_local_have = bool(favorites_manager.folders) and all(
             any(s.id == song_id for s in f.songs) for f in favorites_manager.folders
         )
-        if all_local_have and anonymous:
+        if all_local_have and not logged:
             InfoBar.info(
                 tr('song_card.already_saved'),
                 tr('song_card.this_song_is_already_in_all_folders'),

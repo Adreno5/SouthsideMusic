@@ -151,8 +151,8 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
     def userPrivilegeLevel(self) -> int:
         return pyncm.getCurrentSession().vipType
 
-    def userAnonymous(self) -> bool:
-        return bool(pyncm.getCurrentSession().is_anonymous)
+    def loggedIn(self) -> bool:
+        return bool(pyncm.getCurrentSession().logged_in)
 
     def getUserPlaylists(self) -> list[CloudFolderInfo]:
         with pyncm.getCurrentSession() as session:
@@ -227,6 +227,30 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
 
     def getUserVipType(self) -> int | str:
         return pyncm.getCurrentSession().vipType
+    
+    def getDailyRecommend(self) -> list[SongStorable]:
+        with pyncm.getCurrentSession():
+            response = apis.user.getDailyRecommend()
+            assert isinstance(response, dict), 'Invalid Response'
+            assert response.get('code') == 200, f'API Error: {response}'
+            return [SongStorable(
+                info = SongInfo(
+                    name=obj['name'],
+                    artists=[ArtistInfo(
+                        id=a['id'],
+                        name=a['name']
+                    ) for a in obj['artists']],
+                    id=obj['id'],
+                    privilege=obj['fee'],
+                    duration=obj['duration'],
+                ),
+                image=None,
+                image_cache_hash=getCachedHashes(str(obj['id'])).get('image_cache_hash', ''),
+                content_cache_hash=getCachedHashes(str(obj['id'])).get('content_cache_hash', ''),
+            ) for obj in response['recommend']]
+    
+    def scrobble(self, song_id: str, time: float):
+        return apis.user.setScrobble(song_id, time)
 
 
 def _tag_texts(value: Any) -> list[str]:

@@ -324,7 +324,7 @@ Purpose:
 Switch the main UI page.
 
 Arguments:
-- page: one of "settings", "account", or "search".
+- page: one of "settings" or "search".
 
 Use when:
 - the user asks to go to a page.

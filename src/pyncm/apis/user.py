@@ -90,3 +90,36 @@ def setWeblog(logs) -> dict:
         dict
     '''
     return weapi('/weapi/feedback/weblog', {'logs': dumps(logs)})
+
+def setScrobble(song_id: str, time: float):
+    '''log play action for a song (web api).
+    
+    Args:
+        song_id: song id.
+        time: play time in seconds.
+        
+    Returns:
+        dict'''
+    return setWeblog({
+        'action': 'play',
+        'json': {
+            'download': 0,
+            'end': 'playend',
+            'id': song_id,
+            'sourceId': '',
+            'time': float(time),
+            'type': 'song',
+            'wifi': 0,
+            'source': 'list',
+            'mainsite': 1,
+            'content': '',
+        }
+    })
+
+def getDailyRecommend():
+    '''get daily recommend songs (web api).
+    
+    Returns:
+        dict
+    '''
+    return weapi('/weapi/v2/discovery/recommend/songs', {})

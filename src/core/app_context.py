@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     from views.playing_page import PlayingPage
     from views.playlist_page import PlaylistPage
     from views.search_page import SearchPage
-    from views.session_page import SessionPage
     from views.setting_page import SettingPage
 
 
@@ -93,7 +92,6 @@ class AppContext:
         self.search_page: SearchPage = cast('SearchPage', None)
         self.desktop_lyrics_page: DesktopLyricsPage = cast('DesktopLyricsPage', None)
         self.favorites_page: FavoritesPage = cast('FavoritesPage', None)
-        self.session_page: SessionPage = cast('SessionPage', None)
         self.setting_page: SettingPage = cast('SettingPage', None)
         self.playlist_page: PlaylistPage = cast('PlaylistPage', None)
         self.dependences_window: DependencesWindow = cast('DependencesWindow', None)

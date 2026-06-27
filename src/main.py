@@ -48,7 +48,6 @@ from views.search_page import SearchPage
 from views.playing_page import PlayingPage
 from views.desktop_lyrics import DesktopLyricsPage
 from views.favorites_page import FavoritesPage
-from views.session_page import SessionPage
 from views.main_window import MainWindow
 from views.error_popup import ErrorPopupWindow
 from core.debugging import Debugging
@@ -402,9 +401,6 @@ if __name__ == '__main__':
         launchwindow.push('Initializing favorites page...')
         fp = FavoritesPage(ctx)
         ctx.favorites_page = fp
-        launchwindow.push('Initializing session page...')
-        sep = SessionPage(ctx)
-        ctx.session_page = sep
         launchwindow.push('Initializing setting page...')
         stp = SettingPage(ctx)
         ctx.setting_page = stp
@@ -416,7 +412,6 @@ if __name__ == '__main__':
         ctx.search_page = sp
         ctx.desktop_lyrics_page = dsp
         ctx.favorites_page = fp
-        ctx.session_page = sep
         ctx.setting_page = stp
         ctx.playlist_page = plp
 

@@ -11,4 +11,4 @@ pyncm.setCurrentSession(pyncm.loadSessionFromString(data['session']))
 
 with pyncm.getCurrentSession():
     with open('res.json', 'w') as f:
-        f.write(json.dumps(pyncm.apis.track.getTrackDetail(['518904426']), indent=4))
+        f.write(json.dumps(pyncm.apis.user.getDailyRecommend(), indent=4))

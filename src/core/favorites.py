@@ -5,6 +5,8 @@ import shutil
 import stat
 import threading
 
+import requests
+
 from core.models import (
     DATA_DIR,
     LocalFolderInfo,
@@ -16,6 +18,7 @@ from core.models import (
     MUSIC_DATA_DIR,
     SongStorable,
 )
+from imports import IMAGE_ASSET_PERSISTED, event_bus
 from qfluentwidgets import MessageBoxBase, SubtitleLabel
 from views.list_widget import SListWidget
 from imports import QHBoxLayout, QLabel, QListWidget, QVBoxLayout
@@ -24,6 +27,13 @@ _logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 _FAVORITES_PATH = os.path.join(_PROJECT_ROOT, 'favorites.json')
+_image_download_locks: dict[str, threading.Lock] = {}
+
+
+def _get_image_download_lock(song_id: str) -> threading.Lock:
+    if song_id not in _image_download_locks:
+        _image_download_locks[song_id] = threading.Lock()
+    return _image_download_locks[song_id]
 
 
 class FavoritesManager:
@@ -54,6 +64,8 @@ class FavoritesManager:
         with self._lock:
             self.folders.clear()
             self.folders.extend(folders)
+            for folder in self.folders:
+                self.ensureFolderFirstImage(folder)
 
     def _save(self) -> None:
         with self._lock:
@@ -94,8 +106,53 @@ class FavoritesManager:
                 if f.folder_name == folder_name:
                     f.songs.insert(0, song)
                     self._save()
+                    self.ensureFolderFirstImage(f)
                     return True
         return False
+
+    def ensureFolderFirstImage(self, folder: LocalFolderInfo) -> None:
+        if not folder.songs:
+            return
+        storable = folder.songs[0]
+        if storable.image_cached():
+            return
+
+        thread = threading.Thread(
+            target=self._downloadFirstImage,
+            args=(folder.folder_name, storable),
+            daemon=True,
+        )
+        thread.start()
+
+    def _downloadFirstImage(self, folder_name: str, storable: SongStorable) -> None:
+        if storable.image_cached():
+            return
+
+        lock = _get_image_download_lock(storable.id)
+        if not lock.acquire(blocking=False):
+            return
+        try:
+            if storable.image_cached():
+                return
+            try:
+                from core.backend import getBackend
+
+                detail = getBackend().getTrackDetail(storable.id)
+                image_bytes = requests.get(detail.cover_url).content
+            except Exception:
+                _logger.exception(
+                    "Failed to auto-download first image for folder '%s'",
+                    folder_name,
+                )
+                return
+
+            if not image_bytes:
+                return
+            storable._write_cache(image_bytes, IMAGE_DATA_DIR, 'image_cache_hash')
+            self._save()
+            event_bus.emit(IMAGE_ASSET_PERSISTED, storable)
+        finally:
+            lock.release()
 
     def removeSong(self, song_name: str) -> None:
         with self._lock:
@@ -105,6 +162,7 @@ class FavoritesManager:
                 f.songs = [s for s in f.songs if s.name != song_name]
                 if len(f.songs) < before:
                     changed = True
+                    self.ensureFolderFirstImage(f)
             if changed:
                 self._save()
 
@@ -124,6 +182,7 @@ class FavoritesManager:
                         f.songs[idx],
                     )
                     self._save()
+                    self.ensureFolderFirstImage(f)
                     return True
         return False
 

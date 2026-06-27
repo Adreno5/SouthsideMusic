@@ -10,6 +10,7 @@ import tempfile
 import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict
+import time as timeLib
 
 import numpy as np
 
@@ -36,6 +37,7 @@ from core.models import (
     SongStorable,
     TrackLyricsInfo,
 )
+from core.netease_backend import NeteaseCloudMusicBackend
 from core.weighted_random import AdvancedRandom
 from services.events.event_bus import event_bus
 from services.events.events import (
@@ -127,6 +129,8 @@ class PlayingManager:
         self._stream_processes: set[subprocess.Popen[bytes]] = set()
         self._stream_process_lock = threading.Lock()
         self.crossfading = False
+        self._last_song_played: float = 0
+        self._play_storable_time: float = -1
 
         if ctx is not None:
             self._bindEvents()
@@ -198,6 +202,7 @@ class PlayingManager:
                 f'preload_triggered={self._preload_triggered}',
                 f'next_song_audio={self.next_song_audio is not None}',
                 f'pending_play={self._pending_play_selection is not None}',
+                f'last_play={self._play_storable_time}'
             ],
         )
 
@@ -1070,7 +1075,7 @@ class PlayingManager:
     def _storable_asset_missing(self, song_storable: SongStorable) -> tuple[bool, bool]:
         backend = getBackend()
         return not song_storable.image_cached(), not song_storable.audio_cached(
-            not backend.userAnonymous(), int(backend.getUserVipType())
+            backend.loggedIn(), int(backend.getUserVipType())
         )
 
     def _downloadStorableMissingAssets(
@@ -1309,6 +1314,19 @@ class PlayingManager:
             )
         event_bus.emit(PLAY_STATE_CHANGED, not pause_after_load)
         event_bus.emit(POST_PLAY_STORABLE, song_storable)
+
+        def _logAction():
+            self._last_song_played = timeLib.time() - self._play_storable_time
+            backend = getBackend()
+            if isinstance(backend, NeteaseCloudMusicBackend):
+                backend.scrobble(song_storable.id, self._last_song_played)
+
+        def _logFinish():
+            self._logger.info(f'logged playback action id={song_storable.id}, played={self._last_song_played}')
+            self._last_song_played = 0
+            self._play_storable_time = timeLib.time()
+
+        asyncTask(_logAction, (), self._mwindow_obj, _logFinish)
 
     def _playDownloadingStorable(
         self,
@@ -1666,7 +1684,7 @@ class PlayingManager:
         player = self._player
         if player is None:
             return
-
+        
         if preloaded_audio is None:
             self._cancelCrossfadePlayback()
         image_missing, music_missing = self._storable_asset_missing(song_storable)

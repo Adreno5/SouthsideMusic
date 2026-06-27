@@ -29,7 +29,6 @@ class SouthsideIcon(FluentIconBase, Enum):
     MUSIC = 'music'
     STUDIO = 'studio'
     ISLAND = 'island'
-    SESSION = 'session'
     DROP_UP = 'drop_up'
     DROP_DOWN = 'drop_down'
     PLAYLIST = 'playlist'

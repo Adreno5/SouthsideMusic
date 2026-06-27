@@ -21,6 +21,7 @@ from core.models import (
     SongStorable,
 )
 from imports import QApplication, QCheckBox, QComboBox, QThread, QWidget, event_bus, tr
+import pyncm
 from services.events.events import FAVORITES_CHANGED, MWINDOW_REFRESH_FOLDERS
 from views.number_viewer import SettableNumberViewer
 
@@ -593,7 +594,7 @@ class LLMToolRunner:
                 }
             )
         cloud = []
-        if not getBackend().userAnonymous():
+        if getBackend().loggedIn():
             for index, cloud_folder in enumerate(getBackend().getUserPlaylists()):
                 handle = f'cloud:{index}:{cloud_folder.id}'
                 self._folder_handles[handle] = cloud_folder
@@ -674,8 +675,6 @@ class LLMToolRunner:
             mw = self.ctx.main_window
             if page == 'settings':
                 mw.contents_widget.setCurrentWidget(self.ctx.setting_page)
-            elif page == 'account':
-                mw.contents_widget.setCurrentWidget(self.ctx.session_page)
             elif page == 'search':
                 mw.contents_widget.setCurrentWidget(self.ctx.search_page)
             else:
@@ -905,11 +904,11 @@ class LLMToolRunner:
         return self._run_main_thread(self._get_nickname)
 
     def _get_nickname(self) -> dict[str, Any]:
-        page = self.ctx.session_page
+        backend = getBackend()
         return {
-            'logged_in': page._nickname != 'Anonymous User',
-            'nickname': page._nickname,
-            'vip_level': page._vip_level,
+            'logged_in': not backend.loggedIn(),
+            'nickname': pyncm.getCurrentSession().nickname,
+            'vip_level': pyncm.getCurrentSession().vipType,
         }
 
     def _get_llm_providers(self) -> dict[str, Any]:
@@ -1102,12 +1101,7 @@ class LLMToolRunner:
         }
 
     def login(self) -> dict[str, Any]:
-        self._run_main_thread(
-            lambda: self.ctx.main_window.contents_widget.setCurrentWidget(
-                self.ctx.session_page
-            )
-        )
-        self._run_main_thread(lambda: self.ctx.session_page.login())
+        self._run_main_thread(lambda: self.ctx.main_window.login())
         return self.getNickname()
 
     def _get_sections(self) -> dict[str, Any]:

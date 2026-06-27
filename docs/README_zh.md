@@ -4,6 +4,8 @@
 
 > 能用是及格，值得用才是作品。真正的功夫，都在看不见的时间里。
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Adreno5/SouthsideMusic)
+
 网易云第三方桌面客户端。高品质流媒体播放、逐字歌词高亮、响度均衡、桌面歌词悬浮窗。
 
 > 开发历程见 [SouthsideMusic Story](SouthsideMusic_Story.md)。

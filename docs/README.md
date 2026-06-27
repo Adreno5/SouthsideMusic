@@ -4,6 +4,8 @@
 
 > In an age drowning in things that merely work, what's worth using is what earns the name of a real work. True craft lives in the hours no one sees.
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Adreno5/SouthsideMusic)
+
 A third-party NetEase CloudMusic desktop client. High-quality streaming, word-by-word lyrics, loudness normalization, and desktop lyrics overlay.
 
 > For the project's history, see [SouthsideMusic Story](SouthsideMusic_Story.md).

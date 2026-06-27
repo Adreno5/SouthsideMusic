@@ -5,7 +5,7 @@
 > In an age drowning in things that merely work, what's worth using is what earns the name of a real work. True craft lives in the hours no one sees.
 
 # Friendly Links
-- [LINUX DO](linux.do) A new ideal community
+- [LINUX DO](https://linux.do) A new ideal community
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Adreno5/SouthsideMusic)
 

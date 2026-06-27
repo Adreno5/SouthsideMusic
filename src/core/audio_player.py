@@ -46,6 +46,7 @@ _MAX_HAAS_DELAY_MS = 30
 _MIN_AUDIBLE_PITCH_SHIFT = 0.25
 _REVERB_DELAY_MS = (29, 43, 61, 79)
 _REVERB_TAP_GAINS = (0.42, 0.31, 0.22, 0.15)
+_REVERB_GAIN_COMPENSATION = 0.18
 _PRODUCER_QUEUE_BLOCKS = 32768
 _PRODUCER_PROGRESS_BOOST_RATIO = 0.2
 _PRODUCER_EARLY_LEAD = 5.0
@@ -550,7 +551,8 @@ class AudioPlayer(QObject):
             wet += history[start - delay : end - delay] * tap_gain
 
         mix = cfg.reverb_intensity
-        out = dry * (1.0 - mix * 0.25) + wet * (mix * 0.55)
+        gain = 1.0 + mix * _REVERB_GAIN_COMPENSATION
+        out = (dry * (1.0 - mix * 0.25) + wet * (mix * 0.55)) * gain
         self._reverb_tail = history[-max_delay:].copy()
         return out.astype(np.float32, copy=False)
 

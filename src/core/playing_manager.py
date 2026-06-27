@@ -935,6 +935,8 @@ class PlayingManager:
         generation = self._crossfade_generation
         duration_ms = max(1, int(info.fade_seconds * 1000))
         current_position = player.getPosition()
+        play_speed = player.play_speed
+        play_pitch = player.play_pitch
 
         crossfade_player = AudioPlayer()
         devices = getAudioDevices()
@@ -942,6 +944,8 @@ class PlayingManager:
             crossfade_player.setOutputDevice(devices[cfg.output_device_index])
         crossfade_player.setVolume(player.volume_gain)
         crossfade_player.setGain(player.loudness_gain)
+        crossfade_player.setPlaySpeed(play_speed)
+        crossfade_player.setPlayPitch(play_pitch)
         crossfade_player.load(current_audio)
         crossfade_player.play()
         crossfade_player.setPosition(current_position)
@@ -953,7 +957,8 @@ class PlayingManager:
         self._play_seq += 1
         play_seq = self._play_seq
         player.stopPlaySpeedAnimation()
-        player.setPlaySpeed(cfg.play_speed)
+        player.setPlaySpeed(play_speed)
+        player.setPlayPitch(play_pitch)
         player.load(audio)
         self.total_length = self._storableDuration(
             selection.song,
@@ -971,7 +976,7 @@ class PlayingManager:
         crossfade_player.animateVolume(0.0, duration_ms)
         player.animateVolume(1.0, duration_ms)
         if info.target_speed != 1.0:
-            crossfade_player.animatePlaySpeed(info.target_speed, duration_ms)
+            crossfade_player.animatePlaySpeed(play_speed * info.target_speed, duration_ms)
 
         def _finish() -> None:
             self._finishCrossfade(selection, generation, play_seq)
@@ -995,7 +1000,6 @@ class PlayingManager:
         player = self._player
         if crossfade_player is not None:
             crossfade_player.stopPlaySpeedAnimation()
-            crossfade_player.setPlaySpeed(cfg.play_speed)
             self._shutdownCrossfadePlayer()
         if player is not None:
             player.stopVolumeAnimation()

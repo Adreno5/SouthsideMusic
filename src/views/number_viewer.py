@@ -3,7 +3,7 @@ from PySide6.QtGui import QHideEvent, QPaintEvent, QShowEvent, QWheelEvent
 
 from core.app_context import AppContext
 from core.smooth import EaseOutTimer
-from imports import QWidget, QFont, QPainter, QFontMetricsF, Signal
+from imports import QTimer, QWidget, QFont, QPainter, QFontMetricsF, Signal
 from services.events import event_bus
 from services.events.events import REPAINT
 
@@ -96,6 +96,7 @@ class NumberViewer(QWidget):
                     self.alpha_timer[pos] = {}
                 if not self.alpha_timer[pos].get(digit):
                     self.alpha_timer[pos][digit] = EaseOutTimer(0.3, 2)
+                    self.alpha_timer[pos][digit].target_value = 1
                 self.alpha_timer[pos][digit].target_value = 1 if digit == int(char) else 0
                 painter.setOpacity(self.alpha_timer[pos][digit].current_value)
                 painter.drawText(
@@ -117,6 +118,9 @@ class SettableNumberViewer(NumberViewer):
 
     def __init__(self, font: str, ctx: AppContext):
         super().__init__(font, ctx, 22)
+        self._debounce_timer = QTimer(self)
+        self._debounce_timer.setSingleShot(True)
+        self._debounce_timer.timeout.connect(lambda: self.alpha_timer.clear())
 
     def setRange(self, min, max):
         self.min = min
@@ -142,6 +146,7 @@ class SettableNumberViewer(NumberViewer):
         return f'{value:.{self._decimal_places()}f}'
 
     def wheelEvent(self, event: QWheelEvent) -> None:
+        self._debounce_timer.start(1000)
         if event.angleDelta().y() > 0:
             self.value = self.clamp(self.value + self.step)
         else:

@@ -14,6 +14,7 @@ _logger = logging.getLogger(__name__)
 
 cfg_cache: dict[str, Any] = {}
 
+
 @dataclass
 class Config:
     language: Literal['en_US', 'zh_CN'] = 'en_US'
@@ -97,6 +98,7 @@ class Config:
     def instance() -> 'Config':
         global _instance
         return _instance
+
 
 _instance: Config = cast(Config, None)
 Config()
@@ -240,7 +242,9 @@ def _normalize_llm_provider(data: Any) -> dict[str, Any] | None:
 def _migrate_legacy_llm_config() -> None:
     if _instance.llm_providers:
         return
-    if not (_instance.llm_base_url or _instance.llm_api_key_encrypted or _instance.llm_model):
+    if not (
+        _instance.llm_base_url or _instance.llm_api_key_encrypted or _instance.llm_model
+    ):
         return
     models: list[dict[str, str]] = []
     if _instance.llm_model:

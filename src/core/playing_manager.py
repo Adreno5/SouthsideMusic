@@ -129,8 +129,8 @@ class PlayingManager:
         self._stream_processes: set[subprocess.Popen[bytes]] = set()
         self._stream_process_lock = threading.Lock()
         self.crossfading = False
-        self._last_song_played: float = 0
-        self._play_storable_time: float = -1
+        self._play_storable_time: float = timeLib.time()
+        self._last_storable: SongStorable | None = None
 
         if ctx is not None:
             self._bindEvents()
@@ -202,7 +202,7 @@ class PlayingManager:
                 f'preload_triggered={self._preload_triggered}',
                 f'next_song_audio={self.next_song_audio is not None}',
                 f'pending_play={self._pending_play_selection is not None}',
-                f'last_play={self._play_storable_time}'
+                f'last_play={self._play_storable_time}',
             ],
         )
 
@@ -344,9 +344,16 @@ class PlayingManager:
         return base64.b64decode(data)
 
     def setPlaylist(self, playlist: list[SongStorable]) -> None:
+        current_song = self.current_song
+        self._cancelCrossfadePlayback()
+        self.clearPreload()
         self.playlist = playlist
         self.refreshRandom()
         self.clearReservedNext()
+        if current_song not in playlist:
+            self.current_index = -1
+            self.current_song = None
+            self.current_song_audio = None
         event_bus.emit(PLAYLIST_CHANGED)
 
     def refreshRandom(self) -> None:
@@ -672,7 +679,7 @@ class PlayingManager:
         song_id = str(song_storable.id)
 
         for folder in self._favs_ref:
-            for favorite in folder.songs:
+            for favorite in folder.songs:  # type: ignore
                 if str(favorite.id) != song_id:
                     continue
                 if (
@@ -981,7 +988,9 @@ class PlayingManager:
         crossfade_player.animateVolume(0.0, duration_ms)
         player.animateVolume(1.0, duration_ms)
         if info.target_speed != 1.0:
-            crossfade_player.animatePlaySpeed(play_speed * info.target_speed, duration_ms)
+            crossfade_player.animatePlaySpeed(
+                play_speed * info.target_speed, duration_ms
+            )
 
         def _finish() -> None:
             self._finishCrossfade(selection, generation, play_seq)
@@ -1315,18 +1324,24 @@ class PlayingManager:
         event_bus.emit(PLAY_STATE_CHANGED, not pause_after_load)
         event_bus.emit(POST_PLAY_STORABLE, song_storable)
 
+        song_storable.increment_count(1)
+
         def _logAction():
-            self._last_song_played = timeLib.time() - self._play_storable_time
             backend = getBackend()
             if isinstance(backend, NeteaseCloudMusicBackend):
-                backend.scrobble(song_storable.id, self._last_song_played)
+                if self._last_storable:
+                    backend.recordPlayed(
+                        self._last_storable.id,
+                        self._last_storable.name,
+                        timeLib.time() - self._play_storable_time,
+                    )
+                backend.recordPlay(song_storable.id)
 
-        def _logFinish():
-            self._logger.info(f'logged playback action id={song_storable.id}, played={self._last_song_played}')
-            self._last_song_played = 0
+            self._logger.info(f'logged playback action id={song_storable.id}')
             self._play_storable_time = timeLib.time()
+            self._last_storable = song_storable
 
-        asyncTask(_logAction, (), self._mwindow_obj, _logFinish)
+        asyncTask(_logAction, (), self._mwindow_obj)
 
     def _playDownloadingStorable(
         self,
@@ -1684,7 +1699,9 @@ class PlayingManager:
         player = self._player
         if player is None:
             return
-        
+
+        self._last_storable = self.current_song
+
         if preloaded_audio is None:
             self._cancelCrossfadePlayback()
         image_missing, music_missing = self._storable_asset_missing(song_storable)

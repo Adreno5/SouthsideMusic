@@ -28,6 +28,7 @@ from views.number_viewer import NumberViewer
 from core.downloader import asyncTask
 from views.song_card import CloudFavoriteSongCard
 
+
 class HomePage(SScrollArea):
     def __init__(self, ctx: AppContext):
         super().__init__()
@@ -43,12 +44,17 @@ class HomePage(SScrollArea):
 
         welcome_layout = QHBoxLayout()
         welcome_layout.setSpacing(0)
-        welcome_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        welcome_layout.addSpacerItem(
+            QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        )
         welcome_label = SubtitleLabel('')
         bindText(welcome_label, 'home_page.welcome_back')
         welcome_layout.addWidget(welcome_label, alignment=Qt.AlignmentFlag.AlignVCenter)
         self.accounter = AccountWidget(self, self.ctx)
-        def _empty(event: QMouseEvent): return None
+
+        def _empty(event: QMouseEvent):
+            return None
+
         self.accounter.mousePressEvent = _empty
         self.accounter.setCursor(Qt.CursorShape.ArrowCursor)
         self.accounter.setFixedHeight(60)
@@ -56,9 +62,10 @@ class HomePage(SScrollArea):
         f = self.accounter.nickname_label.font()
         f.setPointSize(16)
         self.accounter.nickname_label.setFont(f)
-        welcome_layout.addWidget(welcome_label, alignment=Qt.AlignmentFlag.AlignBottom)
         welcome_layout.addWidget(self.accounter)
-        welcome_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        welcome_layout.addSpacerItem(
+            QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        )
 
         if getBackend().loggedIn():
             contents_layout.addLayout(welcome_layout)
@@ -72,7 +79,9 @@ class HomePage(SScrollArea):
         title_label = SubtitleLabel('')
         bindText(title_label, 'home_page.recommend_songs')
         hbox.addWidget(title_label)
-        self.songs_counter = NumberViewer(self.ctx.harmony_font_family, self.ctx, 15, 1.3)
+        self.songs_counter = NumberViewer(
+            self.ctx.harmony_font_family, self.ctx, 15, 1.3
+        )
         hbox.addWidget(self.songs_counter)
         self.recommend_songs_layout = SFlowLayout(yAnimations=True)
         self.recommend_songs_layout.setAnimation(300)
@@ -87,16 +96,26 @@ class HomePage(SScrollArea):
         title_label = SubtitleLabel('')
         bindText(title_label, 'home_page.recommend_folders')
         hbox.addWidget(title_label)
-        self.folders_counter = NumberViewer(self.ctx.harmony_font_family, self.ctx, 15, 1.3)
+        self.folders_counter = NumberViewer(
+            self.ctx.harmony_font_family, self.ctx, 15, 1.3
+        )
         hbox.addWidget(self.folders_counter)
-        self.recommend_folders_layout = SFlowLayout(yAnimations=True)
+        self.recommend_folders_layout = SFlowLayout()
         self.recommend_folders_layout.setAnimation(1000)
         left_layout.addLayout(hbox)
         left_layout.addLayout(self.recommend_folders_layout)
         bottom_layout.addLayout(left_layout)
 
-        left_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding))
-        right_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding))
+        left_layout.addSpacerItem(
+            QSpacerItem(
+                0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
+        )
+        right_layout.addSpacerItem(
+            QSpacerItem(
+                0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
+        )
 
         if getBackend().loggedIn():
             contents_layout.addLayout(bottom_layout)
@@ -124,15 +143,15 @@ class HomePage(SScrollArea):
                     return
                 inf = folders[idx]
                 card = CloudFolderCard(inf, self.width() / 4 - 2, self.ctx)
-                card.clicked.connect(
-                    lambda f=inf: event_bus.emit(VIEW_FOLDER, f)
-                )
-                self.recommend_folders_layout.insertWidget(0, card)
+                card.clicked.connect(lambda f=inf: event_bus.emit(VIEW_FOLDER, f))
+                self.recommend_folders_layout.addWidget(card)
 
-                QTimer.singleShot(90, add)
-            
+                QTimer.singleShot(100, add)
+
             folders = getBackend().getDailyRecommendFolders()
-            self.ctx.addScheduledTask(lambda: self.folders_counter.setText(str(len(folders))))
+            self.ctx.addScheduledTask(
+                lambda: self.folders_counter.setText(str(len(folders)))
+            )
             self.ctx.addScheduledTask(add)
 
         def _fetchSongs():
@@ -145,14 +164,21 @@ class HomePage(SScrollArea):
                 if idx >= len(songs):
                     return
                 song = songs[idx]
-                card = CloudFavoriteSongCard(song, self.ctx.playing_page, self.ctx.main_window, self.ctx.playlist_page)
+                card = CloudFavoriteSongCard(
+                    song,
+                    self.ctx.playing_page,
+                    self.ctx.main_window,
+                    self.ctx.playlist_page,
+                )
                 card.clicked.connect(self._playSong)
                 card.queued.connect(self._queueSong)
                 self.recommend_songs_layout.insertWidget(0, card)
 
                 QTimer.singleShot(50, add)
 
-            self.ctx.addScheduledTask(lambda: self.songs_counter.setText(str(len(songs))))
+            self.ctx.addScheduledTask(
+                lambda: self.songs_counter.setText(str(len(songs)))
+            )
             self.ctx.addScheduledTask(add)
 
         asyncTask(_fetchFolders, (), self)

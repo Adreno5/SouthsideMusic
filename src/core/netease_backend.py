@@ -38,10 +38,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
         songs: list[SearchSongInfo] = []
         for songdict in resp.get('result', {}).get('songs', []):
             artists = [
-                ArtistInfo(
-                    id=art.get('id', 0),
-                    name=art.get('name', '')
-                )
+                ArtistInfo(id=art.get('id', 0), name=art.get('name', ''))
                 for art in songdict.get('ar', [])
             ]
             al = songdict.get('al', {})
@@ -210,10 +207,10 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
                 storable = SongStorable(
                     info=SongInfo(
                         name=s['name'],
-                        artists=[ArtistInfo(
-                            id=obj['id'],
-                            name=obj['name']
-                        ) for obj in s.get('ar', [])],
+                        artists=[
+                            ArtistInfo(id=obj['id'], name=obj['name'])
+                            for obj in s.get('ar', [])
+                        ],
                         id=str(s['id']),
                         privilege=-1,
                         duration=s.get('dt', 0),
@@ -227,28 +224,35 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
 
     def getUserVipType(self) -> int | str:
         return pyncm.getCurrentSession().vipType
-    
+
     def getDailyRecommendSongs(self) -> list[SongStorable]:
         with pyncm.getCurrentSession():
             response = apis.user.getDailyRecommend()
             assert isinstance(response, dict), 'Invalid Response'
             assert response.get('code') == 200, f'API Error: {response}'
-            return [SongStorable(
-                info = SongInfo(
-                    name=obj['name'],
-                    artists=[ArtistInfo(
-                        id=a['id'],
-                        name=a['name']
-                    ) for a in obj['artists']],
-                    id=obj['id'],
-                    privilege=obj['fee'],
-                    duration=obj['duration'],
-                ),
-                image=None,
-                image_cache_hash=getCachedHashes(str(obj['id'])).get('image_cache_hash', ''),
-                content_cache_hash=getCachedHashes(str(obj['id'])).get('content_cache_hash', ''),
-            ) for obj in response['recommend']]
-        
+            return [
+                SongStorable(
+                    info=SongInfo(
+                        name=obj['name'],
+                        artists=[
+                            ArtistInfo(id=a['id'], name=a['name'])
+                            for a in obj['artists']
+                        ],
+                        id=obj['id'],
+                        privilege=obj['fee'],
+                        duration=obj['duration'],
+                    ),
+                    image=None,
+                    image_cache_hash=getCachedHashes(str(obj['id'])).get(
+                        'image_cache_hash', ''
+                    ),
+                    content_cache_hash=getCachedHashes(str(obj['id'])).get(
+                        'content_cache_hash', ''
+                    ),
+                )
+                for obj in response['recommend']
+            ]
+
     def getDailyRecommendFolders(self) -> list[CloudFolderInfo]:
         with pyncm.getCurrentSession():
             response = apis.user.getDailyRecommendResource()
@@ -263,9 +267,40 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
                 )
                 for obj in response.get('recommend') or []
             ]
-    
-    def scrobble(self, song_id: str, time: float):
-        return apis.user.setScrobble(song_id, time)
+
+    def recordPlayed(self, song_id: str, song_name: str, time: float):
+        apis.user.setWeblog(
+            {
+                'action': 'play',
+                'json': {
+                    'content': '',
+                    'download': 0,
+                    'end': 'ui',
+                    'id': int(song_id),
+                    'mainsite': '1',
+                    'mainsiteWeb': '1',
+                    'source': 'search',
+                    'sourceId': song_name,
+                    'time': int(time),
+                    'type': 'song',
+                    'wifi': 0,
+                },
+            }
+        )
+
+    def recordPlay(self, song_id: str):
+        apis.user.setWeblog(
+            {
+                'action': 'startplay',
+                'json': {
+                    'content': '',
+                    'id': int(song_id),
+                    'mainsite': '1',
+                    'mainsiteWeb': '1',
+                    'type': 'song',
+                },
+            }
+        )
 
 
 def _tag_texts(value: Any) -> list[str]:

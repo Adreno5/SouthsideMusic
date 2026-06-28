@@ -17,6 +17,7 @@ from imports import (
     MWINDOW_REFRESH_FOLDERS,
     PLAYLIST_CHANGED,
     PLAY_SONG_AT_INDEX,
+    STORABLE_COUNT_CHANGED,
     QSizePolicy,
     QSpacerItem,
     Qt,
@@ -498,7 +499,7 @@ class _SongCardItem(QWidget):
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(2)
         text_layout.addSpacerItem(
-            QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+            QSpacerItem(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         )
         title_label = SubtitleLabel(storable.name)
         title_label.setWordWrap(True)
@@ -507,9 +508,20 @@ class _SongCardItem(QWidget):
         artists_label.setWordWrap(True)
         text_layout.addWidget(artists_label)
         text_layout.addSpacerItem(
-            QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+            QSpacerItem(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         )
         layout.addLayout(text_layout, 1)
+
+        layout.addSpacerItem(
+            QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
+        )
+
+        self.count_label = SubtitleLabel(str(storable.count))
+        suffix_label = QLabel()
+        bindText(suffix_label, 'song_card.played_times')
+
+        layout.addWidget(self.count_label)
+        layout.addWidget(suffix_label)
 
         if not lazy:
             self.load = True
@@ -522,6 +534,15 @@ class _SongCardItem(QWidget):
                 threading.Thread(
                     target=self._auto_download_missing_image, daemon=True
                 ).start()
+
+        event_bus.subscribe(STORABLE_COUNT_CHANGED, self._on_storable_count_changed)
+
+    def _on_storable_count_changed(self, storable: SongStorable):
+        if storable != self.storable:
+            return
+
+        self.storable.count = storable.count
+        self.count_label.setText(str(storable.count))
 
     def loadDetailAndImage(self):
         if self.load:
@@ -823,7 +844,9 @@ class FavoriteSongCard(_SongCardItem):
         lazy=False,
         sortable=True,
     ):
-        super().__init__(storable, dp, mwindow, plp, parent, lazy=lazy, sortable=sortable)
+        super().__init__(
+            storable, dp, mwindow, plp, parent, lazy=lazy, sortable=sortable
+        )
         self._remove_callback = remove_callback
         self._move_callback = move_callback
 

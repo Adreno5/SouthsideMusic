@@ -4,7 +4,7 @@ from .. import eapi
 
 
 def getFmZoneInfo(limit=3, zone='CLASSICAL', e_r=True) -> dict:
-    '''get zone fm content.
+    """get zone fm content.
 
     known zones: CLASSICAL.
 
@@ -15,7 +15,7 @@ def getFmZoneInfo(limit=3, zone='CLASSICAL', e_r=True) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return eapi(
         '/eapi/zone/fm/get',
         {
@@ -27,7 +27,7 @@ def getFmZoneInfo(limit=3, zone='CLASSICAL', e_r=True) -> dict:
 
 
 def setSkipFmTrack(songId, zone='CLASSICAL', e_r=True) -> dict:
-    '''skip zone fm track.
+    """skip zone fm track.
 
     Args:
         songId: track id.
@@ -36,7 +36,7 @@ def setSkipFmTrack(songId, zone='CLASSICAL', e_r=True) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return eapi(
         '/eapi/zone/fm/skip',
         {

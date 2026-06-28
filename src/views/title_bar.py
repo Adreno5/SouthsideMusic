@@ -40,7 +40,7 @@ class SouthsideMusicTitleBar(TitleBar):
         self.hBoxLayout.addLayout(self.vBoxLayout, 0)
 
         FluentStyleSheet.FLUENT_WINDOW.apply(self)
-        
+
     def setTitle(self, title):
         self.titleLabel.setText(title)
         self.titleLabel.adjustSize()

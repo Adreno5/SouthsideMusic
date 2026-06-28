@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-'''Another lrc file parser'''
+"""Another lrc file parser"""
 
 import re
 from collections import defaultdict
@@ -66,7 +66,7 @@ def tag2stamp(IDTag):
 
 
 class LrcParser:
-    '''Parses lrc into mutable dict-like objects'''
+    """Parses lrc into mutable dict-like objects"""
 
     # region Properties
     @_lrc_property('ar')
@@ -108,7 +108,7 @@ class LrcParser:
     # endregion
 
     def __init__(self, lrc=''):
-        '''Takes lyrics in `LRC` format,then provides lyrics based on timestamps'''
+        """Takes lyrics in `LRC` format,then provides lyrics based on timestamps"""
 
         # Parsing lrc,line by line
         def _enmurate_attributes():
@@ -142,19 +142,19 @@ class LrcParser:
 
     @property
     def lyrics_sorted(self):
-        '''Returns sorted version of the lyrics'''
+        """Returns sorted version of the lyrics"""
         lastID, lastDict = self._lyrics_sorted
         if lastID != id(self.lyrics):
             self._lyrics_sorted = (
                 id(self.lyrics),
-                defaultdict(list, sorted(self.lyrics.items())), # type: ignore
+                defaultdict(list, sorted(self.lyrics.items())),  # type: ignore
             )
             return self.lyrics_sorted
         else:
             return lastDict
 
     def loadLrc(self, lrc):
-        '''Loads a LRC formmated lryics file'''
+        """Loads a LRC formmated lryics file"""
         for line in lrc.split('\n'):
             IDTag = LrcRegexes.LIDTag.findall(line)
             if not IDTag:
@@ -179,7 +179,7 @@ class LrcParser:
                             if not isinstance(self.offset, Exception):
                                 timestamp += float(self.offset)
                             if Lyrics:
-                                self.lyrics[timestamp].append( # type: ignore
+                                self.lyrics[timestamp].append(  # type: ignore
                                     (_IDTag, Lyrics)
                                 )  # Ignore empty lines
                 except Exception:
@@ -191,27 +191,27 @@ class LrcParser:
         if not isinstance(value, list):
             value = [value]
         for v in value:
-            self.lyrics[timestamp].append((stamp2tag(timestamp), v)) # type: ignore
+            self.lyrics[timestamp].append((stamp2tag(timestamp), v))  # type: ignore
         self.lyrics = (
             self.lyrics_sorted
         )  # this isn't too much for previously sorted items though
 
     def clearLyrics(self):
         # Clears the lyrics buffer
-        self.lyrics.clear() # type: ignore
+        self.lyrics.clear()  # type: ignore
 
     def updateLyrics(self, iterable, timestamp_function, lyrics_function):
-        '''This function takes an iterable,a timestamp function,and a lyrics function
+        """This function takes an iterable,a timestamp function,and a lyrics function
 
         And for every item in the iterable,timestamp and lyrics will be fetch via the said functions,then get added to our buffer
-        '''
+        """
         for line in iterable:
             timestamp = timestamp_function(line)
             lyrics = lyrics_function(line)
             self.addLyrics(timestamp, lyrics)
 
     def dumpLyrics(self, delimiter='\t'):
-        '''Format current lyrics buffer then spits out a LRC formatted string'''
+        """Format current lyrics buffer then spits out a LRC formatted string"""
         lrc = ''
         # Adding tags
         for prop, attr in self.lrcAttributes:
@@ -219,7 +219,10 @@ class LrcParser:
             if not isinstance(value, Exception):  # If such value do exist
                 lrc += f'[{attr}:{value}]' + '\n'
         # Adding lyrics
-        for timestamp, lyrics in self.lyrics.items():  # write the sorted one # type: ignore
+        for (
+            timestamp,
+            lyrics,
+        ) in self.lyrics.items():  # write the sorted one # type: ignore
             Lyrics = []
             for tag, _lyric in lyrics:
                 Lyrics.append(_lyric)
@@ -228,7 +231,7 @@ class LrcParser:
 
     @staticmethod
     def find(lyrics, timestamp):
-        '''Finds closest match in our hashable through binary search. Prioritiezs
+        """Finds closest match in our hashable through binary search. Prioritiezs
 
         ones that comes before the timestamp, Rather than ones with minimum distance
 
@@ -237,10 +240,10 @@ class LrcParser:
             Returns `(timestamp_seconds,lyrics[(timestamp_tag,lyrics)],indexof)`
 
             Returns None if nothing is found
-        '''
+        """
 
         def search(val, src: list, left, right):
-            '''Binary search'''
+            """Binary search"""
             pivot = (left + right) >> 1
             if left >= right or pivot == left or pivot == right:
                 return pivot

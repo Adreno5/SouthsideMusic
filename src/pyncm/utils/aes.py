@@ -2,9 +2,10 @@
 # All rights reserved by the original author.
 # Modified for pyncm usage.
 
-s_box = b"c|w{\xf2ko\xc50\x01g+\xfe\xd7\xabv\xca\x82\xc9}\xfaYG\xf0\xad\xd4\xa2\xaf\x9c\xa4r\xc0\xb7\xfd\x93&6?\xf7\xcc4\xa5\xe5\xf1q\xd81\x15\x04\xc7#\xc3\x18\x96\x05\x9a\x07\x12\x80\xe2\xeb'\xb2u\t\x83,\x1a\x1bnZ\xa0R;\xd6\xb3)\xe3/\x84S\xd1\x00\xed \xfc\xb1[j\xcb\xbe9JLX\xcf\xd0\xef\xaa\xfbCM3\x85E\xf9\x02\x7fP<\x9f\xa8Q\xa3@\x8f\x92\x9d8\xf5\xbc\xb6\xda!\x10\xff\xf3\xd2\xcd\x0c\x13\xec_\x97D\x17\xc4\xa7~=d]\x19s`\x81O\xdc\"*\x90\x88F\xee\xb8\x14\xde^\x0b\xdb\xe02:\nI\x06$\\\xc2\xd3\xacb\x91\x95\xe4y\xe7\xc87m\x8d\xd5N\xa9lV\xf4\xeaez\xae\x08\xbax%.\x1c\xa6\xb4\xc6\xe8\xddt\x1fK\xbd\x8b\x8ap>\xb5fH\x03\xf6\x0ea5W\xb9\x86\xc1\x1d\x9e\xe1\xf8\x98\x11i\xd9\x8e\x94\x9b\x1e\x87\xe9\xceU(\xdf\x8c\xa1\x89\r\xbf\xe6BhA\x99-\x0f\xb0T\xbb\x16"
-inv_s_box = b"R\tj\xd506\xa58\xbf@\xa3\x9e\x81\xf3\xd7\xfb|\xe39\x82\x9b/\xff\x874\x8eCD\xc4\xde\xe9\xcbT{\x942\xa6\xc2#=\xeeL\x95\x0bB\xfa\xc3N\x08.\xa1f(\xd9$\xb2v[\xa2Im\x8b\xd1%r\xf8\xf6d\x86h\x98\x16\xd4\xa4\\\xcc]e\xb6\x92lpHP\xfd\xed\xb9\xda^\x15FW\xa7\x8d\x9d\x84\x90\xd8\xab\x00\x8c\xbc\xd3\n\xf7\xe4X\x05\xb8\xb3E\x06\xd0,\x1e\x8f\xca?\x0f\x02\xc1\xaf\xbd\x03\x01\x13\x8ak:\x91\x11AOg\xdc\xea\x97\xf2\xcf\xce\xf0\xb4\xe6s\x96\xact\"\xe7\xad5\x85\xe2\xf97\xe8\x1cu\xdfnG\xf1\x1aq\x1d)\xc5\x89o\xb7b\x0e\xaa\x18\xbe\x1b\xfcV>K\xc6\xd2y \x9a\xdb\xc0\xfex\xcdZ\xf4\x1f\xdd\xa83\x88\x07\xc71\xb1\x12\x10Y'\x80\xec_`Q\x7f\xa9\x19\xb5J\r-\xe5z\x9f\x93\xc9\x9c\xef\xa0\xe0;M\xae*\xf5\xb0\xc8\xeb\xbb<\x83S\x99a\x17+\x04~\xbaw\xd6&\xe1i\x14cU!\x0c}"
-r_con = b"\x00\x01\x02\x04\x08\x10 @\x80\x1b6l\xd8\xabM\x9a/^\xbcc\xc6\x975j\xd4\xb3}\xfa\xef\xc5\x919"
+s_box = b'c|w{\xf2ko\xc50\x01g+\xfe\xd7\xabv\xca\x82\xc9}\xfaYG\xf0\xad\xd4\xa2\xaf\x9c\xa4r\xc0\xb7\xfd\x93&6?\xf7\xcc4\xa5\xe5\xf1q\xd81\x15\x04\xc7#\xc3\x18\x96\x05\x9a\x07\x12\x80\xe2\xeb\'\xb2u\t\x83,\x1a\x1bnZ\xa0R;\xd6\xb3)\xe3/\x84S\xd1\x00\xed \xfc\xb1[j\xcb\xbe9JLX\xcf\xd0\xef\xaa\xfbCM3\x85E\xf9\x02\x7fP<\x9f\xa8Q\xa3@\x8f\x92\x9d8\xf5\xbc\xb6\xda!\x10\xff\xf3\xd2\xcd\x0c\x13\xec_\x97D\x17\xc4\xa7~=d]\x19s`\x81O\xdc"*\x90\x88F\xee\xb8\x14\xde^\x0b\xdb\xe02:\nI\x06$\\\xc2\xd3\xacb\x91\x95\xe4y\xe7\xc87m\x8d\xd5N\xa9lV\xf4\xeaez\xae\x08\xbax%.\x1c\xa6\xb4\xc6\xe8\xddt\x1fK\xbd\x8b\x8ap>\xb5fH\x03\xf6\x0ea5W\xb9\x86\xc1\x1d\x9e\xe1\xf8\x98\x11i\xd9\x8e\x94\x9b\x1e\x87\xe9\xceU(\xdf\x8c\xa1\x89\r\xbf\xe6BhA\x99-\x0f\xb0T\xbb\x16'
+inv_s_box = b'R\tj\xd506\xa58\xbf@\xa3\x9e\x81\xf3\xd7\xfb|\xe39\x82\x9b/\xff\x874\x8eCD\xc4\xde\xe9\xcbT{\x942\xa6\xc2#=\xeeL\x95\x0bB\xfa\xc3N\x08.\xa1f(\xd9$\xb2v[\xa2Im\x8b\xd1%r\xf8\xf6d\x86h\x98\x16\xd4\xa4\\\xcc]e\xb6\x92lpHP\xfd\xed\xb9\xda^\x15FW\xa7\x8d\x9d\x84\x90\xd8\xab\x00\x8c\xbc\xd3\n\xf7\xe4X\x05\xb8\xb3E\x06\xd0,\x1e\x8f\xca?\x0f\x02\xc1\xaf\xbd\x03\x01\x13\x8ak:\x91\x11AOg\xdc\xea\x97\xf2\xcf\xce\xf0\xb4\xe6s\x96\xact"\xe7\xad5\x85\xe2\xf97\xe8\x1cu\xdfnG\xf1\x1aq\x1d)\xc5\x89o\xb7b\x0e\xaa\x18\xbe\x1b\xfcV>K\xc6\xd2y \x9a\xdb\xc0\xfex\xcdZ\xf4\x1f\xdd\xa83\x88\x07\xc71\xb1\x12\x10Y\'\x80\xec_`Q\x7f\xa9\x19\xb5J\r-\xe5z\x9f\x93\xc9\x9c\xef\xa0\xe0;M\xae*\xf5\xb0\xc8\xeb\xbb<\x83S\x99a\x17+\x04~\xbaw\xd6&\xe1i\x14cU!\x0c}'
+r_con = b'\x00\x01\x02\x04\x08\x10 @\x80\x1b6l\xd8\xabM\x9a/^\xbcc\xc6\x975j\xd4\xb3}\xfa\xef\xc5\x919'
+
 
 def sub_bytes(s):
     for i in range(4):
@@ -66,22 +67,22 @@ def inv_mix_columns(s):
 
 
 def bytes2matrix(text):
-    '''Converts a 16-byte array into a 4x4 matrix.'''
+    """Converts a 16-byte array into a 4x4 matrix."""
     return [list(text[i : i + 4]) for i in range(0, len(text), 4)]
 
 
 def matrix2bytes(matrix):
-    '''Converts a 4x4 matrix into a 16-byte array.'''
+    """Converts a 4x4 matrix into a 16-byte array."""
     return bytes(sum(matrix, []))
 
 
 def xor_bytes(a, b):
-    '''Returns a new byte array with the elements xor'ed.'''
+    """Returns a new byte array with the elements xor'ed."""
     return bytes(i ^ j for i, j in zip(a, b))
 
 
 def inc_bytes(a):
-    '''Returns a new byte array with the value increment by 1'''
+    """Returns a new byte array with the value increment by 1"""
     out = list(a)
     for i in reversed(range(len(out))):
         if out[i] == 0xFF:
@@ -109,7 +110,7 @@ class AES:
         self._key_matrices = self._expand_key(master_key)
 
     def _expand_key(self, master_key):
-        '''Expands and returns a list of key matrices for the given master_key.'''
+        """Expands and returns a list of key matrices for the given master_key."""
         # Initialize round keys with raw key material.
         key_columns = bytes2matrix(master_key)
         iteration_size = len(master_key) // 4
@@ -137,7 +138,7 @@ class AES:
         return [key_columns[4 * i : 4 * (i + 1)] for i in range(len(key_columns) // 4)]
 
     def encrypt_block(self, plaintext):
-        '''Encrypts a single block of 16 byte long plaintext.'''
+        """Encrypts a single block of 16 byte long plaintext."""
         assert len(plaintext) == 16
 
         plain_state = bytes2matrix(plaintext)
@@ -157,7 +158,7 @@ class AES:
         return matrix2bytes(plain_state)
 
     def decrypt_block(self, ciphertext):
-        '''Decrypts a single block of 16 byte long ciphertext.'''
+        """Decrypts a single block of 16 byte long ciphertext."""
         assert len(ciphertext) == 16
 
         cipher_state = bytes2matrix(ciphertext)
@@ -177,10 +178,10 @@ class AES:
         return matrix2bytes(cipher_state)
 
     def encrypt_ecb_nopadding(self, plaintext):
-        '''
+        """
         Decrypts `plaintext` using ECB mode
         Assumes data is already padded.
-        '''
+        """
         return bytearray(
             b''.join(
                 [
@@ -191,10 +192,10 @@ class AES:
         )
 
     def decrypt_ecb_nopadding(self, ciphertext):
-        '''
+        """
         Decrypts `plaintext` using ECB mode
         Assumes data is already padded.
-        '''
+        """
         return bytearray(
             b''.join(
                 [
@@ -205,10 +206,10 @@ class AES:
         )
 
     def encrypt_cbc_nopadding(self, plaintext, iv):
-        '''
+        """
         Encrypts `plaintext` using CBC mode and with the given initialization vector (iv).
         Assumes data is already padded.
-        '''
+        """
         assert len(iv) == 16
 
         blocks = []
@@ -222,10 +223,10 @@ class AES:
         return bytearray(b''.join(blocks))
 
     def decrypt_cbc_nopadding(self, ciphertext, iv):
-        '''
+        """
         Decrypts `ciphertext` using CBC mode with the given initialization vector (iv).
         Assumes data is already padded.
-        '''
+        """
         assert len(iv) == 16
         blocks = []
         previous = iv

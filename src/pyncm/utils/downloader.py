@@ -1,4 +1,4 @@
-'''Pool based multithreaded downloader'''
+"""Pool based multithreaded downloader"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from requests import Session
 
 
 class PoolWorker(Thread):
-    '''Base worker model.'''
+    """Base worker model."""
 
     def __init__(self, queue, id=0):
         self.id = id
@@ -31,7 +31,7 @@ class PoolWorker(Thread):
 
 
 class DownloadWorker(PoolWorker):
-    '''Workers for downloading'''
+    """Workers for downloading"""
 
     def init_status(self):
         self.status = {
@@ -54,7 +54,7 @@ class DownloadWorker(PoolWorker):
         self.init_status()
 
     def __call__(self):
-        '''Reports the status once called'''
+        """Reports the status once called"""
         return self.status
 
     def run(self):
@@ -76,7 +76,7 @@ class DownloadWorker(PoolWorker):
                 self.task_queue.task_done()
                 continue
             # Stops this iteration if server doesn't response 200 (0xC8)
-            length = int(r.headers['content-length']) # type: ignore
+            length = int(r.headers['content-length'])  # type: ignore
             if length:
                 self.status['length'] = length
             # Sets content-length if the server ever sends one
@@ -89,22 +89,22 @@ class DownloadWorker(PoolWorker):
                 with open(path, 'wb') as f:
                     chunk_size = self.buffer_size * 1024
                     # Buffer of 128 KB
-                    for chunk in r.iter_content(chunk_size): # type: ignore
+                    for chunk in r.iter_content(chunk_size):  # type: ignore
                         # Iterate content with buffer size of which
                         f.write(chunk)
-                        self.status['xfered'] += len(chunk) # type: ignore
+                        self.status['xfered'] += len(chunk)  # type: ignore
                         # Writes to file and updates infomation
                 self.status['status'] = 0xFF
                 # sets flag to 0xFF to flag completion since 256 isnt in the HTTP Standard
             except Exception as e:
                 # Uncaught excpetion
-                sys.stderr.write(e) # type: ignore
+                sys.stderr.write(e)  # type: ignore
             self.task_queue.task_done()
             # Marks that one task is completed.Note that it doesn't specifiy which task,work end
 
 
 class Downloader:
-    '''Threadpool a-like downloader
+    """Threadpool a-like downloader
 
     Args :
 
@@ -114,7 +114,7 @@ class Downloader:
             append    :   append a new download task
             wait      :   wait util all tasks are finished
             report    :   geneartes a pretty report
-    '''
+    """
 
     def __init__(
         self,
@@ -132,14 +132,14 @@ class Downloader:
         def get_worker(i):
             if worker == DownloadWorker:
                 return worker(
-                    session, # type: ignore
+                    session,  # type: ignore
                     self.task_queue,
                     id=i,
                     timeout=timeout,
                     buffer_size=buffer_size,
                 )
             elif worker == PoolWorker:
-                return worker(self.task_queue, id=i) # type: ignore
+                return worker(self.task_queue, id=i)  # type: ignore
             else:
                 raise NotImplementedError
 
@@ -150,7 +150,7 @@ class Downloader:
         # and start them
 
     def reports(self):
-        '''Generates reports.'''
+        """Generates reports."""
         for worker in self.workers:
             if not isinstance(worker, DownloadWorker):
                 raise NotImplementedError(type(worker))
@@ -163,10 +163,10 @@ class Downloader:
             yield status, id, xfered, length
 
     def wait(self, *args, func=None, do_when_done=True):
-        '''Equvilant to .task_queue.join(),but tasks during wait time is possible.
+        """Equvilant to .task_queue.join(),but tasks during wait time is possible.
             do_when_done    :   Specifies whether exec the fucntion when loop ends or not
         Waits for all tasks are finished
-        '''
+        """
 
         def do_func():
             if args and func:
@@ -180,9 +180,9 @@ class Downloader:
             do_func()
 
     def append(self, url, path):
-        '''Appends a new download task into queue
+        """Appends a new download task into queue
 
         url     : the file url
         path    : the path of the destination file
-        '''
+        """
         self.task_queue.put((url, path))

@@ -82,128 +82,206 @@ def _clean_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
 def llmToolSchemas() -> list[dict[str, Any]]:
     schemas = [
-        _schema('get_tool_usage', 'Get exact usage for one tool.', {
-            'tool_name': _prop('string', 'Exact tool name.', required=True),
-        }),
-        _schema('get_confirm', 'Ask the user to confirm a plan before actions.', {
-            'plan': _prop('string', 'Short action plan shown to the user.', required=True),
-            'tools': _prop(
-                'string',
-                'JSON array of tool calls to execute after approval.',
-                required=True,
-            ),
-        }),
+        _schema(
+            'get_tool_usage',
+            'Get exact usage for one tool.',
+            {
+                'tool_name': _prop('string', 'Exact tool name.', required=True),
+            },
+        ),
+        _schema(
+            'get_confirm',
+            'Ask the user to confirm a plan before actions.',
+            {
+                'plan': _prop(
+                    'string', 'Short action plan shown to the user.', required=True
+                ),
+                'tools': _prop(
+                    'string',
+                    'JSON array of tool calls to execute after approval.',
+                    required=True,
+                ),
+            },
+        ),
         _schema('get_current_song', TOOL_SCHEMA_DESCRIPTION, {}),
-        _schema('get_song_details', TOOL_SCHEMA_DESCRIPTION, {
-            'song': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-        }),
+        _schema(
+            'get_song_details',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'song': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            },
+        ),
         _schema('get_folders', TOOL_SCHEMA_DESCRIPTION, {}),
-        _schema('get_folder_songs', TOOL_SCHEMA_DESCRIPTION, {
-            'folder': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-            'offset': _prop('integer', TOOL_ARG_DESCRIPTION),
-            'limit': _prop('integer', TOOL_ARG_DESCRIPTION),
-        }),
-        _schema('read', TOOL_SCHEMA_DESCRIPTION, {
-            'path': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-            'offset': _prop('integer', TOOL_ARG_DESCRIPTION),
-            'limit': _prop('integer', TOOL_ARG_DESCRIPTION),
-        }),
-        _schema('grep', TOOL_SCHEMA_DESCRIPTION, {
-            'path': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-            'pattern': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-        }),
+        _schema(
+            'get_folder_songs',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'folder': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+                'offset': _prop('integer', TOOL_ARG_DESCRIPTION),
+                'limit': _prop('integer', TOOL_ARG_DESCRIPTION),
+            },
+        ),
+        _schema(
+            'read',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'path': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+                'offset': _prop('integer', TOOL_ARG_DESCRIPTION),
+                'limit': _prop('integer', TOOL_ARG_DESCRIPTION),
+            },
+        ),
+        _schema(
+            'grep',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'path': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+                'pattern': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            },
+        ),
         _schema('get_language', TOOL_SCHEMA_DESCRIPTION, {}),
-        _schema('get_translation', TOOL_SCHEMA_DESCRIPTION, {
-            'key': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-        }),
+        _schema(
+            'get_translation',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'key': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            },
+        ),
         _schema('refresh_folders', TOOL_SCHEMA_DESCRIPTION, {}),
-        _schema('switch_page', TOOL_SCHEMA_DESCRIPTION, {
-            'page': _prop(
-                'string',
-                TOOL_ARG_DESCRIPTION,
-                enum=['settings', 'account', 'search'],
-                required=True,
-            ),
-        }),
-        _schema('open_folder', TOOL_SCHEMA_DESCRIPTION, {
-            'folder': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-        }),
-        _schema('search_cloud', TOOL_SCHEMA_DESCRIPTION, {
-            'query': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-        }),
+        _schema(
+            'switch_page',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'page': _prop(
+                    'string',
+                    TOOL_ARG_DESCRIPTION,
+                    enum=['settings', 'account', 'search'],
+                    required=True,
+                ),
+            },
+        ),
+        _schema(
+            'open_folder',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'folder': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            },
+        ),
+        _schema(
+            'search_cloud',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'query': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            },
+        ),
         _schema('continue_search_cloud', TOOL_SCHEMA_DESCRIPTION, {}),
-        _schema('favorite_song', TOOL_SCHEMA_DESCRIPTION, {
-            'song': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-            'folder': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-        }),
-        _schema('create_favorite_folder', TOOL_SCHEMA_DESCRIPTION, {
-            'name': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-            'kind': _prop(
-                'string',
-                TOOL_ARG_DESCRIPTION,
-                enum=['local', 'cloud'],
-                required=True,
-            ),
-        }),
+        _schema(
+            'favorite_song',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'song': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+                'folder': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            },
+        ),
+        _schema(
+            'create_favorite_folder',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'name': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+                'kind': _prop(
+                    'string',
+                    TOOL_ARG_DESCRIPTION,
+                    enum=['local', 'cloud'],
+                    required=True,
+                ),
+            },
+        ),
         _schema('get_sections', TOOL_SCHEMA_DESCRIPTION, {}),
-        _schema('jump_to_option', TOOL_SCHEMA_DESCRIPTION, {
-            'option': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-        }),
-        _schema('get_options', TOOL_SCHEMA_DESCRIPTION, {
-            'section': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-        }),
-        _schema('set_option_value', TOOL_SCHEMA_DESCRIPTION, {
-            'section': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-            'option': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-            'value': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-            'converter': _prop(
-                'string',
-                TOOL_ARG_DESCRIPTION,
-                enum=['str', 'int', 'float', 'bool'],
-                required=True,
-            ),
-        }),
+        _schema(
+            'jump_to_option',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'option': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            },
+        ),
+        _schema(
+            'get_options',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'section': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            },
+        ),
+        _schema(
+            'set_option_value',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'section': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+                'option': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+                'value': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+                'converter': _prop(
+                    'string',
+                    TOOL_ARG_DESCRIPTION,
+                    enum=['str', 'int', 'float', 'bool'],
+                    required=True,
+                ),
+            },
+        ),
         _schema('get_llm_providers', TOOL_SCHEMA_DESCRIPTION, {}),
-        _schema('fetch_llm_models', TOOL_SCHEMA_DESCRIPTION, {
-            'api_format': _prop(
-                'string',
-                TOOL_ARG_DESCRIPTION,
-                enum=['openai_chat', 'openai_responses', 'anthropic'],
-                required=True,
-            ),
-            'api_key': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-            'base_url': _prop('string', TOOL_ARG_DESCRIPTION),
-        }),
-        _schema('add_llm_provider', TOOL_SCHEMA_DESCRIPTION, {
-            'name': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-            'api_format': _prop(
-                'string',
-                TOOL_ARG_DESCRIPTION,
-                enum=['openai_chat', 'openai_responses', 'anthropic'],
-                required=True,
-            ),
-            'api_key': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-            'base_url': _prop('string', TOOL_ARG_DESCRIPTION),
-            'models': _prop(
-                'string',
-                TOOL_ARG_DESCRIPTION,
-                required=True,
-            ),
-        }),
-        _schema('set_llm_provider_model', TOOL_SCHEMA_DESCRIPTION, {
-            'provider': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-            'model': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-        }),
+        _schema(
+            'fetch_llm_models',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'api_format': _prop(
+                    'string',
+                    TOOL_ARG_DESCRIPTION,
+                    enum=['openai_chat', 'openai_responses', 'anthropic'],
+                    required=True,
+                ),
+                'api_key': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+                'base_url': _prop('string', TOOL_ARG_DESCRIPTION),
+            },
+        ),
+        _schema(
+            'add_llm_provider',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'name': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+                'api_format': _prop(
+                    'string',
+                    TOOL_ARG_DESCRIPTION,
+                    enum=['openai_chat', 'openai_responses', 'anthropic'],
+                    required=True,
+                ),
+                'api_key': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+                'base_url': _prop('string', TOOL_ARG_DESCRIPTION),
+                'models': _prop(
+                    'string',
+                    TOOL_ARG_DESCRIPTION,
+                    required=True,
+                ),
+            },
+        ),
+        _schema(
+            'set_llm_provider_model',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'provider': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+                'model': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            },
+        ),
         _schema('get_southside_legacy_connection', TOOL_SCHEMA_DESCRIPTION, {}),
         _schema('connect_southside_legacy', TOOL_SCHEMA_DESCRIPTION, {}),
         _schema('disconnect_southside_legacy', TOOL_SCHEMA_DESCRIPTION, {}),
         _schema('reset_desktop_lyrics_position', TOOL_SCHEMA_DESCRIPTION, {}),
         _schema('get_nickname', TOOL_SCHEMA_DESCRIPTION, {}),
         _schema('login', TOOL_SCHEMA_DESCRIPTION, {}),
-        _schema('remove_song', TOOL_SCHEMA_DESCRIPTION, {
-            'folder': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-            'song': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
-        }),
+        _schema(
+            'remove_song',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'folder': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+                'song': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+            },
+        ),
     ]
     return [_clean_schema(schema) for schema in schemas]
 
@@ -283,7 +361,11 @@ class SourceTree:
 
         files = self._grep_files(rel)
         if files is None:
-            return {'path': rel, 'pattern': pattern, 'error': 'Path not found under src'}
+            return {
+                'path': rel,
+                'pattern': pattern,
+                'error': 'Path not found under src',
+            }
 
         matches = []
         for source in files:
@@ -638,7 +720,9 @@ class LLMToolRunner:
             'limit': limit,
             'total': len(songs),
             'next_offset': offset + len(sliced),
-            'songs': [self._song_to_dict(song, self._song_handle(song)) for song in sliced],
+            'songs': [
+                self._song_to_dict(song, self._song_handle(song)) for song in sliced
+            ],
         }
 
     def read(self, path: str, offset: int = 0, limit: int = 80) -> dict[str, Any]:
@@ -803,7 +887,9 @@ class LLMToolRunner:
             target.setExpanded(True)
             target.refreshContentHeight()
             scroller = self.ctx.setting_page.scroller
-            card_y = card.mapTo(self.ctx.setting_page.options_widget, card.rect().topLeft()).y()
+            card_y = card.mapTo(
+                self.ctx.setting_page.options_widget, card.rect().topLeft()
+            ).y()
             center = card_y - scroller.viewport().height() // 2 + card.height() // 2
             bar = scroller.verticalScrollBar()
             value = max(0, min(bar.maximum(), center))

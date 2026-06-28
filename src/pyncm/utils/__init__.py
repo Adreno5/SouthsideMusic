@@ -29,24 +29,24 @@ def _hash_digest(text):
 
 
 def _hash_hex_digest(text):
-    '''Digests 128 bit md5 hash,then digest it as a hexstring'''
+    """Digests 128 bit md5 hash,then digest it as a hexstring"""
     return _hex_digest(_hash_digest(text))
 
 
 def _generate_s_device_id() -> str:
-    '''Generate sDeviceId
+    """Generate sDeviceId
 
     This code is from web source code
-    '''
+    """
     random_num = random.randrange(1000000)
     return f'unknown-{random_num}'
 
 
 def _generate_chain_id(s_device_id: str) -> str:
-    '''Generate chainId param for web login api
+    """Generate chainId param for web login api
 
     This code is from web source code
-    '''
+    """
     timestamp = int(time.time() * 1000)
     # the rule is '{version}_{s_device_id}_{platform}_{action}_{timestamp}'
     return f'v1_{s_device_id}_web_login_{timestamp}'

@@ -20,6 +20,7 @@ def removeWidgets(layout: QLayout) -> None:
         elif item.layout() is not None:
             removeWidgets(item.layout())
 
+
 def toQtInt(value: float | int) -> int:
     with _lock:
         return _toQtInt(value)

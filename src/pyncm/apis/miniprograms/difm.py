@@ -4,7 +4,7 @@ from .. import weapi
 
 
 def getCurrentPlayingTrackList(channelId=101, limit=10, source=0) -> dict:
-    '''get current playing tracks for a difm channel (mobile).
+    """get current playing tracks for a difm channel (mobile).
 
     Args:
         channelId: channel id. defaults to 101.
@@ -13,7 +13,7 @@ def getCurrentPlayingTrackList(channelId=101, limit=10, source=0) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return weapi(
         '/api/dj/difm/playing/tracks/list',
         {
@@ -25,31 +25,31 @@ def getCurrentPlayingTrackList(channelId=101, limit=10, source=0) -> dict:
 
 
 def getChannelCollection(source=0) -> dict:
-    '''get all difm channel info (mobile).
+    """get all difm channel info (mobile).
 
     Args:
         source: unknown. defaults to 0.
 
     Returns:
         dict
-    '''
+    """
     return weapi('/api/dj/difm/all/style/channel/v2', {'sources': '[%s]' % source})
 
 
 def getChannelSubscriptionCollection(source=0) -> dict:
-    '''get all subscribed difm channel info (mobile).
+    """get all subscribed difm channel info (mobile).
 
     Args:
         source: unknown. defaults to 0.
 
     Returns:
         dict
-    '''
+    """
     return weapi('/api/dj/difm/subscribe/channels/get/v2', {'sources': '[%s]' % source})
 
 
 def setChannelSubscribiton(id, set_subsubscribe=True) -> dict:
-    '''subscribe/unsubscribe difm channel (mobile).
+    """subscribe/unsubscribe difm channel (mobile).
 
     Args:
         id: channel id.
@@ -57,7 +57,7 @@ def setChannelSubscribiton(id, set_subsubscribe=True) -> dict:
 
     Returns:
         dict
-    '''
+    """
     url = (
         '/api/dj/difm/channel/subscribe'
         if set_subsubscribe

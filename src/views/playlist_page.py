@@ -183,7 +183,11 @@ class PlaylistPage(QWidget):
         item.setData(Qt.ItemDataRole.UserRole, song)
         item.setSizeHint(QSize(0, SONG_CARD_HEIGHT))
         card = PlaylistSongCard(
-            song, self._dp, mwindow=self._mwindow, plp=self, lazy=True # type: ignore
+            song,
+            self._dp,
+            mwindow=self._mwindow,
+            plp=self,
+            lazy=True,  # type: ignore
         )
         card.clicked.connect(lambda s: self._onSongClicked(s))
         card.queued.connect(lambda s: self._onSongClicked(s))

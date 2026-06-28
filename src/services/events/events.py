@@ -1,4 +1,5 @@
 IMAGE_ASSET_PERSISTED = 'image_asset_persisted'
+STORABLE_COUNT_CHANGED = 'storable_count_changed'
 
 SONG_CHANGED = 'song_changed'
 SONG_ENDED = 'song_ended'

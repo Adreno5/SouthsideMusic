@@ -35,7 +35,7 @@ from imports import (
     QWidget,
     QSizePolicy,
     QSpacerItem,
-    QTimer
+    QTimer,
 )
 from qfluentwidgets import (
     CardWidget,
@@ -262,6 +262,7 @@ class SettingPage(QWidget):
                 tr('setting_page.current_volume_db_value', value=f'{v:.1f}')
             ),
         )
+
     @property
     def _dp(self):
         return self.ctx.playing_page
@@ -311,7 +312,10 @@ class SettingPage(QWidget):
         self.addNumberSetting(
             'setting_page.download_concurrent_threads',
             'setting_page.download_concurrent_threads_description',
-            1, 128, 1, 'download_concurrent_threads'
+            1,
+            128,
+            1,
+            'download_concurrent_threads',
         )
 
         self.addSection(
@@ -578,9 +582,7 @@ class SettingPage(QWidget):
         self.target_lufs.setRange(-60, 0)
         self.target_lufs.setSingleStep(1)
         self.target_lufs.setValue(cfg.target_lufs)
-        self.target_lufs_label = SubtitleLabel(
-            tr('setting_page.target_lufs_value')
-        )
+        self.target_lufs_label = SubtitleLabel(tr('setting_page.target_lufs_value'))
         self.addSetting(
             'setting_page.target_lufs',
             'setting_page.restart_to_apply_loudness_changes',
@@ -592,7 +594,11 @@ class SettingPage(QWidget):
         self.target_lufs_viewer = NumberViewer(self.ctx.harmony_font_family, self.ctx)
         self.target_lufs_viewer.setText(str(cfg.target_lufs))
         middle_layout.addWidget(self.target_lufs_viewer)
-        middle_layout.addSpacerItem(QSpacerItem(10, 10, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        middle_layout.addSpacerItem(
+            QSpacerItem(
+                10, 10, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+            )
+        )
         middle_layout.setSpacing(8)
         middle_widget.setLayout(middle_layout)
         self.addSeparateWidget(middle_widget)
@@ -619,7 +625,9 @@ class SettingPage(QWidget):
         status_layout.addWidget(prefix_label)
         status_layout.addWidget(self.sent_label)
         status_layout.addWidget(QLabel('MB'))
-        status_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        status_layout.addSpacerItem(
+            QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        )
 
         prefix_label = QLabel('')
         bindText(prefix_label, 'setting_page.received_size')
@@ -627,7 +635,9 @@ class SettingPage(QWidget):
         status_layout.addWidget(prefix_label)
         status_layout.addWidget(self.received_label)
         status_layout.addWidget(QLabel('KB'))
-        status_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        status_layout.addSpacerItem(
+            QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        )
         status_layout.setSpacing(8)
         self.status_widget.setLayout(status_layout)
         self.addSeparateWidget(self.status_widget)
@@ -638,14 +648,22 @@ class SettingPage(QWidget):
         status_layout.addWidget(prefix_label)
         status_layout.addWidget(self.latency_label)
         status_layout.addWidget(QLabel('ms'))
-        status_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        status_layout.addSpacerItem(
+            QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        )
         status_layout.setSpacing(8)
         self.status_widget.setLayout(status_layout)
         self.addSeparateWidget(self.status_widget)
 
-        self.update_statuses_timer.timeout.connect(lambda: self.sent_label.setText(f'{self.ctx.ws_handler.sent:.2f}'))
-        self.update_statuses_timer.timeout.connect(lambda: self.received_label.setText(f'{self.ctx.ws_handler.received:.2f}'))
-        self.update_statuses_timer.timeout.connect(lambda: self.latency_label.setText(f'{self.ctx.ws_handler.ping:.2f}'))
+        self.update_statuses_timer.timeout.connect(
+            lambda: self.sent_label.setText(f'{self.ctx.ws_handler.sent:.2f}')
+        )
+        self.update_statuses_timer.timeout.connect(
+            lambda: self.received_label.setText(f'{self.ctx.ws_handler.received:.2f}')
+        )
+        self.update_statuses_timer.timeout.connect(
+            lambda: self.latency_label.setText(f'{self.ctx.ws_handler.ping:.2f}')
+        )
         self.update_statuses_timer.start(200)
 
         self.disconnect_btn = TransparentPushButton('')
@@ -772,9 +790,9 @@ class SettingPage(QWidget):
 
     def addSetting(self, name: str, description: str, widget: QWidget) -> None:
         card = self._createTransparentCard()
-        card._llm_setting_name = name # type: ignore
-        card._llm_setting_description = description # type: ignore
-        card._llm_setting_widget = widget # type: ignore
+        card._llm_setting_name = name  # type: ignore
+        card._llm_setting_description = description  # type: ignore
+        card._llm_setting_widget = widget  # type: ignore
         global_layout = QHBoxLayout()
         global_layout.setContentsMargins(16, 12, 16, 12)
         global_layout.setSpacing(18)
@@ -959,7 +977,7 @@ class SettingPage(QWidget):
     def _refreshLlmProvidersView(self) -> None:
         while self.llm_provider_list_layout.count():
             item = self.llm_provider_list_layout.takeAt(0)
-            widget = item.widget() # type: ignore
+            widget = item.widget()  # type: ignore
             if widget is not None:
                 widget.deleteLater()
 
@@ -1022,7 +1040,9 @@ class SettingPage(QWidget):
         if self.llm_provider_form is not None:
             self.llm_provider_form.deleteLater()
             self.llm_provider_form = None
-        self.llm_editing_provider_name = str(provider.get('name', '')) if provider else ''
+        self.llm_editing_provider_name = (
+            str(provider.get('name', '')) if provider else ''
+        )
         self.llm_fetched_models = []
         self.llm_provider_form = self._createLlmProviderForm(provider)
         self._refreshLlmProvidersView()
@@ -1041,9 +1061,13 @@ class SettingPage(QWidget):
         form.setSpacing(8)
 
         self.llm_provider_name_edit = LineEdit()
-        self.llm_provider_name_edit.setText(str(provider.get('name', '')) if provider else '')
+        self.llm_provider_name_edit.setText(
+            str(provider.get('name', '')) if provider else ''
+        )
         self.llm_provider_name_edit.setFixedWidth(320)
-        form.addRow(QLabel(tr('setting_page.provider_name')), self.llm_provider_name_edit)
+        form.addRow(
+            QLabel(tr('setting_page.provider_name')), self.llm_provider_name_edit
+        )
 
         self.llm_api_format_box = ComboBox()
         self.llm_api_format_box.setFixedWidth(320)
@@ -1054,7 +1078,11 @@ class SettingPage(QWidget):
         )
         for label, value in formats:
             self.llm_api_format_box.addItem(label, userData=value)
-        current_format = str(provider.get('api_format', 'openai_chat')) if provider else 'openai_chat'
+        current_format = (
+            str(provider.get('api_format', 'openai_chat'))
+            if provider
+            else 'openai_chat'
+        )
         index = self.llm_api_format_box.findData(current_format)
         self.llm_api_format_box.setCurrentIndex(max(index, 0))
         form.addRow(QLabel(tr('setting_page.api_format')), self.llm_api_format_box)
@@ -1063,12 +1091,18 @@ class SettingPage(QWidget):
         self.llm_provider_api_key_edit.setFixedWidth(320)
         encrypted = str(provider.get('api_key_encrypted', '')) if provider else ''
         self.llm_provider_api_key_edit.setText(decryptSecret(encrypted))
-        form.addRow(QLabel(tr('setting_page.llm_api_key')), self.llm_provider_api_key_edit)
+        form.addRow(
+            QLabel(tr('setting_page.llm_api_key')), self.llm_provider_api_key_edit
+        )
 
         self.llm_provider_base_url_edit = LineEdit()
         self.llm_provider_base_url_edit.setFixedWidth(320)
-        self.llm_provider_base_url_edit.setText(str(provider.get('base_url', '')) if provider else '')
-        form.addRow(QLabel(tr('setting_page.llm_base_url')), self.llm_provider_base_url_edit)
+        self.llm_provider_base_url_edit.setText(
+            str(provider.get('base_url', '')) if provider else ''
+        )
+        form.addRow(
+            QLabel(tr('setting_page.llm_base_url')), self.llm_provider_base_url_edit
+        )
         layout.addLayout(form)
 
         fetch_btn = PushButton(FluentIcon.SYNC, '')
@@ -1105,7 +1139,9 @@ class SettingPage(QWidget):
         add_btn = PushButton(FluentIcon.ADD_TO, '')
         bindText(
             add_btn,
-            'setting_page.save' if self.llm_editing_provider_name else 'setting_page.add',
+            'setting_page.save'
+            if self.llm_editing_provider_name
+            else 'setting_page.add',
         )
         add_btn.clicked.connect(self._saveLlmProviderForm)
         buttons.addWidget(cancel_btn)
@@ -1143,9 +1179,9 @@ class SettingPage(QWidget):
         remove_btn = TransparentPushButton('')
         bindIcon(remove_btn, 'trash')
         remove_btn.clicked.connect(lambda: self._removeLlmModelRow(row))
-        row._llm_model_id_widget = model_widget # type: ignore
-        row._llm_display_name_edit = display_edit # type: ignore
-        row._llm_enable_1m_context_box = context_box # type: ignore
+        row._llm_model_id_widget = model_widget  # type: ignore
+        row._llm_display_name_edit = display_edit  # type: ignore
+        row._llm_enable_1m_context_box = context_box  # type: ignore
         layout.addWidget(QLabel(tr('setting_page.model_id')))
         layout.addWidget(model_widget)
         layout.addWidget(QLabel(tr('setting_page.display_name')))
@@ -1166,7 +1202,7 @@ class SettingPage(QWidget):
     def _readLlmModelRows(self) -> list[dict[str, object]]:
         models: list[dict[str, object]] = []
         for i in range(self.llm_model_rows_layout.count()):
-            row = self.llm_model_rows_layout.itemAt(i).widget() # type: ignore
+            row = self.llm_model_rows_layout.itemAt(i).widget()  # type: ignore
             if row is None:
                 continue
             model_widget = getattr(row, '_llm_model_id_widget')
@@ -1205,14 +1241,18 @@ class SettingPage(QWidget):
         if any(not item['id'] or not item['display_name'] for item in models):
             self._showLlmError(tr('setting_page.model_mapping_required'))
             return
-        if len(set(model_ids)) != len(model_ids) or len(set(display_names)) != len(display_names):
+        if len(set(model_ids)) != len(model_ids) or len(set(display_names)) != len(
+            display_names
+        ):
             self._showLlmError(tr('setting_page.model_mapping_duplicated'))
             return
 
         new_provider = {
             'name': name,
             'api_format': str(self.llm_api_format_box.currentData() or 'openai_chat'),
-            'api_key_encrypted': encryptSecret(self.llm_provider_api_key_edit.text().strip()),
+            'api_key_encrypted': encryptSecret(
+                self.llm_provider_api_key_edit.text().strip()
+            ),
             'base_url': self.llm_provider_base_url_edit.text().strip().rstrip('/'),
             'models': models,
         }
@@ -1275,7 +1315,7 @@ class SettingPage(QWidget):
         rows = self._readLlmModelRows()
         while self.llm_model_rows_layout.count():
             item = self.llm_model_rows_layout.takeAt(0)
-            widget = item.widget() # type: ignore
+            widget = item.widget()  # type: ignore
             if widget is not None:
                 widget.deleteLater()
         for row in rows or [{'id': '', 'display_name': ''}]:
@@ -1297,7 +1337,9 @@ class SettingPage(QWidget):
             cfg.llm_current_provider = str(provider.get('name', '')) if provider else ''
             models = provider.get('models', []) if provider else []
             first = models[0] if isinstance(models, list) and models else {}
-            cfg.llm_current_model = str(first.get('id', '')) if isinstance(first, dict) else ''
+            cfg.llm_current_model = (
+                str(first.get('id', '')) if isinstance(first, dict) else ''
+            )
         self._syncLegacyLlmConfig()
         saveConfig()
         self._refreshLlmProvidersView()
@@ -1352,7 +1394,10 @@ class SettingPage(QWidget):
         provider = self._currentLlmProvider()
         if provider is None:
             return
-        if str(provider.get('api_format', 'openai_chat')) != 'anthropic' and not str(provider.get('base_url', '')).strip():
+        if (
+            str(provider.get('api_format', 'openai_chat')) != 'anthropic'
+            and not str(provider.get('base_url', '')).strip()
+        ):
             if not silent:
                 InfoBar.error(
                     tr('setting_page.llm_models_refresh_failed'),
@@ -1394,11 +1439,11 @@ class SettingPage(QWidget):
             if silent:
                 return
             known = provider.get('models', [])
-            known_ids = {
-                str(item.get('id', ''))
-                for item in known
-                if isinstance(item, dict)
-            } if isinstance(known, list) else set()
+            known_ids = (
+                {str(item.get('id', '')) for item in known if isinstance(item, dict)}
+                if isinstance(known, list)
+                else set()
+            )
             if isinstance(known, list):
                 for model in models:
                     if model not in known_ids:

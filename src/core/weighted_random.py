@@ -15,7 +15,7 @@ class AdvancedRandom(Generic[T]):
         self.list_weight: list[float] = []
         self.randomed_times: list[int] = []
         self.target_lst: list[T] = []
-        
+
     def init(self, lst: list[T]):
         if not lst:
             return
@@ -30,9 +30,11 @@ class AdvancedRandom(Generic[T]):
         for key in lst:
             result[key] = result.get(key, 0) + 1
         return result
-    
+
     def _get_formatted(self, lst: list) -> str:
-        return ' '.join(f'{key}: {value}' for key, value in self._get_item_count(lst).items())
+        return ' '.join(
+            f'{key}: {value}' for key, value in self._get_item_count(lst).items()
+        )
 
     def random(self) -> T:
         total_weight: float = 0

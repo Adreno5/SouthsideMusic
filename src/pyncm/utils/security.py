@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-'''Miscellaneous implementations of some of netease's security algorithms
+"""Miscellaneous implementations of some of netease's security algorithms
 Implemented:
 - `abroad` parameter decryption
-'''
+"""
 
 import ctypes
 import urllib.parse
@@ -374,7 +374,8 @@ def c_decrypt_abroad_message(hexstring):
         boxB = c_apply_sbox(c_apply_sbox(box, WEAPI_ABROAD_SBOX), WEAPI_ABROAD_SBOX)
         boxC = [c_signed_xor(boxB[i], boxA[i]) for i in range(0, 64)]
         boxD = [
-            cast_to_signed(boxC[i] + cast_to_signed(-boxA[i])) for i in range(0, 64) # type: ignore
+            cast_to_signed(boxC[i] + cast_to_signed(-boxA[i]))
+            for i in range(0, 64)  # type: ignore
         ]
         boxE = [c_signed_xor(boxD[i], WEAPI_ABROAD_IV[i]) for i in range(0, 64)]
         boxA = source[i : i + 64]

@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from views.home_page import HomePage
     from views.library_page import LibraryPage
 
+
 class _ScheduledTaskRunner(QObject):
     scheduledTaskRequested = Signal()
 

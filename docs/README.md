@@ -5,11 +5,12 @@
 > In an age drowning in things that merely work, what's worth using is what earns the name of a real work. True craft lives in the hours no one sees.
 
 # Friendly Links
+
 - [LINUX DO](https://linux.do) A new ideal community
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Adreno5/SouthsideMusic)
 
-A third-party NetEase CloudMusic desktop client. High-quality streaming, word-by-word lyrics, loudness normalization, and desktop lyrics overlay.
+A Windows-only third-party NetEase CloudMusic desktop client with streaming playback, word-by-word lyrics, loudness normalization, desktop lyrics, local favorites, song export, Onerad assistant support, and SouthsideClient integration.
 
 > For the project's history, see [SouthsideMusic Story](SouthsideMusic_Story.md).
 
@@ -30,9 +31,11 @@ A third-party NetEase CloudMusic desktop client. High-quality streaming, word-by
 
 ## What It Is
 
-Southside Music is a Windows desktop music player for NetEase CloudMusic. Log in with your account to search, browse, and play from the full catalog. It has its own audio engine with loudness normalization, speed control, and spectrum visualization, plus word-by-word lyrics and a desktop overlay.
+Southside Music is a Windows desktop music player for NetEase CloudMusic. Log in with your account to search songs and playlists, browse your cloud playlists, play daily recommendations, and keep your own local favorite folders.
 
-In short: it plays your NetEase music in a cleaner, more focused way.
+It has its own audio engine with loudness normalization, playback speed and pitch controls, stereo Haas widening, reverb, crossfade, silent-ending skip, preloading, FFT visualization, word-by-word lyrics, translated lyrics, and a desktop lyrics overlay.
+
+In short: it plays your NetEase music in a cleaner, more focused way, while keeping power-user controls close at hand.
 
 ---
 
@@ -40,29 +43,54 @@ In short: it plays your NetEase music in a cleaner, more focused way.
 
 **Playback**
 
-- Full-catalog search and streaming from NetEase CloudMusic
-- Loudness normalization — all songs play at the same perceived volume, no more sudden jumps
-- Speed control from 0.1× to 3.0×
-- Optional stereo widening for a cleaner headphone soundstage
-- Auto-skip silent endings for seamless transitions
-- Preloading of the next track for near-instant switching
+- Full-catalog song search and playlist search through NetEase CloudMusic
+- Daily recommended songs and recommended playlists on the Home page
+- Loudness normalization so songs stay close to the same perceived volume
+- Playback speed from 0.1x to 3.0x
+- Pitch shift from -12 to +12 semitones
+- Optional stereo Haas widening and reverb
+- Crossfade between adjacent songs
+- Auto-skip silent endings, with threshold and remaining-time controls
+- Preloading of the current and next track for smoother seeking and switching
+- Output device selection
 
-**Visuals**
+**Lyrics and Visuals**
 
-- Real-time spectrum visualization
-- Word-by-word lyric highlighting
-- Desktop lyrics — an always-on-top overlay that shows real-time lyrics
-- Dark and light theme, auto-switching with your system
+- LRC and YRC lyric support
+- Word-by-word lyric highlighting when YRC timing is available
+- Translated lyrics toggle when translation data exists
+- Desktop lyrics in an always-on-top floating window, with reset-position support
+- Real-time FFT spectrum visualization in SouthsideMusic
+- Theme-aware background color mixed from the current song cover
+- Dark and light theme support, plus English and Simplified Chinese UI
 
 **Organization**
 
-- Browse and play your NetEase cloud playlists
-- Download cloud songs into local folders for offline listening
-- Export songs as audio files with embedded cover art and metadata
+- Local favorite folders stored by the app
+- NetEase cloud playlists in the sidebar
+- Create local folders and cloud playlists from the app
+- Add songs to local folders or cloud playlists
+- Batch-select songs in a folder for add-to-playlist, add-to-folder, and removal
+- Library page that gathers all local favorite songs
+- Queue songs after the current track from Home, Library, Favorites, and search results
+- Export songs as audio files with cover art, lyrics, album, artists, and metadata
 
-**Auto-Update**
+**Assistant and Client Integration**
 
-- Checks GitHub releases and applies updates automatically
+- Onerad assistant side panel with streaming responses and tool-call confirmation
+- OpenAI-compatible Chat Completions, OpenAI Responses, and Anthropic provider configuration
+- Encrypted API-key storage through Windows user data protection
+- SouthsideClient WebSocket bridge on port `15489`
+- Sends lyrics, cover, playback position, play state, and FFT data to SouthsideClient
+- Receives basic music-control commands from SouthsideClient: toggle, seek, next, previous
+
+**Auto-Update and Diagnostics**
+
+- Checks GitHub releases and starts update handling from inside the app
+- Startup dependency check for FFmpeg, Python runtime, audio output, network, and OpenGL
+- Automatic FFmpeg download helper when FFmpeg is missing
+- Error popup with traceback details for unhandled exceptions
+- Debug overlay toggle with `F3`
 
 ---
 
@@ -70,7 +98,9 @@ In short: it plays your NetEase music in a cleaner, more focused way.
 
 Download `SouthsideMusic_win64_setup.exe` from the latest version on the [Releases page](https://github.com/Adreno5/SouthsideMusic/releases) and run it.
 
-> FFmpeg is required on first launch.
+On startup the app checks FFmpeg, Python runtime, audio output, network access, and OpenGL. If FFmpeg is missing, the dependency window can download and install it automatically.
+
+> SouthsideMusic is Windows-only.
 
 ---
 
@@ -78,61 +108,91 @@ Download `SouthsideMusic_win64_setup.exe` from the latest version on the [Releas
 
 ### 1. Log In
 
-Open the app and use **Account** in the bottom-left corner to log in:
+Open the app and use the account area in the sidebar or Home page to log in:
 
-- **Phone number** — Enter your number, then the verification code
-- **QR code** — Scan with the NetEase CloudMusic app
+- **Cell Phone** - Enter your phone number, then the verification code
+- **QR Code** - Scan with the NetEase CloudMusic app, then confirm that you scanned it
 
-Using the app without logging in is nearly impossible — anonymous accounts are limited to 30-second previews for most songs.
+Anonymous sessions can launch the app, but most useful cloud features require a real NetEase CloudMusic login.
 
 ### 2. Search
 
-Click the search box in the title bar, type a keyword, and hit Enter. Results appear directly below. Click the paper-plane icon to play, or the heart icon to save to a local folder.
+Click the search box in the title bar, type a keyword, and press Enter. On the Search page, choose **Songs** or **Playlists** from the search-type selector.
 
-### 3. Browse Playlists
+Song results can be played directly or added to a local/cloud folder. Playlist results open as cloud playlist cards.
 
-Your NetEase cloud playlists appear in the left sidebar's favorites area. Click a playlist to load its songs, double-click to play. Right-click a cloud song and select "Add to Local Folder" to download it for offline listening.
+### 3. Use Home
 
-### 4. Manage Local Favorites
+The Home page shows daily recommended songs and recommended playlists after login. Click a song to play it, or click its cover to queue it after the current track.
 
-Click "Add Folder" in the left sidebar's favorites area to create folders for organizing your songs.
+### 4. Browse Folders and Playlists
+
+The left sidebar contains:
+
+- **Daily Recommend**
+- **Local** favorite folders
+- **Cloud** NetEase playlists
+- **Refresh**, **Library**, **Settings**, and **Add folder** controls
+
+Click a folder or playlist to open it in the Favorites page. Use **Replace Playlist** to make it the active queue, or **Add to Playlist** to append it.
+
+### 5. Manage Local Favorites
+
+Use **Add folder** under the Local section to create local folders. Right-click or use song-card actions to add songs, export songs, remove songs, and move songs inside local folders.
 
 ---
 
 ## Interface Guide
 
+### Home
+
+Home welcomes the logged-in user and loads daily recommended songs and recommended playlists.
+
 ### Search
 
-Click the title bar search box, type a keyword, and press Enter. Results show song name, artist, and cover.
+Search supports **Songs** and **Playlists**. Results load incrementally as you scroll.
+
+### Library
+
+Library gathers songs from all local favorite folders into one view, with lazy-loaded covers and details.
+
+### Favorites
+
+Favorites displays a selected local folder or cloud playlist. It supports replacing the current playlist, appending a folder to the playlist, batch selection, add-to-folder, add-to-playlist, removal, and local song reordering.
 
 ### Now Playing
 
-Click the persistent progress bar at the bottom to expand the playing panel. The layout has two halves:
+Click the bottom playback bar to expand the playing panel. The panel shows:
 
-- **Left** — Album cover on top, song name and artist below
-- **Right** — Scrolling lyrics with dual-language support and word-by-word highlighting
+- Album cover, song title, and artist
+- Scrolling lyrics with word-level highlighting when available
+- Translated lyrics toggle when translation data exists
 
-The spectrum animation and playback controls stay in the bottom bar — no need to expand the panel to use them.
+The bottom controller stays available for cover, current lyric, progress, FFT visualization, previous/play/next, and playlist expansion. Drag the progress line to seek.
 
-### Favorites Area
+### Playlist Panel
 
-The left sidebar combines local folders and cloud playlists. Click "Add Folder" to create a local folder; click a cloud playlist to load its songs. Right-click songs for export, add-to-folder, and other actions.
+Click the playlist button in the bottom controller to open the right-side playlist panel. You can play a queued song, reorder tracks, export a track, repeat one item, remove one item, or clear the queue.
+
+### Onerad
+
+Click the chat button in the title bar to open the Onerad side panel. Configure providers in Settings first. Onerad can answer questions about the app and, after explicit confirmation, run supported app actions such as searching, opening folders, or changing settings.
 
 ### Settings
 
-Click **Setting** in the bottom-left corner. Adjustable options include:
+Settings are grouped into collapsible sections:
 
-| Setting             | Description                                                |
-| ------------------- | ---------------------------------------------------------- |
-| Target LUFS         | Volume normalization baseline. Lower = louder. Keep at -16 |
-| Playback Speed      | 0.1× to 3.0×                                             |
-| Play Mode           | Repeat all / Repeat one / Shuffle / Sequential             |
-| Stereo Widening     | Broaden the stereo soundstage                              |
-| Skip Silent Endings | Auto-skip trailing silence                                 |
-| Silence Threshold   | Volume level considered "silent"                           |
-| FFT Spectrum        | Toggle frequency visualization                             |
-| Desktop Lyrics      | Toggle always-on-top lyrics overlay                        |
-| Output Device       | Select audio output device                                 |
+| Section | Main options |
+| --- | --- |
+| App | Language, download concurrent threads |
+| Playing | Play order, stereo, Haas delay, reverb, smart skip, crossfade, speed, pitch, skip threshold, skip remaining time, output device |
+| LLM | Providers, API format, API key, Base URL, model mappings |
+| Window | Background mix ratio |
+| Lyrics | Lyrics smooth factor, acceleration smooth factor |
+| Desktop Lyrics | Enable desktop lyrics, reset position |
+| FFT | Enable spectrum, FFT smoothing, SouthsideMusic FFT factor, SouthsideClient FFT factor |
+| Loudness | Target LUFS, reference values |
+| Connection | SouthsideClient connection status, sent/received size, latency, connect/disconnect |
 
 ---
 
@@ -140,25 +200,44 @@ Click **Setting** in the bottom-left corner. Adjustable options include:
 
 ### Word-by-Word Lyrics
 
-When a song supports word-level timing data, the playing panel switches to word-by-word highlighting.
+When NetEase returns YRC word timing, lyrics switch to word-level highlighting. Otherwise the app falls back to line-level LRC lyrics.
+
+### Translated Lyrics
+
+If translation data exists for the current song, the expanded playing panel shows a translation toggle.
 
 ### Desktop Lyrics
 
-Enable in Settings to show an always-on-top floating window with live lyrics. The background is fully opaque. Drag it anywhere — snap to the top edge of the screen by dragging upward.
+Enable Desktop Lyrics in Settings to show an always-on-top floating lyrics window. The window position is saved; drag it to the top edge to anchor it, or use **Reset Position** in Settings.
+
+### Loudness Normalization
+
+Target LUFS controls the perceived playback loudness. Lower values are quieter; the default target is `-16`.
+
+### Crossfade and Smart Skip
+
+Crossfade blends adjacent songs. Smart Skip can skip silent endings near the end of a song using the configured threshold and remaining-time window.
 
 ### Song Export
 
-Right-click any song and select "Export." The exported file is ready to drop onto an MP3 player or USB drive.
+Right-click a song and select **Export**. Supported output extensions include `.mp3`, `.m4a`, `.flac`, `.wav`, `.ogg`, and `.opus`. Export writes cover art, lyrics, album, artist, and track metadata when available.
+
+### SouthsideClient Bridge
+
+SouthsideMusic starts a WebSocket server on port `15489` for SouthsideClient. The bridge streams playback state, lyrics, position, cover/info, and FFT data, and accepts simple playback controls.
 
 ---
 
 ## Tips
 
 - **Spacebar** toggles play/pause
-- **Mouse wheel in the lyrics area** scrolls through lyrics; click to jump playback to that position
-- Right-click cloud playlist songs to **save them to a local folder** for offline listening
-- The app's theme color is **extracted from the current song's album cover**
-- If the overall volume feels off, adjust the **loudness normalization target** in Settings
+- **F3** toggles the debug overlay
+- Click the bottom bar below the progress line to expand/collapse the playing panel
+- Drag the bottom progress line to seek once the song is ready
+- Click a song card cover in several views to queue that song after the current track
+- Use **Library** to see all local favorite songs in one place
+- Use Settings -> **Language** to switch between English and Simplified Chinese immediately
+- If volume feels inconsistent, adjust **Target LUFS** in Settings and restart when prompted
 
 ---
 
@@ -166,7 +245,12 @@ Right-click any song and select "Export." The exported file is ready to drop ont
 
 ### Requirements
 
-Python 3.12+ (3.12.7 recommended), Windows OS, package manager, internet connection (initial setup only).
+- Windows
+- Python `>=3.13` for the project environment
+- `uv`
+- Internet connection for the initial setup and dependency downloads
+
+`setup_workspace.py` currently prepares a Python 3.14.2 embedded runtime, a free-threaded worker Python (`3.14t`), and a clean build venv with Nuitka.
 
 ### Setup
 
@@ -176,7 +260,7 @@ cd SouthsideMusic
 python setup_workspace.py
 ```
 
-`setup_workspace.py` handles all dependency setup automatically.
+`setup_workspace.py` checks the environment, installs or verifies `uv`, runs `uv sync`, prepares embedded Python, installs embedded requirements, prepares the build venv, validates the runtime, and installs Inno Setup when accepted.
 
 ### Run from Source
 
@@ -184,11 +268,22 @@ python setup_workspace.py
 uv run src/main.py
 ```
 
-### Type Checking
+If the environment is already active, this also works:
 
 ```bash
+python src/main.py
+```
+
+### Validation
+
+```bash
+python -m py_compile src/main.py
+uv run ruff check .
+uv run ruff format --check .
 uv run mypy src/
 ```
+
+There is no formal test suite yet. `src/test.py` is a manual API exploration script, not a pytest suite.
 
 ### Build
 
@@ -196,33 +291,43 @@ uv run mypy src/
 build.bat
 ```
 
-`build.bat` produces:
+`build.bat` deletes old outputs, builds `launcher.py` with Nuitka, copies embedded Python, free-threaded Python, `src`, fonts, icons, images, and runtime metadata, regenerates the icon, then runs Inno Setup if `ISCC.exe` is installed.
 
-```
+Build output:
+
+```text
 build.result\
-├── raw\          Runnable directory (portable)
-└── installer\    Installer (SouthsideMusic_win64_setup.exe)
+├── raw\          Runnable portable directory
+└── installer\    Installer when Inno Setup is available
 ```
+
+If Inno Setup is not found, the raw portable files remain in `build.result\raw\`.
 
 ### Tech Stack
 
-| Layer      | Technology                             |
-| ---------- | -------------------------------------- |
-| GUI        | PySide6 + PySide6-Fluent-Widgets       |
-| Audio      | pydub + sounddevice                    |
-| Math       | NumPy + SciPy (FFT, signal processing) |
-| Metadata   | mutagen (ID3, Vorbis, MP4 tags)        |
-| API        | pyncm (NetEase CloudMusic)             |
-| Networking | Tornado                                |
-| Packaging  | Nuitka + Inno Setup                    |
-| Font       | HarmonyOS Sans SC                      |
+| Layer | Technology |
+| --- | --- |
+| GUI | PySide6 + PySide6-Fluent-Widgets |
+| Windowing | qframelesswindow + hPyT |
+| Audio | pydub + sounddevice |
+| Math/DSP | NumPy + SciPy |
+| Metadata | mutagen |
+| API | bundled `pyncm` NetEase CloudMusic client |
+| Networking | requests + Tornado WebSocket server |
+| Assistant | OpenAI SDK + Anthropic SDK |
+| Packaging | Nuitka + Inno Setup |
+| Font | HarmonyOS Sans SC |
 
-### Configuration
+### Configuration and Data
 
-All settings are stored in `config.json`. The file checks for changes every second and auto-saves when modified.
+- Persistent app settings are saved in `config.json`
+- Local favorite data and runtime caches live under `data/`
+- Legacy `config.pkl` is migrated away and deleted
+- LLM API keys are encrypted with Windows `CryptProtectData`
+- Runtime caches such as `ffcache*` are cleaned while the app is running
 
 ### License
 
-PolyForm Noncommercial License 1.0.0 — see [LICENSE](../LICENSE).
+PolyForm Noncommercial License 1.0.0 - see [LICENSE](../LICENSE).
 
-This software is for personal learning, research, and private entertainment only. No commercial use. Users are solely responsible for all music exported through this software — do not redistribute or resell exported audio files. The developer assumes no liability for any misuse.
+This software is for personal learning, research, and private entertainment only. No commercial use. Users are solely responsible for all music exported through this software. Do not redistribute or resell exported audio files. The developer assumes no liability for misuse.

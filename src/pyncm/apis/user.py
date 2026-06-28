@@ -1,24 +1,25 @@
 from __future__ import annotations
 
 from json import dumps
+import json
 
 from . import weapi
 
 
 def getUserDetail(user_id=0) -> dict:
-    '''get user detail (web api).
+    """get user detail (web api).
 
     Args:
         user_id: user id. defaults to 0.
 
     Returns:
         dict
-    '''
+    """
     return weapi('/weapi/v1/user/detail/%s' % user_id, {})
 
 
 def getUserPlaylists(user_id, offset=0, limit=1001) -> dict:
-    '''get user's playlists (web api).
+    """get user's playlists (web api).
 
     Args:
         user_id: user id. defaults to 0.
@@ -27,7 +28,7 @@ def getUserPlaylists(user_id, offset=0, limit=1001) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return weapi(
         '/weapi/user/playlist',
         {
@@ -39,96 +40,72 @@ def getUserPlaylists(user_id, offset=0, limit=1001) -> dict:
 
 
 def getUserAlbumSubs(limit=30) -> dict:
-    '''get user's subscribed albums (web api).
+    """get user's subscribed albums (web api).
 
     Args:
         limit: page size. defaults to 30.
 
     Returns:
         dict
-    '''
+    """
     return weapi('/weapi/album/sublist', {'limit': str(limit)})
 
 
 def getUserArtistSubs(limit=30) -> dict:
-    '''get user's subscribed artists (web api).
+    """get user's subscribed artists (web api).
 
     Args:
         limit: page size. defaults to 30.
 
     Returns:
         dict
-    '''
+    """
     return weapi('/weapi/artist/sublist', {'limit': str(limit)})
 
 
 SIGNIN_TYPE_MOBILE = 0
-'''mobile daily check-in, +4 exp'''
+"""mobile daily check-in, +4 exp"""
 SIGNIN_TYPE_WEB = 1
-'''web daily check-in, +1 exp'''
+"""web daily check-in, +1 exp"""
 
 
 def setSignin(dtype=0) -> dict:
-    '''daily check-in (mobile/pc api).
+    """daily check-in (mobile/pc api).
 
     Args:
         dtype: SIGNIN_TYPE_MOBILE or SIGNIN_TYPE_WEB. defaults to mobile.
 
     Returns:
         dict
-    '''
+    """
     return weapi('/weapi/point/dailyTask', {'type': str(dtype)})
 
 
-def setWeblog(logs) -> dict:
-    '''send user behavior log (mobile/pc api).
+def setWeblog(log: dict) -> dict:
+    """send user behavior log (mobile/pc api).
 
     Args:
         logs: operation record dict.
 
     Returns:
         dict
-    '''
-    return weapi('/weapi/feedback/weblog', {'logs': dumps(logs)})
+    """
+    return weapi('/weapi/feedback/weblog', {'logs': dumps([log])})
 
-def setScrobble(song_id: str, time: float):
-    '''log play action for a song (web api).
-    
-    Args:
-        song_id: song id.
-        time: play time in seconds.
-        
-    Returns:
-        dict'''
-    return setWeblog({
-        'action': 'play',
-        'json': {
-            'download': 0,
-            'end': 'playend',
-            'id': song_id,
-            'sourceId': '',
-            'time': float(time),
-            'type': 'song',
-            'wifi': 0,
-            'source': 'list',
-            'mainsite': 1,
-            'content': '',
-        }
-    })
 
 def getDailyRecommend():
-    '''get daily recommend songs (web api).
-    
+    """get daily recommend songs (web api).
+
     Returns:
         dict
-    '''
+    """
     return weapi('/weapi/v2/discovery/recommend/songs', {})
 
 
 def getDailyRecommendResource() -> dict:
-    '''get daily recommend playlists (web api).
+    """get daily recommend playlists (web api).
 
     Returns:
         dict
-    '''
+    """
     return weapi('/weapi/v1/discovery/recommend/resource', {})

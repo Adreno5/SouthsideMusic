@@ -13,6 +13,7 @@ from imports import (
     QFont,
     QLinearGradient,
     QListView,
+    QMouseEvent,
     QObject,
     QPaintEvent,
     QPainter,
@@ -68,7 +69,47 @@ class SSmoothScrollBar(ScrollBar):
         self.anim_timer.timeout.connect(self._tick)
         self.anim_timer.start(max(1, int(1000 / self.refresh_rate)))
 
+        self.origin_setValue = self.setValue
+        self.setValue = self._patched_setValue
+
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
+
+    def _patched_setValue(self, value: int):
+        self.scrollValue(value - self.value())
+
+    def mousePressEvent(self, e: QMouseEvent):
+        super().mousePressEvent(e)
+        self._isPressed = True
+        self._pressedPos = e.pos()
+
+        if self.childAt(e.pos()) is self.handle or not self._isSlideResion(e.pos()):
+            return
+
+        if self.orientation() == Qt.Orientation.Vertical:
+            if e.pos().y() > self.handle.geometry().bottom():
+                value = e.pos().y() - self.handle.height() - self._padding
+            else:
+                value = e.pos().y() - self._padding
+        else:
+            if e.pos().x() > self.handle.geometry().right():
+                value = e.pos().x() - self.handle.width() - self._padding
+            else:
+                value = e.pos().x() - self._padding
+
+        self.setValue(int(value / max(self._slideLength(), 1) * self.maximum()))
+        self.sliderPressed.emit()
+
+    def mouseMoveEvent(self, e: QMouseEvent):
+        if self.orientation() == Qt.Orientation.Vertical:
+            dv = e.pos().y() - self._pressedPos.y()
+        else:
+            dv = e.pos().x() - self._pressedPos.x()
+
+        dv = int(dv / max(self._slideLength(), 1) * (self.maximum() - self.minimum()))
+        self.setValue(self.value() + dv)
+
+        self._pressedPos = e.pos()
+        self.sliderMoved.emit()
 
     def _onRefreshRateChanged(self):
         screen = self.window().screen()
@@ -107,7 +148,7 @@ class SSmoothScrollBar(ScrollBar):
             next_value = self.value() + total_delta + self._scroll_remainder
             final_value = int(next_value)
             self._scroll_remainder = next_value - final_value
-            self.setValue(final_value)
+            self.origin_setValue(final_value)
         self.debug_forces = forces
         self.debug_total_force = total_delta
         self.debug_offset = float(self.value())
@@ -172,7 +213,9 @@ class SSmoothDelegate(QObject):
                 and self.hScrollBar.value() == self.hScrollBar.minimum()
             )
 
-            if (vdlimited or vulimited or hdlimited or hulimited) and not isinstance(self.par, TextEdit):
+            if (vdlimited or vulimited or hdlimited or hulimited) and not isinstance(
+                self.par, TextEdit
+            ):
                 if vulimited:
                     self.par._trigger_limit_anim(self.par._top_anim)
                 if vdlimited:

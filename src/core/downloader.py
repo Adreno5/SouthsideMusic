@@ -374,8 +374,7 @@ def downloadStream(
 
         with ThreadPoolExecutor(max_workers=len(ranges)) as executor:
             futures = [
-                executor.submit(_dl_range, i, s, e)
-                for i, (s, e) in enumerate(ranges)
+                executor.submit(_dl_range, i, s, e) for i, (s, e) in enumerate(ranges)
             ]
             for f in futures:
                 f.result()

@@ -4,7 +4,7 @@ from .. import eapi
 
 
 def getMoreRadioContent(limit=3, e_r=True) -> dict:
-    '''fetch more fm content (pc client).
+    """fetch more fm content (pc client).
 
     Args:
         limit: count. defaults to 3.
@@ -12,7 +12,7 @@ def getMoreRadioContent(limit=3, e_r=True) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return eapi(
         '/api/v1/radio/get',
         {
@@ -23,7 +23,7 @@ def getMoreRadioContent(limit=3, e_r=True) -> dict:
 
 
 def setSkipRadioContent(songId, time=0, alg='itembased', e_r=True) -> dict:
-    '''skip fm track (pc client).
+    """skip fm track (pc client).
 
     Args:
         songId: track id.
@@ -32,7 +32,7 @@ def setSkipRadioContent(songId, time=0, alg='itembased', e_r=True) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return eapi(
         '/api/v1/radio/get',
         {
@@ -47,7 +47,7 @@ def setSkipRadioContent(songId, time=0, alg='itembased', e_r=True) -> dict:
 def setLikeRadioContent(
     trackId, like=True, time='0', alg='itembased', e_r=True
 ) -> dict:
-    '''like/unlike fm track (pc client).
+    """like/unlike fm track (pc client).
 
     Args:
         trackId: track id.
@@ -57,7 +57,7 @@ def setLikeRadioContent(
 
     Returns:
         dict
-    '''
+    """
     return eapi(
         '/api/v1/radio/like',
         {
@@ -71,7 +71,7 @@ def setLikeRadioContent(
 
 
 def setTrashRadioContent(songId, time='0', alg='itembased', e_r=True) -> dict:
-    '''trash fm track (pc client).
+    """trash fm track (pc client).
 
     Args:
         songId: track id.
@@ -80,7 +80,7 @@ def setTrashRadioContent(songId, time='0', alg='itembased', e_r=True) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return eapi(
         '/api/v1/radio/trash/add',
         {

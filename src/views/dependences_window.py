@@ -77,7 +77,9 @@ class DependencesWindow(QWidget):
         layout.addWidget(self.ffmpeg_btn)
 
         self.python_runtime_label = SubtitleLabel()
-        bindText(self.python_runtime_label, 'dependences_window.python_runtime_checking')
+        bindText(
+            self.python_runtime_label, 'dependences_window.python_runtime_checking'
+        )
         layout.addWidget(self.python_runtime_label)
 
         self.audio_output_label = SubtitleLabel()
@@ -141,7 +143,9 @@ class DependencesWindow(QWidget):
 
         def _finished(data: bytes):
             if not data:
-                self.ffmpeg_label.setText(tr('dependences_window.ffmpeg_download_failed'))
+                self.ffmpeg_label.setText(
+                    tr('dependences_window.ffmpeg_download_failed')
+                )
                 self.ffmpeg_btn.setEnabled(True)
                 return
 
@@ -179,7 +183,9 @@ class DependencesWindow(QWidget):
             except Exception as e:
                 self.logger.exception('Failed to extract FFmpeg')
                 self.logger.exception(e)
-                self.ffmpeg_label.setText(tr('dependences_window.ffmpeg_extraction_failed'))
+                self.ffmpeg_label.setText(
+                    tr('dependences_window.ffmpeg_extraction_failed')
+                )
                 self.ffmpeg_btn.setEnabled(True)
                 return
             finally:
@@ -340,11 +346,15 @@ class DependencesWindow(QWidget):
             if devices:
                 self.logger.info(f'Audio Output found: {len(devices)} device(s)')
                 self.check_done.emit(
-                    'Audio Output', True, tr('dependences_window.count_device_s', count=len(devices))
+                    'Audio Output',
+                    True,
+                    tr('dependences_window.count_device_s', count=len(devices)),
                 )
             else:
                 self.logger.warning('Audio Output not found: no output device')
-                self.check_done.emit('Audio Output', False, tr('dependences_window.no_output_device'))
+                self.check_done.emit(
+                    'Audio Output', False, tr('dependences_window.no_output_device')
+                )
         except Exception as e:
             self.logger.warning(f'Audio Output not found: {e}')
             self.check_done.emit('Audio Output', False, str(e))
@@ -375,7 +385,9 @@ class DependencesWindow(QWidget):
                 self.check_done.emit('OpenGL', True, tr('dependences_window.available'))
             else:
                 self.logger.warning('OpenGL not found: no valid context')
-                self.check_done.emit('OpenGL', False, tr('dependences_window.no_valid_context'))
+                self.check_done.emit(
+                    'OpenGL', False, tr('dependences_window.no_valid_context')
+                )
         except Exception as e:
             self.logger.warning(f'OpenGL not found: {e}')
             self.check_done.emit('OpenGL', False, str(e))

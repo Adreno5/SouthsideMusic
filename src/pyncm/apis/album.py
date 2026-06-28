@@ -4,19 +4,19 @@ from . import weapi
 
 
 def getAlbumInfo(album_id: str) -> dict:
-    '''get album info (web api).
+    """get album info (web api).
 
     Args:
         album_id: album id.
 
     Returns:
         dict
-    '''
+    """
     return weapi('/weapi/v1/album/%s' % album_id, {})
 
 
 def getAlbumComments(album_id: str, offset=0, limit=20, beforeTime=0) -> dict:
-    '''get album comments (web api).
+    """get album comments (web api).
 
     Args:
         album_id: album id.
@@ -26,7 +26,7 @@ def getAlbumComments(album_id: str, offset=0, limit=20, beforeTime=0) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return weapi(
         '/weapi/v1/resource/comments/R_AL_3_%s' % album_id,
         {

@@ -239,7 +239,7 @@ class PlayingControllerLyricsViewer(QWidget):
         )
         painter.setFont(self.ft)
 
-        y = float(payload.get('baseline_y', 0.0)) # type: ignore
+        y = float(payload.get('baseline_y', 0.0))  # type: ignore
         content = str(payload.get('text', ''))
         color = self._colorFromPayload(payload.get('color', {}))
 
@@ -251,7 +251,7 @@ class PlayingControllerLyricsViewer(QWidget):
 
             clip_y = toQtInt(y - self.metri.ascent())
             clip_h = toQtInt(self.font_height)
-            for clip in payload.get('clips', []): # type: ignore
+            for clip in payload.get('clips', []):  # type: ignore
                 if not isinstance(clip, dict):
                     continue
                 x = float(clip.get('x', 0.0))
@@ -273,12 +273,14 @@ class PlayingControllerLyricsViewer(QWidget):
 
         painter.end()
 
+
 class TranslationHandler:
     def __init__(self):
         self.current_text = ''
 
     def setText(self, text):
         self.current_text = text
+
 
 class PlayingController(QWidget):
     def __init__(
@@ -392,8 +394,12 @@ class PlayingController(QWidget):
         event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
-        event_bus.subscribe(START_CROSSFADE, lambda: setattr(self.bar_alpha_timer, 'target_value', 0.2))
-        event_bus.subscribe(FINISH_CROSSFADE, lambda: setattr(self.bar_alpha_timer, 'target_value', 1))
+        event_bus.subscribe(
+            START_CROSSFADE, lambda: setattr(self.bar_alpha_timer, 'target_value', 0.2)
+        )
+        event_bus.subscribe(
+            FINISH_CROSSFADE, lambda: setattr(self.bar_alpha_timer, 'target_value', 1)
+        )
 
         if self._mwindow:
             self.bg_color = mixColor(
@@ -527,9 +533,7 @@ class PlayingController(QWidget):
             )
             self.draw_ratio_timer.target_value = current_time / self._dp.total_length
             draw_ratio = max(0.0, min(self.draw_ratio_timer.current_value, 1.0))
-            self._draw_current_x = progress_left + int(
-                progress_width * draw_ratio
-            )
+            self._draw_current_x = progress_left + int(progress_width * draw_ratio)
             self.prepared_ratio_timer.target_value = (
                 max(0.0, min(loaded_time, self._dp.total_length))
                 / self._dp.total_length
@@ -613,10 +617,10 @@ class PlayingController(QWidget):
         use_yrc = bool(self._ymgr.parsed)
         lines: list[LyricInfo | YRCLyricInfo]
         if use_yrc:
-            lines = self._ymgr.parsed # type: ignore
+            lines = self._ymgr.parsed  # type: ignore
             current_index = self._ymgr.getCurrentIndex(position)
         else:
-            lines = self._mgr.parsed # type: ignore
+            lines = self._mgr.parsed  # type: ignore
             current_index = self._mgr.getCurrentIndex(position)
 
         payload_lines: list[dict[str, object]] = []
@@ -626,9 +630,7 @@ class PlayingController(QWidget):
             line = lines[index] if 0 <= index < len(lines) else None
             if offset == 0:
                 current_line = line
-            payload_lines.append(
-                self._lyricLinePayload(line, offset, index, use_yrc)
-            )
+            payload_lines.append(self._lyricLinePayload(line, offset, index, use_yrc))
 
         return payload_lines, current_line, current_index, use_yrc
 
@@ -642,12 +644,7 @@ class PlayingController(QWidget):
                 layout = dict(self._dp.viewer._layout_payload)
                 translation_enabled = bool(cfg.show_translation)
                 self._ws_handler.sendJsonFactory(
-                    lambda position=position,
-                    current_index=current_index,
-                    use_yrc=use_yrc,
-                    lines=lines,
-                    layout=layout,
-                    translation_enabled=translation_enabled: {
+                    lambda position=position, current_index=current_index, use_yrc=use_yrc, lines=lines, layout=layout, translation_enabled=translation_enabled: {
                         'option': 'update_lyric',
                         'position': position,
                         'current_index': current_index,
@@ -708,13 +705,21 @@ class PlayingController(QWidget):
         return super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if self.dragging and self._dp.preloaded and not self.ctx.playing_manager.crossfading:
+        if (
+            self.dragging
+            and self._dp.preloaded
+            and not self.ctx.playing_manager.crossfading
+        ):
             self._player.setPosition(self._eventPlayingTime(event))
             self.dragging = False
         return super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        if self.dragging and self._dp.preloaded and not self.ctx.playing_manager.crossfading:
+        if (
+            self.dragging
+            and self._dp.preloaded
+            and not self.ctx.playing_manager.crossfading
+        ):
             self._player.setPosition(self._eventPlayingTime(event))
         return super().mouseMoveEvent(event)
 
@@ -777,11 +782,25 @@ class PlayingController(QWidget):
         painter.drawLine(progress_left, 0, self.width(), 0)
 
         if self.ctx.playing_manager.crossfading or bar_alpha < 255:
-            painter.setPen(QPen(QColor(255, 255, 255, 255 - bar_alpha) if isDark else QColor(0, 0, 0, 255 - bar_alpha), 8))
+            painter.setPen(
+                QPen(
+                    QColor(255, 255, 255, 255 - bar_alpha)
+                    if isDark
+                    else QColor(0, 0, 0, 255 - bar_alpha),
+                    8,
+                )
+            )
             metrics = QFontMetricsF(painter.font())
             painter.drawText(
-                int((self.width() - metrics.horizontalAdvance(self.tip_handler.current_text)) * 0.5),
-                int(10 + metrics.ascent()), self.tip_handler.current_text
+                int(
+                    (
+                        self.width()
+                        - metrics.horizontalAdvance(self.tip_handler.current_text)
+                    )
+                    * 0.5
+                ),
+                int(10 + metrics.ascent()),
+                self.tip_handler.current_text,
             )
 
         if self._dp.total_length > 0:
@@ -801,7 +820,12 @@ class PlayingController(QWidget):
             )
 
             painter.setPen(
-                QPen(QColor(255, 255, 255, bar_alpha) if isDark else QColor(0, 0, 0, bar_alpha), 8)
+                QPen(
+                    QColor(255, 255, 255, bar_alpha)
+                    if isDark
+                    else QColor(0, 0, 0, bar_alpha),
+                    8,
+                )
             )
             painter.drawLine(
                 progress_left,

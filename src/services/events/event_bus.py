@@ -38,7 +38,7 @@ class EventBus:
 
     def subscribe(self, event: str, listener: Listener) -> None:
         msg = f'subscribing {event} to {listener.__module__}.{listener.__name__}'
-        if event != 'image_asset_persisted':
+        if event not in ('image_asset_persisted', 'storable_count_changed'):
             self._logger.info(msg)
         if self._lw:
             self._lw.push(msg)
@@ -49,7 +49,7 @@ class EventBus:
             self._listeners[event].append(listener)
 
     def unsubscribe(self, event: str, listener: Listener) -> None:
-        if event != 'image_asset_persisted':
+        if event not in ('image_asset_persisted', 'storable_count_changed'):
             self._logger.info(f'unsubscribing {event} from {listener.__name__}')
         if self._lock is not None:
             with self._lock:

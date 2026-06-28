@@ -156,7 +156,9 @@ def _hide_subprocess_window(kwargs):
     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     startupinfo.wShowWindow = subprocess.SW_HIDE
     kwargs['startupinfo'] = startupinfo
-    kwargs['creationflags'] = int(kwargs.get('creationflags', 0)) | subprocess.CREATE_NO_WINDOW
+    kwargs['creationflags'] = (
+        int(kwargs.get('creationflags', 0)) | subprocess.CREATE_NO_WINDOW
+    )
 
 
 def patched_popen(*args, **kwargs):
@@ -258,7 +260,7 @@ _ims.event_bus.subscribe(
             'option': 'play_state',
             'is_playing': bool(is_playing),
             'position': ctx.player.getPosition(),
-            'duration': ctx.player.getLength()
+            'duration': ctx.player.getLength(),
         },
         coalesce_key='play_state',
     ),
@@ -436,7 +438,7 @@ if __name__ == '__main__':
 
         print(ncm.getCurrentSession().bindings)
 
-        _ims.QTimer.singleShot(2000, lambda: startUpdateCheck(mwindow)) # type: ignore
+        _ims.QTimer.singleShot(2000, lambda: startUpdateCheck(mwindow))  # type: ignore
 
         _logger.debug(f'{sys.path=}')
 

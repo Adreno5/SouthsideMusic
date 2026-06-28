@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+import threading
 from typing import Any, Literal
 import base64
 import hashlib
@@ -17,6 +18,8 @@ LYRIC_DATA_DIR = os.path.join(DATA_DIR, 'lyrics')
 LEGACY_CACHE_DIR = os.path.join(_PROJECT_ROOT, 'cache')
 LEGACY_MUSIC_CACHE_DIR = os.path.join(LEGACY_CACHE_DIR, 'music')
 LEGACY_IMAGE_CACHE_DIR = os.path.join(LEGACY_CACHE_DIR, 'image')
+COUNT_FILE = os.path.join(DATA_DIR, 'count.json')
+_count_lock = threading.Lock()
 
 _CACHE_INDEX_PATH = os.path.join(DATA_DIR, 'cache_index.json')
 _cache_index: dict[str, dict[str, str]] = {}
@@ -117,9 +120,48 @@ def _artists_from_object(obj: object) -> list[ArtistInfo]:
 
 def _int_from_object(obj: object, default: int = 0) -> int:
     try:
-        return int(obj) # type: ignore
+        return int(obj)  # type: ignore
     except (TypeError, ValueError):
         return default
+
+
+def _song_id_from_object(obj: object) -> str:
+    return str(obj or '')
+
+
+def _load_count() -> dict[str, int]:
+    if not os.path.exists(COUNT_FILE):
+        return {}
+    with open(COUNT_FILE, 'r', encoding='utf-8') as fp:
+        content = fp.read().strip()
+    if not content:
+        return {}
+    try:
+        obj = json.loads(content)
+    except json.JSONDecodeError:
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(content)
+        except json.JSONDecodeError:
+            return {}
+    if not isinstance(obj, dict):
+        return {}
+    return {str(song_id): _int_from_object(count) for song_id, count in obj.items()}
+
+
+def _normalize_count(obj: dict[str, int]) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for song_id, count in obj.items():
+        key = _song_id_from_object(song_id)
+        if not key:
+            continue
+        result[key] = result.get(key, 0) + _int_from_object(count)
+    return result
+
+
+def _save_count(obj: dict[str, int]) -> None:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(COUNT_FILE, 'w', encoding='utf-8') as fp:
+        json.dump(_normalize_count(obj), fp, indent=4)
 
 
 class SongStorable:
@@ -135,6 +177,7 @@ class SongStorable:
     loggedin_when_download: bool = False
     viptype_when_download: int = 0
     duration: int = 0
+    count: int = 0
 
     def __init__(
         self,
@@ -155,7 +198,7 @@ class SongStorable:
     ) -> None:
         self.name = info.name
         self.artists = info.artists
-        self.id = info.id
+        self.id = _song_id_from_object(info.id)
         self.duration = max(0, _int_from_object(info.duration))
         self._ensure_artists()
 
@@ -177,6 +220,26 @@ class SongStorable:
         self.loaded_loudness_gain = loaded_loudness_gain
         self.loggedin_when_download = loggedin_when_download
         self.viptype_when_download = viptype_when_download
+        self.count = _load_count().get(self.id, 0)
+
+    def _ensure_count(self) -> None:
+        with _count_lock:
+            obj = _load_count()
+            if self.id not in obj:
+                obj[self.id] = 0
+            _save_count(obj)
+
+    def increment_count(self, count: int) -> None:
+        with _count_lock:
+            obj = _load_count()
+            key = _song_id_from_object(self.id)
+            obj[key] = obj.get(key, 0) + count
+            self.count = obj[key]
+            _save_count(obj)
+
+        from imports import STORABLE_COUNT_CHANGED, event_bus
+
+        event_bus.emit(STORABLE_COUNT_CHANGED, self)
 
     def _ensure_artists(self) -> None:
         if (self.artists and self.duration > 0) or not self.id:
@@ -275,6 +338,7 @@ class SongStorable:
         return self._write_cache(data, MUSIC_DATA_DIR, 'content_cache_hash')
 
     def _ensure_cache_fields(self) -> None:
+        self.id = _song_id_from_object(self.id)
         if not hasattr(self, 'image_cache_hash'):
             self.image_cache_hash = ''
         if not hasattr(self, 'content_cache_hash'):

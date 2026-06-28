@@ -369,14 +369,7 @@ class PlayingPage(QWidget):
         artists = _artists_text(self.cur.storable)
         is_playing = self.ctx.player.isPlaying()
         self._ws_handler.sendJsonFactory(
-            lambda img_bytes=img_bytes,
-            song_name=song_name,
-            position=position,
-            duration=duration,
-            translation_enabled=translation_enabled,
-            use_yrc=use_yrc,
-            artists=artists,
-            is_playing=is_playing: {
+            lambda img_bytes=img_bytes, song_name=song_name, position=position, duration=duration, translation_enabled=translation_enabled, use_yrc=use_yrc, artists=artists, is_playing=is_playing: {
                 'option': 'cover',
                 'image': json_base64_bytes(img_bytes),
                 'song_name': song_name,

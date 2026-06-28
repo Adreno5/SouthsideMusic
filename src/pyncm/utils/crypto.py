@@ -108,8 +108,8 @@ def _eapi_encrypt(url, params):
 
 def _eapi_decrypt(cipher):
     """Implements EAPI response decryption"""
-    cipher = bytearray(cipher) if isinstance(cipher, str) else cipher # type: ignore
-    return _aes_decrypt(cipher, EAPI_AES_KEY, mode=AES.MODE_ECB) if cipher else cipher # type: ignore
+    cipher = bytearray(cipher) if isinstance(cipher, str) else cipher  # type: ignore
+    return _aes_decrypt(cipher, EAPI_AES_KEY, mode=AES.MODE_ECB) if cipher else cipher  # type: ignore
 
 
 def _linux_api_encrypt(params):

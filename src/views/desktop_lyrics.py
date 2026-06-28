@@ -127,8 +127,10 @@ class DesktopLyricsViewer(LyricsViewer):
 
     def updateDatas(self, multiple_factor: float = 1.0) -> None:
         self.indentation_y += (
-            (-self.height() + 8 if self.indentation else 0) - self.indentation_y
-        ) * 0.2 * multiple_factor
+            ((-self.height() + 8 if self.indentation else 0) - self.indentation_y)
+            * 0.2
+            * multiple_factor
+        )
 
         position = self.ctx.playing_manager.getDisplayPosition()
         cur_line = self._currentLyricLine(position)
@@ -279,10 +281,7 @@ class DesktopLyricsViewer(LyricsViewer):
                     painter.drawRect(
                         self.height() // 2,
                         0,
-                        int(
-                            (self.width() - self.height())
-                            * self._draw_progress_ratio
-                        ),
+                        int((self.width() - self.height()) * self._draw_progress_ratio),
                         1,
                     )
                     painter.restore()

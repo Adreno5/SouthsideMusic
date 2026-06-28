@@ -31,7 +31,6 @@ class LibraryPage(SScrollArea):
         self._logger = logging.getLogger(__name__)
         self.ctx = ctx
         self._song_cards: list[FavoriteSongCard] = []
-        self._fetch_seq = 0
 
         contents_widget = QWidget()
         self.contents_layout = QVBoxLayout()
@@ -42,6 +41,9 @@ class LibraryPage(SScrollArea):
         self.contents_layout.addWidget(title_label)
 
         number_layout = QHBoxLayout()
+        number_layout.addSpacerItem(
+            QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        )
         prefix = SubtitleLabel('')
         bindText(prefix, 'library_page.number_prefix')
         suffix = SubtitleLabel('')
@@ -56,18 +58,25 @@ class LibraryPage(SScrollArea):
         self.cards_layout.setAnimation(100)
         self.contents_layout.addLayout(self.cards_layout)
 
-        self.contents_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding))
+        self.contents_layout.addSpacerItem(
+            QSpacerItem(
+                0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
+        )
 
         self._lazy_timer = QTimer(self)
         self._lazy_timer.timeout.connect(self._checkVisibleCards)
         self._lazy_timer.start(50)
 
+        self.loaded = False
+
         self.setWidgetResizable(True)
         self.setWidget(contents_widget)
 
-    def fetchSongs(self):
-        self._fetch_seq += 1
-        fetch_seq = self._fetch_seq
+    def fetchSongs(self, force: bool = False):
+        if self.loaded and not force:
+            return
+        self.loaded = True
 
         self.viewer.setText('0')
         self.viewer.y_map.clear()
@@ -82,13 +91,9 @@ class LibraryPage(SScrollArea):
                 continue
             songs.extend(folder.songs)
 
-        def add(index: int = 0) -> None:
-            if fetch_seq != self._fetch_seq or index >= len(songs):
-                return
-            
-            self.viewer.setText(f'{index + 1}')
+        self.viewer.setText(str(len(songs)))
 
-            song = songs[index]
+        for song in songs:
             card = FavoriteSongCard(
                 song,
                 self.ctx.playing_page,
@@ -105,10 +110,7 @@ class LibraryPage(SScrollArea):
             self.cards_layout.insertWidget(0, card)
             self._song_cards.append(card)
 
-            self._checkVisibleCards()
-            QTimer.singleShot(1, lambda: add(index + 1))
-
-        add()
+        self._checkVisibleCards()
 
     def _checkVisibleCards(self) -> None:
         viewport_rect = self.viewport().rect()

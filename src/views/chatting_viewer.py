@@ -335,9 +335,10 @@ class ChattingViewer(QWidget):
         self._update_line_state(text)
 
     def _append_normal_text_line(self, text: str) -> None:
-        if not isinstance(self.cur_widget, TextBrowser) or self.cur_widget.property(
-            'viewerRole'
-        ) != 'text':
+        if (
+            not isinstance(self.cur_widget, TextBrowser)
+            or self.cur_widget.property('viewerRole') != 'text'
+        ):
             self.cur_widget = self._create_text_browser()
             self.cur_text = ''
 
@@ -345,9 +346,10 @@ class ChattingViewer(QWidget):
         self._update_text_browser_html(self._inline_markdown_to_html(self.cur_text))
 
     def _finish_normal_text_line(self) -> None:
-        if isinstance(self.cur_widget, TextBrowser) and self.cur_widget.property(
-            'viewerRole'
-        ) == 'text':
+        if (
+            isinstance(self.cur_widget, TextBrowser)
+            and self.cur_widget.property('viewerRole') == 'text'
+        ):
             self.cur_widget = None
             self.cur_text = ''
 
@@ -461,7 +463,9 @@ class ChattingViewer(QWidget):
         table.setWordWrap(True)
         table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        table.verticalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
         table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._add_block_widget(table)
         self._table_column_count = column_count
@@ -676,8 +680,7 @@ class ChattingViewer(QWidget):
         numbered = re.match(r'^(\d+)\.\s+(.+)$', line)
         if numbered:
             return (
-                f'{numbered.group(1)}. '
-                f'{self._render_inline_tokens(numbered.group(2))}'
+                f'{numbered.group(1)}. {self._render_inline_tokens(numbered.group(2))}'
             )
 
         return self._render_inline_tokens(line)

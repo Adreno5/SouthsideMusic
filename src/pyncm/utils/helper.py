@@ -6,7 +6,7 @@ from os import listdir, path
 import datetime
 import logging
 
-'''helper utilities for working with api responses.'''
+"""helper utilities for working with api responses."""
 
 truncate_length = 64
 logger = logging.getLogger('pyncm.helper')
@@ -33,7 +33,7 @@ def _default(default=None):
 
 
 class IDCahceHelper:
-    '''generic cache for id-based dicts.'''
+    """generic cache for id-based dicts."""
 
     _cache: dict = {}
 
@@ -159,19 +159,19 @@ class UserHelper(IDCahceHelper):
 
 
 class TrackHelper:
-    '''helper for handling generic track objects.'''
+    """helper for handling generic track objects."""
 
     def __init__(self, track_dict) -> None:
         self.data: dict = track_dict
 
     @property
     def duration(self) -> int:
-        '''track duration in milliseconds.'''
+        """track duration in milliseconds."""
         return int(self.data['dt'])
 
     @property
     def album(self) -> AlbumHelper:
-        '''album object with more metadata.'''
+        """album object with more metadata."""
         return AlbumHelper(self.data['al']['id'])
 
     @_default()
@@ -230,7 +230,7 @@ class TrackHelper:
 
     @_default()
     def title(self):
-        return f'{self.trackName} - {",".join(self.artists)}' # type: ignore
+        return f'{self.trackName} - {",".join(self.artists)}'  # type: ignore
 
     @property
     def template(self):
@@ -241,7 +241,7 @@ class TrackHelper:
             'track': self.trackName,
             'album': self.albumName,
             'title': self.title,
-            'artists': ' / '.join(self.artists), # type: ignore
+            'artists': ' / '.join(self.artists),  # type: ignore
         }
 
 
@@ -275,7 +275,7 @@ class FuzzyPathHelper(IDCahceHelper):
         }
 
     def exists(self, name, partial_extension_check=True):
-        '''check if a file exists in O(1) time.
+        """check if a file exists in O(1) time.
 
         Args:
             name: file basename inside basepath.
@@ -283,7 +283,7 @@ class FuzzyPathHelper(IDCahceHelper):
 
         Returns:
             bool
-        '''
+        """
         if partial_extension_check:
             return name in self.tbl_basenames_noext
         else:
@@ -291,10 +291,10 @@ class FuzzyPathHelper(IDCahceHelper):
 
     def fullpath(self, name):
         if name in self.tbl_basenames:
-            return path.join(self.base_path, self.tbl_basenames[name]) # type: ignore
+            return path.join(self.base_path, self.tbl_basenames[name])  # type: ignore
         if name in self.tbl_basenames_noext:
-            return path.join(self.base_path, self.tbl_basenames_noext[name]) # type: ignore
+            return path.join(self.base_path, self.tbl_basenames_noext[name])  # type: ignore
 
     def get_extension(self, name):
         p = self.fullpath(name)
-        return path.splitext(p)[1][1:] # type: ignore
+        return path.splitext(p)[1][1:]  # type: ignore

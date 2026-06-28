@@ -8,7 +8,7 @@ BUCKET = 'jd-musicrep-privatecloud-audio-public'
 
 
 def getCloudDriveInfo(limit=30, offset=0) -> dict:
-    '''get cloud drive contents (pc client api).
+    """get cloud drive contents (pc client api).
 
     Args:
         limit: page size. defaults to 30.
@@ -16,19 +16,19 @@ def getCloudDriveInfo(limit=30, offset=0) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return weapi('/weapi/v1/cloud/get', {'limit': str(limit), 'offset': str(offset)})
 
 
 def getCloudDriveItemInfo(song_ids: list) -> dict:
-    '''get cloud drive item detail (pc client api).
+    """get cloud drive item detail (pc client api).
 
     Args:
         song_ids: cloud item ids.
 
     Returns:
         dict
-    '''
+    """
     ids = song_ids if isinstance(song_ids, list) else [song_ids]
     return weapi('/weapi/v1/cloud/get/byids', {'songIds': ids})
 
@@ -43,7 +43,7 @@ def getNosToken(
     bucket=BUCKET,
     local=False,
 ) -> dict:
-    '''allocate nos token for cloud upload (mobile api).
+    """allocate nos token for cloud upload (mobile api).
 
     Args:
         filename: file name.
@@ -57,7 +57,7 @@ def getNosToken(
 
     Returns:
         dict
-    '''
+    """
     return eapi(
         '/eapi/nos/token/alloc',
         {
@@ -84,7 +84,7 @@ def setUploadObject(
     bucket=BUCKET,
     session=None,
 ) -> dict:
-    '''upload file to cloud drive.
+    """upload file to cloud drive.
 
     Args:
         stream: bytes or file-like object.
@@ -96,7 +96,7 @@ def setUploadObject(
 
     Returns:
         dict
-    '''
+    """
     r = (session or getCurrentSession()).post(
         'http://45.127.129.8/%s/' % bucket + objectKey.replace('/', '%2F'),
         data=stream,
@@ -112,7 +112,7 @@ def setUploadObject(
 
 
 def getCheckCloudUpload(md5, ext='', length=0, bitrate=0, songId=0, version=1) -> dict:
-    '''check cloud upload status (mobile api).
+    """check cloud upload status (mobile api).
 
     Args:
         md5: file md5 hash.
@@ -124,7 +124,7 @@ def getCheckCloudUpload(md5, ext='', length=0, bitrate=0, songId=0, version=1) -
 
     Returns:
         dict
-    '''
+    """
     return eapi(
         '/eapi/cloud/upload/check',
         {
@@ -141,7 +141,7 @@ def getCheckCloudUpload(md5, ext='', length=0, bitrate=0, songId=0, version=1) -
 def setUploadCloudInfo(
     resourceId, songid, md5, filename, song='.', artist='.', album='.', bitrate=128
 ) -> dict:
-    '''submit cloud upload info (mobile api).
+    """submit cloud upload info (mobile api).
 
     note: file corresponding to md5 must already be uploaded via setUploadObject.
     song must not contain '.' or '/'.
@@ -158,7 +158,7 @@ def setUploadCloudInfo(
 
     Returns:
         dict
-    '''
+    """
     return eapi(
         '/eapi/upload/cloud/info/v2',
         {
@@ -175,19 +175,19 @@ def setUploadCloudInfo(
 
 
 def setPublishCloudResource(songid) -> dict:
-    '''publish cloud resource (mobile api).
+    """publish cloud resource (mobile api).
 
     Args:
         songid: from setUploadCloudInfo.
 
     Returns:
         dict
-    '''
+    """
     return eapi('/eapi/cloud/pub/v2', {'songid': str(songid)})
 
 
 def setRectifySongId(oldSongId, newSongId, session=None) -> dict:
-    '''rectify song id in cloud drive.
+    """rectify song id in cloud drive.
 
     Args:
         oldSongId: source song id.
@@ -195,7 +195,7 @@ def setRectifySongId(oldSongId, newSongId, session=None) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return (
         (session or getCurrentSession())
         .get(

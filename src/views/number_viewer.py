@@ -9,7 +9,14 @@ from services.events.events import REPAINT
 
 
 class NumberViewer(QWidget):
-    def __init__(self, font: str, ctx: AppContext, point_size=14, animation_time: float = 0.3, power_number: int = 3):
+    def __init__(
+        self,
+        font: str,
+        ctx: AppContext,
+        point_size=14,
+        animation_time: float = 0.3,
+        power_number: int = 3,
+    ):
         super().__init__()
         self.ft = QFont(font, point_size)
         self.metri = QFontMetricsF(self.ft)
@@ -56,7 +63,7 @@ class NumberViewer(QWidget):
     def showEvent(self, event: QShowEvent) -> None:
         self.updateGeometry()
         return super().showEvent(event)
-    
+
     def hideEvent(self, event: QHideEvent) -> None:
         self.updateGeometry()
         return super().hideEvent(event)
@@ -65,9 +72,7 @@ class NumberViewer(QWidget):
         self.cur_text = text
 
     def sizeHint(self) -> QSize:
-        return QSize(
-            int(self.width_timer.current_value), int(self.full_height)
-        )
+        return QSize(int(self.width_timer.current_value), int(self.full_height))
 
     def paintEvent(self, event: QPaintEvent) -> None:
         super().paintEvent(event)
@@ -75,8 +80,7 @@ class NumberViewer(QWidget):
         painter.setRenderHints(
             QPainter.RenderHint.TextAntialiasing | QPainter.RenderHint.Antialiasing
         )
-        painter.setFont(self.
-                        ft)
+        painter.setFont(self.ft)
 
         baseline = self.metri.ascent()
         x = 0

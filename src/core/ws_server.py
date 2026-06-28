@@ -57,7 +57,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
     def on_message(self, message):
         if ws_handler.isCurrentHandler(self):
             ws_handler.messaged(message)
-            if ws_handler.handlePingMessage(message): # type: ignore
+            if ws_handler.handlePingMessage(message):  # type: ignore
                 return
             ws_handler.onMessage.emit(message)
 
@@ -211,7 +211,11 @@ class QObjectHandler(QObject):
             self._ping_timer = None
 
     def _startPingRound(self, generation: int) -> None:
-        if not self.is_open or generation != self._send_generation or self._ping_waiting:
+        if (
+            not self.is_open
+            or generation != self._send_generation
+            or self._ping_waiting
+        ):
             return
         self._ping_id += 1
         self._ping_started_at = time.perf_counter()

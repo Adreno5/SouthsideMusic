@@ -762,10 +762,7 @@ class FavoritesPage(QWidget):
         event_bus.emit(MWINDOW_REFRESH_FOLDERS)
 
     def replacePlaylist(self, tip=True):
-        self._pm.playlist.clear()
-        for song in self._songs():
-            self._pm.playlist.append(song)
-        event_bus.emit(PLAYLIST_CHANGED)
+        self._pm.setPlaylist(list(self._songs()))
         folder_name = (
             self.curr_cloud_folder.folder_name
             if self.is_cloud and self.curr_cloud_folder

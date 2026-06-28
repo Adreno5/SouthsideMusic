@@ -330,15 +330,11 @@ def _worker_main() -> int:
                     msg = _handle_worker_request(request)
                     _send_response({'id': request_id, 'ok': True, 'msg': msg})
                 except Exception as e:
-                    _send_response(
-                        {'id': request_id, 'ok': False, 'error': repr(e)}
-                    )
+                    _send_response({'id': request_id, 'ok': False, 'error': repr(e)})
                 continue
 
             future = executor.submit(_handle_worker_request, request)
-            future.add_done_callback(
-                lambda fut, rid=request_id: _done(rid, fut)
-            )
+            future.add_done_callback(lambda fut, rid=request_id: _done(rid, fut))
 
 
 class FreeThreadedJsonSender:
@@ -528,8 +524,7 @@ class FreeThreadedJsonSender:
             uv_python_dir = Path(appdata) / 'uv' / 'python'
             if uv_python_dir.is_dir():
                 candidates.extend(
-                    path / 'python.exe'
-                    for path in uv_python_dir.glob('*freethreaded*')
+                    path / 'python.exe' for path in uv_python_dir.glob('*freethreaded*')
                 )
 
         for candidate in candidates:

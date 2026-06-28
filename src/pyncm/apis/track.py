@@ -7,14 +7,14 @@ from ..utils import _random_string
 
 
 def getTrackDetail(song_ids: list) -> dict:
-    '''get track detail (web api).
+    """get track detail (web api).
 
     Args:
         song_ids: track ids, up to 1000 per call.
 
     Returns:
         dict
-    '''
+    """
     ids = song_ids if isinstance(song_ids, list) else [song_ids]
     return weapi(
         '/weapi/v3/song/detail',
@@ -25,7 +25,7 @@ def getTrackDetail(song_ids: list) -> dict:
 
 
 def getTrackAudio(song_ids: list, bitrate=320000, encodeType='aac') -> dict:
-    '''get track audio urls (pc client api).
+    """get track audio urls (pc client api).
 
     Args:
         song_ids: track ids, up to 1000 per call.
@@ -34,7 +34,7 @@ def getTrackAudio(song_ids: list, bitrate=320000, encodeType='aac') -> dict:
 
     Returns:
         dict
-    '''
+    """
     ids = song_ids if isinstance(song_ids, list) else [song_ids]
     return eapi(
         '/eapi/song/enhance/player/url',
@@ -47,7 +47,7 @@ def getTrackAudio(song_ids: list, bitrate=320000, encodeType='aac') -> dict:
 
 
 def getTrackAudioV1(song_ids: list, level='standard', encodeType='flac') -> dict:
-    '''get track audio urls v1 (pc client api).
+    """get track audio urls v1 (pc client api).
 
     Args:
         song_ids: track ids, up to 1000 per call.
@@ -56,7 +56,7 @@ def getTrackAudioV1(song_ids: list, level='standard', encodeType='flac') -> dict
 
     Returns:
         dict
-    '''
+    """
     ids = song_ids if isinstance(song_ids, list) else [song_ids]
     return eapi(
         '/eapi/song/enhance/player/url/v1',
@@ -69,7 +69,7 @@ def getTrackAudioV1(song_ids: list, level='standard', encodeType='flac') -> dict
 
 
 def getTrackDownloadURL(song_ids: list, bitrate=320000, encodeType='aac') -> dict:
-    '''get download url (pc client api).
+    """get download url (pc client api).
 
     Args:
         song_ids: track ids, up to 1000 per call.
@@ -78,7 +78,7 @@ def getTrackDownloadURL(song_ids: list, bitrate=320000, encodeType='aac') -> dic
 
     Returns:
         dict
-    '''
+    """
     ids = song_ids if isinstance(song_ids, list) else [song_ids]
     return eapi(
         '/eapi/song/enhance/download/url',
@@ -91,7 +91,7 @@ def getTrackDownloadURL(song_ids: list, bitrate=320000, encodeType='aac') -> dic
 
 
 def getTrackDownloadURLV1(song_id: int, level='standard') -> dict:
-    '''get download url v1 (pc client api).
+    """get download url v1 (pc client api).
 
     Args:
         song_id: track id.
@@ -99,7 +99,7 @@ def getTrackDownloadURLV1(song_id: int, level='standard') -> dict:
 
     Returns:
         dict
-    '''
+    """
     return eapi(
         '/eapi/song/enhance/download/url/v1',
         {
@@ -110,7 +110,7 @@ def getTrackDownloadURLV1(song_id: int, level='standard') -> dict:
 
 
 def getTrackLyrics(song_id: int, lv=-1, tv=-1, rv=-1) -> dict:
-    '''get track lyrics (web api). pass -1 for latest version.
+    """get track lyrics (web api). pass -1 for latest version.
 
     Args:
         song_id: track id.
@@ -120,7 +120,7 @@ def getTrackLyrics(song_id: int, lv=-1, tv=-1, rv=-1) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return weapi(
         '/weapi/song/lyric',
         {
@@ -133,14 +133,14 @@ def getTrackLyrics(song_id: int, lv=-1, tv=-1, rv=-1) -> dict:
 
 
 def getTrackLyricsNew(song_id: str) -> dict:
-    '''get track lyrics v2 (pc client api).
+    """get track lyrics v2 (pc client api).
 
     Args:
         song_id: track id.
 
     Returns:
         dict
-    '''
+    """
     return eapi(
         '/eapi/song/lyric/v1',
         {
@@ -158,7 +158,7 @@ def getTrackLyricsNew(song_id: str) -> dict:
 
 
 def getTrackComments(song_id, offset=0, limit=20, beforeTime=0) -> dict:
-    '''get track comments (web api).
+    """get track comments (web api).
 
     Args:
         song_id: track id.
@@ -168,7 +168,7 @@ def getTrackComments(song_id, offset=0, limit=20, beforeTime=0) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return weapi(
         '/weapi/v1/resource/comments/R_SO_4_%s' % song_id,
         {
@@ -182,7 +182,7 @@ def getTrackComments(song_id, offset=0, limit=20, beforeTime=0) -> dict:
 
 
 def setLikeTrack(trackId, like=True, userid=0, e_r=True) -> dict:
-    '''like/unlike a track (pc client api).
+    """like/unlike a track (pc client api).
 
     Args:
         trackId: track id.
@@ -191,7 +191,7 @@ def setLikeTrack(trackId, like=True, userid=0, e_r=True) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return eapi(
         '/eapi/song/like',
         {
@@ -209,7 +209,7 @@ DEFAULT_AUDIO_MATCHER_SESSION_ID = _random_string(16)
 def getMatchTrackByFP(
     audioFP: str, duration: float, sessionId=DEFAULT_AUDIO_MATCHER_SESSION_ID
 ) -> dict:
-    '''audio fingerprint matching (mobile chrome plugin api).
+    """audio fingerprint matching (mobile chrome plugin api).
 
     Args:
         audioFP: base64-encoded afp. see https://github.com/mos9527/ncm-afp
@@ -218,7 +218,7 @@ def getMatchTrackByFP(
 
     Returns:
         dict
-    '''
+    """
     return weapi(
         '/weapi/music/audio/match',
         {

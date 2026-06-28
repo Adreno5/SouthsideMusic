@@ -6,7 +6,7 @@ from .. import eapi
 
 
 def getSportsFMRecommendations(limit=3, bpm: int = 50, e_r=True) -> dict:
-    '''get sports fm track recommendations (mobile).
+    """get sports fm track recommendations (mobile).
 
     Args:
         limit: count. defaults to 3.
@@ -15,7 +15,7 @@ def getSportsFMRecommendations(limit=3, bpm: int = 50, e_r=True) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return eapi(
         '/eapi/radio/sport/get',
         {
@@ -29,7 +29,7 @@ def getSportsFMRecommendations(limit=3, bpm: int = 50, e_r=True) -> dict:
 def getCalculatedSportsFMStatus(
     distance=0, maxbpm=0, time=0, songList=None, steps=0, bpm=0, e_r=True
 ) -> dict:
-    '''calculate sports fm status (mobile).
+    """calculate sports fm status (mobile).
 
     Args:
         distance: distance. defaults to 0.
@@ -42,7 +42,7 @@ def getCalculatedSportsFMStatus(
 
     Returns:
         dict
-    '''
+    """
     return eapi(
         '/eapi/radio/sport/calculate',
         {

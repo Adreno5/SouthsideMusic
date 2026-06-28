@@ -14,7 +14,7 @@ VIDEO = 1014
 
 
 def getSearchResult(keyword: str, stype=SONG, limit=30, offset=0) -> dict:
-    '''search (pc client api).
+    """search (pc client api).
 
     Args:
         keyword: search query.
@@ -24,7 +24,7 @@ def getSearchResult(keyword: str, stype=SONG, limit=30, offset=0) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return eapi(
         '/eapi/cloudsearch/pc',
         {

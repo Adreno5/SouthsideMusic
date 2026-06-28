@@ -156,9 +156,9 @@ class SearchPage(QWidget):
 
             def _apply() -> None:
                 if search_type == 'Songs':
-                    self.addSongs(result) # type: ignore
+                    self.addSongs(result)  # type: ignore
                 else:
-                    self.addPlaylists(result) # type: ignore
+                    self.addPlaylists(result)  # type: ignore
 
                 self.curr_offset += len(result)
                 self.searching = False

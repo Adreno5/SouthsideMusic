@@ -101,7 +101,11 @@ class Session(requests.Session):
             'User-Agent': self.UA_DEFAULT,
             'Referer': self.HOST,
         }
-        self.login_info: dict[str, Any] = {'success': False, 'tick': time(), 'content': None}
+        self.login_info: dict[str, Any] = {
+            'success': False,
+            'tick': time(),
+            'content': None,
+        }
         self.eapi_config = {
             'os': 'iPhone OS',
             'appver': '10.0.0',
@@ -152,7 +156,7 @@ class Session(requests.Session):
     @property
     def is_anonymous(self):
         return self.logged_in and not self.nickname
-    
+
     @property
     def bindings(self):
         if not self.login_info.get('content', {}).get('bindings'):

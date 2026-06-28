@@ -6,7 +6,7 @@ from . import eapi, weapi
 
 
 def getPlaylistInfo(playlist_id, offset=0, total=True, limit=1000) -> dict:
-    '''get playlist detail (web api).
+    """get playlist detail (web api).
 
     shows playlist name but not full tracks in one call.
     use getPlaylistAllTracks for complete track list.
@@ -19,7 +19,7 @@ def getPlaylistInfo(playlist_id, offset=0, total=True, limit=1000) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return weapi(
         '/weapi/v6/playlist/detail',
         {
@@ -33,7 +33,7 @@ def getPlaylistInfo(playlist_id, offset=0, total=True, limit=1000) -> dict:
 
 
 def getPlaylistAllTracks(playlist_id, offset=0, limit=1000) -> dict:
-    '''get all tracks from a playlist.
+    """get all tracks from a playlist.
 
     Args:
         playlist_id: playlist id.
@@ -42,7 +42,7 @@ def getPlaylistAllTracks(playlist_id, offset=0, limit=1000) -> dict:
 
     Returns:
         dict
-    '''
+    """
     data = getPlaylistInfo(playlist_id, offset, True, limit)
     trackIds = [track['id'] for track in data['playlist']['trackIds']]
     id = trackIds[offset : offset + limit]
@@ -52,7 +52,7 @@ def getPlaylistAllTracks(playlist_id, offset=0, limit=1000) -> dict:
 
 
 def getPlaylistComments(playlist_id: str, offset=0, limit=20, beforeTime=0) -> dict:
-    '''get playlist comments (web api).
+    """get playlist comments (web api).
 
     Args:
         playlist_id: playlist id.
@@ -62,7 +62,7 @@ def getPlaylistComments(playlist_id: str, offset=0, limit=20, beforeTime=0) -> d
 
     Returns:
         dict
-    '''
+    """
     return weapi(
         '/v1/resource/comments/A_PL_0_%s' % playlist_id,
         {
@@ -77,7 +77,7 @@ def getPlaylistComments(playlist_id: str, offset=0, limit=20, beforeTime=0) -> d
 def setManipulatePlaylistTracks(
     trackIds, playlistId, op='add', imme=True, e_r=True
 ) -> dict:
-    '''add/delete tracks in a playlist (pc client api).
+    """add/delete tracks in a playlist (pc client api).
 
     Args:
         trackIds: track ids to operate on.
@@ -87,7 +87,7 @@ def setManipulatePlaylistTracks(
 
     Returns:
         dict
-    '''
+    """
     trackIds = trackIds if isinstance(trackIds, list) else [trackIds]
     return weapi(
         '/weapi/v1/playlist/manipulate/tracks',
@@ -101,7 +101,7 @@ def setManipulatePlaylistTracks(
 
 
 def setCreatePlaylist(name: str, privacy=False) -> dict:
-    '''create a new playlist (pc client api).
+    """create a new playlist (pc client api).
 
     Args:
         name: playlist name.
@@ -109,7 +109,7 @@ def setCreatePlaylist(name: str, privacy=False) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return eapi(
         '/eapi/playlist/create',
         {
@@ -120,7 +120,7 @@ def setCreatePlaylist(name: str, privacy=False) -> dict:
 
 
 def setRemovePlaylist(ids: list, self=True) -> dict:
-    '''delete playlist (mobile api).
+    """delete playlist (mobile api).
 
     Args:
         ids: playlist ids.
@@ -128,7 +128,7 @@ def setRemovePlaylist(ids: list, self=True) -> dict:
 
     Returns:
         dict
-    '''
+    """
     ids = ids if isinstance(ids, list) else [ids]
     return eapi(
         '/eapi/playlist/remove',

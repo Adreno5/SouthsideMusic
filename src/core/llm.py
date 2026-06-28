@@ -25,7 +25,7 @@ from core.config import cfg, decryptSecret  # type: ignore[import-not-found]
 _logger = logging.getLogger(__name__)
 
 TOOL_USAGE: dict[str, str] = {
-    'get_current_song': '''
+    'get_current_song': """
 Purpose:
 Read the song that is currently loaded or playing.
 
@@ -42,8 +42,8 @@ Use when:
 
 Do not use when:
 - the user has already provided a specific song name that should be searched.
-'''.strip(),
-    'get_song_details': '''
+""".strip(),
+    'get_song_details': """
 Purpose:
 Read detailed metadata for one song, including style or tag-like fields when the
 NetEase detail API returns them.
@@ -65,8 +65,8 @@ Rules:
 - call get_current_song, search_cloud, or get_folder_songs first when you only
   know the song by user-facing name.
 - style_hints may be empty because NetEase often omits genre/style fields.
-'''.strip(),
-    'search_cloud': '''
+""".strip(),
+    'search_cloud': """
 Purpose:
 Search NetEase Cloud Music and return the first JSON result batch.
 
@@ -92,8 +92,8 @@ Rules:
 - call this before continue_search_cloud.
 - pick the best match only when title and artist confidence are high.
 - if results are ambiguous, ask the user or search with a more specific query.
-'''.strip(),
-    'continue_search_cloud': '''
+""".strip(),
+    'continue_search_cloud': """
 Purpose:
 Continue the active cloud search and return the next JSON result batch.
 
@@ -117,8 +117,8 @@ Use when:
 Rules:
 - do not call repeatedly without checking the returned results.
 - stop when the target is found, the user has enough choices, or no more results load.
-'''.strip(),
-    'get_folders': '''
+""".strip(),
+    'get_folders': """
 Purpose:
 Read favorite folder lists.
 
@@ -138,8 +138,8 @@ Rules:
 - use folder handles from this tool for later folder actions.
 - if a folder name is ambiguous, ask the user to choose.
 - use get_folder_songs when you need the songs inside a folder.
-'''.strip(),
-    'get_folder_songs': '''
+""".strip(),
+    'get_folder_songs': """
 Purpose:
 Read songs from one favorite folder with pagination.
 
@@ -162,8 +162,8 @@ Rules:
 - call get_folders first if you only know the folder name.
 - use offset and limit for large folders instead of reading everything at once.
 - for cloud folders, this may fetch the playlist tracks from the backend.
-'''.strip(),
-    'favorite_song': '''
+""".strip(),
+    'favorite_song': """
 Purpose:
 Add one song to a local or cloud favorite folder.
 
@@ -185,8 +185,8 @@ Rules:
 - get_folders first unless the target folder was just created.
 - do not silently choose between ambiguous folders or songs.
 - summarize successes and unresolved songs after batch operations.
-'''.strip(),
-    'create_favorite_folder': '''
+""".strip(),
+    'create_favorite_folder': """
 Purpose:
 Create a local or cloud favorite folder.
 
@@ -205,8 +205,8 @@ Rules:
 - call get_folders first when duplicate names matter.
 - cloud folders may require login; use get_nickname or login if needed.
 - after creating, use the returned folder handle for favorite_song.
-'''.strip(),
-    'read': '''
+""".strip(),
+    'read': """
 Purpose:
 Read SouthsideMusic source context from the startup-scanned src tree.
 
@@ -230,8 +230,8 @@ Rules:
 - start with a directory read when the relevant file is unknown.
 - use offset and limit instead of reading huge files at once.
 - this is read-only; it cannot edit files.
-'''.strip(),
-    'grep': '''
+""".strip(),
+    'grep': """
 Purpose:
 Search SouthsideMusic source code with a regular expression.
 
@@ -260,8 +260,8 @@ Rules:
   before giving a code-based answer.
 - keep regex patterns focused so results stay useful.
 - this is read-only; it cannot edit files.
-'''.strip(),
-    'get_language': '''
+""".strip(),
+    'get_language': """
 Purpose:
 Read the current SouthsideMusic UI language.
 
@@ -279,8 +279,8 @@ Use when:
 Rules:
 - this is read-only.
 - use get_translation for actual i18n key translation.
-'''.strip(),
-    'get_translation': '''
+""".strip(),
+    'get_translation': """
 Purpose:
 Translate one SouthsideMusic i18n key in the current UI language.
 
@@ -299,8 +299,8 @@ Rules:
   answers unless the user explicitly asks for the key.
 - prefer translated fields such as title_text, name_text, and description_text
   when tools already returned them.
-'''.strip(),
-    'refresh_folders': '''
+""".strip(),
+    'refresh_folders': """
 Purpose:
 Refresh the app's folder list.
 
@@ -318,8 +318,8 @@ Use when:
 Rules:
 - prefer get_folders for a simple read.
 - use refresh_folders when the app UI should actively reload folder data.
-'''.strip(),
-    'switch_page': '''
+""".strip(),
+    'switch_page': """
 Purpose:
 Switch the main UI page.
 
@@ -334,8 +334,8 @@ Rules:
 - do not use this to open a favorite folder; use open_folder for that.
 - search_cloud does not switch pages; use switch_page only when the user wants to see
   the Search page.
-'''.strip(),
-    'open_folder': '''
+""".strip(),
+    'open_folder': """
 Purpose:
 Open a favorite folder in the Favorites page.
 
@@ -353,8 +353,8 @@ Use when:
 Rules:
 - call get_folders first if you only know a folder name.
 - do not use switch_page for folder-specific navigation.
-'''.strip(),
-    'get_sections': '''
+""".strip(),
+    'get_sections': """
 Purpose:
 Read Settings page section names and expansion state.
 
@@ -375,8 +375,8 @@ Rules:
 - use title or title_key as the section argument for follow-up setting tools.
 - when the user asks where a setting option is, call jump_to_option after
   identifying the option.
-'''.strip(),
-    'jump_to_option': '''
+""".strip(),
+    'jump_to_option': """
 Purpose:
 Jump to one Settings option, expand its section, and smoothly scroll to it.
 
@@ -396,8 +396,8 @@ Use when:
 Rules:
 - call get_sections and get_options first when the exact option is unknown.
 - the LLM section is hidden and must not be targeted by this navigation tool.
-'''.strip(),
-    'get_options': '''
+""".strip(),
+    'get_options': """
 Purpose:
 Read setting options inside one Settings section.
 
@@ -416,8 +416,8 @@ Rules:
 - the LLM section is hidden and must not be returned.
 - use name or name_text in user-facing answers.
 - use name or name_key as the option argument for set_option_value.
-'''.strip(),
-    'set_option_value': '''
+""".strip(),
+    'set_option_value': """
 Purpose:
 Set one Settings option value.
 
@@ -441,8 +441,8 @@ Rules:
 - for numeric options, respect the range returned by get_options.
 - the LLM section is hidden and must not be changed through this tool.
 - never treat converter as arbitrary code; it is a safe built-in conversion name.
-'''.strip(),
-    'get_llm_providers': '''
+""".strip(),
+    'get_llm_providers': """
 Purpose:
 Read configured LLM providers and model mappings.
 
@@ -457,8 +457,8 @@ Returns:
 Use when:
 - the user asks what model/provider is configured.
 - add_llm_provider or set_llm_provider_model may duplicate an existing provider.
-'''.strip(),
-    'fetch_llm_models': '''
+""".strip(),
+    'fetch_llm_models': """
 Purpose:
 Fetch model ids from one LLM provider API endpoint.
 
@@ -479,8 +479,8 @@ Rules:
 - call this before asking the user to manually provide model ids when credentials
   and endpoint are available.
 - do not expose the API key in the final answer or tool result summary.
-'''.strip(),
-    'add_llm_provider': '''
+""".strip(),
+    'add_llm_provider': """
 Purpose:
 Add one LLM provider to Settings.
 
@@ -507,8 +507,8 @@ Rules:
 - never invent API keys, base URLs, or model ids.
 - call set_llm_provider_model afterward only if the user explicitly wants to
   switch to the newly added provider.
-'''.strip(),
-    'set_llm_provider_model': '''
+""".strip(),
+    'set_llm_provider_model': """
 Purpose:
 Select the current LLM provider and model.
 
@@ -522,8 +522,8 @@ Behavior:
 
 Use when:
 - the user asks to switch Onerad to a configured model.
-'''.strip(),
-    'get_southside_legacy_connection': '''
+""".strip(),
+    'get_southside_legacy_connection': """
 Purpose:
 Read Southside Legacy websocket connection state.
 
@@ -536,8 +536,8 @@ Returns:
 Use when:
 - the user asks whether Southside Legacy is connected.
 - deciding whether connect_southside_legacy or disconnect_southside_legacy is needed.
-'''.strip(),
-    'connect_southside_legacy': '''
+""".strip(),
+    'connect_southside_legacy': """
 Purpose:
 Try to connect/start the Southside Legacy websocket bridge.
 
@@ -550,8 +550,8 @@ Behavior:
 
 Use when:
 - the user asks to connect or retry Southside Legacy.
-'''.strip(),
-    'disconnect_southside_legacy': '''
+""".strip(),
+    'disconnect_southside_legacy': """
 Purpose:
 Disconnect Southside Legacy websocket bridge.
 
@@ -564,8 +564,8 @@ Behavior:
 
 Use when:
 - the user asks to disconnect Southside Legacy.
-'''.strip(),
-    'reset_desktop_lyrics_position': '''
+""".strip(),
+    'reset_desktop_lyrics_position': """
 Purpose:
 Reset the floating desktop lyrics window position.
 
@@ -578,8 +578,8 @@ Behavior:
 
 Use when:
 - the user asks to reset desktop lyrics position.
-'''.strip(),
-    'get_nickname': '''
+""".strip(),
+    'get_nickname': """
 Purpose:
 Read the current account login status and nickname.
 
@@ -592,8 +592,8 @@ Returns:
 Use when:
 - the user asks which account is logged in.
 - a cloud action may require login.
-'''.strip(),
-    'login': '''
+""".strip(),
+    'login': """
 Purpose:
 Open or trigger the app's account login flow.
 
@@ -610,8 +610,8 @@ Use when:
 
 Rules:
 - do not call login just to inspect account state; use get_nickname.
-'''.strip(),
-    'remove_song': '''
+""".strip(),
+    'remove_song': """
 Purpose:
 Remove a song from a favorite folder.
 
@@ -631,8 +631,8 @@ Rules:
 - this is destructive and always requires confirmation.
 - never remove songs as an inferred cleanup step.
 - if song or folder is ambiguous, ask before showing confirmation.
-'''.strip(),
-    'get_tool_usage': '''
+""".strip(),
+    'get_tool_usage': """
 Purpose:
 Return exact usage instructions for one tool.
 
@@ -649,8 +649,8 @@ Use when:
 Rules:
 - pass an exact tool name when possible.
 - if the tool is unknown, report the available tool names.
-'''.strip(),
-    'get_confirm': '''
+""".strip(),
+    'get_confirm': """
 Purpose:
 Ask the user to confirm a plan before a broad, batch, or high-risk workflow.
 
@@ -681,7 +681,7 @@ Rules:
 - do not ask for confirmation only in natural language; call get_confirm with
   the exact pending tools JSON so the app can show an executable confirmation card.
 - if the user rejects or is unsure, revise the plan and ask again.
-'''.strip(),
+""".strip(),
 }
 
 
@@ -693,7 +693,7 @@ def getToolUsage(tool_name: str) -> str:
     return f'Unknown tool: {tool_name}. Available tools: {names}'
 
 
-ONERAD_SYSTEM_PROMPT = '''You are Onerad, the AI assistant inside SouthsideMusic(南方音乐).
+ONERAD_SYSTEM_PROMPT = """You are Onerad, the AI assistant inside SouthsideMusic(南方音乐).
 You are built to help the user explore music, lyrics, playback, library organization,
 local files, and creative listening workflows without getting in the way of the app.
 Onerad is your in-app assistant identity. If the user asks whether you are DeepSeek,
@@ -765,7 +765,7 @@ Tool use rules:
   jump_to_option, get_options, set_option_value, get_llm_providers,
   fetch_llm_models, add_llm_provider, set_llm_provider_model,
   get_southside_legacy_connection, connect_southside_legacy, disconnect_southside_legacy,
-  reset_desktop_lyrics_position, get_nickname, login, remove_song.'''
+  reset_desktop_lyrics_position, get_nickname, login, remove_song."""
 
 LLMMessage = dict[str, str]
 ToolRunner = Callable[[str, dict[str, Any]], str]
@@ -872,7 +872,11 @@ class LLM:
                         if tool_call.function.arguments:
                             part['arguments'] += tool_call.function.arguments
 
-            if finish_reason != 'tool_calls' or not tool_call_parts or tool_runner is None:
+            if (
+                finish_reason != 'tool_calls'
+                or not tool_call_parts
+                or tool_runner is None
+            ):
                 return
 
             tool_call_payloads: list[dict[str, Any]] = []
@@ -1216,7 +1220,7 @@ class LLM:
         if self.base_url:
             kwargs['base_url'] = self._baseUrl()
         elif self._provider() is not None:
-            base_url = str(self._provider().get('base_url', '')).strip() # type: ignore
+            base_url = str(self._provider().get('base_url', '')).strip()  # type: ignore
             if base_url:
                 kwargs['base_url'] = base_url.rstrip('/')
         return Anthropic(**kwargs)
@@ -1255,7 +1259,7 @@ class LLM:
             raise ValueError('LLM Api Key is required')
         base_url = (self.base_url or '').strip().rstrip('/')
         if not base_url and self._provider() is not None:
-            base_url = str(self._provider().get('base_url', '')).strip().rstrip('/') # type: ignore
+            base_url = str(self._provider().get('base_url', '')).strip().rstrip('/')  # type: ignore
         if not base_url:
             base_url = 'https://api.anthropic.com/v1'
         urls = [f'{base_url}/models']

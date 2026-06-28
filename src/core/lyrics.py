@@ -221,7 +221,7 @@ class LRCLyricParser:
         self.parsed: list[LyricInfo] = []
         self.empty_times: list[float] = []
         self.version: int = 0
-        
+
     def getCurrentLyric(self, time: float) -> LyricInfo:
         return self._getCurrentLyric(time)
 

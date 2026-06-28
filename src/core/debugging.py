@@ -9,11 +9,12 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+
 class Debugging(QObject):
     def __init__(self, ctx: AppContext):
         super().__init__()
         self.ctx = ctx
-        
+
         self.infos: list[
             dict[str, list[str]]
         ] = []  # [ {'debug info source name': ['line1', 'line2', ...]}, ... ]

@@ -4,7 +4,7 @@ from . import weapi
 
 
 def getArtistAlbums(artist_id: str, offset=0, total=True, limit=1000) -> dict:
-    '''get artist's albums (web api).
+    """get artist's albums (web api).
 
     Args:
         artist_id: artist id.
@@ -14,7 +14,7 @@ def getArtistAlbums(artist_id: str, offset=0, total=True, limit=1000) -> dict:
 
     Returns:
         dict
-    '''
+    """
     return weapi(
         '/weapi/artist/albums/%s' % artist_id,
         {
@@ -28,7 +28,7 @@ def getArtistAlbums(artist_id: str, offset=0, total=True, limit=1000) -> dict:
 def getArtistTracks(
     artist_id: str, offset=0, total=True, limit=1000, order='hot'
 ) -> dict:
-    '''get artist's tracks sorted by order (web api).
+    """get artist's tracks sorted by order (web api).
 
     Args:
         artist_id: artist id.
@@ -39,7 +39,7 @@ def getArtistTracks(
 
     Returns:
         dict
-    '''
+    """
     return weapi(
         '/weapi/v1/artist/songs',
         {
@@ -53,12 +53,12 @@ def getArtistTracks(
 
 
 def getArtistDetails(artist_id: str) -> dict:
-    '''get artist detail (web api).
+    """get artist detail (web api).
 
     Args:
         artist_id: artist id.
 
     Returns:
         dict
-    '''
+    """
     return weapi('/weapi/artist/head/info/get', {'id': str(artist_id)})

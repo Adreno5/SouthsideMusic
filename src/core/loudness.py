@@ -16,7 +16,7 @@ _logger = logging.getLogger(__name__)
 
 
 def valid_audio(data, rate, block_size):
-    '''validate input is numpy floating array with correct shape and dimensions.'''
+    """validate input is numpy floating array with correct shape and dimensions."""
     if not isinstance(data, np.ndarray):
         raise ValueError('Data must be of type numpy.ndarray.')
 
@@ -33,7 +33,7 @@ def valid_audio(data, rate, block_size):
 
 
 class IirFilter(object):
-    '''iir filter for frequency weighting pre-filtering.'''
+    """iir filter for frequency weighting pre-filtering."""
 
     def __init__(self, G, Q, fc, rate, filter_type, passband_gain=1.0):
         self.G = G
@@ -45,7 +45,7 @@ class IirFilter(object):
 
     def __str__(self):
         filter_info = dedent(
-            '''
+            """
         ------------------------------
         type: {type}
         ------------------------------
@@ -62,7 +62,7 @@ class IirFilter(object):
         a1 = {_a1}
         a2 = {_a2}
         ------------------------------
-        '''.format(
+        """.format(
                 type=self.filter_type,
                 G=self.G,
                 Q=self.Q,
@@ -81,11 +81,11 @@ class IirFilter(object):
         return filter_info
 
     def generateCoefficients(self):
-        '''generate biquad filter coefficients from instance parameters.
+        """generate biquad filter coefficients from instance parameters.
 
         based on rbj cookbook formulae for audio equalizer biquad filter coefficients.
         for itu specification compliance, use the 'DeMan' filter types.
-        '''
+        """
         A = 10 ** (self.G / 40.0)
         w0 = 2.0 * np.pi * (self.fc / self.rate)
         alpha = np.sin(w0) / (2.0 * self.Q)
@@ -157,7 +157,7 @@ class IirFilter(object):
         return np.array([b0, b1, b2]) / a0, np.array([a0, a1, a2]) / a0
 
     def applyFilter(self, data):
-        '''apply the iir filter to the input signal.'''
+        """apply the iir filter to the input signal."""
         return self.passband_gain * scipy.signal.lfilter(self.b, self.a, data)  # type: ignore
 
     @property
@@ -170,7 +170,7 @@ class IirFilter(object):
 
 
 class Meter(object):
-    '''loudness meter based on ITU-R BS.1770-4 gating algorithm.'''
+    """loudness meter based on ITU-R BS.1770-4 gating algorithm."""
 
     def __init__(
         self, rate, filter_class='K-weighting', block_size=0.400, overlap=0.75
@@ -182,11 +182,11 @@ class Meter(object):
         self.blockwise_loudness = []
 
     def integratedLoudness(self, data):
-        '''measure integrated gated loudness of a signal in db LUFS.
+        """measure integrated gated loudness of a signal in db LUFS.
 
         input data shape: (samples, ch) or (samples,) for mono, up to 5 channels.
         channel order: [Left, Right, Center, Left surround, Right surround].
-        '''
+        """
         input_data = data.copy()
         valid_audio(input_data, self.rate, self.block_size)
 
@@ -260,10 +260,10 @@ class Meter(object):
         return LUFS
 
     def loudnessRange(self, data):
-        '''measure the loudness range (LRA) of a signal in LU units.
+        """measure the loudness range (LRA) of a signal in LU units.
 
         returns NaN if the signal is too quiet to compute LRA.
-        '''
+        """
         original_block_size = self.block_size
         original_overlap = self.overlap
 

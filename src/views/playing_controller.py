@@ -7,7 +7,7 @@ import time
 from typing import TYPE_CHECKING, cast as _cast
 
 from core.app_context import AppContext
-from core.i18n import bindText
+from core.i18n import tr
 from core.models import SongStorable
 from core.qt_utils import toQtInt
 from core.smooth import EaseOutTimer
@@ -387,7 +387,6 @@ class PlayingController(QWidget):
         self.bar_alpha_timer = EaseOutTimer(0.3, 2)
         self.bar_alpha_timer.target_value = 1
         self.tip_handler = TranslationHandler()
-        bindText(self.tip_handler, 'playing_controller.crossfading_tip')
 
         event_bus.subscribe(PLAY_STATE_CHANGED, self._onPlayStateChanged)
         event_bus.subscribe(SONG_CHANGED, self._updateDatas)
@@ -683,6 +682,11 @@ class PlayingController(QWidget):
     def _progressLeft(self) -> int:
         return 52 if self.cover_label.isVisible() else 0
 
+    def _crossfadeTipText(self) -> str:
+        if cfg.show_advanced_settings:
+            return tr('playing_controller.crossfading_tip')
+        return tr('playing_controller.crossfading_tip_easy')
+
     def _eventPlayingTime(self, event: QMouseEvent) -> float:
         progress_left = self._progressLeft()
         progress_width = max(1, self.width() - progress_left)
@@ -791,16 +795,17 @@ class PlayingController(QWidget):
                 )
             )
             metrics = QFontMetricsF(painter.font())
+            tip_text = self._crossfadeTipText()
             painter.drawText(
                 int(
                     (
                         self.width()
-                        - metrics.horizontalAdvance(self.tip_handler.current_text)
+                        - metrics.horizontalAdvance(tip_text)
                     )
                     * 0.5
                 ),
                 int(10 + metrics.ascent()),
-                self.tip_handler.current_text,
+                tip_text,
             )
 
         if self._dp.total_length > 0:

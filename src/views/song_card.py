@@ -59,6 +59,7 @@ from core.models import (
     SongDetail,
     SongInfo,
     SongStorable,
+    getCachedHashes
 )
 from core.icons import bindIcon, getQIcon
 from core.downloader import (
@@ -68,6 +69,7 @@ from core.soundfile import getSongFormat, saveSongWithInformation
 import requests
 from core.favorites import favorites_manager
 from core.backend import getBackend
+from core.app_context import AppContext
 from views.list_widget import SListWidget
 from views.folder_card import CloudFolderCard, LocalFolderCard
 
@@ -208,11 +210,12 @@ class FolderSelectDialog(MessageBoxBase):
 class SearchSongCard(QWidget):
     imageLoaded = Signal(bytes)
 
-    def __init__(self, info: SearchSongInfo, play_callback: Callable, mwindow) -> None:
+    def __init__(self, info: SearchSongInfo, play_callback: Callable, ctx: AppContext) -> None:
         super().__init__()
         self.info = info
         self._play_callback = play_callback
-        self._mwindow = mwindow
+        self.ctx = ctx
+        self._mwindow = self.ctx.main_window
 
         self.detail = SongDetail(image_url='')
 
@@ -337,41 +340,6 @@ class SearchSongCard(QWidget):
                 return
             favorites_manager.addFolder(folder_name)
 
-        result: dict = {}
-
-        def _on_prepared():
-            if not result.get('done'):
-                return
-            self._mwindow.ctx.addScheduledTask(
-                lambda: self._finishAddToFavorites(
-                    folder_name, result['image'], result['music']
-                )
-            )
-
-        def _prepare():
-            try:
-                backend = getBackend()
-                detail = backend.getTrackDetail(str(self.info.id))
-                image_url = detail.cover_url
-                image_bytes = requests.get(image_url).content
-                result['image'] = image_bytes
-
-                audio = backend.getTrackAudio(
-                    str(self.info.id), bitrate=self.info.privilege.max_br
-                )
-                music_url = audio.url
-                result['music'] = requests.get(music_url).content
-                result['done'] = True
-            except Exception:
-                result['done'] = False
-
-        asyncTask(_prepare, (), self._mwindow, _on_prepared)
-
-    def _finishAddToFavorites(
-        self, folder_name: str, image_bytes: bytes | None, music_bytes: bytes
-    ):
-        if image_bytes is None:
-            return
         storable = SongStorable(
             info=SongInfo(
                 name=self.info.name,
@@ -380,9 +348,9 @@ class SearchSongCard(QWidget):
                 privilege=-1,
                 duration=self.info.duration,
             ),
-            image=image_bytes,
-            music_bin=music_bytes,
-            lyric='',
+            image=None,
+            image_cache_hash=getCachedHashes(song_id).get('image_cache_hash', ''),
+            content_cache_hash=getCachedHashes(song_id).get('content_cache_hash', '')
         )
         if not favorites_manager.addSong(folder_name, storable):
             InfoBar.warning(
@@ -397,6 +365,7 @@ class SearchSongCard(QWidget):
             return
 
         event_bus.emit(FAVORITES_CHANGED, folder_name)
+        event_bus.emit(MWINDOW_REFRESH_FOLDERS)
 
         InfoBar.success(
             tr('song_card.favorited'),

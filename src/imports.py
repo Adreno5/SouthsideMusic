@@ -747,4 +747,4 @@ from qfluentwidgets import *  # type: ignore
 
 from services.events import *
 
-from core.i18n import bindText, refreshBoundTexts, setBoundText, tr
+from core.i18n import bindText, hasTranslation, refreshBoundTexts, setBoundText, tr

@@ -22,7 +22,9 @@ from imports import (
     Signal,
     event_bus,
     bindText,
+    hasTranslation,
     refreshBoundTexts,
+    setBoundText,
     tr,
 )
 from imports import QColor
@@ -235,6 +237,8 @@ class SettingPage(QWidget):
         self._section_count = 0
         self._current_section: SectionContainer | None = None
         self._sections: list[SectionContainer] = []
+        self._advanced_widgets: list[QWidget] = []
+        self._easy_text_widgets: list[QWidget] = []
         self.options_widget = QWidget()
         self.options_widget.setLayout(self.options_layout)
         self._initOptions()
@@ -243,6 +247,7 @@ class SettingPage(QWidget):
                 continue
             section.collapseNow()
         self._syncSectionExpandedConfig()
+        self._applyAdvancedSettingsVisibility()
         self.options_layout.addStretch(1)
 
         self.scroller.setWidget(self.options_widget)
@@ -297,6 +302,19 @@ class SettingPage(QWidget):
         if lw:
             lw.push('Setting up sidebar options...')
 
+        self.advanced_settings_box = CheckBox()
+        bindText(self.advanced_settings_box, 'setting_page.enable_advanced_settings')
+        self.advanced_settings_box.setChecked(cfg.show_advanced_settings)
+        self.advanced_settings_box.checkStateChanged.connect(
+            self._onAdvancedSettingsChanged
+        )
+        self.addSetting(
+            'setting_page.enable_advanced_settings',
+            'setting_page.enable_advanced_settings_description',
+            self.advanced_settings_box,
+            easy=False,
+        )
+
         self.addSection(
             'setting_page.app', 'setting_page.language_and_application_behavior'
         )
@@ -316,6 +334,7 @@ class SettingPage(QWidget):
             128,
             1,
             'download_concurrent_threads',
+            advanced=True,
         )
 
         self.addSection(
@@ -337,6 +356,7 @@ class SettingPage(QWidget):
             'setting_page.enable_stereo_effect',
             'stereo',
             lambda: self._player.restartProducer(),
+            advanced=True,
         )
         self.addNumberSetting(
             'setting_page.stereo_haas_index_ms',
@@ -346,12 +366,14 @@ class SettingPage(QWidget):
             5,
             'stereo_haas_index',
             lambda val: self._player.restartProducer(),
+            advanced=True,
         )
         self.addCheckSetting(
             'setting_page.enable_reverb',
             'setting_page.enable_reverb_effect',
             'enable_reverb',
             lambda: self._player.restartProducer(),
+            advanced=True,
         )
         self.addNumberSetting(
             'setting_page.reverb_intensity',
@@ -361,6 +383,7 @@ class SettingPage(QWidget):
             0.05,
             'reverb_intensity',
             lambda val: self._player.restartProducer(),
+            advanced=True,
         )
         self.addCheckSetting(
             'setting_page.smart_skip',
@@ -379,6 +402,7 @@ class SettingPage(QWidget):
             1,
             0.05,
             'crossfade_strength',
+            advanced=True,
         )
         self.addNumberSetting(
             'setting_page.playback_speed',
@@ -397,6 +421,7 @@ class SettingPage(QWidget):
             0.1,
             'play_pitch',
             lambda val: self._player.setPlayPitch(val),
+            advanced=True,
         )
         self.addNumberSetting(
             'setting_page.skip_threshold',
@@ -405,11 +430,13 @@ class SettingPage(QWidget):
             0,
             1,
             'skip_threshold',
+            advanced=True,
         )
         self.addSetting(
             'setting_page.current_volume',
             'setting_page.live_playback_volume_in_db',
             self.now_volume,
+            advanced=True,
         )
 
         self.addNumberSetting(
@@ -419,6 +446,7 @@ class SettingPage(QWidget):
             60,
             1,
             'skip_remain_time',
+            advanced=True,
         )
 
         self.device_selector = ComboBox()
@@ -432,6 +460,7 @@ class SettingPage(QWidget):
             'setting_page.output_device',
             'setting_page.the_device_to_output_audio',
             self.device_selector,
+            advanced=True,
         )
 
         if lw:
@@ -439,6 +468,7 @@ class SettingPage(QWidget):
         self.addSection(
             'setting_page.llm',
             'setting_page.llm_provider_model_and_authentication',
+            advanced=True,
         )
         self.llm_section = self._current_section
 
@@ -451,7 +481,7 @@ class SettingPage(QWidget):
         self.llm_provider_list_layout.setSpacing(6)
         self.llm_provider_list_widget.setLayout(self.llm_provider_list_layout)
         self._refreshLlmProvidersView()
-        self.addSeparateWidget(self.llm_provider_list_widget)
+        self.addSeparateWidget(self.llm_provider_list_widget, advanced=True)
 
         if lw:
             lw.top('Setting up window options...')
@@ -473,6 +503,7 @@ class SettingPage(QWidget):
         self.addSection(
             'setting_page.lyrics',
             'setting_page.smoothing_controls_for_the_main_lyrics_animation',
+            advanced=True,
         )
         self.addNumberSetting(
             'setting_page.lyrics_smooth_factor',
@@ -481,6 +512,7 @@ class SettingPage(QWidget):
             1,
             0.002,
             'lyrics_smooth_factor',
+            advanced=True,
         )
         self.addNumberSetting(
             'setting_page.acceleration_smooth_factor',
@@ -489,6 +521,7 @@ class SettingPage(QWidget):
             1,
             0.002,
             'acceleration_smooth_factor',
+            advanced=True,
         )
 
         if lw:
@@ -527,6 +560,7 @@ class SettingPage(QWidget):
         self.addSection(
             'setting_page.fft',
             'setting_page.frequency_visualization_tuning_for_local_and_client_output',
+            advanced=True,
         )
         self.enableFFT_box = CheckBox()
         bindText(self.enableFFT_box, 'setting_page.enable_frequency_graphics')
@@ -535,6 +569,7 @@ class SettingPage(QWidget):
             'setting_page.frequency_graphics',
             'setting_page.enable_fft_driven_visual_effects',
             self.enableFFT_box,
+            advanced=True,
         )
         self.addNumberSetting(
             'setting_page.fft_filtering_window_size',
@@ -543,6 +578,7 @@ class SettingPage(QWidget):
             200,
             1,
             'fft_filtering_windowsize',
+            advanced=True,
         )
         self.addNumberSetting(
             'setting_page.fft_smoothing_factor',
@@ -551,6 +587,7 @@ class SettingPage(QWidget):
             1.0,
             0.05,
             'fft_factor',
+            advanced=True,
         )
         self.addNumberSetting(
             'setting_page.southside_music_side_fft_multiple_factor',
@@ -559,6 +596,7 @@ class SettingPage(QWidget):
             15.0,
             0.1,
             'cfft_multiple',
+            advanced=True,
         )
         self.addNumberSetting(
             'setting_page.southside_client_side_fft_multiple_factor',
@@ -567,6 +605,7 @@ class SettingPage(QWidget):
             15.0,
             0.5,
             'sfft_multiple',
+            advanced=True,
         )
 
         if lw:
@@ -574,6 +613,7 @@ class SettingPage(QWidget):
         self.addSection(
             'setting_page.loudness',
             'setting_page.target_volume_normalization_for_playback',
+            advanced=True,
         )
         self.target_lufs = Slider(Qt.Orientation.Horizontal)
         self.target_lufs.valueChanged.connect(self.onTargetLUFSChanged)
@@ -587,6 +627,7 @@ class SettingPage(QWidget):
             'setting_page.target_lufs',
             'setting_page.restart_to_apply_loudness_changes',
             self.target_lufs,
+            advanced=True,
         )
         middle_widget = QWidget()
         middle_layout = QHBoxLayout()
@@ -601,10 +642,11 @@ class SettingPage(QWidget):
         )
         middle_layout.setSpacing(8)
         middle_widget.setLayout(middle_layout)
-        self.addSeparateWidget(middle_widget)
+        self.addSeparateWidget(middle_widget, advanced=True)
         self.addInfoBlock(
             'setting_page.reference',
             'setting_page.range_60_quietest_0_loudest_recommend_16_18_youtube_14_lufs_netflix_27',
+            advanced=True,
         )
 
         if lw:
@@ -612,9 +654,10 @@ class SettingPage(QWidget):
         self.addSection(
             'setting_page.connection',
             'setting_page.southside_client_websocket_status_and_controls',
+            advanced=True,
         )
         self.southsideclient_status_label = SubtitleLabel()
-        self.addSeparateWidget(self.southsideclient_status_label)
+        self.addSeparateWidget(self.southsideclient_status_label, advanced=True)
 
         self.status_widget = QWidget()
         status_layout = QHBoxLayout()
@@ -640,7 +683,7 @@ class SettingPage(QWidget):
         )
         status_layout.setSpacing(8)
         self.status_widget.setLayout(status_layout)
-        self.addSeparateWidget(self.status_widget)
+        self.addSeparateWidget(self.status_widget, advanced=True)
 
         prefix_label = QLabel('')
         bindText(prefix_label, 'setting_page.latency')
@@ -653,7 +696,7 @@ class SettingPage(QWidget):
         )
         status_layout.setSpacing(8)
         self.status_widget.setLayout(status_layout)
-        self.addSeparateWidget(self.status_widget)
+        self.addSeparateWidget(self.status_widget, advanced=True)
 
         self.update_statuses_timer.timeout.connect(
             lambda: self.sent_label.setText(f'{self.ctx.ws_handler.sent:.2f}')
@@ -683,7 +726,7 @@ class SettingPage(QWidget):
         connection_layout.addWidget(self.connect_btn)
         connection_layout.addStretch(1)
         connection_buttons.setLayout(connection_layout)
-        self.addSeparateWidget(connection_buttons)
+        self.addSeparateWidget(connection_buttons, advanced=True)
         self._refreshConnectionStatus()
 
         for slider in self.findChildren(QSlider):
@@ -715,6 +758,43 @@ class SettingPage(QWidget):
             parent=self._mwindow,
         )
 
+    def _onAdvancedSettingsChanged(self, *args: object) -> None:
+        cfg.show_advanced_settings = self.advanced_settings_box.isChecked()
+        saveConfig()
+        self._applyAdvancedSettingsVisibility()
+
+    def _easyTextKey(self, key: str) -> str:
+        easy_key = f'{key}_easy'
+        if not cfg.show_advanced_settings and hasTranslation(easy_key):
+            return easy_key
+        return key
+
+    def _bindSettingText(self, widget: QWidget, key: str, easy: bool) -> None:
+        setattr(widget, '_easy_setting_key', key)
+        setattr(widget, '_easy_setting_enabled', easy)
+        setBoundText(widget, self._easyTextKey(key) if easy else key)
+
+    def _refreshEasySettingTexts(self) -> None:
+        for widget in self._easy_text_widgets:
+            key = getattr(widget, '_easy_setting_key', '')
+            easy = bool(getattr(widget, '_easy_setting_enabled', False))
+            if not key:
+                continue
+            setBoundText(widget, self._easyTextKey(key) if easy else key)
+
+    def _trackAdvancedWidget(self, widget: QWidget, advanced: bool) -> None:
+        if advanced:
+            self._advanced_widgets.append(widget)
+
+    def _applyAdvancedSettingsVisibility(self) -> None:
+        show_advanced = cfg.show_advanced_settings
+        for widget in self._advanced_widgets:
+            widget.setVisible(show_advanced)
+        self._refreshEasySettingTexts()
+        for section in self._sections:
+            section.refreshContentHeight()
+        self.options_widget.adjustSize()
+
     def addNumberSetting(
         self,
         title: str,
@@ -724,6 +804,8 @@ class SettingPage(QWidget):
         step: float | int,
         configurationName: str,
         onChanged: Callable[[float], None] | None = None,
+        advanced: bool = False,
+        easy: bool = True,
     ) -> None:
         box = SettableNumberViewer(self.ctx.harmony_font_family, self.ctx)
         box.setRange(min, max_v)
@@ -738,7 +820,7 @@ class SettingPage(QWidget):
                 onChanged(value)
 
         box.valueChanged.connect(_valueChanged)
-        self.addSetting(title, description, box)
+        self.addSetting(title, description, box, advanced=advanced, easy=easy)
 
     def addCheckSetting(
         self,
@@ -746,9 +828,12 @@ class SettingPage(QWidget):
         description: str,
         configurationName: str,
         onChanged: Callable[[], None] | None = None,
+        advanced: bool = False,
+        easy: bool = True,
     ) -> None:
         box = CheckBox()
-        bindText(box, title)
+        self._bindSettingText(box, title, easy)
+        self._easy_text_widgets.append(box)
 
         def __valueChanged():
             setattr(cfg, configurationName, box.checkState() == Qt.CheckState.Checked)
@@ -757,12 +842,25 @@ class SettingPage(QWidget):
 
         box.stateChanged.connect(__valueChanged)
         box.setChecked(getattr(cfg, configurationName))
-        self.addSetting(title, description, box)
+        self.addSetting(title, description, box, advanced=advanced, easy=easy)
 
-    def addSection(self, title: str, description: str) -> None:
+    def addSection(
+        self,
+        title: str,
+        description: str,
+        advanced: bool = False,
+        easy: bool = True,
+    ) -> None:
         if self._section_count:
-            self.options_layout.addSpacing(12)
+            spacer = QWidget()
+            spacer.setFixedHeight(12)
+            self._trackAdvancedWidget(spacer, advanced)
+            self.options_layout.addWidget(spacer)
         section = SectionContainer(title, description)
+        self._bindSettingText(section.title_l, title, easy)
+        self._bindSettingText(section.desc_l, description, easy)
+        self._easy_text_widgets.extend([section.title_l, section.desc_l])
+        self._trackAdvancedWidget(section, advanced)
         section.expandedChanged.connect(self._onSectionExpandedChanged)
         self.options_layout.addWidget(section)
         self._current_section = section
@@ -788,11 +886,19 @@ class SettingPage(QWidget):
         card.paintEvent = lambda e: self._patched_paint_event(card, e)
         return card
 
-    def addSetting(self, name: str, description: str, widget: QWidget) -> None:
+    def addSetting(
+        self,
+        name: str,
+        description: str,
+        widget: QWidget,
+        advanced: bool = False,
+        easy: bool = True,
+    ) -> None:
         card = self._createTransparentCard()
         card._llm_setting_name = name  # type: ignore
         card._llm_setting_description = description  # type: ignore
         card._llm_setting_widget = widget  # type: ignore
+        self._trackAdvancedWidget(card, advanced)
         global_layout = QHBoxLayout()
         global_layout.setContentsMargins(16, 12, 16, 12)
         global_layout.setSpacing(18)
@@ -800,13 +906,14 @@ class SettingPage(QWidget):
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(4)
         name_l = QLabel()
-        bindText(name_l, name)
+        self._bindSettingText(name_l, name, easy)
         name_l.setStyleSheet('font-weight: bold;')
         name_l.setWordWrap(True)
         desc_l = QLabel()
-        bindText(desc_l, description)
+        self._bindSettingText(desc_l, description, easy)
         desc_l.setWordWrap(True)
         desc_l.setStyleSheet(f'color: {"#A8A8A8" if theme.isDark() else "#666666"};')
+        self._easy_text_widgets.extend([name_l, desc_l])
         text_layout.addWidget(name_l)
         text_layout.addWidget(desc_l)
         global_layout.addLayout(text_layout, 1)
@@ -814,17 +921,25 @@ class SettingPage(QWidget):
         card.setLayout(global_layout)
         self._addOptionWidget(card)
 
-    def addInfoBlock(self, title: str, text: str) -> None:
+    def addInfoBlock(
+        self,
+        title: str,
+        text: str,
+        advanced: bool = False,
+        easy: bool = True,
+    ) -> None:
         card = self._createTransparentCard()
+        self._trackAdvancedWidget(card, advanced)
         layout = QVBoxLayout()
         layout.setContentsMargins(16, 12, 16, 12)
         title_l = QLabel()
-        bindText(title_l, title)
+        self._bindSettingText(title_l, title, easy)
         title_l.setStyleSheet('font-weight: bold;')
         body_l = QLabel()
-        bindText(body_l, text)
+        self._bindSettingText(body_l, text, easy)
         body_l.setWordWrap(True)
         body_l.setStyleSheet(f'color: {"#A8A8A8" if theme.isDark() else "#666666"};')
+        self._easy_text_widgets.extend([title_l, body_l])
         layout.addWidget(title_l)
         layout.addWidget(body_l)
         card.setLayout(layout)
@@ -901,7 +1016,8 @@ class SettingPage(QWidget):
         painter.setBrush(card.backgroundColor)
         painter.drawRoundedRect(rect, r, r)
 
-    def addSeparateWidget(self, widget: QWidget) -> None:
+    def addSeparateWidget(self, widget: QWidget, advanced: bool = False) -> None:
+        self._trackAdvancedWidget(widget, advanced)
         self._addOptionWidget(widget)
 
     def disconnectFromSouthsideClient(self):

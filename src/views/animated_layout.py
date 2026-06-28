@@ -230,8 +230,10 @@ class SFlowLayout(QLayout):
         if w is not None:
             ani: QPropertyAnimation | None = w.property('flowAni')
             if ani is not None:
-                self._anis.remove(ani)
+                if ani in self._anis:
+                    self._anis.remove(ani)
                 ani.deleteLater()
+                w.setProperty('flowAni', None)
         return item
 
     def removeWidget(self, widget: QWidget) -> None:
@@ -239,6 +241,25 @@ class SFlowLayout(QLayout):
             if item.widget() is widget:
                 self.takeAt(i)
                 return
+
+    def moveWidget(self, widget: QWidget, index: int) -> None:
+        old_index = -1
+        for i, item in enumerate(self._items):
+            if item.widget() is widget:
+                old_index = i
+                break
+        if old_index < 0:
+            self.insertWidget(index, widget)
+            return
+
+        item = self._items.pop(old_index)
+        index = max(0, min(index, len(self._items)))
+        self._items.insert(index, item)
+
+        ani: QPropertyAnimation | None = widget.property('flowAni')
+        if ani is not None and ani in self._anis:
+            self._anis.remove(ani)
+            self._anis.insert(index, ani)
 
     def removeAllWidgets(self) -> None:
         while self._items:
@@ -304,7 +325,8 @@ class SFlowLayout(QLayout):
 
         for i, item in enumerate(self._items):
             w = item.widget()
-            if w is not None and not w.isVisible() and self._isTight:
+            if w is not None and w.isHidden() and self._isTight:
+                aniIdx += 1
                 continue
 
             itemWidth = item.sizeHint().width()

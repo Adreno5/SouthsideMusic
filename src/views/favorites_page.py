@@ -154,6 +154,8 @@ class FavoritesPage(QWidget):
             return
         self.refresh()
 
+        self.ctx.library_page.fetchSongs(force=True)
+
         event_bus.emit(MWINDOW_REFRESH_FOLDERS)
 
     @property

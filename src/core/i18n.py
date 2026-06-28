@@ -399,6 +399,14 @@ TRANSLATIONS: dict[str, list[str]] = {
     'library_page.title': ['Library', '库'],
     'library_page.number_prefix': ['', '一共'],
     'library_page.number_suffix': ['songs in total', '首'],
+    'library_page.sort.name_asc': ['Song name A-Z', '歌名升序'],
+    'library_page.sort.name_desc': ['Song name Z-A', '歌名降序'],
+    'library_page.sort.artist_asc': ['Artist name A-Z', '作者升序'],
+    'library_page.sort.artist_desc': ['Artist name Z-A', '作者降序'],
+    'library_page.sort.name_length_asc': ['Song name length ↑', '歌名长度升序'],
+    'library_page.sort.name_length_desc': ['Song name length ↓', '歌名长度降序'],
+    'library_page.sort.count_asc': ['Play count ↑', '播放次数升序'],
+    'library_page.sort.count_desc': ['Play count ↓', '播放次数降序'],
     'setting_page.acceleration_smooth_factor': [
         'Acceleration Smooth Factor',
         '加速度平滑系数',
@@ -412,9 +420,14 @@ TRANSLATIONS: dict[str, list[str]] = {
         '调整混响效果强度',
     ],
     'setting_page.app': ['App', '应用'],
+    'setting_page.app_easy': ['Basic', '基础'],
     'setting_page.change_the_display_language_immediately': [
         'change the display language immediately',
         '立即切换显示语言',
+    ],
+    'setting_page.change_the_display_language_immediately_easy': [
+        'choose the language used by the app',
+        '选择软件显示的语言',
     ],
     'setting_page.changed_output_device_to_device': [
         'changed output device to {device}',
@@ -432,10 +445,23 @@ TRANSLATIONS: dict[str, list[str]] = {
         '当前音量(db)：{value}',
     ],
     'setting_page.desktop_lyrics': ['Desktop Lyrics', '桌面歌词'],
+    'setting_page.desktop_lyrics_easy': ['Floating Lyrics', '悬浮歌词'],
     'setting_page.device_changed': ['Device changed', '设备已切换'],
     'setting_page.disconnect': ['Disconnect', '断开连接'],
     'setting_page.disconnected': ['Disconnected', '未连接'],
     'setting_page.enable_desktop_lyrics': ['Enable Desktop Lyrics', '启用桌面歌词'],
+    'setting_page.enable_desktop_lyrics_easy': [
+        'Show Floating Lyrics',
+        '显示悬浮歌词',
+    ],
+    'setting_page.enable_advanced_settings': [
+        'Enable Advanced Settings',
+        '启用高级设置项',
+    ],
+    'setting_page.enable_advanced_settings_description': [
+        'show every setting, including options for tuning audio, model providers and client links',
+        '显示全部设置，包括音效调节、模型服务和客户端连接等高级选项',
+    ],
     'setting_page.enable_fft_driven_visual_effects': [
         'enable FFT-driven visual effects',
         '启用 FFT 驱动的视觉效果',
@@ -445,9 +471,17 @@ TRANSLATIONS: dict[str, list[str]] = {
         '启用频谱图形',
     ],
     'setting_page.enable_crossfade': ['Enable Crossfade', '启用交叉淡化'],
+    'setting_page.enable_crossfade_easy': [
+        'Enable Seamless Transition',
+        '启用无缝过渡',
+    ],
     'setting_page.enable_crossfade_effect': [
         'blend the end of the current song into the next preloaded song',
         '将当前歌曲结尾与下一首预加载歌曲混合播放',
+    ],
+    'setting_page.enable_crossfade_effect_easy': [
+        'make the next song fade in smoothly instead of stopping suddenly',
+        '让下一首歌平滑接上，不会突然切断',
     ],
     'setting_page.enable_reverb': ['Enable Reverb', '启用混响'],
     'setting_page.enable_reverb_effect': ['enable reverb effect', '启用混响效果'],
@@ -463,15 +497,24 @@ TRANSLATIONS: dict[str, list[str]] = {
         'Floating lyrics window controls.',
         '悬浮歌词窗口控制。',
     ],
+    'setting_page.floating_lyrics_window_controls_easy': [
+        'Show lyrics in a small floating window.',
+        '把歌词显示在一个悬浮小窗口里。',
+    ],
     'setting_page.frequency_graphics': ['Frequency Graphics', '频谱图形'],
     'setting_page.frequency_visualization_tuning_for_local_and_client_output': [
         'Frequency visualization tuning for local and client output.',
         '本地和客户端输出的频谱可视化调节。',
     ],
     'setting_page.language': ['Language', 'Language(语言)'],
+    'setting_page.language_easy': ['Language', '语言'],
     'setting_page.language_and_application_behavior': [
         'Language and application behavior.',
         '语言和应用行为。',
+    ],
+    'setting_page.language_and_application_behavior_easy': [
+        'Common app preferences.',
+        '常用的软件偏好。',
     ],
     'setting_page.larger_value_make_color_of_backgound_nearly_to_image_of_playing_song': [
         'larger value make color of backgound nearly to image of playing song',
@@ -506,11 +549,13 @@ TRANSLATIONS: dict[str, list[str]] = {
     ],
     'setting_page.need_restart': ['Need Restart', '需要重启'],
     'setting_page.output_device': ['Output Device', '输出设备'],
+    'setting_page.output_device_easy': ['Play Sound Through', '声音从哪里播放'],
     'setting_page.play_method.play_in_order': ['Play in order', '顺序播放'],
     'setting_page.play_method.repeat_list': ['Repeat list', '列表循环'],
     'setting_page.play_method.repeat_one': ['Repeat one', '单曲循环'],
     'setting_page.play_method.shuffle': ['Shuffle', '随机播放'],
     'setting_page.play_order': ['Play order', '播放顺序'],
+    'setting_page.play_order_easy': ['Song Order', '歌曲播放方式'],
     'setting_page.pitch_shift_in_semitones': [
         'pitch shift in semitones',
         '按半音调整音调',
@@ -518,6 +563,10 @@ TRANSLATIONS: dict[str, list[str]] = {
     'setting_page.playback_order_stereo_output_speed_and_skip_behavior': [
         'Playback order, stereo output, speed and skip behavior.',
         '播放顺序、立体声输出、速度和跳过行为。',
+    ],
+    'setting_page.playback_order_stereo_output_speed_and_skip_behavior_easy': [
+        'Everyday playback preferences.',
+        '日常听歌设置。',
     ],
     'setting_page.crossfade_time': ['Crossfade Time', '交叉淡化时长'],
     'setting_page.crossfade_time_description': [
@@ -531,7 +580,9 @@ TRANSLATIONS: dict[str, list[str]] = {
     ],
     'setting_page.playback_pitch': ['Playback Pitch', '播放音调'],
     'setting_page.playback_speed': ['Playback Speed', '播放速度'],
+    'setting_page.playback_speed_easy': ['Playback Speed', '播放速度'],
     'setting_page.playing': ['Playing', '播放'],
+    'setting_page.playing_easy': ['Playback', '听歌'],
     'setting_page.llm': ['LLM', 'LLM'],
     'setting_page.llm_provider_model_and_authentication': [
         'OpenAI-compatible provider, model and authentication.',
@@ -649,6 +700,7 @@ TRANSLATIONS: dict[str, list[str]] = {
     'setting_page.reference': ['Reference', '参考'],
     'setting_page.remain_time_to_skip': ['Remain time to Skip', '跳过检测剩余时间'],
     'setting_page.reset_position': ['Reset Position', '重置位置'],
+    'setting_page.reset_position_easy': ['Move Back to Default Position', '移回默认位置'],
     'setting_page.restart_the_application_to_apply_the_new_lufs': [
         'Restart the application to apply the new LUFS',
         '重启应用以应用新的 LUFS',
@@ -662,9 +714,17 @@ TRANSLATIONS: dict[str, list[str]] = {
         'show lyrics in a floating always-on-top window',
         '在置顶悬浮窗口中显示歌词',
     ],
+    'setting_page.show_lyrics_in_a_floating_always_on_top_window_easy': [
+        'show lyrics above other windows',
+        '在其他窗口上方显示歌词',
+    ],
     'setting_page.skip_the_no_sound_section_when_song_ends': [
         'Skip the no sound section when song ends',
         '歌曲结尾时跳过无声片段',
+    ],
+    'setting_page.skip_the_no_sound_section_when_song_ends_easy': [
+        'skip long silence at the end of a song',
+        '自动跳过歌曲末尾的空白',
     ],
     'setting_page.skip_threshold': ['Skip Threshold', '跳过阈值'],
     'setting_page.smaller_value_means_a_more_bounce_effect': [
@@ -672,6 +732,7 @@ TRANSLATIONS: dict[str, list[str]] = {
         '数值越小弹性效果越明显',
     ],
     'setting_page.smart_skip': ['Smart Skip', '智能跳过'],
+    'setting_page.smart_skip_easy': ['Skip Silence', '跳过空白'],
     'setting_page.smoothing_controls_for_the_main_lyrics_animation': [
         'Smoothing controls for the main lyrics animation.',
         '主歌词动画的平滑控制。',
@@ -689,6 +750,10 @@ TRANSLATIONS: dict[str, list[str]] = {
         'SouthsideMusic 侧 FFT 放大系数',
     ],
     'setting_page.speed_of_playing': ['speed of playing', '播放速度'],
+    'setting_page.speed_of_playing_easy': [
+        'make songs play faster or slower',
+        '让歌曲播放得更快或更慢',
+    ],
     'setting_page.start_detecting_volume_during_the_remaining_specified_seconds': [
         'start detecting volume during the remaining specified seconds',
         '在剩余指定秒数内开始检测音量',
@@ -707,7 +772,15 @@ TRANSLATIONS: dict[str, list[str]] = {
         'the device to output audio',
         '音频输出设备',
     ],
+    'setting_page.the_device_to_output_audio_easy': [
+        'choose speakers or headphones',
+        '选择音箱、耳机或其他播放设备',
+    ],
     'setting_page.the_order_of_play': ['the order of play', '播放顺序'],
+    'setting_page.the_order_of_play_easy': [
+        'choose how songs move to the next one',
+        '选择歌曲按什么顺序继续播放',
+    ],
     'setting_page.the_threshold_of_the_skip': [
         'the threshold of the skip',
         '跳过检测阈值',
@@ -716,14 +789,23 @@ TRANSLATIONS: dict[str, list[str]] = {
         'Theme-sensitive background mixing.',
         '随主题变化的背景混合。',
     ],
+    'setting_page.theme_sensitive_background_mixing_easy': [
+        'Adjust how much the song cover affects the window color.',
+        '调节窗口背景受歌曲封面影响的程度。',
+    ],
     'setting_page.try_connect': ['Try connect', '尝试连接'],
     'setting_page.sent_size': ['Sent', '已发送'],
     'setting_page.received_size': ['Received', '已接收'],
     'setting_page.latency': ['Latency', '延迟'],
     'setting_page.window': ['Window', '窗口'],
+    'setting_page.window_easy': ['Appearance', '外观'],
     'setting_page.window_background_mix_ratio': [
         'Window Background Mix Ratio',
         '窗口背景混合比例',
+    ],
+    'setting_page.window_background_mix_ratio_easy': [
+        'Cover Color Strength',
+        '封面颜色强度',
     ],
     'setting_page.download_concurrent_threads': [
         'Download Concurrent Threads',
@@ -785,6 +867,10 @@ TRANSLATIONS: dict[str, list[str]] = {
     ],
     'song_card.played_times': ['times', '次'],
     'playing_controller.crossfading_tip': ['Crossfading', '正在交叉淡化'],
+    'playing_controller.crossfading_tip_easy': [
+        'Seamless Transition',
+        '无缝过渡中',
+    ],
 }
 
 
@@ -811,6 +897,10 @@ def tr(key: str, **kwargs: Any) -> str:
     if kwargs:
         return text.format(**kwargs)
     return text
+
+
+def hasTranslation(key: str) -> bool:
+    return key in TRANSLATIONS
 
 
 def bindText(widget: object, key: str, **kwargs: Any) -> None:

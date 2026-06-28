@@ -75,6 +75,7 @@ class Config:
     play_pitch: float = 0
 
     show_translation: bool = True
+    show_advanced_settings: bool = False
     setting_section_expanded: dict[str, bool] = field(default_factory=dict)
 
     download_concurrent_threads: int = 16

@@ -1335,9 +1335,12 @@ class PlayingManager:
                         self._last_storable.name,
                         timeLib.time() - self._play_storable_time,
                     )
+                    self._logger.info(
+                        f'logged playback action id={self._last_storable.id}'
+                    )
                 backend.recordPlay(song_storable.id)
+                self._logger.info(f'logged start play action id={song_storable.id}')
 
-            self._logger.info(f'logged playback action id={song_storable.id}')
             self._play_storable_time = timeLib.time()
             self._last_storable = song_storable
 
@@ -1693,6 +1696,8 @@ class PlayingManager:
         pause_after_load: bool = False,
         mark_loaded: bool = False,
     ) -> None:
+        if preloaded_audio is None:
+            self.clearPreload()
         song_storable = self._selectStorableForPlayback(song_storable)
         self._logger.debug(f'{song_storable.target_lufs=} {cfg.target_lufs=}')
 

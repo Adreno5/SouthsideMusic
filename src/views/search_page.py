@@ -184,7 +184,7 @@ class SearchPage(QWidget):
             content_widget = SearchSongCard(
                 song,
                 lambda c: self._mwindow.play(c),
-                self._mwindow,  # type: ignore
+                self.ctx
             )
             self.lst.setItemWidget(item, content_widget)
             self.cards.append(content_widget)

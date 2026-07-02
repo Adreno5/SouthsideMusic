@@ -242,7 +242,7 @@ TRANSLATIONS: dict[str, list[str]] = {
         '请重新登录后再执行此操作',
     ],
     'favorites_page.remove': ['Remove', '移除'],
-    'favorites_page.replace_playlist': ['Replace Playlist', '替换播放列表'],
+    'favorites_page.play_all': ['Play', '播放全部'],
     'favorites_page.select_all': ['Select All', '全选'],
     'favorites_page.session_expired': ['Session expired', '会话已过期'],
     'favorites_page.song_deleted': ['Song deleted', '歌曲已删除'],

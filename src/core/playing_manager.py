@@ -1372,6 +1372,31 @@ class PlayingManager:
         def _is_current() -> bool:
             return play_seq == self._play_seq and self.current_song is song_storable
 
+        def _refresh_current_audio() -> None:
+            if not _is_current():
+                return
+            try:
+                audio = self._loadStorableAudio(song_storable)
+            except Exception:
+                self._logger.exception('failed to load completed streaming audio')
+                return
+
+            def _apply() -> None:
+                if not _is_current():
+                    return
+                self.current_song_audio = audio
+                if (
+                    isinstance(self.next_song_audio, AudioSegment_)
+                    and self.next_song_selection is not None
+                    and self.isSelectionCurrent(self.next_song_selection)
+                ):
+                    self.crossfade_info = self._computeCrossfadeInfo(
+                        audio,
+                        self.next_song_audio,
+                    )
+
+            self._schedule(_apply)
+
         def _cleanup(path: Path) -> None:
             try:
                 path.unlink(missing_ok=True)
@@ -1558,6 +1583,10 @@ class PlayingManager:
                     )
                 else:
                     _try_start_playback(path)
+                threading.Thread(
+                    target=_refresh_current_audio,
+                    daemon=True,
+                ).start()
             _cleanup(path)
 
         def _prepare() -> None:
@@ -1696,8 +1725,7 @@ class PlayingManager:
         pause_after_load: bool = False,
         mark_loaded: bool = False,
     ) -> None:
-        if preloaded_audio is None:
-            self.clearPreload()
+        self.clearPreload()
         song_storable = self._selectStorableForPlayback(song_storable)
         self._logger.debug(f'{song_storable.target_lufs=} {cfg.target_lufs=}')
 
@@ -1707,15 +1735,19 @@ class PlayingManager:
 
         self._last_storable = self.current_song
 
-        if preloaded_audio is None:
-            self._cancelCrossfadePlayback()
+        self._cancelCrossfadePlayback()
         image_missing, music_missing = self._storable_asset_missing(song_storable)
         player.stop()
         player.setVolume(1.0)
         self.current_song = song_storable
+        self.current_song_audio = None
         self.total_length = self._storableDuration(song_storable)
         self._play_seq += 1
         play_seq = self._play_seq
+
+        def _is_current_playback() -> bool:
+            return play_seq == self._play_seq and self.current_song is song_storable
+
         event_bus.emit(STOP_PROGRESS_LOADING)
         event_bus.emit(PLAYBACK_SONG_LOADING, song_storable)
         app = self._app
@@ -1745,13 +1777,17 @@ class PlayingManager:
                     restore_position,
                     pause_after_load,
                     mark_loaded,
-                ),
+                )
+                if _is_current_playback()
+                else None,
             ):
                 return
 
         result: dict[str, object] = {}
 
         def _prepare() -> None:
+            if not _is_current_playback():
+                return
             mwindow = self._mwindow_obj
             if mwindow is not None:
                 mwindow._loading_song = True
@@ -1760,9 +1796,13 @@ class PlayingManager:
             if mwindow is not None:
                 mwindow._loading_song = False
 
+            if not _is_current_playback():
+                return
             result['audio'] = audio
             self.current_song_audio = audio
             player.load(audio)
+            if not _is_current_playback():
+                return
             self.total_length = self._storableDuration(
                 song_storable,
                 player.getLength(),

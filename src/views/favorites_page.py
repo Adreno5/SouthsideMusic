@@ -13,6 +13,9 @@ from imports import (
     PLAY_PLAYLIST_STORABLE,
     START_INTER_LOADING,
     STOP_INTER_LOADING,
+    PLAY_SONG_AT_INDEX,
+    FluentIcon,
+    PrimaryPushButton,
     PushButton,
     QLabel,
     QPixmap,
@@ -73,10 +76,11 @@ class FavoritesPage(QWidget):
 
         self.title_label = TitleLabel(tr('favorites_page.none'))
         buttons_layout = FlowLayout()
-        self.reppl_btn = PushButton('')
-        bindText(self.reppl_btn, 'favorites_page.replace_playlist')
-        self.reppl_btn.clicked.connect(self.replacePlaylist)
-        buttons_layout.addWidget(self.reppl_btn)
+        self.playall_btn = PrimaryPushButton('')
+        self.playall_btn.setIcon(FluentIcon.PLAY_SOLID)
+        bindText(self.playall_btn, 'favorites_page.play_all')
+        self.playall_btn.clicked.connect(self.playAll)
+        buttons_layout.addWidget(self.playall_btn)
         self.addpl_btn = PushButton('')
         bindText(self.addpl_btn, 'favorites_page.add_to_playlist')
         self.addpl_btn.clicked.connect(self.addFolderToPlaylist)
@@ -142,6 +146,8 @@ class FavoritesPage(QWidget):
         self._favorites_refresh_seq = 0
 
         event_bus.subscribe(FAVORITES_CHANGED, self._onFavoritesChanged)
+
+        # self.playall_btn.setFixedSize(self.playall_btn.size() * 2)
 
     def _onFavoritesChanged(self, folder_name=None):
         if self.is_cloud:
@@ -377,7 +383,7 @@ class FavoritesPage(QWidget):
         self._syncBatchButtons()
 
     def _replaceAndPlay(self, song: SongStorable):
-        self.replacePlaylist(False)
+        self.playAll(False)
         event_bus.emit(PLAY_PLAYLIST_STORABLE, song)
 
     def _queueAfterCurrent(self, song: SongStorable):
@@ -763,7 +769,7 @@ class FavoritesPage(QWidget):
         )
         event_bus.emit(MWINDOW_REFRESH_FOLDERS)
 
-    def replacePlaylist(self, tip=True):
+    def playAll(self, tip=True):
         self._pm.setPlaylist(list(self._songs()))
         folder_name = (
             self.curr_cloud_folder.folder_name
@@ -772,6 +778,7 @@ class FavoritesPage(QWidget):
             if self.curr_folder
             else ''
         )
+        event_bus.emit(PLAY_SONG_AT_INDEX, 0)
         if tip:
             InfoBar.success(
                 tr('favorites_page.playlist_replaced'),

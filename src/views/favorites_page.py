@@ -407,7 +407,7 @@ class FavoritesPage(QWidget):
         pixmap = card.img_label.pixmap()
         if not pixmap or pixmap.isNull():
             try:
-                image_bytes = song.get_image_bytes()
+                image_bytes = song.getImageBytes()
                 pixmap = QPixmap()
                 pixmap.loadFromData(image_bytes)
                 if pixmap.isNull():

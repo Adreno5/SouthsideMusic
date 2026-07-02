@@ -625,10 +625,10 @@ class LLMToolRunner:
             song = pm.playlist[pm.current_index]
         if song is None:
             return {'has_song': False}
-        handle = self._song_handle(song)
+        handle = self._songHandle(song)
         return {
             'has_song': True,
-            'song': self._song_to_dict(song, handle),
+            'song': self._songToDict(song, handle),
             'playback': {
                 'playing': player.isPlaying(),
                 'position': player.getPosition(),
@@ -639,11 +639,11 @@ class LLMToolRunner:
         }
 
     def getSongDetails(self, song: str) -> dict[str, Any]:
-        song_id = self._song_id_from_handle_or_id(song)
+        song_id = self._songIdFromHandleOrId(song)
         if not song_id:
             return {'error': 'song handle or id is required'}
         detail = getBackend().getTrackDetail(song_id)
-        style_hints = self._style_hints(detail)
+        style_hints = self._styleHints(detail)
         return {
             'id': str(song_id),
             'title': detail.name,
@@ -685,7 +685,7 @@ class LLMToolRunner:
                         'handle': handle,
                         'name': cloud_folder.folder_name,
                         'kind': 'cloud',
-                        'song_count': self._cloud_song_count(cloud_folder),
+                        'song_count': self._cloudSongCount(cloud_folder),
                         'id': cloud_folder.id,
                     }
                 )
@@ -708,20 +708,20 @@ class LLMToolRunner:
         limit = max(1, min(100, limit))
         if isinstance(folder_obj, CloudFolderInfo):
             songs = getBackend().getPlaylistTracks(folder_obj.id)
-            if self._cloud_song_count(folder_obj) is None:
-                self._set_cloud_song_count(folder_obj, len(songs))
+            if self._cloudSongCount(folder_obj) is None:
+                self._setCloudSongCount(folder_obj, len(songs))
         else:
             songs = folder_obj.songs
 
         sliced = songs[offset : offset + limit]
         return {
-            'folder': self._folder_to_dict(folder, folder_obj),
+            'folder': self._folderToDict(folder, folder_obj),
             'offset': offset,
             'limit': limit,
             'total': len(songs),
             'next_offset': offset + len(sliced),
             'songs': [
-                self._song_to_dict(song, self._song_handle(song)) for song in sliced
+                self._songToDict(song, self._songHandle(song)) for song in sliced
             ],
         }
 
@@ -789,7 +789,7 @@ class LLMToolRunner:
             'offset': 0,
             'next_offset': self.ctx.llm_cloud_search_offset,
             'count': len(results),
-            'results': [self._search_song_to_dict(song) for song in results],
+            'results': [self._searchSongToDict(song) for song in results],
         }
 
     def continueSearchCloud(self) -> dict[str, Any]:
@@ -804,7 +804,7 @@ class LLMToolRunner:
             'offset': offset,
             'next_offset': self.ctx.llm_cloud_search_offset,
             'count': len(results),
-            'results': [self._search_song_to_dict(song) for song in results],
+            'results': [self._searchSongToDict(song) for song in results],
         }
 
     def favoriteSong(self, song: str, folder: str) -> dict[str, Any]:
@@ -818,7 +818,7 @@ class LLMToolRunner:
         if folder_obj is None:
             return {'error': f'folder handle not found: {folder}'}
 
-        storable = self._to_storable(song_obj)
+        storable = self._toStorable(song_obj)
         if isinstance(folder_obj, CloudFolderInfo):
             ok = getBackend().editPlaylist('add', [str(storable.id)], folder_obj.id)
             if not ok:
@@ -831,8 +831,8 @@ class LLMToolRunner:
         self._pending_refresh_folders = True
         self._pending_open_folder = folder_obj
         return {
-            'favorited': self._song_to_dict(storable, song),
-            'folder': self._folder_to_dict(folder, folder_obj),
+            'favorited': self._songToDict(storable, song),
+            'folder': self._folderToDict(folder, folder_obj),
         }
 
     def createFavoriteFolder(self, name: str, kind: str) -> dict[str, Any]:
@@ -852,7 +852,7 @@ class LLMToolRunner:
         self._folder_handles[handle] = folder_obj
         self._pending_refresh_folders = True
         self._pending_open_folder = folder_obj
-        return {'created': self._folder_to_dict(handle, folder_obj)}
+        return {'created': self._folderToDict(handle, folder_obj)}
 
     def flushPostActions(self) -> None:
         favorite_folders = sorted(self._pending_favorite_folders)
@@ -1265,8 +1265,8 @@ class LLMToolRunner:
             'new_value': self._widget_value(widget),
         }
 
-    def _search_song_to_dict(self, song: SearchSongInfo) -> dict[str, Any]:
-        handle = self._song_handle(song)
+    def _searchSongToDict(self, song: SearchSongInfo) -> dict[str, Any]:
+        handle = self._songHandle(song)
         return {
             'handle': handle,
             'id': str(song.id),
@@ -1276,13 +1276,13 @@ class LLMToolRunner:
             'duration': song.duration,
         }
 
-    def _song_to_dict(
+    def _songToDict(
         self,
         song: SongStorable | SearchSongInfo,
         handle: str,
     ) -> dict[str, Any]:
         if isinstance(song, SearchSongInfo):
-            return self._search_song_to_dict(song)
+            return self._searchSongToDict(song)
         return {
             'handle': handle,
             'id': str(song.id),
@@ -1291,7 +1291,7 @@ class LLMToolRunner:
             'duration': song.duration,
         }
 
-    def _folder_to_dict(
+    def _folderToDict(
         self,
         handle: str,
         folder: LocalFolderInfo | CloudFolderInfo,
@@ -1302,7 +1302,7 @@ class LLMToolRunner:
                 'kind': 'cloud',
                 'name': folder.folder_name,
                 'id': folder.id,
-                'song_count': self._cloud_song_count(folder),
+                'song_count': self._cloudSongCount(folder),
             }
         return {
             'handle': handle,
@@ -1311,14 +1311,14 @@ class LLMToolRunner:
             'song_count': len(folder.songs),
         }
 
-    def _cloud_song_count(self, folder: CloudFolderInfo) -> int | None:
+    def _cloudSongCount(self, folder: CloudFolderInfo) -> int | None:
         count = getattr(folder, 'song_count', None)
         return count if isinstance(count, int) else None
 
-    def _set_cloud_song_count(self, folder: CloudFolderInfo, count: int) -> None:
+    def _setCloudSongCount(self, folder: CloudFolderInfo, count: int) -> None:
         setattr(folder, 'song_count', count)
 
-    def _song_id_from_handle_or_id(self, song: str) -> str:
+    def _songIdFromHandleOrId(self, song: str) -> str:
         song = song.strip()
         song_obj = self._song_handles.get(song)
         if song_obj is not None:
@@ -1327,7 +1327,7 @@ class LLMToolRunner:
             return song.removeprefix('song:').strip()
         return song
 
-    def _style_hints(self, detail: Any) -> list[str]:
+    def _styleHints(self, detail: Any) -> list[str]:
         hints: list[str] = []
         for item in (
             *detail.display_tags,
@@ -1342,13 +1342,13 @@ class LLMToolRunner:
             hints.append(feature)
         return hints
 
-    def _song_handle(self, song: SearchSongInfo | SongStorable) -> str:
+    def _songHandle(self, song: SearchSongInfo | SongStorable) -> str:
         song_id = str(song.id)
         handle = f'song:{song_id}'
         self._song_handles[handle] = song
         return handle
 
-    def _to_storable(self, song: SearchSongInfo | SongStorable) -> SongStorable:
+    def _toStorable(self, song: SearchSongInfo | SongStorable) -> SongStorable:
         if isinstance(song, SongStorable):
             return song
         return SongStorable(

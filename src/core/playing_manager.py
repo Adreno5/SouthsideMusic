@@ -18,9 +18,9 @@ import requests
 from core.audio_player import (
     AudioPlayer,
     PatchedAudioSegment as AudioSegment_,
-    cache_decoded_audio,
-    decode_audio_with_sidecar,
-    get_cached_audio,
+    cacheDecodedAudio,
+    decodeAudioWithSidecar,
+    getCachedAudio,
     getAudioDevices,
 )
 from core.backend import getBackend
@@ -585,7 +585,7 @@ class PlayingManager:
         if total_seconds <= 0:
             return 0.0
         try:
-            lyrics = song.get_lyrics()
+            lyrics = song.getLyrics()
         except Exception:
             self._logger.exception('failed to read lyrics for crossfade timing')
             return 0.0
@@ -785,21 +785,21 @@ class PlayingManager:
                 try:
                     lock = self._lock
                     if lock is None:
-                        song_bytes = next_song.get_music_bytes()
+                        song_bytes = next_song.getMusicBytes()
                     else:
                         with lock:
-                            song_bytes = next_song.get_music_bytes()
+                            song_bytes = next_song.getMusicBytes()
                     cache_key = next_song.content_cache_hash
-                    cached = get_cached_audio(cache_key) if cache_key else None
+                    cached = getCachedAudio(cache_key) if cache_key else None
                     if cached is not None:
                         audio = cached
                     else:
-                        audio = decode_audio_with_sidecar(
+                        audio = decodeAudioWithSidecar(
                             song_bytes,
                             self._ft_worker,
                         )
                         if cache_key:
-                            cache_decoded_audio(cache_key, audio)
+                            cacheDecodedAudio(cache_key, audio)
                 except Exception as e:
                     next_song.content_cache_hash = ''
                     saveFavorites()
@@ -1083,7 +1083,7 @@ class PlayingManager:
 
     def _storable_asset_missing(self, song_storable: SongStorable) -> tuple[bool, bool]:
         backend = getBackend()
-        return not song_storable.image_cached(), not song_storable.audio_cached(
+        return not song_storable.imageCached(), not song_storable.audioCached(
             backend.loggedIn(), int(backend.getUserVipType())
         )
 
@@ -1126,7 +1126,7 @@ class PlayingManager:
                     image_bytes = prepared.get('image')
                     if not isinstance(image_bytes, bytes) or not image_bytes:
                         return False
-                    song_storable._write_cache(
+                    song_storable._writeCache(
                         image_bytes, IMAGE_DATA_DIR, 'image_cache_hash'
                     )
                     image_just_persisted = True
@@ -1134,7 +1134,7 @@ class PlayingManager:
                 if music_missing:
                     if not music_bytes:
                         return False
-                    song_storable._write_cache(
+                    song_storable._writeCache(
                         music_bytes, MUSIC_DATA_DIR, 'content_cache_hash'
                     )
 
@@ -1252,14 +1252,14 @@ class PlayingManager:
         if preloaded_audio is not None:
             return preloaded_audio
 
-        music_bytes = song_storable.get_music_bytes()
+        music_bytes = song_storable.getMusicBytes()
         cache_key = song_storable.content_cache_hash
-        cached = get_cached_audio(cache_key) if cache_key else None
+        cached = getCachedAudio(cache_key) if cache_key else None
         if cached is not None:
             return cached
-        audio = decode_audio_with_sidecar(music_bytes, self._ft_worker)
+        audio = decodeAudioWithSidecar(music_bytes, self._ft_worker)
         if cache_key:
-            cache_decoded_audio(cache_key, audio)
+            cacheDecodedAudio(cache_key, audio)
         return audio
 
     def _storableDuration(
@@ -1277,7 +1277,7 @@ class PlayingManager:
         result: dict[str, object],
     ) -> None:
         try:
-            image_bytes = song_storable.get_image_bytes()
+            image_bytes = song_storable.getImageBytes()
             result['image'] = image_bytes
             result['avg_color'] = self._averageColorFromBytes(image_bytes)
         except Exception:
@@ -1324,7 +1324,7 @@ class PlayingManager:
         event_bus.emit(PLAY_STATE_CHANGED, not pause_after_load)
         event_bus.emit(POST_PLAY_STORABLE, song_storable)
 
-        song_storable.increment_count(1)
+        song_storable.incrementCount(1)
 
         def _logAction():
             backend = getBackend()
@@ -1534,7 +1534,7 @@ class PlayingManager:
                     try:
                         with open(path, 'rb') as f:
                             music_bytes = f.read()
-                        song_storable.cache_audio(music_bytes)
+                        song_storable.cacheAudio(music_bytes)
                         saveFavorites()
                     except Exception:
                         self._logger.exception(
@@ -1625,7 +1625,7 @@ class PlayingManager:
                         tr('playing_manager.failed_to_download_missing_cached_files'),
                     )
                     return
-                song_storable.cache_image(image_bytes)
+                song_storable.cacheImage(image_bytes)
                 saveFavorites()
                 event_bus.emit(IMAGE_ASSET_PERSISTED, song_storable)
 
@@ -1833,7 +1833,7 @@ class PlayingManager:
     def _show_original_lyrics(self, song_storable: SongStorable) -> None:
         if not self.ctx:
             return
-        lyrics = song_storable.get_lyrics()
+        lyrics = song_storable.getLyrics()
         self.ctx.mgr.cur = lyrics['lyric'] or '[00:00.000]'
         self.ctx.transmgr.cur = ''
         self.ctx.ymgr.cur = ''
@@ -1871,9 +1871,9 @@ class PlayingManager:
 
         def _download() -> None:
             nonlocal lyric_result
-            need_yrc = song_storable.yrc_lyrics_missing()
-            need_translated_lyric = song_storable.translated_lyrics_missing()
-            need_ytlrc = song_storable.ytlrc_missing()
+            need_yrc = song_storable.yrcLyricsMissing()
+            need_translated_lyric = song_storable.translatedLyricsMissing()
+            need_ytlrc = song_storable.ytlrcMissing()
             if not need_yrc and not need_translated_lyric and not need_ytlrc:
                 return
             try:
@@ -1894,7 +1894,7 @@ class PlayingManager:
                 ymgr = self.ctx.ymgr
 
             if lyric_result is None:
-                lyrics = lyric_target.get_lyrics()
+                lyrics = lyric_target.getLyrics()
                 mgr.cur = lyrics['lyric'] or '[00:00.000]'
                 ymgr.cur = lyrics['yrc_lyric']
                 ytlrc = lyrics.get('ytlrc_lyric', '')
@@ -1910,7 +1910,7 @@ class PlayingManager:
                     transmgr.cur = ytlrc
                 else:
                     transmgr.cur = lyric_result.translated_lyric or '[00:00.000]'
-                lyric_target.write_lyrics(
+                lyric_target.writeLyrics(
                     mgr.cur,
                     transmgr.cur if transmgr.cur != '[00:00.000]' else '',
                     ymgr.cur,
@@ -1932,10 +1932,10 @@ class PlayingManager:
         self._logger.debug(f'loading data {len(music_bytes)}')
         lock = self._lock
         if lock is None:
-            audio = decode_audio_with_sidecar(music_bytes, self._ft_worker)
+            audio = decodeAudioWithSidecar(music_bytes, self._ft_worker)
         else:
             with lock:
-                audio = decode_audio_with_sidecar(music_bytes, self._ft_worker)
+                audio = decodeAudioWithSidecar(music_bytes, self._ft_worker)
 
         self._logger.debug(f'applying gain {gain} {cfg.target_lufs=}')
         audio = audio.apply_gain(20 * np.log10(gain))

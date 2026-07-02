@@ -138,7 +138,7 @@ def _build_codeload_url(tag_name: str) -> str:
     )
 
 
-def init_file():
+def initFile():
     _FILE.write_text(json.dumps({}), encoding='utf-8')
 
 
@@ -204,7 +204,7 @@ def applyUpdate(update_info: UpdateInfo) -> bool:
 
 def startUpdateCheck(mwindow: MainWindow) -> None:
     if not _FILE.is_file():
-        init_file()
+        initFile()
 
     def _check():
         try:

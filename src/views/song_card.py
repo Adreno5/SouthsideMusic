@@ -555,14 +555,14 @@ class _SongCardItem(QWidget):
 
     def _auto_download_missing_image(self):
         storable = self.storable
-        if storable.image_cached():
+        if storable.imageCached():
             return
 
         lock = _get_image_download_lock(storable.id)
         if not lock.acquire(blocking=False):
             return
         try:
-            if storable.image_cached():
+            if storable.imageCached():
                 return
             try:
                 detail = getBackend().getTrackDetail(storable.id)
@@ -576,7 +576,7 @@ class _SongCardItem(QWidget):
 
             if not image_bytes:
                 return
-            storable._write_cache(image_bytes, IMAGE_DATA_DIR, 'image_cache_hash')
+            storable._writeCache(image_bytes, IMAGE_DATA_DIR, 'image_cache_hash')
             favorites_manager._save()
             if self._mwindow:
                 self._mwindow.ctx.addScheduledTask(
@@ -595,7 +595,7 @@ class _SongCardItem(QWidget):
 
         def _decode():
             try:
-                image_bytes = self.storable.get_image_bytes()
+                image_bytes = self.storable.getImageBytes()
             except FileNotFoundError:
                 return
             result['image_bytes'] = image_bytes

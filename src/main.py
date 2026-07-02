@@ -442,6 +442,6 @@ if __name__ == '__main__':
 
         _logger.debug(f'{sys.path=}')
 
-    depwindow.all_checked.connect(_postStageInit)
+    depwindow.allChecked.connect(_postStageInit)
 
     app.exec()

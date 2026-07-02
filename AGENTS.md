@@ -116,9 +116,11 @@ from imports import QTimer, QVBoxLayout, QWidget, Qt, Signal, event_bus
 
 - Files/modules: `snake_case.py`.
 - Classes and Qt widgets: `PascalCase` (`AudioPlayer`, `SearchPage`).
-- Public methods: project-style `camelCase` (`loadConfig`, `addToFolder`).
-- Private helpers: `_snake_case`.
+- Public methods: `camelCase` (`getValue`, `saveConfig`, `loadFavorites`).
+- Private methods: `_camelCase` (`_loadCache`, `_validateInput`).
 - Variables and attributes: `snake_case`.
+- Private variables: `_snake_case`.
+- Qt Signals: `camelCase` (`fetchedSongs`, `onEndingNoSound`).
 - Constants: `UPPER_CASE`.
 - Event constants: `UPPER_CASE` strings (`SONG_CHANGED`, `PRE_THEME_CHANGED`).
 

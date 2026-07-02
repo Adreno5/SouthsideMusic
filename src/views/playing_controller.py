@@ -441,7 +441,7 @@ class PlayingController(QWidget):
         )
 
         if song:
-            pixmap = QPixmap.fromImage(QImage.fromData(song.get_image_bytes()))
+            pixmap = QPixmap.fromImage(QImage.fromData(song.getImageBytes()))
             pixmap = pixmap.scaled(
                 self.height(),
                 self.height(),

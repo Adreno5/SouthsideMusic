@@ -43,7 +43,7 @@ def json_float_array(
     }
 
 
-def _read_frame(stream) -> Any | None:
+def _readFrame(stream) -> Any | None:
     header = stream.read(4)
     if not header:
         return None
@@ -56,14 +56,14 @@ def _read_frame(stream) -> Any | None:
     return pickle.loads(payload)
 
 
-def _write_frame(stream, payload: Any) -> None:
+def _writeFrame(stream, payload: Any) -> None:
     data = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
     stream.write(struct.pack('>I', len(data)))
     stream.write(data)
     stream.flush()
 
 
-def _float_unpack_format(dtype: str) -> str | None:
+def _floatUnpackFormat(dtype: str) -> str | None:
     dtype = dtype.lower()
     if dtype in {'float32', 'single', 'f4', '<f4', '|f4'}:
         return '<f'
@@ -72,7 +72,7 @@ def _float_unpack_format(dtype: str) -> str | None:
     return None
 
 
-def _normalize_payload(value: Any) -> Any:
+def _normalizePayload(value: Any) -> Any:
     if isinstance(value, dict):
         if _B64_BYTES_KEY in value:
             data = value[_B64_BYTES_KEY]
@@ -90,7 +90,7 @@ def _normalize_payload(value: Any) -> Any:
             multiple = float(spec.get('multiple', 1.0))
             if not isinstance(data, bytes):
                 return []
-            fmt = _float_unpack_format(dtype)
+            fmt = _floatUnpackFormat(dtype)
             if fmt is None or count <= 0:
                 return []
             item_size = struct.calcsize(fmt)
@@ -98,10 +98,10 @@ def _normalize_payload(value: Any) -> Any:
             view = memoryview(data)[: count * item_size]
             return [item[0] * multiple for item in struct.iter_unpack(fmt, view)]
 
-        return {str(key): _normalize_payload(item) for key, item in value.items()}
+        return {str(key): _normalizePayload(item) for key, item in value.items()}
 
     if isinstance(value, (list, tuple)):
-        return [_normalize_payload(item) for item in value]
+        return [_normalizePayload(item) for item in value]
 
     if isinstance(value, bytes):
         return base64.b64encode(value).decode('ascii')
@@ -109,7 +109,7 @@ def _normalize_payload(value: Any) -> Any:
     return value
 
 
-def _average_color(image_bytes: bytes) -> list[float]:
+def _averageColor(image_bytes: bytes) -> list[float]:
     if not image_bytes:
         return [128, 128, 128]
     from PIL import Image, ImageStat
@@ -120,7 +120,7 @@ def _average_color(image_bytes: bytes) -> list[float]:
         return [float(value) for value in stat.mean[:3]]
 
 
-def _loudness_gain(payload: dict[str, Any]) -> float:
+def _loudnessGain(payload: dict[str, Any]) -> float:
     src_dir = Path(__file__).resolve().parents[1]
     src_dir_text = str(src_dir)
     if src_dir_text not in sys.path:
@@ -142,7 +142,7 @@ def _loudness_gain(payload: dict[str, Any]) -> float:
     )
 
 
-def _fix_wav_headers(data: bytearray) -> None:
+def _fixWavHeaders(data: bytearray) -> None:
     pos = 12
     data_position = -1
     data_size = 0
@@ -167,7 +167,7 @@ def _fix_wav_headers(data: bytearray) -> None:
     )
 
 
-def _decode_audio(payload: dict[str, Any]) -> bytes:
+def _decodeAudio(payload: dict[str, Any]) -> bytes:
     import json
 
     from pydub import AudioSegment
@@ -255,15 +255,15 @@ def _decode_audio(payload: dict[str, Any]) -> bytes:
         )
 
     wav_bytes = bytearray(stdout)
-    _fix_wav_headers(wav_bytes)
+    _fixWavHeaders(wav_bytes)
     return bytes(wav_bytes)
 
 
-def _handle_worker_request(request: dict[str, Any]) -> Any:
+def _handleWorkerRequest(request: dict[str, Any]) -> Any:
     op = request.get('op')
     payload = request.get('payload', {})
     if op == 'json_dumps':
-        return dump_json_payload(payload)
+        return dumpJsonPayload(payload)
 
     if not isinstance(payload, dict):
         raise TypeError('worker payload must be a dict')
@@ -274,23 +274,23 @@ def _handle_worker_request(request: dict[str, Any]) -> Any:
         image_bytes = payload.get('image', b'')
         if not isinstance(image_bytes, bytes):
             return [128, 128, 128]
-        return _average_color(image_bytes)
+        return _averageColor(image_bytes)
     if op == 'loudness_gain':
-        return _loudness_gain(payload)
+        return _loudnessGain(payload)
     if op == 'decode_audio':
-        return _decode_audio(payload)
+        return _decodeAudio(payload)
 
     raise ValueError(f'unsupported worker op: {op}')
 
 
-def dump_json_payload(payload: Any) -> str:
+def dumpJsonPayload(payload: Any) -> str:
     """Dump a worker-compatible payload to compact JSON."""
     import json
 
-    return json.dumps(_normalize_payload(payload), separators=(',', ':'))
+    return json.dumps(_normalizePayload(payload), separators=(',', ':'))
 
 
-def _worker_main() -> int:
+def _workerMain() -> int:
     max_workers = max(2, os.cpu_count() or 2)
     if '--workers' in sys.argv:
         try:
@@ -300,23 +300,23 @@ def _worker_main() -> int:
 
     stdout_lock = threading.Lock()
 
-    def _send_response(response: dict[str, Any]) -> None:
+    def _sendResponse(response: dict[str, Any]) -> None:
         with stdout_lock:
-            _write_frame(sys.stdout.buffer, response)
+            _writeFrame(sys.stdout.buffer, response)
 
     def _done(request_id: int, future) -> None:
         try:
             msg = future.result()
-            _send_response({'id': request_id, 'ok': True, 'msg': msg})
+            _sendResponse({'id': request_id, 'ok': True, 'msg': msg})
         except Exception as e:
-            _send_response({'id': request_id, 'ok': False, 'error': repr(e)})
+            _sendResponse({'id': request_id, 'ok': False, 'error': repr(e)})
 
     with ThreadPoolExecutor(
         max_workers=max_workers,
         thread_name_prefix='southside-ft-json',
     ) as executor:
         while True:
-            request = _read_frame(sys.stdin.buffer)
+            request = _readFrame(sys.stdin.buffer)
             if request is None:
                 return 0
             if not isinstance(request, dict):
@@ -327,13 +327,13 @@ def _worker_main() -> int:
             request_id = int(request.get('id', 0))
             if request.get('op') in _MAIN_THREAD_OPS:
                 try:
-                    msg = _handle_worker_request(request)
-                    _send_response({'id': request_id, 'ok': True, 'msg': msg})
+                    msg = _handleWorkerRequest(request)
+                    _sendResponse({'id': request_id, 'ok': True, 'msg': msg})
                 except Exception as e:
-                    _send_response({'id': request_id, 'ok': False, 'error': repr(e)})
+                    _sendResponse({'id': request_id, 'ok': False, 'error': repr(e)})
                 continue
 
-            future = executor.submit(_handle_worker_request, request)
+            future = executor.submit(_handleWorkerRequest, request)
             future.add_done_callback(lambda fut, rid=request_id: _done(rid, fut))
 
 
@@ -365,7 +365,7 @@ class FreeThreadedJsonSender:
             if isinstance(msg, str):
                 callback(msg)
 
-        return self._submit_request('json_dumps', payload, _callback) is not None
+        return self._submitRequest('json_dumps', payload, _callback) is not None
 
     def dump(
         self,
@@ -388,7 +388,7 @@ class FreeThreadedJsonSender:
             result.append(msg)
             done.set()
 
-        request_id = self._submit_request(op, payload, _capture)
+        request_id = self._submitRequest(op, payload, _capture)
         if request_id is None:
             return None
         if not done.wait(timeout):
@@ -398,7 +398,7 @@ class FreeThreadedJsonSender:
             return None
         return result[0] if result else None
 
-    def _submit_request(
+    def _submitRequest(
         self,
         op: str,
         payload: dict[str, object],
@@ -407,7 +407,7 @@ class FreeThreadedJsonSender:
         with self._lock:
             if self._shutdown:
                 return None
-            process = self._ensure_process_locked()
+            process = self._ensureProcessLocked()
             if process is None or process.stdin is None:
                 return None
 
@@ -415,7 +415,7 @@ class FreeThreadedJsonSender:
             request_id = self._next_id
             self._callbacks[request_id] = callback
             try:
-                _write_frame(
+                _writeFrame(
                     process.stdin,
                     {
                         'id': request_id,
@@ -426,7 +426,7 @@ class FreeThreadedJsonSender:
             except Exception as e:
                 self._callbacks.pop(request_id, None)
                 self._logger.warning('free-threaded worker submit failed: %s', e)
-                self._stop_process_locked()
+                self._stopProcessLocked()
                 return None
 
         return request_id
@@ -438,23 +438,23 @@ class FreeThreadedJsonSender:
             process = self._process
             if process is not None and process.stdin is not None:
                 try:
-                    _write_frame(process.stdin, {'op': 'shutdown'})
+                    _writeFrame(process.stdin, {'op': 'shutdown'})
                 except Exception:
                     pass
-            reader_thread = self._stop_process_locked(terminate_first=False)
-        self._join_reader_thread(reader_thread)
+            reader_thread = self._stopProcessLocked(terminate_first=False)
+        self._joinReaderThread(reader_thread)
 
     def is_running(self) -> bool:
         with self._lock:
             return self._process is not None and self._process.poll() is None
 
-    def _ensure_process_locked(self) -> subprocess.Popen | None:
+    def _ensureProcessLocked(self) -> subprocess.Popen | None:
         if self._shutdown:
             return None
         if self._process is not None and self._process.poll() is None:
             return self._process
 
-        interpreter = self._find_interpreter()
+        interpreter = self._findInterpreter()
         if interpreter is None:
             return None
 
@@ -486,7 +486,7 @@ class FreeThreadedJsonSender:
 
         self._process = process
         self._reader_thread = threading.Thread(
-            target=self._read_loop,
+            target=self._readLoop,
             args=(process,),
             daemon=True,
             name='southside-ft-json-reader',
@@ -495,7 +495,7 @@ class FreeThreadedJsonSender:
         self._logger.info('free-threaded JSON worker started: %s', interpreter)
         return process
 
-    def _find_interpreter(self) -> Path | None:
+    def _findInterpreter(self) -> Path | None:
         if self._interpreter is not None:
             return self._interpreter
 
@@ -528,14 +528,14 @@ class FreeThreadedJsonSender:
                 )
 
         for candidate in candidates:
-            if candidate.is_file() and self._is_free_threaded(candidate):
+            if candidate.is_file() and self._isFreeThreaded(candidate):
                 self._interpreter = candidate
                 return candidate
 
         self._logger.warning('no free-threaded Python interpreter found')
         return None
 
-    def _is_free_threaded(self, interpreter: Path) -> bool:
+    def _isFreeThreaded(self, interpreter: Path) -> bool:
         code = (
             'import sys, sysconfig; '
             'print(int(not sys._is_gil_enabled())); '
@@ -562,13 +562,13 @@ class FreeThreadedJsonSender:
         values = [line.strip() for line in result.stdout.splitlines()]
         return len(values) >= 2 and values[0] == '1' and values[1] == '1'
 
-    def _read_loop(self, process: subprocess.Popen) -> None:
+    def _readLoop(self, process: subprocess.Popen) -> None:
         stdout = process.stdout
         if stdout is None:
             return
         while True:
             try:
-                response = _read_frame(stdout)
+                response = _readFrame(stdout)
             except Exception as e:
                 self._logger.debug('free-threaded worker read ended: %s', e)
                 break
@@ -597,7 +597,7 @@ class FreeThreadedJsonSender:
         for callback in callbacks:
             callback(None)
 
-    def _stop_process_locked(
+    def _stopProcessLocked(
         self,
         *,
         terminate_first: bool = True,
@@ -650,7 +650,7 @@ class FreeThreadedJsonSender:
                 pass
         return reader_thread
 
-    def _join_reader_thread(self, reader_thread: threading.Thread | None) -> None:
+    def _joinReaderThread(self, reader_thread: threading.Thread | None) -> None:
         if (
             reader_thread is not None
             and reader_thread.is_alive()
@@ -660,4 +660,4 @@ class FreeThreadedJsonSender:
 
 
 if __name__ == '__main__' and '--worker' in sys.argv:
-    raise SystemExit(_worker_main())
+    raise SystemExit(_workerMain())

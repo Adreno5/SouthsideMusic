@@ -4,7 +4,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 
-from core.free_threaded_worker import FreeThreadedJsonSender, dump_json_payload
+from core.free_threaded_worker import FreeThreadedJsonSender, dumpJsonPayload
 from tornado.websocket import WebSocketClosedError
 import tornado.websocket
 import tornado.httpserver
@@ -225,7 +225,7 @@ class QObjectHandler(QObject):
     def _sendPingPacket(self, option: str, stage: str, ping_id: object) -> None:
         try:
             self.send(
-                dump_json_payload(
+                dumpJsonPayload(
                     {
                         'option': option,
                         'stage': stage,
@@ -314,7 +314,7 @@ class QObjectHandler(QObject):
         try:
             msg = self._ft_json_sender.dump(payload)
             if msg is None:
-                msg = dump_json_payload(payload)
+                msg = dumpJsonPayload(payload)
         except Exception as e:
             self._logger.exception(e)
             return

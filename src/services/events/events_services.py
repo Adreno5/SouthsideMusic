@@ -68,9 +68,9 @@ class EventsServices(QObject):
         event_bus.subscribe(LOCAL_ADD_TO_CLOUD, self.localAddToCloud)
         event_bus.subscribe(CLOUD_REMOVE_FOLDER, self.cloudRemoveFolder)
         event_bus.subscribe(CLOUD_RENAME_FOLDER, self.cloudRenameFolder)
-        event_bus.subscribe(CLOUD_ADD_TO_LOCAL, self.cloudAddtoLocal)
+        event_bus.subscribe(CLOUD_ADD_TO_LOCAL, self.cloudAddToLocal)
 
-    def cloudAddtoLocal(self, card: CloudFolderCard):
+    def cloudAddToLocal(self, card: CloudFolderCard):
         folder_name = card.folder.folder_name
         favorites_manager.addFolder(folder_name)
 

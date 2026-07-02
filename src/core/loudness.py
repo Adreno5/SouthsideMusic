@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 _logger = logging.getLogger(__name__)
 
 
-def valid_audio(data, rate, block_size):
+def validAudio(data, rate, block_size):
     """validate input is numpy floating array with correct shape and dimensions."""
     if not isinstance(data, np.ndarray):
         raise ValueError('Data must be of type numpy.ndarray.')
@@ -188,7 +188,7 @@ class Meter(object):
         channel order: [Left, Right, Center, Left surround, Right surround].
         """
         input_data = data.copy()
-        valid_audio(input_data, self.rate, self.block_size)
+        validAudio(input_data, self.rate, self.block_size)
 
         if input_data.ndim == 1:
             input_data = np.reshape(input_data, (input_data.shape[0], 1))
@@ -270,7 +270,7 @@ class Meter(object):
         try:
             self.block_size = 3.0
             self.overlap = 0.97
-            data = self._append_silence(data, silence_duration_sec=1.5)
+            data = self._appendSilence(data, silence_duration_sec=1.5)
             self.integratedLoudness(data)
             if not self.blockwise_loudness:
                 raise ValueError('No blockwise loudness found')
@@ -303,7 +303,7 @@ class Meter(object):
             self.block_size = original_block_size
             self.overlap = original_overlap
 
-    def _append_silence(self, data, silence_duration_sec):
+    def _appendSilence(self, data, silence_duration_sec):
         num_silence_samples = int(silence_duration_sec * self.rate)
         silence = np.zeros(num_silence_samples)
 
@@ -374,7 +374,7 @@ class Meter(object):
 
 
 def getAdjustedGainFactor(target_lufs: float, audio: AudioSegment) -> float:
-    return getAdjustedGainFactor_impl(target_lufs, audio)
+    return getAdjustedGainFactorImpl(target_lufs, audio)
 
 
 def getAdjustedGainFactorFromSamples(
@@ -398,7 +398,7 @@ def getAdjustedGainFactorFromSamples(
 
 
 @lru_cache(maxsize=1024)
-def getAdjustedGainFactor_impl(target_lufs: float, audio: AudioSegment) -> float:
+def getAdjustedGainFactorImpl(target_lufs: float, audio: AudioSegment) -> float:
     samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
     dtype_map = {1: np.int8, 2: np.int16, 4: np.int32}
     dtype = dtype_map[audio.sample_width]

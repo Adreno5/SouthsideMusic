@@ -114,7 +114,7 @@ class FavoritesManager:
         if not folder.songs:
             return
         storable = folder.songs[0]
-        if storable.image_cached():
+        if storable.imageCached():
             return
 
         thread = threading.Thread(
@@ -125,14 +125,14 @@ class FavoritesManager:
         thread.start()
 
     def _downloadFirstImage(self, folder_name: str, storable: SongStorable) -> None:
-        if storable.image_cached():
+        if storable.imageCached():
             return
 
         lock = _get_image_download_lock(storable.id)
         if not lock.acquire(blocking=False):
             return
         try:
-            if storable.image_cached():
+            if storable.imageCached():
                 return
             try:
                 from core.backend import getBackend
@@ -148,7 +148,7 @@ class FavoritesManager:
 
             if not image_bytes:
                 return
-            storable._write_cache(image_bytes, IMAGE_DATA_DIR, 'image_cache_hash')
+            storable._writeCache(image_bytes, IMAGE_DATA_DIR, 'image_cache_hash')
             self._save()
             event_bus.emit(IMAGE_ASSET_PERSISTED, storable)
         finally:

@@ -36,11 +36,11 @@ if TYPE_CHECKING:
 
 
 class DependencesWindow(QWidget):
-    check_done = Signal(str, bool, str)
-    all_checked = Signal()
-    _configure_pydub = Signal(str, str)
+    checkDone = Signal(str, bool, str)
+    allChecked = Signal()
+    _configurePydub = Signal(str, str)
 
-    update_progress = Signal(float)
+    updateProgress = Signal(float)
 
     def __init__(self, ctx: AppContext) -> None:
         super().__init__()
@@ -48,9 +48,9 @@ class DependencesWindow(QWidget):
         self._results: dict[str, bool] = {}
         self.logger = logging.getLogger(__name__)
 
-        self.check_done.connect(self._on_check_done, Qt.ConnectionType.QueuedConnection)
-        self._configure_pydub.connect(
-            self._set_pydub_config, Qt.ConnectionType.QueuedConnection
+        self.checkDone.connect(self._onCheckDone, Qt.ConnectionType.QueuedConnection)
+        self._configurePydub.connect(
+            self._setPydubConfig, Qt.ConnectionType.QueuedConnection
         )
 
         self.setWindowTitle(tr('dependences_window.dependences_checking'))
@@ -195,7 +195,7 @@ class DependencesWindow(QWidget):
                     except OSError:
                         pass
 
-            self._add_ffmpeg_to_path(ffmpeg_dir)
+            self._addFfmpegToPath(ffmpeg_dir)
 
             self.ffmpeg_label.setText(tr('dependences_window.ffmpeg_checking_2'))
             self.ctx.app.processEvents()
@@ -205,7 +205,7 @@ class DependencesWindow(QWidget):
         manager = asyncDownload(url, parent=self, finished=_finished)
         manager.receiveProgress.connect(_progress)
 
-    def _set_pydub_config(self, ffmpeg_exe: str, ffprobe_exe: str) -> None:
+    def _setPydubConfig(self, ffmpeg_exe: str, ffprobe_exe: str) -> None:
         import pydub
 
         pydub.AudioSegment.converter = ffmpeg_exe
@@ -214,12 +214,12 @@ class DependencesWindow(QWidget):
 
             _pu.get_prober_name = lambda: ffprobe_exe
 
-    def _add_ffmpeg_to_path(self, ffmpeg_dir: str) -> None:
+    def _addFfmpegToPath(self, ffmpeg_dir: str) -> None:
         bin_path = os.path.abspath(os.path.join(ffmpeg_dir, 'bin'))
         ffmpeg_exe = os.path.join(bin_path, 'ffmpeg.exe')
         ffprobe_exe = os.path.join(bin_path, 'ffprobe.exe')
 
-        self._configure_pydub.emit(ffmpeg_exe, ffprobe_exe)
+        self._configurePydub.emit(ffmpeg_exe, ffprobe_exe)
 
         current_path = os.environ.get('PATH', '')
         if bin_path.lower() in (p.lower() for p in current_path.split(os.pathsep)):
@@ -265,7 +265,7 @@ class DependencesWindow(QWidget):
         except Exception:
             self.logger.exception('Failed to add FFmpeg to PATH')
 
-    def _on_check_done(self, name: str, ok: bool, detail: str) -> None:
+    def _onCheckDone(self, name: str, ok: bool, detail: str) -> None:
         key = name.lower().replace(' ', '_')
         label = getattr(self, f'{key}_label')
         status = tr('dependences_window.ok') if ok else tr('dependences_window.failed')
@@ -287,7 +287,7 @@ class DependencesWindow(QWidget):
             and all(self._results.values())
         ):
             self.ctx.dependences_available = True
-            self.all_checked.emit()
+            self.allChecked.emit()
             QTimer.singleShot(500, self.close)
 
         if name == 'FFmpeg' and not ok:
@@ -329,45 +329,45 @@ class DependencesWindow(QWidget):
                 .split(' ')[0]
             )
             self.logger.info(f'FFmpeg found version: {version}')
-            self._add_ffmpeg_to_path(os.path.join(base_dir, 'ffmpeg'))
-            self.check_done.emit('FFmpeg', True, version)
+            self._addFfmpegToPath(os.path.join(base_dir, 'ffmpeg'))
+            self.checkDone.emit('FFmpeg', True, version)
         except Exception as e:
             self.logger.warning(f'FFmpeg not found: {e}')
-            self.check_done.emit('FFmpeg', False, str(e))
+            self.checkDone.emit('FFmpeg', False, str(e))
 
     def checkRuntime(self) -> None:
         version = f'{_sys.version_info.major}.{_sys.version_info.minor}.{_sys.version_info.micro}'
         self.logger.info(f'Python Runtime found version: {version}')
-        self.check_done.emit('Python Runtime', True, version)
+        self.checkDone.emit('Python Runtime', True, version)
 
     def checkAudio(self) -> None:
         try:
             devices = getAudioDevices()
             if devices:
                 self.logger.info(f'Audio Output found: {len(devices)} device(s)')
-                self.check_done.emit(
+                self.checkDone.emit(
                     'Audio Output',
                     True,
                     tr('dependences_window.count_device_s', count=len(devices)),
                 )
             else:
                 self.logger.warning('Audio Output not found: no output device')
-                self.check_done.emit(
+                self.checkDone.emit(
                     'Audio Output', False, tr('dependences_window.no_output_device')
                 )
         except Exception as e:
             self.logger.warning(f'Audio Output not found: {e}')
-            self.check_done.emit('Audio Output', False, str(e))
+            self.checkDone.emit('Audio Output', False, str(e))
 
     def checkNetwork(self) -> None:
         try:
             r = requests.head('https://music.163.com', timeout=8)
             ms = r.elapsed.total_seconds() * 1000
             self.logger.info(f'Network found latency: {ms:.0f}ms')
-            self.check_done.emit('Network', True, f'{ms:.0f}ms')
+            self.checkDone.emit('Network', True, f'{ms:.0f}ms')
         except Exception as e:
             self.logger.warning(f'Network not found: {e}')
-            self.check_done.emit('Network', False, str(e))
+            self.checkDone.emit('Network', False, str(e))
 
     def checkOpenGL(self) -> None:
         from PySide6.QtGui import QOpenGLContext, QOffscreenSurface
@@ -382,15 +382,15 @@ class DependencesWindow(QWidget):
             gl_ctx.doneCurrent()
             if valid:
                 self.logger.info('OpenGL found: available')
-                self.check_done.emit('OpenGL', True, tr('dependences_window.available'))
+                self.checkDone.emit('OpenGL', True, tr('dependences_window.available'))
             else:
                 self.logger.warning('OpenGL not found: no valid context')
-                self.check_done.emit(
+                self.checkDone.emit(
                     'OpenGL', False, tr('dependences_window.no_valid_context')
                 )
         except Exception as e:
             self.logger.warning(f'OpenGL not found: {e}')
-            self.check_done.emit('OpenGL', False, str(e))
+            self.checkDone.emit('OpenGL', False, str(e))
 
     def startCheck(self) -> None:
         threads: list[Thread] = []

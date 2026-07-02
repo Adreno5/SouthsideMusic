@@ -84,7 +84,7 @@ class LocalFolderCard(QWidget):
             return
         first = songs[0]
         try:
-            image_bytes = first.get_image_bytes()
+            image_bytes = first.getImageBytes()
             pixmap = QPixmap()
             pixmap.loadFromData(image_bytes)
             if not pixmap.isNull():

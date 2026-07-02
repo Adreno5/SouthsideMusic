@@ -41,6 +41,7 @@ nul
 update.json
 
 .opencode/
+.claude/
 api-reference/
 
 *.flac

@@ -78,6 +78,17 @@ class Config:
     fft_buffer_seconds: float = 5
     fft_size: int = 4096
 
+    beat_detection_enabled: bool = True
+    beat_detection_sensitivity: float = 1.0
+    beat_detection_smoothing: float = 0.35
+    beat_detection_hop_seconds: float = 0.01
+    beat_detection_min_interval: float = 0.18
+    beat_detection_low_hz: int = 40
+    beat_detection_high_hz: int = 180
+    beat_detection_point_threshold: float = 0.25
+    beat_detection_visual_flash: bool = True
+    beat_detection_visual_lyrics: bool = True
+
     target_lufs: int = -16
 
     session: str | None = None
@@ -113,6 +124,7 @@ class Config:
 
     lyric_video_export_ext: str = '.mp4'
     lyric_video_export_bitrate_kbps: int = 8000
+    lyric_video_export_fps: int = 30
     lyric_video_export_display_line_count: int = 5
     lyric_video_export_word_by_word: bool = True
     lyric_video_export_pure_color: bool = False
@@ -134,6 +146,9 @@ class Config:
     llm_current_provider: str = ''
     llm_current_model: str = ''
     llm_viewer_expanded: bool = False
+    
+    ws_lyrics_interval = 0.032
+    ws_fft_interval = 0.032
 
     def __init__(self) -> None:
         super().__init__()
@@ -257,6 +272,13 @@ def _applyConfigJsonObject(data: dict[str, Any]) -> None:
         100,
         100000,
     )
+    data['lyric_video_export_fps'] = _normalizeInt(
+        data.get('lyric_video_export_fps'),
+        Config.lyric_video_export_fps,
+        10,
+        360,
+    )
+    data['lyric_video_export_fps'] = round(data['lyric_video_export_fps'] / 10) * 10
     data['lyric_video_export_display_line_count'] = _normalizeOddInt(
         data.get('lyric_video_export_display_line_count'),
         Config.lyric_video_export_display_line_count,
@@ -379,7 +401,8 @@ def loadConfig() -> None:
     if not os.path.exists(CONFIG_PATH):
         saveConfig()
     else:
-        with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+        # Accept config files written by Windows editors with a UTF-8 BOM.
+        with open(CONFIG_PATH, 'r', encoding='utf-8-sig') as f:
             data = json.load(f)
 
         if isinstance(data, dict):

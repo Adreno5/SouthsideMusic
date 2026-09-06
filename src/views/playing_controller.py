@@ -17,6 +17,7 @@ from views.setting_page import SettingPage
 from core.color import mixColor
 from imports import (
     BACKGROUND_RATIO_CHANGED,
+    BEAT_POINT,
     COLLECT_DEBUG_INFO,
     EMIT_DEBUG_INFO,
     LYRIC_LINE_CHANGED,
@@ -69,11 +70,6 @@ from views.translation_handler import TranslationHandler
 if TYPE_CHECKING:
     from views.main_window import MainWindow
     from views.playing_page import PlayingPage
-
-
-_WS_LYRIC_INTERVAL = 1 / 30
-_WS_FFT_INTERVAL = 1 / 30
-
 
 class PlayingControllerLyricsViewer(QWidget):
     def __init__(
@@ -334,6 +330,8 @@ class PlayingController(QWidget):
         self._player.fftDataReady.connect(self.updateFFTData)
 
         self.bar_alpha_timer = EaseOutTimer(0.3, 2)
+        self.beat_flash_timer = EaseOutTimer(0.6, 2)
+        self.beat_flash_timer.target_value = 0
         self.bar_alpha_timer.target_value = 1
         self.tip_handler = TranslationHandler()
 
@@ -341,6 +339,10 @@ class PlayingController(QWidget):
         event_bus.subscribe(SONG_CHANGED, self._updateDatas)
         event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
+        event_bus.subscribe(BEAT_POINT, self._onBeatPoint)
+        self._finishInitSubscriptions()
+
+    def _finishInitSubscriptions(self) -> None:
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(
             START_CROSSFADE, lambda: setattr(self.bar_alpha_timer, 'target_value', 0.2)
@@ -511,7 +513,7 @@ class PlayingController(QWidget):
 
             if self._ws_handler.is_open:
                 now = time.perf_counter()
-                if now - self._last_ws_fft_send >= _WS_FFT_INTERVAL:
+                if now - self._last_ws_fft_send >= self.ctx.config.ws_fft_interval:
                     self._last_ws_fft_send = now
                     magnitudes = np.ascontiguousarray(
                         self.fft_display_magnitudes,
@@ -660,7 +662,7 @@ class PlayingController(QWidget):
         lines, current_line, current_index, use_yrc = self._lyricWindowPayload(position)
         if self._ws_handler.is_open:
             now = time.perf_counter()
-            if now - self._last_ws_lyric_send >= _WS_LYRIC_INTERVAL:
+            if now - self._last_ws_lyric_send >= self.ctx.config.ws_lyrics_interval:
                 self._last_ws_lyric_send = now
                 layout = self._dp.viewer.lyricLayoutPayload()
                 translation_enabled = bool(cfg.show_translation)
@@ -801,7 +803,6 @@ class PlayingController(QWidget):
         painter.setPen(QPen(QColor(120, 120, 120, bar_alpha), 8))
         progress_left = self._progressLeft()
         painter.drawLine(progress_left, 0, self.width(), 0)
-
         if self.ctx.playing_manager.crossfading or bar_alpha < 255:
             painter.setPen(
                 QPen(
@@ -862,4 +863,21 @@ class PlayingController(QWidget):
                 0,
             )
 
+        flash = 1 - self.beat_flash_timer.current_value
+        if flash > 0:
+            theme_color = self.ctx.main_window.song_theme
+            if theme_color:
+                width = self.width() * 0.1
+                gradient = QLinearGradient(self._draw_current_x - width, 0, self._draw_current_x + 5, 0)
+                gradient.setColorAt(0, QColor(255, 255, 255, 0))
+                gradient.setColorAt(1, mixColor(QColor(255, 255, 255), theme_color, 1 - (flash * 0.5 + 0.1)))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(gradient)
+                painter.drawRect(QRectF(self._draw_current_x - width, -4, width + 5, 8))
+
         painter.end()
+
+    def _onBeatPoint(self) -> None:
+        if not cfg.beat_detection_visual_flash:
+            return
+        self.beat_flash_timer.current_value = 1

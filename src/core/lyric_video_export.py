@@ -69,10 +69,12 @@ _VIDEO_WIDTH = 1920
 _BASE_VIDEO_HEIGHT = 1080
 _BASE_DISPLAY_LINE_COUNT = 5
 _MAX_DISPLAY_LINE_COUNT = 21
+_X_SCROLL_RESET_SECONDS = 0.3
+_X_SCROLL_FLIP_RATIO = 0.95
 _VIDEO_FPS = 30
 _DEFAULT_REFRESH_RATE = 60.0
 _TRANSLATION_TIME_TOLERANCE = 0.02
-_MIN_PARALLEL_FRAMES = _VIDEO_FPS * 20
+_MIN_PARALLEL_DURATION = 20.0
 _MAX_SEGMENT_WORKERS = 6
 _SEGMENT_CONTAINER_EXT = '.mkv'
 
@@ -95,6 +97,7 @@ class LyricVideoExportProgress:
 class LyricVideoExportOptions:
     video_ext: str = '.mp4'
     video_bitrate_kbps: int = 8000
+    fps: int = _VIDEO_FPS
     display_line_count: int = 5
     word_by_word: bool = True
     pure_color: bool = False
@@ -219,7 +222,7 @@ def exportLyricVideo(
     frame_count = renderer.frameCount()
 
     try:
-        if _shouldUseParallelExport(frame_count):
+        if _shouldUseParallelExport(frame_count, options.fps):
             return _exportLyricVideoParallel(
                 sources,
                 options,
@@ -286,7 +289,7 @@ def _exportLyricVideoSingle(
                     frame_samples.pop(0)
             last_frame_time = frame_time
 
-            image = renderer.renderFrame(frame_index / _VIDEO_FPS)
+            image = renderer.renderFrame(frame_index / options.fps)
             stdin.write(_qimageBytes(image))
             if progress_callback is not None and frame_count > 0:
                 current_frame = frame_index + 1
@@ -343,15 +346,16 @@ def _exportLyricVideoSingle(
     return output_path
 
 
-def _shouldUseParallelExport(frame_count: int) -> bool:
-    return _segmentWorkerCount(frame_count) > 1
+def _shouldUseParallelExport(frame_count: int, fps: int) -> bool:
+    return _segmentWorkerCount(frame_count, fps) > 1
 
 
-def _segmentWorkerCount(frame_count: int) -> int:
-    if frame_count < _MIN_PARALLEL_FRAMES:
+def _segmentWorkerCount(frame_count: int, fps: int) -> int:
+    min_parallel_frames = max(1, int(round(fps * _MIN_PARALLEL_DURATION)))
+    if frame_count < min_parallel_frames:
         return 1
     cpu_count = os.cpu_count() or 2
-    by_frame_count = max(1, frame_count // _MIN_PARALLEL_FRAMES)
+    by_frame_count = max(1, frame_count // min_parallel_frames)
     return max(1, min(cpu_count, _MAX_SEGMENT_WORKERS, by_frame_count))
 
 
@@ -367,7 +371,7 @@ def _exportLyricVideoParallel(
     if interpreter is None:
         raise _ParallelExportUnavailable('no Python with PySide6 is available')
 
-    worker_count = _segmentWorkerCount(frame_count)
+    worker_count = _segmentWorkerCount(frame_count, options.fps)
     if worker_count <= 1:
         raise _ParallelExportUnavailable('not enough frames for parallel export')
 
@@ -669,6 +673,7 @@ def _mergeSegments(
         sources.duration,
         frame_count,
         progress_callback,
+        options.fps,
     )
 
 
@@ -677,6 +682,7 @@ def _runFfmpegProgressCommand(
     duration: float,
     frame_count: int,
     progress_callback: Callable[[LyricVideoExportProgress], None] | None,
+    fps: int = _VIDEO_FPS,
 ) -> None:
     if progress_callback is not None:
         progress_callback(
@@ -713,7 +719,7 @@ def _runFfmpegProgressCommand(
                 merge_progress = max(0.0, min(1.0, out_time / max(duration, 0.001)))
                 current_frame = min(
                     frame_count,
-                    max(0, int(round(out_time * _VIDEO_FPS))),
+                    max(0, int(round(out_time * fps))),
                 )
                 now = time.perf_counter()
                 frame_samples.append((now, current_frame))
@@ -828,6 +834,7 @@ class _LyricVideoRenderer:
         self.acc = 0.0
         self.target_acc = 0.0
         self._line_alphas: dict[int, _FrameEaseOutValue] = {}
+        self._x_scroll_ease = _FrameEaseOutValue(_X_SCROLL_RESET_SECONDS, 2)
         self._last_render_position: float | None = None
         self._layout_y_offsets: list[float] = []
         self._layout_top_offset = 0.0
@@ -839,7 +846,7 @@ class _LyricVideoRenderer:
 
     def frameCount(self) -> int:
         duration = max(self.sources.duration, self._lyricsDuration(), 1.0)
-        return max(1, int(math.ceil(duration * _VIDEO_FPS)))
+        return max(1, int(math.ceil(duration * self.options.fps)))
 
     def renderFrame(self, position: float) -> QImage:
         if (
@@ -1032,6 +1039,7 @@ class _LyricVideoRenderer:
         self._last_render_position = position
         if duration <= 0:
             self._layoutStep(position, 0.0)
+            self._stepXScroll(position, 0.0)
             return
         elapsed = 0.0
         tick_delta = self.delta
@@ -1039,6 +1047,7 @@ class _LyricVideoRenderer:
             step_delta = min(tick_delta, duration - elapsed)
             elapsed += step_delta
             self._layoutStep(position - duration + elapsed, step_delta)
+        self._stepXScroll(position, duration)
 
     def _layoutStep(self, position: float, elapsed: float) -> None:
         current_index = self._currentIndex(position)
@@ -1070,6 +1079,31 @@ class _LyricVideoRenderer:
         )
         self._stepLineAlphas(visible_indexes, current_index, elapsed)
         self._cleanupLineAlphas(visible_indexes)
+
+    def _stepXScroll(self, position: float, elapsed: float) -> None:
+        current_index = self._layout_current_index
+        if current_index < 0 or current_index >= len(self.lines):
+            return
+        line = self.lines[current_index]
+        if not (
+            self.options.x_axis_animation
+            and isinstance(line, YRCLyricInfo)
+            and not line.isMetadata
+        ):
+            return
+        text_width = self.primary_metrics.horizontalAdvance(line.content.strip())
+        clip_width = _VIDEO_WIDTH - 240
+        overflow = max(0.0, text_width - clip_width)
+        if overflow <= 0:
+            self._x_scroll_ease.setTarget(0.0)
+            self._x_scroll_ease.step(elapsed)
+            return
+        clip_w = self._yrcClipWidth(line, position)
+        page_width = clip_width * _X_SCROLL_FLIP_RATIO
+        page = int(clip_w // page_width)
+        target = max(-overflow, min(0.0, -page * page_width))
+        self._x_scroll_ease.setTarget(target)
+        self._x_scroll_ease.step(elapsed)
 
     def _updateDrawOffset(self, multiple_factor: float = 1.0) -> None:
         self.target_acc = (
@@ -1171,8 +1205,10 @@ class _LyricVideoRenderer:
     ) -> float:
         clip_width = _VIDEO_WIDTH - 240
         if self.options.x_axis_animation and is_current and text_width > clip_width:
+            if isinstance(line, YRCLyricInfo) and not line.isMetadata:
+                return 120 + self._x_scroll_ease.current_value
             progress = self._lineProgress(line, position)
-            return 120 - (text_width - clip_width) * self._smoothstep(progress)
+            return 120 - (text_width - clip_width) * progress
         return self._alignedX(text_width)
 
     def _alignedX(self, text_width: float) -> float:
@@ -1303,10 +1339,6 @@ class _LyricVideoRenderer:
                 return lrc_line.time
         return line.time
 
-    def _smoothstep(self, value: float) -> float:
-        value = max(0.0, min(1.0, value))
-        return value * value * (3 - 2 * value)
-
     def _normalizedRefreshRate(self, refresh_rate: float) -> float:
         try:
             value = float(refresh_rate)
@@ -1357,6 +1389,7 @@ def _optionsPayload(options: LyricVideoExportOptions) -> dict[str, Any]:
     return {
         'video_ext': options.video_ext,
         'video_bitrate_kbps': options.video_bitrate_kbps,
+        'fps': options.fps,
         'display_line_count': options.display_line_count,
         'word_by_word': options.word_by_word,
         'pure_color': options.pure_color,
@@ -1379,6 +1412,7 @@ def _optionsFromPayload(payload: dict[str, Any]) -> LyricVideoExportOptions:
     return LyricVideoExportOptions(
         video_ext=str(payload.get('video_ext', '.mp4')),
         video_bitrate_kbps=int(payload.get('video_bitrate_kbps', 8000)),
+        fps=int(payload.get('fps', _VIDEO_FPS)),
         display_line_count=int(payload.get('display_line_count', 5)),
         word_by_word=bool(payload.get('word_by_word', True)),
         pure_color=bool(payload.get('pure_color', False)),
@@ -1451,7 +1485,7 @@ def _segmentWorkerMain(payload_path: str) -> int:
             raise RuntimeError('Failed to open FFmpeg stdin.')
 
         if start_frame > 0:
-            first_image = renderer.renderFrame(start_frame / _VIDEO_FPS)
+            first_image = renderer.renderFrame(start_frame / options.fps)
 
         for frame_index in range(start_frame, end_frame):
             frame_time = time.perf_counter()
@@ -1465,7 +1499,7 @@ def _segmentWorkerMain(payload_path: str) -> int:
             if first_image is not None and frame_index == start_frame:
                 image = first_image
             else:
-                image = renderer.renderFrame(frame_index / _VIDEO_FPS)
+                image = renderer.renderFrame(frame_index / options.fps)
             stdin.write(_qimageBytes(image))
 
             rendered = frame_index - start_frame + 1
@@ -1615,7 +1649,7 @@ def _buildFfmpegCommand(
         '-s',
         f'{_VIDEO_WIDTH}x{video_height}',
         '-r',
-        str(_VIDEO_FPS),
+        str(options.fps),
         '-i',
         'pipe:0',
     ]
@@ -1655,7 +1689,7 @@ def _buildFfmpegSegmentCommand(
         '-s',
         f'{_VIDEO_WIDTH}x{video_height}',
         '-r',
-        str(_VIDEO_FPS),
+        str(options.fps),
         '-i',
         'pipe:0',
         '-an',

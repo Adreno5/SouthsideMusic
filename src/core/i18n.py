@@ -354,6 +354,7 @@ TRANSLATIONS: dict[str, list[str]] = {
     'playing_page.export_complete': ['Export complete', '导出完成'],
     'playing_page.export_display_line_count': ['Visible lines', '显示行数'],
     'playing_page.export_failed': ['Export failed', '导出失败'],
+    'playing_page.export_fps': ['Frame rate', '帧率'],
     'playing_page.export_fps_status': ['{value} frames/s', '{value} 帧/秒'],
     'playing_page.export_frame_status': [
         '{current}/{total} Frame',
@@ -1114,6 +1115,70 @@ TRANSLATIONS: dict[str, list[str]] = {
     'setting_page.fft_buffer_seconds_desc': [
         'How long recent peak amplitudes are retained for normalization. Longer durations make the display adapt more slowly when the peak level drops.',
         '用于归一化的近期峰值保留时长。时长越长，频谱对峰值下降的适应越慢。',
+    ],
+    'setting_page.beat_detection': ['Beat Detection', 'Beat 检测'],
+    'setting_page.beat_detection_description': [
+        'Enable beat intensity estimation from low-frequency FFT energy',
+        '根据低频 FFT 能量估算节拍强度',
+    ],
+    'setting_page.beat_detection_sensitivity': [
+        'Beat Sensitivity', '节拍灵敏度'
+    ],
+    'setting_page.beat_detection_sensitivity_description': [
+        'Multiplier applied to beat energy', '节拍能量倍率'
+    ],
+    'setting_page.beat_detection_smoothing': [
+        'Beat Smoothing', '节拍平滑系数'
+    ],
+    'setting_page.beat_detection_smoothing_description': [
+        'Higher values smooth the intensity curve more', '值越高曲线越平滑'
+    ],
+    'setting_page.beat_detection_hop_seconds': [
+        'Beat Analysis Hop', 'Beat 分析步长'
+    ],
+    'setting_page.beat_detection_hop_seconds_description': [
+        'Time step between beat analysis frames', '相邻 Beat 分析帧的时间间隔'
+    ],
+    'setting_page.beat_detection_min_interval': [
+        'Minimum Beat Interval', 'Beat 最短间隔'
+    ],
+    'setting_page.beat_detection_min_interval_description': [
+        'Shortest time allowed between beat points', 'Beat 点之间允许的最短时间'
+    ],
+    'setting_page.beat_detection_point_threshold': [
+        'Beat Point Threshold', 'Beat 点阈值'
+    ],
+    'setting_page.beat_detection_point_threshold_description': [
+        'Instant intensity increase required to mark a beat point',
+        '瞬时强度增长达到此值时标记 Beat 点',
+    ],
+    'setting_page.beat_detection_visual_flash': [
+        'Beat Progress Flash', 'Beat 进度条闪烁'
+    ],
+    'setting_page.beat_detection_visual_lyrics': [
+        'Beat Lyrics Flash', 'Beat 歌词闪烁'
+    ],
+    'setting_page.beat_detection_visual_flash_description': [
+        'Flash the progress bar on detected beat points',
+        '检测到 Beat 点时闪烁进度条',
+    ],
+    'setting_page.beat_detection_visual_lyrics_description': [
+        'Flash the lyrics on detected beat points',
+        '检测到 Beat 点时闪烁歌词',
+    ],
+    'setting_page.ws_lyrics_interval_title': ['Lyrics Send Interval', '歌词发送间隔'],
+    'setting_page.ws_lyrics_interval_desc': [
+        'The interval between send a lyrics information to Southside Legacy',
+        '向 Southside Legacy 发送歌词信息的间隔',
+    ],
+    'setting_page.ws_fft_interval_title': ['FFT Send Interval', 'FFT 发送间隔'],
+    'setting_page.ws_fft_interval_desc': [
+        'The interval between send FFT information to Southside Legacy',
+        '向 Southside Legacy 发送 FFT 信息的间隔',
+    ],
+    'setting_page.ws_interval_tip': [
+        'Notice: shorter interval can cuase CPU too busy, make your other applications lagging or make SouthsideMusic\'s itself busy',
+        '注意：间隔过短可能导致 CPU 占用过高，使其他应用程序卡顿，或使 SouthsideMusic 本身运行繁忙',
     ],
     'setting_page.fft_size': ['FFT Sampling Size', 'FFT 采样大小'],
     'setting_page.fft_size_desc': [

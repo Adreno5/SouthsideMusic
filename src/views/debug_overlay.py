@@ -74,8 +74,22 @@ class DebugOverlay(QWidget):
         self.offset_timer = EaseOutTimer(0.3, 2)
 
         self.last_update_cpu = -1
+        self.beat_datas: deque[float] = deque(maxlen=800)
+        self.beat_points: deque[int] = deque(maxlen=800)
+        player = getattr(getattr(ctx, 'playing_manager', None), '_player', None)
+        if player is not None and hasattr(player, 'beatDataReady'):
+            player.beatDataReady.connect(self.onBeatData)
+            player.beatDataReset.connect(self._resetBeatData)
 
         event_bus.subscribe(REPAINT, self.refresh)
+
+    def onBeatData(self, intensity: float, is_point: bool) -> None:
+        self.beat_datas.append(float(intensity))
+        self.beat_points.append(1 if is_point else 0)
+
+    def _resetBeatData(self) -> None:
+        self.beat_datas.clear()
+        self.beat_points.clear()
 
     def showEvent(self, event: QShowEvent) -> None:
         self.collect_timer.start(50)
@@ -300,6 +314,7 @@ class DebugOverlay(QWidget):
             y = 0
             mem_rect = QRect(5, y - 215, self.width() - 10, 200)
             cpu_rect = QRect(5, y - 430, self.width() - 10, 200)
+            beat_rect = QRect(5, y - 645, self.width() - 10, 200)
 
             painter.drawRect(
                 0,
@@ -311,6 +326,8 @@ class DebugOverlay(QWidget):
             painter.drawRect(mem_rect)  # color darker
             painter.drawRect(cpu_rect)  # make the
             painter.drawRect(cpu_rect)  # color darker
+            painter.drawRect(beat_rect)  # make the
+            painter.drawRect(beat_rect)  # color darker
 
             painter.setPen(
                 QPen(
@@ -374,6 +391,24 @@ class DebugOverlay(QWidget):
                     )
                     painter.drawPath(path)
                 painter.restore()
+
+            painter.save()
+            painter.setClipRect(beat_rect)
+            if self.beat_datas:
+                path = QPainterPath()
+                for i, value in enumerate(self.beat_datas):
+                    x = 5 + (self.width() - 10) * i / 800
+                    y_ = y - 445 - value * 180
+                    (path.moveTo if i == 0 else path.lineTo)(x, y_)
+                painter.drawPath(path)
+                painter.drawText(10, y - 455, f'Beat intensity - {self.beat_datas[-1]:.2f}')
+            painter.setPen(QPen(QColor(210, 105, 105, 180), 1))
+            for i, point in enumerate(self.beat_points):
+                if not point:
+                    continue
+                x = int(5 + (self.width() - 10) * i / 800)
+                painter.drawLine(x, y - 645, x, y - 445)
+            painter.restore()
 
             y += 10
             export_info = lyricVideoExportDebugInfo()

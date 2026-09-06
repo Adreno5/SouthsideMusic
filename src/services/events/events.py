@@ -58,6 +58,7 @@ DB_CHANGED = 'db_changed'
 
 COLLECT_DEBUG_INFO = 'collect_debug_info'
 EMIT_DEBUG_INFO = 'emit_debug_info'
+BEAT_POINT = 'beat_point'
 
 START_CROSSFADE = 'start_crossfade'
 FINISH_CROSSFADE = 'stop_crossfade'

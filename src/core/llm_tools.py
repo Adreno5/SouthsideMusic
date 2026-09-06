@@ -774,7 +774,7 @@ class LLMToolRunner:
         if folder_obj is None:
             return {'error': f'folder handle not found: {folder}'}
         self._run_main_thread(lambda: self.ctx.main_window._openFolder(folder_obj))
-        return {'opened': self._folder_to_dict(folder, folder_obj)}
+        return {'opened': self._folderToDict(folder, folder_obj)}
 
     def searchCloud(self, query: str) -> dict[str, Any]:
         query = query.strip()
@@ -887,7 +887,7 @@ class LLMToolRunner:
             target.refreshContentHeight()
             scroller = self.ctx.setting_page.scroller
             card_y = card.mapTo(
-                self.ctx.setting_page.options_widget, card.rect().subtitleLeft()
+                self.ctx.setting_page.options_widget, card.rect().topLeft()
             ).y()
             center = card_y - scroller.viewport().height() // 2 + card.height() // 2
             bar = scroller.verticalScrollBar()

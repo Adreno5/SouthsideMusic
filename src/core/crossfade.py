@@ -972,10 +972,14 @@ def _apply_agc(
     threshold_linear = 10.0 ** (-threshold_db / 20.0)
     if dip_ratio >= threshold_linear:
         return mixed
-    gain_curve = np.linspace(
-        1.0, 1.0 / max(dip_ratio, 0.01), len(mixed), dtype=np.float32
-    )
-    gain_curve = gain_curve**0.3
+    # The transition must join the two unmodified tracks at both endpoints.
+    # A one-way gain ramp fixes the middle dip but leaves its boosted final
+    # sample beside the next player's unboosted first sample.
+    peak_gain = (1.0 / max(dip_ratio, 0.01)) ** 0.3
+    progress = np.linspace(0.0, pi, len(mixed), dtype=np.float32)
+    gain_curve = 1.0 + (peak_gain - 1.0) * np.sin(progress)
+    gain_curve[0] = 1.0
+    gain_curve[-1] = 1.0
     return (mixed * gain_curve.reshape(-1, 1)).astype(np.float32, copy=False)
 
 

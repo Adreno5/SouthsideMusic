@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from typing import TYPE_CHECKING, Callable, cast
+from typing import TYPE_CHECKING, Callable, cast, override
 
 from core.app_context import AppContext
 
@@ -16,6 +16,8 @@ from imports import (
     WEBSOCKET_DISCONNECTED,
     InfoBar,
     QEasingCurve,
+    QPaintEvent,
+    QPainter,
     QPropertyAnimation,
     Property,
     Qt,
@@ -70,6 +72,30 @@ from views.number_viewer import NumberViewer, SettableNumberViewer
 
 if TYPE_CHECKING:
     from core.audio_player import AudioPlayer
+
+
+class SectionSeparator(QWidget):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFixedHeight(27)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+    @override
+    def paintEvent(self, event: QPaintEvent) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(
+            QColor(255, 255, 255, 120) if theme.isDark() else QColor(0, 0, 0, 120)
+        )
+        line_width = max(0, self.width() - 30)
+        if line_width:
+            painter.drawRoundedRect(15, 12, line_width, 3, 1, 1)
+        painter.end()
 
 
 class SectionContainer(QWidget):
@@ -233,6 +259,7 @@ class SettingPage(QWidget):
         self.scroller = SScrollArea()
 
         self.setObjectName('SettingPage')
+        self._separators: list[SectionSeparator] = []
         self.updateTheme()
         self.options_layout = QVBoxLayout()
         self.options_layout.setContentsMargins(24, 24, 24, 24)
@@ -285,6 +312,8 @@ class SettingPage(QWidget):
     def updateTheme(self) -> None:
         self.setStyleSheet('')
         setTransparentBackground(self)
+        for separator in self._separators:
+            separator.update()
 
     def updateLanguage(self) -> None:
         refreshBoundTexts()
@@ -711,6 +740,87 @@ class SettingPage(QWidget):
             'sfft_multiple',
             advanced=True,
         )
+        flash_box = CheckBox()
+        flash_box.setChecked(cfg.beat_detection_visual_flash)
+        flash_box.stateChanged.connect(
+            lambda state: setattr(cfg, 'beat_detection_visual_flash', bool(state))
+        )
+        self.addSetting(
+            'setting_page.beat_detection_visual_flash',
+            'setting_page.beat_detection_visual_flash_description',
+            flash_box,
+            advanced=True,
+        )
+        
+        lyrics_flash = CheckBox()
+        lyrics_flash.setChecked(cfg.beat_detection_visual_lyrics)
+        lyrics_flash.stateChanged.connect(
+            lambda state: setattr(cfg, 'beat_detection_visual_lyrics', bool(state))
+        )
+        self.addSetting(
+            'setting_page.beat_detection_visual_flash',
+            'setting_page.beat_detection_visual_lyrics_description',
+            lyrics_flash,
+            advanced=True,
+        )
+
+        lw.subtitle('Setting up beat detection options...')
+        beat_box = CheckBox()
+        beat_box.setChecked(cfg.beat_detection_enabled)
+        beat_box.stateChanged.connect(
+            lambda state: setattr(cfg, 'beat_detection_enabled', bool(state))
+        )
+        self.addSetting(
+            'setting_page.beat_detection',
+            'setting_page.beat_detection_description',
+            beat_box,
+            advanced=True,
+        )
+        self.addNumberSetting(
+            'setting_page.beat_detection_sensitivity',
+            'setting_page.beat_detection_sensitivity_description',
+            0.1,
+            5.0,
+            0.05,
+            'beat_detection_sensitivity',
+            advanced=True,
+        )
+        self.addNumberSetting(
+            'setting_page.beat_detection_smoothing',
+            'setting_page.beat_detection_smoothing_description',
+            0.0,
+            0.99,
+            0.01,
+            'beat_detection_smoothing',
+            advanced=True,
+        )
+        self.addNumberSetting(
+            'setting_page.beat_detection_hop_seconds',
+            'setting_page.beat_detection_hop_seconds_description',
+            0.005,
+            0.05,
+            0.001,
+            'beat_detection_hop_seconds',
+            advanced=True,
+        )
+        self.addNumberSetting(
+            'setting_page.beat_detection_min_interval',
+            'setting_page.beat_detection_min_interval_description',
+            0.08,
+            1.0,
+            0.01,
+            'beat_detection_min_interval',
+            advanced=True,
+        )
+        self.addNumberSetting(
+            'setting_page.beat_detection_point_threshold',
+            'setting_page.beat_detection_point_threshold_description',
+            0.01,
+            1.0,
+            0.01,
+            'beat_detection_point_threshold',
+            advanced=True,
+        )
 
         if lw:
             lw.subtitle('Setting up loudness balance...')
@@ -832,6 +942,18 @@ class SettingPage(QWidget):
         connection_buttons.setLayout(connection_layout)
         self.addSeparateWidget(connection_buttons, advanced=True)
         self._refreshConnectionStatus()
+        
+        self.addSpliter()
+        self.addNumberSetting(
+            'setting_page.ws_lyrics_interval_title',
+            'setting_page.ws_lyrics_interval_desc',
+            0.005, 1, 0.005, 'ws_lyrics_interval'
+        )
+        self.addNumberSetting(
+                    'setting_page.ws_fft_interval_title',
+                    'setting_page.ws_fft_interval_desc',
+                    0.005, 1, 0.005, 'ws_fft_interval'
+                )
 
         for slider in self.findChildren(QSlider):
             slider.wheelEvent = lambda e: e.ignore()  # type: ignore[method-assign]
@@ -872,9 +994,6 @@ class SettingPage(QWidget):
         player = self.ctx.playing_manager._player
         if player is not None:
             player.fft_size = fft_size
-        crossfade_player = self.ctx.playing_manager._crossfade_player
-        if crossfade_player is not None:
-            crossfade_player.fft_size = fft_size
 
     def _easyTextKey(self, key: str) -> str:
         easy_key = f'{key}_easy'
@@ -1068,13 +1187,7 @@ class SettingPage(QWidget):
         self._refreshConnectionStatus(False)
 
     def _onVolumeChanged(self, player: AudioPlayer, volume: float) -> None:
-        manager = self.ctx.playing_manager
-        active_player = (
-            manager._crossfade_player
-            if manager.crossfading and manager._crossfade_player is not None
-            else self.ctx.player
-        )
-        if player is not active_player:
+        if player is not self.ctx.player:
             return
         self.now_volume.setText(
             tr(
@@ -1141,6 +1254,11 @@ class SettingPage(QWidget):
     def addSeparateWidget(self, widget: QWidget, advanced: bool = False) -> None:
         self._trackAdvancedWidget(widget, advanced)
         self._addOptionWidget(widget)
+
+    def addSpliter(self) -> None:
+        separator = SectionSeparator()
+        self._separators.append(separator)
+        self.addSeparateWidget(separator)
 
     def disconnectFromSouthsideClient(self):
         self._ws_server.tryGetHandler()

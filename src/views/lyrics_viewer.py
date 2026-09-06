@@ -28,6 +28,7 @@ from imports import (
     QPainter,
     QPaintEvent,
     QWheelEvent,
+    BEAT_POINT
 )
 from imports import QWidget
 
@@ -40,6 +41,11 @@ from core.lyrics import LyricInfo, YRCLyricInfo
 from services.events.events import (
     PLAY_STORABLE,
 )
+
+_HORIZONTAL_SCROLL_MARGIN = 12.0
+_X_SCROLL_SMOOTH_DURATION = 0.3
+_X_SCROLL_SMOOTH_POWER = 2
+_X_SCROLL_FLIP_RATIO = 0.95
 
 
 class LyricsViewer(QWidget):
@@ -108,6 +114,11 @@ class LyricsViewer(QWidget):
 
         self.translation_timer = EaseOutTimer(0.4, 4)
 
+        self.x_scroll_timer = EaseOutTimer(
+            _X_SCROLL_SMOOTH_DURATION, _X_SCROLL_SMOOTH_POWER
+        )
+        self._x_scroll_current_index = -1
+
         self._view_position = 0.0
         self._view_lines: list[LyricInfo | YRCLyricInfo] = []
         self._view_current_index = -1
@@ -117,12 +128,21 @@ class LyricsViewer(QWidget):
         self._view_total_height = 0.0
         self._shown_lines: list[int] = []
         self._line_alphas: dict[int, EaseOutTimer] = {}
+        
+        self.beat_flash_timer = EaseOutTimer(0.6, 2)
+        self.beat_flash_timer.target_value = 0
 
         self.last_lyric: YRCLyricInfo | LyricInfo | None = None
 
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(REPAINT, self._onRepaintTick)
         event_bus.subscribe(PLAY_STORABLE, lambda _: self.prewarmFontMetrics())
+        event_bus.subscribe(BEAT_POINT, self._onBeatPoint)
+        
+    def _onBeatPoint(self):
+        if not self.ctx.config.beat_detection_visual_lyrics:
+            return
+        self.beat_flash_timer.current_value = 1
 
     def prewarmFontMetrics(self):
         self._text_width_map.clear()
@@ -204,6 +224,7 @@ class LyricsViewer(QWidget):
         for i in list(self._line_alphas):
             if i not in self._shown_lines:
                 self._line_alphas.pop(i)
+        self._updateXScroll(lines, current_index, position)
 
     def _onRefreshRateChanged(self):
         self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
@@ -387,6 +408,73 @@ class LyricsViewer(QWidget):
 
         if self.draw_offset != self.target_draw_offset:
             self.draw_offset += self.acc
+
+    def _xScrollClipWidth(self) -> float:
+        return max(1.0, float(self.width()) - _HORIZONTAL_SCROLL_MARGIN)
+
+    def _updateXScroll(
+        self,
+        lines: list[LyricInfo | YRCLyricInfo],
+        current_index: int,
+        position: float,
+    ) -> None:
+        if current_index < 0 or current_index >= len(lines):
+            self._x_scroll_current_index = -1
+            self.x_scroll_timer.reset()
+            self.draw_x_offset = 0.0
+            return
+        if current_index != self._x_scroll_current_index:
+            self._x_scroll_current_index = current_index
+            self.x_scroll_timer.reset()
+
+        line = lines[current_index]
+        content = line.content.strip()
+        text_width = self._textWidth(content)
+        clip_width = self._xScrollClipWidth()
+        overflow = max(0.0, text_width - clip_width)
+        if overflow <= 0:
+            self.x_scroll_timer.reset()
+            self.draw_x_offset = 0.0
+            return
+
+        has_word_timing = bool(
+            self._view_use_yrc
+            and not line.isMetadata
+            and getattr(line, 'chars', None)
+        )
+        if has_word_timing:
+            _ratio, clip_w = self._yrcClipPayload(line, position)
+            page_width = clip_width * _X_SCROLL_FLIP_RATIO
+            page = int(clip_w // page_width)
+            target = max(-overflow, min(0.0, -page * page_width))
+            self.x_scroll_timer.target_value = target
+            self.draw_x_offset = self.x_scroll_timer.current_value
+        else:
+            progress = self._linePlaybackProgress(lines, current_index, position)
+            eased = 1.0 - pow(1.0 - progress, 3)
+            self.draw_x_offset = -overflow * eased
+
+    def _linePlaybackProgress(
+        self,
+        lines: list[LyricInfo | YRCLyricInfo],
+        current_index: int,
+        position: float,
+    ) -> float:
+        if current_index < 0 or current_index >= len(lines):
+            return 0.0
+        line = lines[current_index]
+        if current_index + 1 < len(lines):
+            next_time = lines[current_index + 1].time
+        else:
+            next_time = line.time + max(
+                float(getattr(line, 'duration', 0.0)),
+                3.0,
+            )
+        line_duration = getattr(line, 'duration', 0.0)
+        if line_duration > 0:
+            next_time = max(next_time, line.time + line_duration)
+        duration = max(0.001, next_time - line.time)
+        return max(0.0, min(1.0, (position - line.time) / duration))
 
     def _visibleIndexes(
         self,
@@ -584,7 +672,7 @@ class LyricsViewer(QWidget):
                     'bottom_y_from_center': baseline_y
                     + self.metri.descent()
                     - center_y,
-                    'x': self.draw_x_offset,
+                    'x': self.draw_x_offset if is_current_line else 0.0,
                     'primary_color': self._colorPayload(primary_color),
                     'yrc_base_color': self._colorPayload(
                         QColor(
@@ -672,7 +760,8 @@ class LyricsViewer(QWidget):
                 else (255 if is_current_line else 120)
             )
             y = top_offset + y_offsets[i]
-            x = self.draw_x_offset
+            x = 0.0
+            text_x = self.draw_x_offset if is_current_line else 0.0
             color = self._primaryColorForLine(line, is_current_line, alpha)
             if is_current_line and self.ctx.debugging:
                 color = QColor(0, 255, 0)
@@ -687,9 +776,9 @@ class LyricsViewer(QWidget):
             content = line.content.strip()
             if is_current_line and use_yrc and not line.isMetadata and content:
                 base_color = QColor(color)
-                base_color.setAlpha(120)
+                base_color.setAlpha(90 + int(30 * self.beat_flash_timer.current_value))
                 painter.setPen(base_color)
-                painter.drawText(toQtInt(x), toQtInt(y), content)
+                painter.drawText(toQtInt(text_x), toQtInt(y), content)
 
                 yrc_current_ratio, clip_w = self._yrcClipPayload(line, position)
                 self.current_index = i
@@ -700,7 +789,7 @@ class LyricsViewer(QWidget):
                     painter.save()
                     if self.ctx.debugging and 0.0 < yrc_current_ratio < 1.0:
                         painter.setPen(QPen(QColor(120, 0, 255), 1))
-                        _x = toQtInt(x + clip_w)
+                        _x = toQtInt(text_x + clip_w)
                         painter.drawLine(_x, clip_y, _x, clip_y + clip_h)
                         painter.setFont(self.db_ft)
                         painter.drawText(
@@ -710,17 +799,21 @@ class LyricsViewer(QWidget):
                         )
                         painter.setFont(self.ft)
                     painter.setClipRect(
-                        QRectF(x, clip_y, clip_w, clip_h),
+                        QRectF(text_x, clip_y, clip_w, clip_h),
                     )
                     c = QColor(color)
-                    c.setAlpha(alpha)
+                    c.setAlpha(200 + int(55 * self.beat_flash_timer.current_value))
                     painter.setPen(c)
-                    painter.drawText(toQtInt(x), toQtInt(y), content)
+                    painter.drawText(toQtInt(text_x), toQtInt(y), content)
                     painter.restore()
             else:
+                color.setAlpha(
+                    (color.alpha() - 10 + int(10 * self.beat_flash_timer.current_value)) if not is_current_line else 
+                    (color.alpha() - 55 + int(55 * self.beat_flash_timer.current_value))
+                )
                 painter.setPen(color)
                 painter.drawText(
-                    toQtInt(x),
+                    toQtInt(text_x),
                     toQtInt(y),
                     content,
                 )

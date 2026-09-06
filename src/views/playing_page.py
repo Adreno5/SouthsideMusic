@@ -70,6 +70,7 @@ from qfluentwidgets import (
     MessageBoxBase,
     ProgressBar,
     PushButton,
+    Slider,
     SubtitleLabel,
     PillToolButton,
 )
@@ -132,6 +133,27 @@ class LyricVideoExportDialog(MessageBoxBase):
             self.display_line_count_box,
         )
 
+        self.fps_slider = Slider(Qt.Orientation.Horizontal)
+        self.fps_slider.setRange(10, 360)
+        self.fps_slider.setSingleStep(10)
+        self.fps_slider.setPageStep(10)
+        self.fps_slider.wheelEvent = lambda e: e.ignore()
+        self.fps_slider.setValue(self._normalizedFps(cfg.lyric_video_export_fps))
+        self.fps_value_label = QLabel(
+            tr('playing_page.export_fps_status', value=self.fps_slider.value())
+        )
+        self.fps_value_label.setMinimumWidth(90)
+        self.fps_slider.valueChanged.connect(self._updateFpsValueLabel)
+
+        fps_layout = QHBoxLayout()
+        fps_layout.setContentsMargins(0, 0, 0, 0)
+        fps_layout.setSpacing(8)
+        fps_layout.addWidget(self.fps_slider)
+        fps_layout.addWidget(self.fps_value_label)
+        fps_container = QWidget()
+        fps_container.setLayout(fps_layout)
+        form.addRow(QLabel(tr('playing_page.export_fps')), fps_container)
+
         self.word_box = CheckBox(tr('playing_page.export_word_by_word'))
         self.word_box.setChecked(cfg.lyric_video_export_word_by_word)
         form.addRow(self.word_box)
@@ -185,6 +207,7 @@ class LyricVideoExportDialog(MessageBoxBase):
         return LyricVideoExportOptions(
             video_ext=self.selectedExt(),
             video_bitrate_kbps=int(self.bitrate_box.value()),
+            fps=int(self.fps_slider.value()),
             display_line_count=int(self.display_line_count_box.value()),
             word_by_word=self.word_box.isChecked(),
             pure_color=self.pure_color_box.isChecked(),
@@ -206,10 +229,18 @@ class LyricVideoExportDialog(MessageBoxBase):
         self.display_line_count_box.setValue(fixed_value)
         self.display_line_count_box.blockSignals(False)
 
+    def _updateFpsValueLabel(self, value: int) -> None:
+        self.fps_value_label.setText(tr('playing_page.export_fps_status', value=value))
+
+    def _normalizedFps(self, value: int) -> int:
+        value = max(10, min(360, int(value)))
+        return round(value / 10) * 10
+
     def saveOptionsToConfig(self) -> None:
         options = self.options()
         cfg.lyric_video_export_ext = options.video_ext
         cfg.lyric_video_export_bitrate_kbps = options.video_bitrate_kbps
+        cfg.lyric_video_export_fps = options.fps
         cfg.lyric_video_export_display_line_count = options.display_line_count
         cfg.lyric_video_export_word_by_word = options.word_by_word
         cfg.lyric_video_export_pure_color = options.pure_color

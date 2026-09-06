@@ -15,7 +15,9 @@ COVER_DATA_DIR = os.path.join(DATA_DIR, 'cover')
 TEMP_DATA_DIR = os.path.join(DATA_DIR, 'temp')
 
 DEFAULT_DATA_CACHE_MAX_BYTES = 4 * 1024 * 1024 * 1024
-DEFAULT_DATA_CACHE_MAX_AGE_MINUTES = 5
+# Cache entries can remain referenced by the currently playing song even when
+# their mtime is old; a short age window caused visible covers to disappear.
+DEFAULT_DATA_CACHE_MAX_AGE_MINUTES = 24 * 60
 DEFAULT_DATA_CLEANUP_INTERVAL_SECONDS = 5 * 60
 DEFAULT_TEMP_CACHE_MAX_AGE_MINUTES = 5
 
@@ -101,7 +103,9 @@ def cleanupDataFolder(
 
     if max_age_seconds > 0:
         for file in sorted(cache_files, key=lambda item: item.mtime):
-            if _fileAge(now, file) >= max_age_seconds:
+            if _fileAge(now, file) >= max_age_seconds and _fileAge(
+                now, file
+            ) >= _RECENT_FILE_GRACE_SECONDS:
                 removeFile(file, reduce_remaining=True)
 
     if remaining_bytes > max_bytes:

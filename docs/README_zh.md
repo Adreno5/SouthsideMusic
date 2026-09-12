@@ -1,6 +1,6 @@
 [English Version](README.md)
 
-# Southside Music
+# 南方音乐
 
 > 能用是及格，值得用才是作品。真正的功夫，都在看不见的时间里。
 

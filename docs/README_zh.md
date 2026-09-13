@@ -1,6 +1,6 @@
 [English Version](README.md)
 
-# Southside Music
+# 南方音乐
 
 > 一款精工打造的 Windows 网易云音乐桌面工作站：精准音频控制、实时歌词、可视化工具与深度桌面联动，全部汇聚于一个毫不妥协的播放器。
 

@@ -3463,7 +3463,7 @@ wheels = [
 
 [[package]]
 name = "southsidemusic"
-version = "43"
+version = "44"
 source = { virtual = "." }
 dependencies = [
     { name = "anthropic" },

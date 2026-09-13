@@ -250,7 +250,7 @@ class PlayingController(QWidget):
         self.overlay_alpha_timer = EaseOutTimer(0.4, 2)
 
         self.last_cover = time.time()
-        self.last_draw_x: int = time.perf_counter_ns()
+        self.last_play_time: int = time.perf_counter_ns()
         self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
         self.delta = 1 / self.refresh_rate
         self.setFFTBufferSeconds(self.ctx.config.fft_buffer_seconds)
@@ -339,7 +339,7 @@ class PlayingController(QWidget):
         self.update_acc_timer.start(100)
         
         self.draw_x_acc = 0
-        self.last_draw_x = 0
+        self.last_play_time_acc = 0
         self.draw_x_acc_timer = EaseOutTimer(0.1, 2)
 
         event_bus.subscribe(PLAY_STATE_CHANGED, self._onPlayStateChanged)
@@ -440,11 +440,12 @@ class PlayingController(QWidget):
         
     def _updateXAcc(self):
         playing = self.ctx.player.isPlaying()
-        if (self._draw_current_x != self.last_draw_x) or not playing:
-            offseted = -(self._draw_current_x - self.last_draw_x)
-            if abs(offseted - self.draw_x_acc) > 1 or not playing:
+        play_time = self.ctx.player.getPosition()
+        if (play_time != self.last_play_time_acc) or not playing:
+            offseted = -(play_time - self.last_play_time_acc)
+            if abs(offseted - self.draw_x_acc) > 0.09:
                 self.draw_x_acc_timer.target_value = offseted
-        self.last_draw_x = self._draw_current_x
+        self.last_play_time_acc = play_time
 
     def updateFFTData(self, freqs: np.ndarray, magnitudes: np.ndarray) -> None:
         if len(magnitudes) != len(self.smoothed_magnitudes):
@@ -894,7 +895,7 @@ class PlayingController(QWidget):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(gradient)
                 painter.drawRect(QRectF(self._draw_current_x - width, -4, width + 5, 8))
-                offset = max(-self.width() * 0.1, min(self.width() * 0.1, self.draw_x_acc * 10))
+                offset = max(-self.width() * 0.05, min(self.width() * 0.05, self.draw_x_acc * 100))
                 gradient = QLinearGradient(self._draw_current_x + 5, 0, self._draw_current_x + offset + 5, 0)
                 gradient.setColorAt(0, mixed)
                 gradient.setColorAt(1, QColor(mixed.red(), mixed.green(), mixed.blue(), 0))

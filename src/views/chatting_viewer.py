@@ -167,7 +167,8 @@ def _renderFence(
     env: dict[str, Any],
 ) -> str:
     token = tokens[idx]
-    language = token.info.strip().split(maxsplit=1)[0].lower()
+    info = (token.info or '').strip()
+    language = info.split(maxsplit=1)[0].lower() if info else ''
     if language not in _LATEX_FENCE_LANGUAGES:
         return _DEFAULT_FENCE_RENDERER(tokens, idx, options, env)
     math_color = str(env.get('math_color', '#ffffff'))

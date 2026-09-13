@@ -2,6 +2,8 @@
 
 # Southside Music
 
+> A refined Windows music workstation for NetEase CloudMusic: precision audio control, live lyrics, visual performance tools, and deep desktop integration in one uncompromising player.
+
 > In an age drowning in things that merely work, what's worth using is what earns the name of a real work. True craft lives in the hours no one sees.
 
 ## Friendly Links
@@ -10,7 +12,7 @@
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Adreno5/SouthsideMusic)
 
-Southside Music is a Windows-only third-party NetEase CloudMusic desktop client. It combines a focused music library with a custom audio engine, word-by-word lyrics, desktop lyrics, local favorites, song and lyric-video export, Onerad assistant support, and SouthsideClient integration.
+Southside Music is a Windows-only third-party NetEase CloudMusic desktop client built around a custom audio engine. It combines loudness normalization, speed and pitch control, word-by-word and desktop lyrics, spectrum visualization, local favorites, song and lyric-video export, Onerad assistant support, and SouthsideClient WebSocket integration.
 
 > For the story behind the project, read [SouthsideMusic Story](SouthsideMusic_Story.md).
 
@@ -72,6 +74,7 @@ Southside Music is an independent, non-commercial project and is not an official
 - A Library view that gathers every locally favorited song
 - Song export with cover art, lyrics, album, artist, and track metadata
 - Queue-after-current actions across Home, Search, Library, and Favorites
+- Song comments with threaded replies, avatars, pagination, and posting support
 
 ### Assistant and Integration
 
@@ -90,6 +93,7 @@ Southside Music is an independent, non-commercial project and is not an official
 - Automatic cleanup of old or oversized downloadable caches
 - Unhandled-exception dialog with traceback details
 - Runtime debug overlay available with `F3`
+- Persistent session refresh, cache-size cleanup, and graceful recovery from missing dependencies
 
 ---
 

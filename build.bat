@@ -8,8 +8,18 @@ echo Building - Nuitka
 call build_venv\Scripts\python.exe -m nuitka launcher.py --windows-console-mode=hide --output-filename=Launch --standalone --windows-icon-from-ico=icons\app.ico
 
 mkdir build.result >nul
-echo Building - Copy launcher.dist
-xcopy .\launcher.dist .\build.result\raw /E /I /Y /Q /J >nul
+echo Building - Copy launcher
+rem Launch.exe and its runtime must stay together (Nuitka standalone cannot load
+rem python314.dll from another folder), and they cannot sit in the app root:
+rem the app's free-threaded Python would load that GIL-build DLL through
+rem scipy -> ctypes and crash. So: its own folder plus a shortcut in the root.
+xcopy .\launcher.dist .\build.result\raw\launcher /E /I /Y /Q /J >nul
+echo Building - Link Launch.exe into the root
+rem Relative working directory: run the script from the folder it must fill in.
+pushd "%~dp0build.result\raw"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\create_shortcut.ps1"
+if errorlevel 1 echo [WARN] Could not create the Launch.lnk shortcut.
+popd
 echo Building - Copy embed_python
 xcopy .\embed_python .\build.result\raw\python /E /I /Y /Q /J >nul
 echo Building - Copy free-threaded Python
@@ -28,6 +38,19 @@ xcopy .\images .\build.result\raw\images /E /I /Y /Q /J >nul
 copy .\pyproject.toml .\build.result\raw\pyproject.toml
 copy .\bootstrap.py .\build.result\raw\bootstrap.py
 copy .\full_requirements.txt .\build.result\raw\full_requirements.txt
+
+echo Building - Verify runtime imports
+rem bootstrap.py imports PySide6 before it can repair anything, so a shipped
+rem python that lost it would die on startup with no way back. Only the
+rem bootstrap-capable modules are checked here; the full PySide6 is installed
+rem by bootstrap on first launch.
+"build.result\raw\python\python.exe" -c "import PySide6, shiboken6"
+if errorlevel 1 (
+    echo [ERROR] build.result\raw\python cannot import PySide6/shiboken6.
+    echo         Fix embed_python\Lib\site-packages and build again.
+    pause
+    exit /b 1
+)
 
 echo Building - Remove unneeded files
 RD /S /Q "build.result\raw\python\Lib\site-packages\__pycache__" >nul

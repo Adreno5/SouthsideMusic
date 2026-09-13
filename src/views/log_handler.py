@@ -61,7 +61,7 @@ class LogHandler(logging.Handler):
 
         message = record.getMessage()
 
-        if 'QFluentWidgets' in message:
+        if 'QFluentWidgets' in message or '"QColor::setAlpha": invalid value' in message:
             return
 
         color = {

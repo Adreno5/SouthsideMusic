@@ -107,7 +107,7 @@ class DependencesWindow(QWidget):
     def downloadFFmpeg(self):
         self.ffmpeg_label.setStyleSheet('')
 
-        url = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-lgpl-shared-7.1.zip'
+        url = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip'
 
         self.probar.setRange(0, 1000)
         self.probar.setValue(0)

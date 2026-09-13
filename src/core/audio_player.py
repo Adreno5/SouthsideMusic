@@ -387,6 +387,7 @@ class AudioPlayer(QObject):
 
         self.current_index: int = 0
         self._playback_time: float = 0.0
+        self._last_seek_at: float = float('-inf')
         self._smooth_position_start: float = 0.0
         self._smooth_position_end: float = 0.0
         self._smooth_position_started_at: float = 0.0
@@ -670,7 +671,9 @@ class AudioPlayer(QObject):
     def loadPrepared(self, prepared: PreparedAudioBuffer) -> None:
         with self._lock:
             self._stopProducer()
-            self.stop()
+            # The stream is closed and rebuilt right after this, so there is no
+            # point draining its queue first.
+            self.stop(drain_stream=False)
             if self.stream:
                 self.stream.close()
                 self.stream = None
@@ -780,14 +783,53 @@ class AudioPlayer(QObject):
         if self.is_playing:
             self._startProducer()
 
-    def cancelQueuedTrack(self) -> None:
+    def cancelQueuedTrack(self) -> bool:
+        """Drop any queued splice and report whether the timeline is seekable."""
         with self._lock:
-            if self._timeline is None or self._queued_restore is None:
-                return
-            if self.current_index < self._queued_start:
-                self._timeline.replaceFrom(self._queued_start, self._queued_restore)
-                self._rebuildFutureQueue(self._queued_start)
+            if self._timeline is None:
+                return False
+            restore = self._queued_restore
             self._queued_restore = None
+            if restore is None:
+                # Nothing spliced: the timeline already holds the current track.
+                return True
+            if self.current_index < self._queued_start:
+                self._timeline.replaceFrom(self._queued_start, restore)
+                self._rebuildFutureQueue(self._queued_start)
+                return True
+            # The splice already reached the DAC; the tail is another track now.
+            return False
+
+    def seekTimeline(self, seconds: float) -> bool:
+        """Move the play head inside the live timeline without rebuilding it."""
+        self._last_seek_at = time.perf_counter()
+        with self._lock:
+            timeline = self._timeline
+            if timeline is None or self.sample_rate <= 0 or not timeline.blocks:
+                return False
+            origin = self._track_origin
+            frames = self._track_frames
+            if frames is None:
+                frames = timeline.end - origin
+            frame = origin + round(max(0.0, seconds) * self.sample_rate)
+            frame = max(origin, min(frame, origin + frames, timeline.end))
+            if frame < timeline.blocks[0].start:
+                return False
+
+            self._stopProducer()
+            self._playback_time = (frame - origin) / self.sample_rate
+            self._smooth_position_start = self._playback_time
+            self._smooth_position_end = self._playback_time
+            self._producer_target_lead = self._producerDesiredLead()
+            self._resetWsola()
+            self._resetBeatAnalysis()
+            self._resetStereoEffect()
+            self._resetReverb()
+            self.current_index = frame
+            self._clearQueue()
+            if self.is_playing or (self.stream is not None and self.stream.active):
+                self._startProducer()
+            return True
 
     def beginQueuedTrack(self, origin: int, frames: int, gain: float) -> None:
         """Change the displayed track, leaving queued PCM and DSP untouched."""
@@ -1050,6 +1092,7 @@ class AudioPlayer(QObject):
                 self.is_paused = False
 
     def playFromPosition(self, seconds: float) -> None:
+        self._last_seek_at = time.perf_counter()
         with self._lock:
             if self._sampleCount() == 0:
                 return
@@ -1140,13 +1183,19 @@ class AudioPlayer(QObject):
     def resume(self) -> None:
         self.play()
 
-    def stop(self, clear_growing_file: bool = True) -> None:
+    def stop(self, clear_growing_file: bool = True, drain_stream: bool = True) -> None:
         with self._lock:
             self.stopVolumeAnimation()
             self.stopGainAnimation()
             self._stopProducer()
             if self.stream and self.stream.active:
-                self.stream.stop()
+                # Draining waits for the queued audio to play out, which can block
+                # for hundreds of milliseconds; abort when the stream is about to
+                # be torn down anyway.
+                if drain_stream:
+                    self.stream.stop()
+                else:
+                    self.stream.abort()
             self.current_index = 0
             self._producer_index = 0
             self._prepared_start_index = 0
@@ -1163,6 +1212,7 @@ class AudioPlayer(QObject):
                 self._resetGrowingFile()
 
     def setPosition(self, seconds: float) -> None:
+        self._last_seek_at = time.perf_counter()
         if self._timeline is not None:
             self.seekRequested.emit(seconds)
             return
@@ -1186,6 +1236,10 @@ class AudioPlayer(QObject):
 
     def getPosition(self) -> float:
         return round(self._playback_time, 2)
+
+    def getLastSeekTime(self) -> float:
+        """Monotonic time of the most recent seek request, or -inf if none."""
+        return self._last_seek_at
 
     def getSmoothPosition(self) -> float:
         """Return playback position interpolated within the current audio block."""

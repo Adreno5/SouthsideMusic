@@ -2,6 +2,8 @@
 
 # Southside Music
 
+> 一款精工打造的 Windows 网易云音乐桌面工作站：精准音频控制、实时歌词、可视化工具与深度桌面联动，全部汇聚于一个毫不妥协的播放器。
+
 > 能用是及格，值得用才是作品。真正的功夫，都在看不见的时间里。
 
 ## 友情链接
@@ -10,7 +12,7 @@
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Adreno5/SouthsideMusic)
 
-Southside Music 是一款 Windows 专用的网易云音乐第三方桌面客户端。它把专注的音乐管理、自研音频引擎、逐字歌词、桌面歌词、本地收藏、歌曲与歌词动画导出、Onerad 助手和 SouthsideClient 联动放在了同一个桌面应用里。
+Southside Music 是一款以自研音频引擎为核心的 Windows 专用网易云音乐第三方桌面客户端。它将响度均衡、变速变调、逐字歌词与桌面歌词、频谱可视化、本地收藏、歌曲与歌词动画导出、Onerad 助手和 SouthsideClient WebSocket 联动整合在同一个桌面应用中。
 
 > 想了解项目一路走来的过程，可以阅读 [SouthsideMusic Story](SouthsideMusic_Story.md)。
 
@@ -72,6 +74,7 @@ Southside Music 是独立、非商业项目，并非网易云音乐官方客户�
 - “库”页面汇总全部本地收藏歌曲
 - 导出歌曲时写入封面、歌词、专辑、歌手和曲目元数据
 - 在首页、搜索、库和收藏页面把歌曲插入当前播放之后
+- 歌曲评论、楼中楼回复、头像加载、分页浏览与评论发布
 
 ### 助手与联动
 
@@ -90,6 +93,7 @@ Southside Music 是独立、非商业项目，并非网易云音乐官方客户�
 - 自动清理过旧或超过空间上限的可重新下载缓存
 - 未捕获异常通过弹窗显示 traceback 详情
 - 按 `F3` 打开运行时调试覆盖层
+- 持久化会话刷新、缓存空间自动清理，以及缺少依赖时的平滑恢复
 
 ---
 

@@ -698,8 +698,22 @@ def _setup_build_venv() -> None:
     _safe_remove(BUILD_VENV)
 
     print('  Creating venv...')
+    # Build with the same Python the app runs on. A build venv from an older
+    # interpreter makes Launch.exe ship python3XX.dll of that version, and the
+    # app's free-threaded Python then loads the wrong DLL whenever an extension
+    # imports ctypes (scipy does), which crashes it.
+    base_python = sys.executable
+    embed_python = os.path.join(EMBED_DIR, 'python.exe')
+    if os.path.isfile(embed_python):
+        base_python = embed_python
+        print(f'  Using {embed_python} as the base interpreter.')
+    else:
+        print(
+            f'  [WARNING] {embed_python} not found; building with '
+            f'{base_python}.'
+        )
     try:
-        run([sys.executable, '-m', 'venv', BUILD_VENV, '--clear'])
+        run([base_python, '-m', 'venv', BUILD_VENV, '--clear'])
     except subprocess.CalledProcessError:
         raise SetupError('Failed to create build venv.')
 

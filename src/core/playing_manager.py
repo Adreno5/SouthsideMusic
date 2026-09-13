@@ -66,7 +66,7 @@ from services.events.events import (
     STOP_PROGRESS_LOADING,
     UPDATE_LOADING_PROGRESS,
 )
-from imports import tr
+from imports import QTimer, tr
 
 if TYPE_CHECKING:
     from core.app_context import AppContext
@@ -84,6 +84,8 @@ _STREAM_PCM_READ_BYTES = _STREAM_SAMPLE_RATE * _STREAM_CHANNELS * 4
 _STREAM_PLAY_MIN_SECONDS = 5.0
 _STREAM_ANALYSIS_SECONDS = 30
 _LYRIC_TIME_RE = re.compile(r'\[(\d+):(\d+(?:\.\d+)?)\]')
+# Keep the queued crossfade PCM out of the way while the user is seeking.
+_SEEK_CROSSFADE_DEBOUNCE_SECONDS = 1.0
 
 
 @dataclass(frozen=True)
@@ -131,6 +133,13 @@ class PlayingManager:
         self._preload_download_seq = 0
         self._preload_download_song_id: str | None = None
         self._pending_play_selection: PlaySelection | None = None
+        self._pending_crossfade_selection: PlaySelection | None = None
+        self._crossfade_debounce_timer = QTimer()
+        self._crossfade_debounce_timer.setSingleShot(True)
+        self._crossfade_debounce_timer.setInterval(
+            int(_SEEK_CROSSFADE_DEBOUNCE_SECONDS * 1000)
+        )
+        self._crossfade_debounce_timer.timeout.connect(self._flushDeferredCrossfade)
         self._ft_worker = FreeThreadedJsonSender(logger=self._logger)
         self._stream_processes: set[subprocess.Popen[bytes]] = set()
         self._stream_process_lock = threading.Lock()
@@ -412,6 +421,8 @@ class PlayingManager:
         self.crossfade_info = None
         self.next_song_selection = None
         self._next_song_buffer = None
+        self._crossfade_debounce_timer.stop()
+        self._pending_crossfade_selection = None
         if self._queued_selection is not None and self._player is not None:
             self._player.cancelQueuedTrack()
         self._queued_selection = None
@@ -437,8 +448,17 @@ class PlayingManager:
         was_playing = player.isPlaying()
         rate = player.sample_rate
         gain = player.loudness_gain
+        # Restoring the pre-splice PCM keeps the live timeline usable, so the
+        # seek can reuse it instead of reloading the track and tearing the
+        # output stream down.
+        reusable = player.cancelQueuedTrack()
         self._cancelCrossfadePlayback()
         self.clearPreload()
+        position = max(0.0, min(seconds, player.getLength()))
+        if reusable and player.seekTimeline(position):
+            self._preload_triggered = True
+            self.preloadNextSong()
+            return
         prepared = AudioPlayer.convertBuffer(AudioPlayer.prepareBuffer(audio), rate)
         player.loadPrepared(prepared)
         player.setGain(gain)
@@ -853,6 +873,22 @@ class PlayingManager:
         if player is not None:
             player.restartProducer()
 
+    def _deferCrossfadeQueue(self, player: AudioPlayer) -> bool:
+        """Hold the crossfade PCM back until one second after the last seek."""
+        elapsed = timeLib.perf_counter() - player.getLastSeekTime()
+        if elapsed >= _SEEK_CROSSFADE_DEBOUNCE_SECONDS:
+            return False
+        remaining = _SEEK_CROSSFADE_DEBOUNCE_SECONDS - elapsed
+        self._crossfade_debounce_timer.start(max(1, int(remaining * 1000)))
+        return True
+
+    def _flushDeferredCrossfade(self) -> None:
+        selection = self._pending_crossfade_selection
+        self._pending_crossfade_selection = None
+        if selection is None:
+            return
+        self._queuePreloadedSong(selection)
+
     def _queuePreloadedSong(self, selection: PlaySelection) -> None:
         player = self._player
         following = self._next_song_buffer
@@ -863,6 +899,9 @@ class PlayingManager:
             or selection != self.next_song_selection
             or self._queued_selection is not None
         ):
+            return
+        if self._deferCrossfadeQueue(player):
+            self._pending_crossfade_selection = selection
             return
         info = self.crossfade_info if cfg.enable_crossfade else None
         transition = None

@@ -250,7 +250,7 @@ class PlayingController(QWidget):
         self.overlay_alpha_timer = EaseOutTimer(0.4, 2)
 
         self.last_cover = time.time()
-        self.last_draw: int = time.perf_counter_ns()
+        self.last_draw_x: int = time.perf_counter_ns()
         self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
         self.delta = 1 / self.refresh_rate
         self.setFFTBufferSeconds(self.ctx.config.fft_buffer_seconds)
@@ -324,8 +324,7 @@ class PlayingController(QWidget):
 
         self.setLayout(global_layout)
 
-        event_bus.subscribe(REPAINT, self._updateFFT)
-        event_bus.subscribe(REPAINT, self._updateLyric)
+        event_bus.subscribe(REPAINT, self._onRepaintTick)
 
         self._player.fftDataReady.connect(self.updateFFTData)
 
@@ -334,6 +333,14 @@ class PlayingController(QWidget):
         self.beat_flash_timer.target_value = 0
         self.bar_alpha_timer.target_value = 1
         self.tip_handler = TranslationHandler()
+        
+        self.update_acc_timer = QTimer(self)
+        self.update_acc_timer.timeout.connect(self._updateXAcc)
+        self.update_acc_timer.start(100)
+        
+        self.draw_x_acc = 0
+        self.last_draw_x = 0
+        self.draw_x_acc_timer = EaseOutTimer(0.1, 2)
 
         event_bus.subscribe(PLAY_STATE_CHANGED, self._onPlayStateChanged)
         event_bus.subscribe(SONG_CHANGED, self._updateDatas)
@@ -425,6 +432,19 @@ class PlayingController(QWidget):
             self.song_title_label.setText(song.name)
 
         self.update()
+        
+    def _onRepaintTick(self, multiple_factor: float = 1):
+        self._updateFFTAndRepaint(multiple_factor)
+        self._updateLyric(multiple_factor)
+        self.draw_x_acc = self.draw_x_acc_timer.current_value
+        
+    def _updateXAcc(self):
+        playing = self.ctx.player.isPlaying()
+        if (self._draw_current_x != self.last_draw_x) or not playing:
+            offseted = -(self._draw_current_x - self.last_draw_x)
+            if abs(offseted - self.draw_x_acc) > 1 or not playing:
+                self.draw_x_acc_timer.target_value = offseted
+        self.last_draw_x = self._draw_current_x
 
     def updateFFTData(self, freqs: np.ndarray, magnitudes: np.ndarray) -> None:
         if len(magnitudes) != len(self.smoothed_magnitudes):
@@ -460,7 +480,7 @@ class PlayingController(QWidget):
             display = peak * np.power(display / peak, 1.6)
         return display.astype(np.float32, copy=False)
 
-    def _updateFFT(self, multiple_factor: float = 1.0) -> None:
+    def _updateFFTAndRepaint(self, multiple_factor: float = 1.0) -> None:
         from views.song_card import DummyCard
 
         self._draw_fft = (
@@ -864,16 +884,24 @@ class PlayingController(QWidget):
             )
 
         flash = 1 - self.beat_flash_timer.current_value
-        if flash > 0:
-            theme_color = self.ctx.main_window.song_theme
-            if theme_color:
+        theme_color = self.ctx.main_window.song_theme
+        if flash > 0 and theme_color:
                 width = self.width() * 0.1
                 gradient = QLinearGradient(self._draw_current_x - width, 0, self._draw_current_x + 5, 0)
                 gradient.setColorAt(0, QColor(255, 255, 255, 0))
-                gradient.setColorAt(1, mixColor(QColor(255, 255, 255), theme_color, 1 - (flash * 0.5 + 0.1)))
+                mixed = mixColor(QColor(255, 255, 255), theme_color, 1 - (flash * 0.5 + 0.1))
+                gradient.setColorAt(1, mixed)
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(gradient)
                 painter.drawRect(QRectF(self._draw_current_x - width, -4, width + 5, 8))
+                offset = max(-self.width() * 0.1, min(self.width() * 0.1, self.draw_x_acc * 10))
+                gradient = QLinearGradient(self._draw_current_x + 5, 0, self._draw_current_x + offset + 5, 0)
+                gradient.setColorAt(0, mixed)
+                gradient.setColorAt(1, QColor(mixed.red(), mixed.green(), mixed.blue(), 0))
+                painter.setBrush(gradient)
+                rect_left = min(self._draw_current_x, self._draw_current_x + offset) + 5
+                rect_width = abs(offset)
+                painter.drawRect(QRectF(rect_left, 0, rect_width, self.height()))
 
         painter.end()
 

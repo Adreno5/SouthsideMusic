@@ -100,7 +100,7 @@ from imports import QTimer, QVBoxLayout, QWidget, Qt, Signal, event_bus
 - Keep QSS color names lowercase (`'white'`, `'black'`).
 - Prefer small, local diffs. Do not reformat unrelated files.
 - Avoid large abstractions; this codebase favors direct PySide code.
-- Add comments only for non-obvious behavior; keep them English and sparse.
+- Write no comments and no docstrings. Names and structure carry the meaning.
 
 ## Types
 
@@ -110,7 +110,7 @@ from imports import QTimer, QVBoxLayout, QWidget, Qt, Signal, event_bus
 - Use `ABC` / `@abstractmethod` for explicit backend interfaces only.
 - Use `cast()` for fields populated after construction when needed.
 - Use `@override` where parent methods are intentionally overridden.
-- Keep public docstrings short: `"""single line."""`.
+- Write no docstrings, including one-liners.
 
 ## Naming
 
@@ -173,6 +173,12 @@ from imports import QTimer, QVBoxLayout, QWidget, Qt, Signal, event_bus
 
 ## KISS Rules
 
+- No comments, no docstrings. If a block needs explaining, rewrite the block.
+- No over-engineering. Ship the smallest thing that works and stop there.
+- Do not add a helper, class, module, config key, or event for a single caller.
+- Do not add options, flags, fallbacks, or abstractions "for later".
+- Extract shared code only when two real callers already need it.
+- Keep functions linear: no state machines, no plugin registries, no indirection.
 - The author favors simple Qt code over enterprise patterns.
 - Before adding abstraction, ask whether a bool, direct signal, or helper is enough.
 - Avoid factories, DI containers, state machines, caching layers, observer wrappers.

@@ -14,7 +14,7 @@ def getUserDetail(user_id=0) -> dict:
     Returns:
         dict
     """
-    return eapi('/api/v1/user/detail/%s' % user_id, {})
+    return eapi('/api/w/v1/user/detail/%s' % user_id, {'all': 'true', 'userId': str(user_id)})
 
 
 def getUserPlaylists(user_id, offset=0, limit=1001) -> dict:
@@ -39,48 +39,6 @@ def getUserPlaylists(user_id, offset=0, limit=1001) -> dict:
     )
 
 
-def getUserAlbumSubs(limit=30) -> dict:
-    """get user's subscribed albums (pc client api).
-
-    Args:
-        limit: page size. defaults to 30.
-
-    Returns:
-        dict
-    """
-    return eapi('/api/album/sublist', {'limit': str(limit)})
-
-
-def getUserArtistSubs(limit=30) -> dict:
-    """get user's subscribed artists (pc client api).
-
-    Args:
-        limit: page size. defaults to 30.
-
-    Returns:
-        dict
-    """
-    return eapi('/api/artist/sublist', {'limit': str(limit)})
-
-
-SIGNIN_TYPE_MOBILE = 0
-"""mobile daily check-in, +4 exp"""
-SIGNIN_TYPE_WEB = 1
-"""web daily check-in, +1 exp"""
-
-
-def setSignin(dtype=0) -> dict:
-    """daily check-in (pc client api).
-
-    Args:
-        dtype: SIGNIN_TYPE_MOBILE or SIGNIN_TYPE_WEB. defaults to mobile.
-
-    Returns:
-        dict
-    """
-    return eapi('/api/point/dailyTask', {'type': str(dtype)})
-
-
 def setWeblog(log: dict) -> dict:
     """send user behavior log (pc client api).
 
@@ -99,7 +57,7 @@ def getDailyRecommend() -> dict:
     Returns:
         dict
     """
-    return eapi('/api/v1/discovery/recommend/songs', {})
+    return eapi('/api/v3/discovery/recommend/songs', {'limit': '30'})
 
 
 def getDailyRecommendResource() -> dict:

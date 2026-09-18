@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 
 from . import eapi
 
@@ -21,6 +20,5 @@ def getIntelligenceList(
             'startMusicId': seed_id,
             'type': 'fromPlayOne',
             'count': str(count),
-            'songIds': json.dumps([str(seed_id)]),
         },
     )

@@ -9,8 +9,8 @@ from typing import Any
 
 import requests
 
-from .utils import _random_string
-from .utils.crypto import _eapi_decrypt, _eapi_encrypt, _hex_compose
+from .utils import _hex_compose, _random_string
+from .utils.crypto import _eapi_decrypt, _eapi_encrypt
 
 """ncm - netease cloud music python api / download tool.
 
@@ -56,10 +56,9 @@ if 'PYNCM_DEBUG' in os.environ:
         level=debug_level, format='[%(levelname).4s] %(name)s %(message)s'
     )
 
-API_HOST = 'interface.music.163.com'
+API_HOST = 'interfacepc.music.163.com'
 CLIENT_OS = 'pc'
 CLIENT_APPVER = '3.1.40.205461'
-CLIENT_CHANNEL = 'netease'
 CLIENT_UA = (
     'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) '
     'Safari/537.36 Chrome/91.0.4472.164 NeteaseMusicDesktop/3.1.40.205461'
@@ -77,19 +76,22 @@ def _osVersion() -> str:
         ) as key:
             product = str(winreg.QueryValueEx(key, 'ProductName')[0])
             build = str(winreg.QueryValueEx(key, 'CurrentBuildNumber')[0])
-        return 'Microsoft %s (build %s),64bit' % (product, build)
+        name = product.replace('Windows 10', 'Windows 11') if int(build) >= 22000 else product
+        return 'Microsoft-%s-build-%s-64bit' % (name.replace(' ', '-'), build)
     except OSError:
         return ''
 
 
-def _eapiConfig(deviceId: str) -> dict:
-    return {
+def _eapiConfig(deviceId: str, clientSign: str = '') -> dict:
+    config = {
         'os': CLIENT_OS,
         'appver': CLIENT_APPVER,
         'osver': _osVersion(),
-        'channel': CLIENT_CHANNEL,
         'deviceId': str(deviceId),
     }
+    if clientSign:
+        config['clientSign'] = str(clientSign)
+    return config
 
 
 def generateDeviceId() -> str:
@@ -243,7 +245,10 @@ class Session(requests.Session):
         for k, v in dumped.items():
             self._session_info[k][1](self, v)
         stored = self.eapi_config if isinstance(self.eapi_config, dict) else {}
-        self.eapi_config = _eapiConfig(stored.get('deviceId') or DEVICE_ID_DEFAULT)
+        self.eapi_config = _eapiConfig(
+            stored.get('deviceId') or DEVICE_ID_DEFAULT,
+            stored.get('clientSign') or '',
+        )
         return True
 
 

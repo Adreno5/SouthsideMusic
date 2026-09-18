@@ -58,79 +58,6 @@ class IDCahceHelper:
             self.data = self._factory_func(self._item_id)
 
 
-class AlbumHelper(IDCahceHelper):
-    def __init__(self, item_id):
-        from ncm.apis.album import getAlbumInfo
-
-        super().__init__(item_id, getAlbumInfo)
-
-    def refresh(self):
-        logger.debug('caching album info %s' % self._item_id)
-        return super().refresh()
-
-    @_default()
-    def albumName(self):
-        return self.data['album']['name']
-
-    @_default()
-    def albumAliases(self):
-        return self.data['album']['alias']
-
-    @_default()
-    def albumCompany(self):
-        return self.data['album']['company']
-
-    @_default()
-    def albumBriefDescription(self):
-        return self.data['album']['breifDesc']
-
-    @_default()
-    def albumDescription(self):
-        return self.data['album']['description']
-
-    @_default()
-    def albumPublishTime(self):
-        return (
-            datetime.datetime(1970, 1, 1)
-            + datetime.timedelta(milliseconds=self.data['album']['publishTime'])
-        ).year
-
-    @_default()
-    def albumSongCount(self):
-        return self.data['album']['size']
-
-    @_default()
-    def albumArtists(self):
-        return [_ar['name'] for _ar in self.data['album']['artists']]
-
-
-class ArtistHelper(IDCahceHelper):
-    def __init__(self, item_id):
-        from ncm.apis.artist import getArtistDetails
-
-        super().__init__(item_id, getArtistDetails)
-
-    def refresh(self):
-        logger.debug('caching artist info %s' % self._item_id)
-        return super().refresh()
-
-    @_default()
-    def ID(self):
-        return self.data['data']['artist']['id']
-
-    @_default()
-    def artistName(self):
-        return self.data['data']['artist']['name']
-
-    @_default()
-    def artistTranslatedName(self):
-        return self.data['data']['artist']['transNames']
-
-    @_default()
-    def artistBrief(self):
-        return self.data['data']['artist']['briefDesc']
-
-
 class UserHelper(IDCahceHelper):
     def __init__(self, item_id):
         from ncm.apis.user import getUserDetail
@@ -168,11 +95,6 @@ class TrackHelper:
     def duration(self) -> int:
         """track duration in milliseconds."""
         return int(self.data['dt'])
-
-    @property
-    def album(self) -> AlbumHelper:
-        """album object with more metadata."""
-        return AlbumHelper(self.data['al']['id'])
 
     @_default()
     def ID(self):

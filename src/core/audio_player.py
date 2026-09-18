@@ -36,6 +36,7 @@ from imports import MessageBox
 from core.config import cfg
 from core.pcm_timeline import PcmTimeline
 from core.beat import BeatDetector, BeatFrame
+from core.wsola import WsolaStretcher
 
 from pydub.utils import fsdecode, audioop, get_prober_name, mediainfo_json
 from pydub.exceptions import CouldntDecodeError
@@ -429,11 +430,7 @@ class AudioPlayer(QObject):
         self._producer_last_resource_sample = 0.0
         self._queue_underruns = 0
         self._output_underflows = 0
-        self._wsola_output_buffer: np.ndarray | None = None
-        self._wsola_tail: np.ndarray | None = None
-        self._wsola_buffer_start_index: float = 0.0
-        self._wsola_next_source_index: float = 0.0
-        self._wsola_speed: float = 1.0
+        self._wsola = WsolaStretcher(self._readSamples, self._sampleCount)
         self._stereo_tail: np.ndarray | None = None
         self._reverb_tail: np.ndarray | None = None
         self._growing_file_path: Path | None = None
@@ -1653,174 +1650,17 @@ class AudioPlayer(QObject):
             self._clearQueue()
 
     def _resetWsola(self) -> None:
-        self._wsola_output_buffer = None
-        self._wsola_tail = None
-        self._wsola_buffer_start_index = 0.0
-        self._wsola_next_source_index = 0.0
-        self._wsola_speed = 1.0
+        self._wsola.reset()
 
     def _pitchRatio(self) -> float:
         if abs(self.play_pitch) < _MIN_AUDIBLE_PITCH_SHIFT:
             return 1.0
         return 2 ** (self.play_pitch / 12.0)
 
-    def _wsolaHopSize(self) -> int:
-        return max(256, self.sample_rate // 43)
-
-    def _wsolaSearchSize(self, hop: int) -> int:
-        return min(hop // 2, max(32, self.sample_rate // 125))
-
-    def _wsolaReadSource(self, start_idx: int, frames: int) -> np.ndarray:
-        n = self._sampleCount()
-        if n == 0 or frames <= 0:
-            return np.zeros((0, self.channels), dtype=np.float32)
-
-        start_idx = max(0, min(start_idx, n))
-        end_idx = min(start_idx + frames, n)
-        segment = self._readSamples(start_idx, end_idx).copy()
-        if len(segment) >= frames:
-            return segment.astype(np.float32, copy=False)
-
-        if len(segment) > 0:
-            pad_frame = segment[-1:]
-        else:
-            pad_frame = self._readSamples(n - 1, n)
-        padding = np.repeat(pad_frame, frames - len(segment), axis=0)
-        return np.concatenate((segment, padding), axis=0).astype(np.float32, copy=False)
-
-    def _wsolaFindStart(self, ideal_start: int, overlap: int, search: int) -> int:
-        tail = self._wsola_tail
-        n = self._sampleCount()
-        if tail is None or len(tail) < overlap or n <= overlap:
-            return max(0, min(ideal_start, n))
-
-        min_start = max(0, ideal_start - search)
-        max_start = min(n - overlap, ideal_start + search)
-        if max_start < min_start:
-            return max(0, min(ideal_start, n))
-
-        tail_segment = tail[:overlap].astype(np.float32, copy=False)
-        tail_segment = tail_segment - tail_segment.mean(axis=0, keepdims=True)
-        channel_energy = np.sum(tail_segment * tail_segment, axis=0)
-        channel = int(np.argmax(channel_energy))
-        tail_channel = tail_segment[:, channel]
-        tail_power = float(np.sqrt(channel_energy[channel]))
-        if tail_power < 1e-6:
-            return max(0, min(ideal_start, n))
-
-        source = self._readSamples(min_start, max_start + overlap)[:, channel]
-        windows = np.lib.stride_tricks.sliding_window_view(source, overlap)
-        centered = windows - windows.mean(axis=1, keepdims=True)
-        powers = np.sqrt(np.sum(centered * centered, axis=1))
-        scores = centered @ tail_channel
-        scores /= np.maximum(powers * tail_power, 1e-6)
-        positions = np.arange(len(scores), dtype=np.float32) + min_start
-        center_bias = np.abs(positions - ideal_start) / max(1, search)
-        scores -= center_bias * 0.12
-        return min_start + int(np.argmax(scores))
-
-    def _wsolaResetFor(self, start_idx: int, speed: float) -> None:
-        self._wsola_output_buffer = np.zeros((0, self.channels), dtype=np.float32)
-        self._wsola_tail = None
-        self._wsola_buffer_start_index = float(start_idx)
-        self._wsola_next_source_index = float(start_idx)
-        self._wsola_speed = speed
-
-    def _wsolaNeedsReset(self, start_idx: int, speed: float) -> bool:
-        if self._wsola_output_buffer is None:
-            return True
-        if self._wsola_output_buffer.ndim != 2:
-            return True
-        if self._wsola_output_buffer.shape[1] != self.channels:
-            return True
-        if abs(speed - self._wsola_speed) >= 1e-6:
-            return True
-
-        expected_start = int(round(self._wsola_buffer_start_index))
-        return abs(start_idx - expected_start) > 16
-
-    def _wsolaAppendFrame(self, speed: float, hop: int, search: int) -> bool:
-        output_buffer = self._wsola_output_buffer
-        if output_buffer is None:
-            return False
-
-        frame_size = hop * 2
-        if self._wsola_tail is None:
-            source_start = int(round(self._wsola_next_source_index))
-            segment = self._wsolaReadSource(source_start, frame_size)
-            if len(segment) == 0:
-                return False
-
-            self._wsola_output_buffer = np.concatenate(
-                (output_buffer, segment[:hop]), axis=0
-            )
-            self._wsola_tail = segment[hop:frame_size].copy()
-            self._wsola_next_source_index += hop * speed
-            return True
-
-        if self._wsola_next_source_index >= self._sampleCount():
-            self._wsola_output_buffer = np.concatenate(
-                (output_buffer, self._wsola_tail), axis=0
-            )
-            self._wsola_tail = None
-            self._wsola_next_source_index = float(self._sampleCount())
-            return True
-
-        ideal_start = int(round(self._wsola_next_source_index))
-        source_start = self._wsolaFindStart(ideal_start, hop, search)
-        segment = self._wsolaReadSource(source_start, frame_size)
-        if len(segment) == 0:
-            return False
-
-        fade_in = (
-            0.5 - 0.5 * np.cos(np.linspace(0.0, np.pi, hop, dtype=np.float32))
-        ).reshape(-1, 1)
-        mixed = self._wsola_tail * (1.0 - fade_in) + segment[:hop] * fade_in
-        self._wsola_output_buffer = np.concatenate((output_buffer, mixed), axis=0)
-        self._wsola_tail = segment[hop:frame_size].copy()
-        self._wsola_next_source_index += hop * speed
-        return True
-
     def _readWsola(self, start_idx: int, frames: int, speed: float) -> np.ndarray:
-        n = self._sampleCount()
-        if n == 0 or start_idx >= n:
-            return np.zeros((0, self.channels), dtype=np.float32)
-
-        if abs(speed - 1.0) < 1e-6:
-            self._resetWsola()
-            return self._readSamples(start_idx, start_idx + frames).copy()
-
-        if frames <= 0:
-            return np.zeros((0, self.channels), dtype=np.float32)
-
-        start_idx = max(0, start_idx)
-        if self._wsolaNeedsReset(start_idx, speed):
-            self._wsolaResetFor(start_idx, speed)
-
-        hop = self._wsolaHopSize()
-        if hop <= 0:
-            return self._readSamples(start_idx, start_idx + frames).copy()
-
-        search = self._wsolaSearchSize(hop)
-        while (
-            self._wsola_output_buffer is not None
-            and len(self._wsola_output_buffer) < frames
-        ):
-            if not self._wsolaAppendFrame(speed, hop, search):
-                break
-
-        buffer = self._wsola_output_buffer
-        if buffer is None or len(buffer) == 0:
-            return np.zeros((0, self.channels), dtype=np.float32)
-
-        out = buffer[:frames].copy()
-        if len(buffer) > frames:
-            self._wsola_output_buffer = buffer[frames:].copy()
-        else:
-            self._wsola_output_buffer = np.zeros((0, self.channels), dtype=np.float32)
-        self._wsola_buffer_start_index += len(out) * speed
-
-        return out.astype(np.float32, copy=False)
+        return self._wsola.read(
+            start_idx, frames, speed, self.sample_rate, self.channels
+        )
 
     def _sourceFramesFor(self, start_idx: int, frames: int, speed: float) -> int:
         n = self._sampleCount()

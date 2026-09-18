@@ -38,6 +38,7 @@ def getPlaylistInfoEapi(playlist_id, n=100000, s=8) -> dict:
             'id': str(playlist_id),
             'n': str(n),
             's': str(s),
+            'newStyle': 'true',
         },
     )
 
@@ -61,29 +62,6 @@ def getPlaylistAllTracks(playlist_id, offset=0, limit=1000) -> dict:
     return getTrackDetail(id)
 
 
-def getPlaylistComments(playlist_id: str, offset=0, limit=20, beforeTime=0) -> dict:
-    """get playlist comments (pc client api).
-
-    Args:
-        playlist_id: playlist id.
-        offset: time offset. defaults to 0.
-        limit: page size. defaults to 20.
-        beforeTime: timestamp in seconds. defaults to 0.
-
-    Returns:
-        dict
-    """
-    return eapi(
-        '/api/v1/resource/comments/A_PL_0_%s' % playlist_id,
-        {
-            'rid': 'A_PL_0_%s' % playlist_id,
-            'limit': str(limit),
-            'offset': str(offset),
-            'beforeTime': str(beforeTime * 1000),
-        },
-    )
-
-
 def setManipulatePlaylistTracks(
     trackIds, playlistId, op='add', imme=True, e_r=True
 ) -> dict:
@@ -100,7 +78,7 @@ def setManipulatePlaylistTracks(
     """
     trackIds = trackIds if isinstance(trackIds, list) else [trackIds]
     return eapi(
-        '/api/playlist/manipulate/tracks',
+        '/api/v1/playlist/manipulate/tracks',
         {
             'trackIds': json.dumps(trackIds),
             'pid': str(playlistId),
@@ -141,7 +119,7 @@ def setRemovePlaylist(ids: list, self=True) -> dict:
     """
     ids = ids if isinstance(ids, list) else [ids]
     return eapi(
-        '/api/playlist/remove',
+        '/api/playlist/delete',
         {
             'ids': json.dumps(ids),
             'self': str(self),

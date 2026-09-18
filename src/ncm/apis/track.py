@@ -3,7 +3,15 @@ from __future__ import annotations
 import json
 
 from . import eapi, getCurrentSession
-from ..utils import _random_string
+
+LEVEL_BY_BITRATE = {
+    96000: 'standard',
+    128000: 'higher',
+    192000: 'exhigh',
+    320000: 'exhigh',
+    999000: 'lossless',
+    1900000: 'hires',
+}
 
 
 def getTrackDetail(song_ids: list) -> dict:
@@ -19,7 +27,8 @@ def getTrackDetail(song_ids: list) -> dict:
     return eapi(
         '/api/v3/song/detail',
         {
-            'c': json.dumps([{'id': str(id)} for id in ids]),
+            'c': json.dumps([{'id': str(id), 'v': 0} for id in ids]),
+            'trialMode': '-1',
         },
     )
 
@@ -36,13 +45,10 @@ def getTrackAudio(song_ids: list, bitrate=320000, encodeType='aac') -> dict:
         dict
     """
     ids = song_ids if isinstance(song_ids, list) else [song_ids]
-    return eapi(
-        '/api/song/enhance/player/url',
-        {
-            'ids': ids,
-            'encodeType': str(encodeType),
-            'br': str(bitrate),
-        },
+    return getTrackAudioV1(
+        ids,
+        level=LEVEL_BY_BITRATE.get(int(bitrate), 'exhigh'),
+        encodeType=encodeType,
     )
 
 
@@ -68,67 +74,6 @@ def getTrackAudioV1(song_ids: list, level='standard', encodeType='flac') -> dict
     )
 
 
-def getTrackDownloadURL(song_id: int | str, bitrate=999000) -> dict:
-    """get download url (pc client api).
-
-    Args:
-        song_id: track id.
-        bitrate: defaults to 999000.
-
-    Returns:
-        dict
-    """
-    return eapi(
-        '/api/song/enhance/download/url',
-        {
-            'id': str(song_id),
-            'br': str(bitrate),
-        },
-    )
-
-
-def getTrackDownloadURLV1(song_id: int, level='standard') -> dict:
-    """get download url v1 (pc client api).
-
-    Args:
-        song_id: track id.
-        level: 'standard' / 'exhigh' / 'lossless' / 'hires'.
-
-    Returns:
-        dict
-    """
-    return eapi(
-        '/api/song/enhance/download/url/v1',
-        {
-            'id': '%s_0' % song_id,
-            'level': str(level),
-        },
-    )
-
-
-def getTrackLyrics(song_id: int, lv=-1, tv=-1, rv=-1) -> dict:
-    """get track lyrics (pc client api). pass -1 for latest version.
-
-    Args:
-        song_id: track id.
-        lv: lyric version, -1 for latest.
-        tv: translation version, -1 for latest.
-        rv: romanization version, -1 for latest.
-
-    Returns:
-        dict
-    """
-    return eapi(
-        '/api/song/lyric',
-        {
-            'id': str(song_id),
-            'lv': str(lv),
-            'tv': str(tv),
-            'rv': str(rv),
-        },
-    )
-
-
 def getTrackLyricsNew(song_id: str) -> dict:
     """get track lyrics v2 with word-by-word lines (pc client api).
 
@@ -150,58 +95,6 @@ def getTrackLyricsNew(song_id: str) -> dict:
             'yv': 0,
             'ytv': 0,
             'yrv': 0,
-        },
-    )
-
-
-def setLikeTrack(trackId, like=True, userid=0, e_r=True) -> dict:
-    """like/unlike a track (pc client api).
-
-    Args:
-        trackId: track id.
-        like: true to like, false to unlike. defaults to true.
-        userid: defaults to 0.
-
-    Returns:
-        dict
-    """
-    return eapi(
-        '/api/song/like',
-        {
-            'trackId': str(trackId),
-            'userid': str(userid),
-            'like': str(like).lower(),
-            'e_r': str(e_r).lower(),
-        },
-    )
-
-
-DEFAULT_AUDIO_MATCHER_SESSION_ID = _random_string(16)
-
-
-def getMatchTrackByFP(
-    audioFP: str, duration: float, sessionId=DEFAULT_AUDIO_MATCHER_SESSION_ID
-) -> dict:
-    """audio fingerprint matching (pc client api).
-
-    Args:
-        audioFP: base64-encoded afp. see https://github.com/mos9527/ncm-afp
-        duration: fp duration in seconds.
-        sessionId: defaults to random.
-
-    Returns:
-        dict
-    """
-    return eapi(
-        '/api/music/audio/match',
-        {
-            'algorithmCode': 'shazam_v2',
-            'sessionId': sessionId,
-            'duration': float(duration),
-            'from': 'recognize-song',
-            'times': '1',
-            'decrypt': '1',
-            'rawdata': audioFP,
         },
     )
 

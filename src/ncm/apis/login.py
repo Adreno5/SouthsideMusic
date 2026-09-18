@@ -12,7 +12,7 @@ from ..utils.crypto import _hash_hex_digest
 from ..utils.security import cloudmusic_dll_encode_id
 
 QRCODE_LOGIN_URL = 'https://st.music.163.com/st/platform/scanlogin'
-QRCODE_CLIENT_TYPE = 3
+QRCODE_CLIENT_TYPE = 5
 
 
 def loginLogout() -> dict:
@@ -33,7 +33,7 @@ def loginQrcodeUnikey(dtype=QRCODE_CLIENT_TYPE) -> dict:
     - login status must be polled via loginQrcodeCheck.
 
     Args:
-        dtype: qrcode client type. 3 for windows, 4 for macos.
+        dtype: qrcode client type. 5 is the windows client default.
 
     Returns:
         dict
@@ -42,7 +42,6 @@ def loginQrcodeUnikey(dtype=QRCODE_CLIENT_TYPE) -> dict:
         '/api/login/qrcode/unikey',
         {
             'type': str(dtype),
-            'noCheckToken': True,
         },
     )
 
@@ -52,7 +51,7 @@ def loginQrcodeCheck(unikey, type=QRCODE_CLIENT_TYPE) -> dict:
 
     Args:
         unikey: qrcode unikey.
-        type: qrcode client type. 3 for windows, 4 for macos.
+        type: qrcode client type. 5 is the windows client default.
 
     Returns:
         dict
@@ -61,15 +60,9 @@ def loginQrcodeCheck(unikey, type=QRCODE_CLIENT_TYPE) -> dict:
         '/api/login/qrcode/client/login',
         {
             'type': type,
-            'noCheckToken': True,
             'key': str(unikey),
         },
     )
-
-
-def loginTypeSwitch() -> dict:
-    """switch login type."""
-    return eapi('/api/logout', {})
 
 
 def getCurrentLoginStatus() -> dict:
@@ -150,48 +143,6 @@ def loginViaCellphone(
     return {'code': 200, 'result': session.login_info}
 
 
-def loginViaEmail(
-    email='', password='', passwordHash='', remeberLogin=True, session=None
-) -> dict:
-    """login via email (pc client api).
-
-    if both password and passwordHash provided, password takes precedence.
-
-    Args:
-        email: email address.
-        remeberLogin: auto-login flag.
-        password: plaintext password.
-        passwordHash: md5 password hash.
-
-    Raises:
-        LoginFailedException: on login failure.
-
-    Returns:
-        dict
-    """
-    path = '/api/login'
-    session = session or getCurrentSession()
-    if password:
-        passwordHash = _hash_hex_digest(password)
-
-    if not passwordHash:
-        raise LoginFailedException('no password provided')
-
-    login_status = eapi(
-        path,
-        {
-            'type': '1',
-            'username': str(email),
-            'remember': str(remeberLogin).lower(),
-            'password': str(passwordHash),
-        },
-        session=session,
-    )
-
-    writeLoginInfo(login_status)
-    return {'code': 200, 'result': session.login_info}
-
-
 def getLoginQRCodeUrl(unikey: str) -> str:
     """build the pc client scan login url from unikey.
 
@@ -262,34 +213,6 @@ def getRegisterVerificationStatusViaCellphone(
     )
 
 
-def setRegisterAccountViaCellphone(
-    cell: str, captcha: str, nickname: str, password: str
-) -> dict:
-    """register via phone number (pc client api).
-
-    requires prior setSendRegisterVerificationCodeViaCellphone.
-    also used for password reset.
-    current session logs into the new account on success.
-
-    Args:
-        cell: phone number.
-        captcha: verification code.
-        nickname: display name.
-        password: password.
-
-    Returns:
-        dict
-    """
-    return eapi(
-        '/api/w/register/cellphone',
-        {
-            'captcha': str(captcha),
-            'nickname': str(nickname),
-            'password': _hash_hex_digest(password),
-            'phone': str(cell),
-        },
-    )
-
 
 def loginViaAnonymousAccount(deviceId=None, session=None) -> dict:
     """anonymous login (pc client api).
@@ -320,22 +243,3 @@ def loginViaAnonymousAccount(deviceId=None, session=None) -> dict:
         }
     )
     return session.login_info
-
-
-def checkIsCellphoneRegistered(cell: str, prefix=86) -> dict:
-    """check if a phone number is registered (pc client api).
-
-    Args:
-        cell: phone number.
-        prefix: country code. defaults to 86.
-
-    Returns:
-        dict
-    """
-    return eapi(
-        '/api/cellphone/existence/check',
-        {
-            'cellphone': cell,
-            'countrycode': prefix,
-        },
-    )

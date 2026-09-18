@@ -1,0 +1,75 @@
+# 真实客户端抓包中命中「在用接口」的逐条报文
+
+来源文件：capture.43480.jsonl, capture.45848.jsonl, capture.46192.jsonl
+
+## /api/cellphone/existence/check
+- host: https://interfacepc.music.163.com
+- url: https://interfacepc.music.163.com/eapi/cellphone/existence/check
+- method: GET
+- params(明文, 脱敏): {"cellphone": "<redacted>", "ctcode": "86", "e_r": true, "header": "<redacted>"}
+- response(明文, 截断): {"exist":1,"nickname":"****","hasPassword":true,"avatarUrl":"http://p1.music.126.net/SUeqMM8HOIpHv9Nhl9qt9w==/109951165647004069.jpg","hasSnsBinded":null,"countryCode":"","cellphone":"182****9658","code":200}
+
+## /api/w/login/cellphone
+- host: https://interfacepc.music.163.com
+- url: https://interfacepc.music.163.com/eapi/w/login/cellphone
+- method: GET
+- params(明文, 脱敏): {"type": "1", "phone": "<redacted>", "captcha": "<redacted>", "remember": "true", "https": "true", "countrycode": "86", "e_r": true, "header": "<redacted>"}
+- response(明文, 截断): {"loginType":1,"hitType":0,"code":200,"account":{"id":13149209959,"userName":"1_18287319658","type":1,"status":0,"whitelistAuthority":0,"createTime":1739700641074,"salt":"[B@410578f9","tokenVersion":0,"ban":0,"baoyueVersion":0,"donateVersion":0,"vipType":11,"viptypeVersion":1785124393838,"anonimousUser":false,"uninitialized":false},"token":"00534C30CEF8BD492AD42EDEE0757188E05174FDD4EB072BDD88D5678
+
+## /api/w/v1/user/detail/13149209959
+- host: https://interfacepc.music.163.com
+- url: https://interfacepc.music.163.com/eapi/w/v1/user/detail/13149209959
+- method: GET
+- params(明文, 脱敏): {"all": "true", "userId": "<redacted>", "e_r": true, "header": "<redacted>"}
+- response(明文, 截断): {"level":4,"listenSongs":183,"userPoint":{"userId":13149209959,"balance":0,"updateTime":1789746163299,"version":10,"status":1,"blockBalance":0},"mobileSign":true,"pcSign":true,"profile":{"privacyItemUnlimit":{"area":true,"college":true,"gender":true,"age":true,"villageAge":true},"avatarDetail":null,"backgroundUrl":"http://p1.music.126.net/_f8R60U9mZ42sSNvdPn2sQ==/109951162868126486.jpg","vipType":
+
+## /api/v3/song/detail
+- host: https://interfacepc.music.163.com
+- url: https://interfacepc.music.163.com/eapi/v3/song/detail
+- method: GET
+- params(明文, 脱敏): {"c": "[{\"id\":\"1842728629\",\"v\":0}]", "trialMode": "-1", "e_r": true, "header": "<redacted>"}
+- response(明文, 截断): {"songs":[{"name":"如果呢","mainTitle":null,"additionalTitle":null,"id":1842728629,"pst":0,"t":0,"ar":[{"id":29051613,"name":"郑润泽","tns":[],"alias":[]}],"alia":[],"pop":100.0,"st":0,"rt":"","fee":8,"v":51,"crbt":null,"cf":"","al":{"id":126985670,"name":"如果呢","picUrl":"https://p3.music.126.net/-xMsNLpquZTmMZlIztTgHg==/109951165953469081.jpg","tns":[],"pic_str":"109951165953469081","pic":10995116595346
+
+## /api/w/v1/user/detail/13149209959
+- host: https://interfacepc.music.163.com
+- url: https://interfacepc.music.163.com/eapi/w/v1/user/detail/13149209959
+- method: GET
+- params(明文, 脱敏): {"all": "true", "userId": "<redacted>", "e_r": true, "header": "<redacted>"}
+- response(明文, 截断): {"level":4,"listenSongs":183,"userPoint":{"userId":13149209959,"balance":0,"updateTime":1789746163299,"version":10,"status":1,"blockBalance":0},"mobileSign":true,"pcSign":true,"profile":{"privacyItemUnlimit":{"area":true,"college":true,"gender":true,"age":true,"villageAge":true},"avatarDetail":null,"authStatus":0,"expertTags":null,"experts":{},"djStatus":0,"nickname":"Adreno9135","avatarUrl":"http
+
+## /api/user/playlist
+- host: https://interfacepc.music.163.com
+- url: https://interfacepc.music.163.com/eapi/user/playlist
+- method: GET
+- params(明文, 脱敏): {"uid": "<redacted>", "offset": "0", "limit": "1000", "e_r": true, "header": "<redacted>"}
+- response(明文, 截断): {"more":false,"playlist":[{"subscribers":[],"subscribed":null,"creator":{"defaultAvatar":false,"province":530000,"authStatus":0,"followed":false,"avatarUrl":"http://p1.music.126.net/_Ml-2_0Hb57m94acyCU9rQ==/109951173088338954.jpg","accountStatus":0,"gender":0,"city":532500,"birthday":0,"userId":13149209959,"userType":0,"nickname":"Adreno9135","signature":"","description":"","detailDescription":"",
+
+## /api/v3/discovery/recommend/songs
+- host: https://interfacepc.music.163.com
+- url: https://interfacepc.music.163.com/eapi/v3/discovery/recommend/songs
+- method: GET
+- params(明文, 脱敏): {"limit": "30", "e_r": true, "header": "<redacted>"}
+- response(明文, 截断): {"code":200,"data":{"fromCache":false,"dailySongs":[{"name":"The Cure","mainTitle":null,"additionalTitle":null,"id":472045959,"pst":0,"t":0,"ar":[{"id":64147,"name":"Lady Gaga","tns":[],"alias":[]}],"alia":[],"pop":100.0,"st":0,"rt":null,"fee":1,"v":176,"crbt":null,"cf":"","al":{"id":35338880,"name":"The Cure","picUrl":"http://p3.music.126.net/bARV4ZiYwNpoaZTyhtEwLg==/18679603046750668.jpg","tns":
+
+## /api/user/playlist/getTop
+- host: https://interfacepc.music.163.com
+- url: https://interfacepc.music.163.com/eapi/user/playlist/getTop
+- method: GET
+- params(明文, 脱敏): {"userId": "<redacted>", "offset": "0", "limit": "1000", "e_r": true, "header": "<redacted>"}
+- response(明文, 截断): {"data":{"topItemList":[]},"code":200}
+
+## /api/v6/playlist/detail
+- host: https://interfacepc.music.163.com
+- url: https://interfacepc.music.163.com/eapi/v6/playlist/detail
+- method: GET
+- params(明文, 脱敏): {"id": "3136952023", "n": "3", "s": "0", "newStyle": "true", "e_r": true, "checkToken": "<redacted>", "header": "<redacted>"}
+- response(明文, 截断): {"code":200,"relatedVideos":null,"playlist":{"id":3136952023,"name":"今天从《Cruel Summer》听起|私人雷达","coverImgId":109951164260234943,"coverImgUrl":"http://p1.music.126.net/6CB6Jsmb7k7qiJqfMY5Row==/109951164260234943.jpg?imageView=1&thumbnail=800y800&enlarge=1%7CimageView=1&watermark&type=1&image=b2JqL3c1bkRrTUtRd3JMRGpEekNtOE9tLzgwMDcyODQ0NzA3LzY1MDIvMjAyNjQ3MTgxODQ5L3gyMjYxNzc4MTQ5MTI5NjU5LnBuZw==&dx=0
+
+## 命中计数
+- /api/w/login/cellphone x1
+- /api/cellphone/existence/check x1
+- /api/v3/song/detail x1
+- /api/v3/discovery/recommend/songs x1
+- /api/user/playlist x2
+- /api/v6/playlist/detail x1
+- /api/w/v1/user/detail/ x2

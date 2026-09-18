@@ -11,13 +11,23 @@ from math import pi
 
 import numpy as np
 from pydub import AudioSegment
-from scipy.interpolate import CubicSpline
 import logging
+
+from core.wsola import WsolaStretcher
 
 _logger = logging.getLogger(__name__)
 
 BPM_MIN = 50.0
 BPM_MAX = 210.0
+
+_ANALYSIS_BLOCK_MS = 10
+_SILENCE_FLOOR_DB = -45.0
+_SILENCE_ABS_LEVEL = 1e-4
+_BODY_LEVEL = 0.35
+_LIVE_HF_RATIO = 0.35
+_SMART_TILT = 1.5
+_ABRUPT_TILT = 2.0
+_MAX_LEAD_COVER_SECONDS = 6.0
 
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 _CROSSFADE_CACHE_DIR = os.path.join(_PROJECT_ROOT, 'data', 'crossfade_cache')
@@ -199,117 +209,229 @@ _KS_PROFILES_MINOR = np.array(
 
 _NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
+_CHROMA_HOP = 2048
+_CHROMA_FFT = _CHROMA_HOP * 2
+_CHROMA_LOW_HZ = 55.0
+_CHROMA_HIGH_HZ = 4000.0
+_CHROMA_BASS_LOW_HZ = 55.0
+_CHROMA_BASS_HIGH_HZ = 250.0
+_CHROMA_GATE = 0.2
+_KEY_WINDOW_SECONDS = 12.0
+_KEY_SEGMENT_SECONDS = 5.0
+_KEY_SEGMENT_STEP_SECONDS = 2.5
+_KEY_FOCUS_FLOOR = 0.5
+_KEY_BASS_WEIGHT = 0.4
+_KEY_MARGIN_SPREAD = 0.15
+
+_KEY_PROFILES = np.vstack(
+    (
+        np.stack([np.roll(_KS_PROFILES_MAJOR, shift) for shift in range(12)]),
+        np.stack([np.roll(_KS_PROFILES_MINOR, shift) for shift in range(12)]),
+    )
+).astype(np.float64)
+_KEY_PROFILES_CENTERED = _KEY_PROFILES - _KEY_PROFILES.mean(axis=1, keepdims=True)
+_KEY_PROFILE_NORMS = np.maximum(np.linalg.norm(_KEY_PROFILES_CENTERED, axis=1), 1e-9)
+
+
+def _block_rms(
+    samples: np.ndarray,
+    sample_rate: int,
+    block_ms: int = _ANALYSIS_BLOCK_MS,
+) -> tuple[np.ndarray, int]:
+    block = max(1, int(round(sample_rate * block_ms / 1000.0)))
+    usable = len(samples) // block
+    if usable <= 0:
+        return np.zeros(0, dtype=np.float32), block
+    frames = samples[-usable * block :].reshape(usable, block, -1)
+    rms = np.sqrt(np.mean(frames * frames, axis=(1, 2)))
+    return rms.astype(np.float32, copy=False), block
+
+
+def _silence_span(
+    samples: np.ndarray,
+    sample_rate: int,
+    floor_db: float = _SILENCE_FLOOR_DB,
+) -> tuple[int, int]:
+    total = len(samples)
+    if total <= 0:
+        return 0, 0
+    rms, block = _block_rms(samples, sample_rate)
+    if len(rms) == 0:
+        return total, 0
+    reference = float(np.percentile(rms, 90))
+    if reference < _SILENCE_ABS_LEVEL:
+        return total, 0
+    floor = max(reference * 10.0 ** (floor_db / 20.0), _SILENCE_ABS_LEVEL)
+    loud = np.flatnonzero(rms >= floor)
+    if len(loud) == 0:
+        return total, 0
+    prefix = total - len(rms) * block
+    lead = prefix + int(loud[0]) * block
+    tail = total - (int(loud[-1]) + 1) * block
+    return lead, max(0, tail)
+
+
+def _high_band_ratio(samples: np.ndarray, sample_rate: int) -> float:
+    window_frames = min(len(samples), sample_rate * 2)
+    mono = samples[-window_frames:] if window_frames > 0 else samples
+    if mono.ndim == 2:
+        mono = mono[:, 0]
+    frame_size = min(len(mono), 4096)
+    if frame_size < 256:
+        return 0.0
+    window = np.hanning(frame_size)
+    starts = np.linspace(0, len(mono) - frame_size, 9).astype(np.intp)
+    split = frame_size // 2 * 6 // 10
+    ratios: list[float] = []
+    for start in starts:
+        spectrum = np.abs(np.fft.rfft(mono[start : start + frame_size] * window))
+        power = spectrum * spectrum
+        low = float(np.sum(power[:split]))
+        high = float(np.sum(power[split:]))
+        ratios.append(high / max(low + high, 1e-12))
+    return float(np.median(ratios))
+
 
 def _classify_ending(samples: np.ndarray, sample_rate: int) -> EndingType:
-    tail_sec = min(10.0, len(samples) / sample_rate)
-    tail_frames = int(tail_sec * sample_rate)
+    tail_seconds = min(12.0, len(samples) / sample_rate)
+    tail_frames = int(tail_seconds * sample_rate)
     if tail_frames < sample_rate:
         return EndingType.FADE_OUT
     tail = samples[-tail_frames:]
-
-    block_size = max(1, sample_rate // 10)
-    usable = len(tail) // block_size * block_size
-    if usable <= 0:
+    lead, trailing = _silence_span(tail, sample_rate)
+    if lead >= len(tail):
         return EndingType.FADE_OUT
-    blocks = tail[:usable].reshape(-1, block_size)
-    block_rms = np.sqrt(np.mean(blocks * blocks, axis=1))
-
-    first_quarter = block_rms[: len(block_rms) // 4]
-    last_quarter = block_rms[-(len(block_rms) // 4) :]
-    if len(first_quarter) == 0 or len(last_quarter) == 0:
+    active = tail[: len(tail) - trailing]
+    rms, block = _block_rms(active, sample_rate)
+    if len(rms) < 4:
+        return EndingType.FADE_OUT
+    body = float(np.percentile(rms, 85))
+    if body < _SILENCE_ABS_LEVEL:
         return EndingType.FADE_OUT
 
-    first_mean = float(np.mean(first_quarter))
-    last_mean = float(np.mean(last_quarter))
-    decay_ratio = last_mean / max(first_mean, 1e-6)
+    level = rms / body
+    loud = np.flatnonzero(level >= _BODY_LEVEL)
+    if len(loud) == 0:
+        return EndingType.FADE_OUT
+    release_seconds = (len(level) - 1 - int(loud[-1])) * block / sample_rate
+    edge_blocks = max(1, int(round(0.3 * sample_rate / block)))
+    edge_level = float(np.median(level[-edge_blocks:]))
 
-    high_band = tail[:, 0] if tail.ndim == 2 else tail
-    fft_size = min(len(high_band), 4096)
-    spectrum = np.abs(np.fft.rfft(high_band[:fft_size]))
-    nyquist_bin = len(spectrum)
-    high_start = nyquist_bin * 6 // 10
-    low_energy = float(np.sum(spectrum[:high_start] ** 2))
-    high_energy = float(np.sum(spectrum[high_start:] ** 2))
-    hf_ratio = high_energy / max(low_energy + high_energy, 1e-6)
-
-    if decay_ratio > 0.7:
-        if hf_ratio > 0.35:
+    if release_seconds <= 0.35 and edge_level >= _BODY_LEVEL:
+        if _high_band_ratio(active, sample_rate) >= _LIVE_HF_RATIO:
             return EndingType.LIVE
-        return EndingType.SUSTAINED
-    if decay_ratio < 0.15:
         return EndingType.ABRUPT
-    return EndingType.FADE_OUT
+    if release_seconds >= 1.2:
+        return EndingType.FADE_OUT
+    if edge_level < 0.2:
+        return EndingType.FADE_OUT
+    return EndingType.SUSTAINED
 
 
-def _detect_key(samples: np.ndarray, sample_rate: int) -> str:
-    analysis_frames = min(len(samples), sample_rate * 30)
-    if analysis_frames < sample_rate * 3:
-        return ''
+def _detect_key(
+    samples: np.ndarray, sample_rate: int, focus: str = 'end'
+) -> tuple[str, float]:
+    window = int(_KEY_WINDOW_SECONDS * sample_rate)
+    if len(samples) > window:
+        samples = samples[-window:] if focus == 'end' else samples[:window]
+    if len(samples) < sample_rate // 2:
+        return '', 0.0
 
-    mono = np.mean(samples[:analysis_frames], axis=1).astype(np.float64)
+    mono = np.mean(samples, axis=1).astype(np.float64)
     mono -= float(np.mean(mono))
-    peak = float(np.max(np.abs(mono)))
-    if peak < 1e-5:
-        return ''
-    mono /= peak
+    rms = float(np.sqrt(np.mean(mono * mono)))
+    if rms < 1e-6:
+        return '', 0.0
+    mono /= rms
 
-    chromagram = _compute_chromagram(mono, sample_rate)
-    if chromagram is None or len(chromagram) == 0:
-        return ''
+    folded = _compute_chromagram(mono, sample_rate)
+    if folded is None:
+        return '', 0.0
+    chroma, bass = folded
 
-    avg_chroma = np.mean(chromagram, axis=0)
-    if float(np.max(avg_chroma)) < 1e-6:
-        return ''
+    frames = len(chroma)
+    segment_frames = max(
+        1, min(frames, int(_KEY_SEGMENT_SECONDS * sample_rate / _CHROMA_HOP))
+    )
+    step = max(1, int(_KEY_SEGMENT_STEP_SECONDS * sample_rate / _CHROMA_HOP))
+    if frames <= segment_frames:
+        starts = np.array([0], dtype=np.intp)
+    else:
+        count = max(2, int(np.ceil((frames - segment_frames) / step)) + 1)
+        starts = np.linspace(0, frames - segment_frames, count).astype(np.intp)
 
-    best_corr = -2.0
-    best_note = 0
-    best_is_minor = False
+    proximity = np.linspace(_KEY_FOCUS_FLOOR, 1.0, len(starts)) ** 2
+    if focus == 'start':
+        proximity = proximity[::-1]
+    proximity = proximity / float(np.sum(proximity))
 
-    for shift in range(12):
-        rolled = np.roll(avg_chroma, -shift)
-        corr_major = float(np.corrcoef(rolled, _KS_PROFILES_MAJOR)[0, 1])
-        corr_minor = float(np.corrcoef(rolled, _KS_PROFILES_MINOR)[0, 1])
-        if corr_major > best_corr:
-            best_corr = corr_major
-            best_note = shift
-            best_is_minor = False
-        if corr_minor > best_corr:
-            best_corr = corr_minor
-            best_note = shift
-            best_is_minor = True
+    feature = np.zeros(12, dtype=np.float64)
+    for start, weight in zip(starts, proximity):
+        span = slice(int(start), int(start) + segment_frames)
+        feature += weight * chroma[span].mean(axis=0)
+        feature += weight * _KEY_BASS_WEIGHT * bass[span].mean(axis=0)
 
-    note = _NOTE_NAMES[best_note]
-    if best_is_minor:
-        return f'{note}m'
-    return note
+    scores = _profileScores(feature)
+    order = np.argsort(scores)[::-1]
+    best = float(scores[order[0]])
+    margin = best - float(scores[order[1]])
+    confidence = float(np.clip(margin / _KEY_MARGIN_SPREAD, 0.0, 1.0)) * float(
+        np.clip(best, 0.0, 1.0)
+    )
+
+    note = _NOTE_NAMES[int(order[0]) % 12]
+    if order[0] >= 12:
+        return f'{note}m', confidence
+    return note, confidence
+
+
+def _profileScores(chroma: np.ndarray) -> np.ndarray:
+    centered = chroma - float(np.mean(chroma))
+    norm = float(np.linalg.norm(centered))
+    if norm < 1e-9:
+        return np.zeros(_KEY_PROFILES.shape[0], dtype=np.float64)
+    return (_KEY_PROFILES_CENTERED @ centered) / (_KEY_PROFILE_NORMS * norm)
 
 
 def _compute_chromagram(
-    mono: np.ndarray, sample_rate: int, hop_length: int = 4096
-) -> np.ndarray | None:
+    mono: np.ndarray, sample_rate: int, hop_length: int = _CHROMA_HOP
+) -> tuple[np.ndarray, np.ndarray] | None:
     n_fft = hop_length * 2
-    n_frames = max(1, (len(mono) - n_fft) // hop_length + 1)
-    if n_frames < 3:
+    frames = (len(mono) - n_fft) // hop_length + 1
+    if frames < 4:
         return None
 
-    chromagram = np.zeros((n_frames, 12), dtype=np.float64)
     window = np.hanning(n_fft)
+    view = np.lib.stride_tricks.sliding_window_view(mono, n_fft)[::hop_length][:frames]
+    frame_rms = np.sqrt(np.mean(view * view, axis=1))
+    spectrum = np.abs(np.fft.rfft(view * window, axis=1))
+    del view
+
     freqs = np.fft.rfftfreq(n_fft, d=1.0 / sample_rate)
-    valid = (freqs >= 27.5) & (freqs <= 4200.0)
-    pitches = 12.0 * np.log2(freqs[valid] / 440.0) + 69.0
-    chroma_bins = np.rint(pitches).astype(np.intp) % 12
+    chroma = _foldPitchClasses(spectrum, freqs, _CHROMA_LOW_HZ, _CHROMA_HIGH_HZ)
+    bass = _foldPitchClasses(spectrum, freqs, _CHROMA_BASS_LOW_HZ, _CHROMA_BASS_HIGH_HZ)
 
-    for i in range(n_frames):
-        start = i * hop_length
-        frame = mono[start : start + n_fft] * window
-        spectrum = np.abs(np.fft.rfft(frame)) ** 2
-        chromagram[i] = np.bincount(
-            chroma_bins,
-            weights=spectrum[valid],
-            minlength=12,
-        )
+    gate = frame_rms >= max(float(np.median(frame_rms)) * _CHROMA_GATE, 1e-7)
+    chroma[~gate] = 0.0
+    bass[~gate] = 0.0
+    return chroma, bass
 
-    return chromagram
+
+def _foldPitchClasses(
+    spectrum: np.ndarray,
+    freqs: np.ndarray,
+    low_hz: float,
+    high_hz: float,
+) -> np.ndarray:
+    valid = np.flatnonzero((freqs >= low_hz) & (freqs <= high_hz))
+    if len(valid) == 0:
+        return np.zeros((len(spectrum), 12), dtype=np.float64)
+    pitches = np.rint(12.0 * np.log2(freqs[valid] / 440.0) + 69.0).astype(np.intp) % 12
+    fold = np.zeros((len(valid), 12), dtype=np.float32)
+    fold[np.arange(len(valid)), pitches] = 1.0
+    folded = (spectrum[:, valid] @ fold).astype(np.float64)
+    norm = np.linalg.norm(folded, axis=1, keepdims=True)
+    return folded / np.maximum(norm, 1e-9)
 
 
 def _key_compatibility(key1: str, key2: str) -> float:
@@ -385,7 +507,7 @@ def _cache_token(
         (
             current_id,
             next_id,
-            'structural-transition-v3',
+            'structural-transition-v5',
             str(sample_rate),
             str(channels),
             f'{crossfade_seconds:.6f}',
@@ -480,19 +602,39 @@ def getCrossfade(
     )
     next_samples = _segment_to_samples(next_head, sample_rate, channels)  # type: ignore
 
-    ending_type = _classify_ending(current_samples, sample_rate)
-    current_key = (
-        _detect_key(current_analysis_samples, sample_rate) if key_match else ''
+    _, tail_silence_frames = _silence_span(current_samples, sample_rate)
+    lead_silence_frames, _ = _silence_span(next_samples, sample_rate)
+    if lead_silence_frames >= len(next_samples):
+        lead_silence_frames = 0
+    tail_silence_frames = min(
+        tail_silence_frames, max(0, len(current_samples) - sample_rate // 2)
     )
-    next_key = _detect_key(next_samples, sample_rate) if key_match else ''
+    content_frames = len(current_samples) - tail_silence_frames
+    content_samples = current_samples[:content_frames]
+    content_duration = current_duration - tail_silence_frames / sample_rate
+    lead_seconds = lead_silence_frames / sample_rate
+
+    ending_type = _classify_ending(current_samples, sample_rate)
+    if key_match:
+        current_key, current_key_confidence = _detect_key(
+            content_samples, sample_rate, 'end'
+        )
+        next_key, next_key_confidence = _detect_key(next_samples, sample_rate, 'start')
+    else:
+        current_key, current_key_confidence = '', 0.0
+        next_key, next_key_confidence = '', 0.0
     key_compat = _key_compatibility(current_key, next_key)
+    if key_compat > 0.0:
+        key_compat *= 0.5 + 0.5 * min(current_key_confidence, next_key_confidence)
     timbre_similarity = _timbre_similarity(current_samples, next_samples, sample_rate)
     _logger.debug(
-        'crossfade ending=%s key=%s->%s compat=%.2f timbre=%.2f',
+        'crossfade ending=%s key=%s->%s compat=%.2f conf=%.2f/%.2f timbre=%.2f',
         ending_type.value,
         current_key,
         next_key,
         key_compat,
+        current_key_confidence,
+        next_key_confidence,
         timbre_similarity,
     )
 
@@ -519,7 +661,7 @@ def getCrossfade(
     )
 
     fade_frames = _fade_frames(
-        current_samples,
+        content_samples,
         next_samples,
         sample_rate,
         crossfade_seconds,
@@ -528,6 +670,7 @@ def getCrossfade(
         ending_type,
         current_bpm,
         next_bpm,
+        lead_seconds,
     )
     transition_type = _select_transition_type(
         ending_type,
@@ -555,30 +698,32 @@ def getCrossfade(
             timbre_similarity=timbre_similarity,
         )
 
-    start_frame = len(current_samples) - fade_frames
-    start_seconds = max(0.0, current_duration - fade_frames / sample_rate)
-    current_tail = _apply_speed_transition(
-        current_samples[start_frame:],
+    window_start = content_frames - fade_frames
+    start_seconds = max(0.0, content_duration - fade_frames / sample_rate)
+    outgoing = _apply_speed_transition(
+        content_samples,
         target_speed,
         fade_frames,
-    )
-    next_head = next_samples[:fade_frames]
-    fade_out, fade_in = _select_fade_curve(curve, fade_frames)
-    fade_out_profile, fade_in_profile = _make_fade_profiles(
-        current_tail,
-        next_head,
+        window_start,
         sample_rate,
-        curve,
     )
-    if curve == 'smart':
-        fade_out, fade_in = _transition_fades(transition_type, fade_frames, beat_phase)
-    mixed = current_tail * fade_out * _clamp(
+    incoming = next_samples[:fade_frames]
+    fade_out, fade_in = _build_fades(
+        curve,
+        ending_type,
+        transition_type,
+        fade_frames,
+        beat_phase,
+    )
+    mixed = outgoing * fade_out * _clamp(
         current_gain, 0.0, 4.0
-    ) + next_head * fade_in * _clamp(next_gain, 0.0, 4.0)
+    ) + incoming * fade_in * _clamp(next_gain, 0.0, 4.0)
     if agc:
         mixed = _apply_agc(mixed, sample_rate)
     mixed = _limit_samples(mixed)
     fade_seconds = fade_frames / sample_rate
+    fade_out_profile = _fade_profile(fade_out)
+    fade_in_profile = _fade_profile(fade_in)
 
     info = CrossFadeInfo(
         start_seconds=start_seconds,
@@ -662,7 +807,7 @@ def _segment_to_samples(
 
 
 def _fade_frames(
-    current_samples: np.ndarray,
+    content_samples: np.ndarray,
     next_samples: np.ndarray,
     sample_rate: int,
     crossfade_seconds: float,
@@ -671,9 +816,10 @@ def _fade_frames(
     ending_type: EndingType | None = None,
     current_bpm: float = 0.0,
     next_bpm: float = 0.0,
+    lead_seconds: float = 0.0,
 ) -> int:
     requested_seconds = _adaptive_crossfade_seconds(
-        current_samples,
+        content_samples,
         next_samples,
         sample_rate,
         crossfade_seconds,
@@ -682,13 +828,14 @@ def _fade_frames(
         ending_type,
         current_bpm,
         next_bpm,
+        lead_seconds,
     )
     requested_frames = int(round(requested_seconds * sample_rate))
-    return min(requested_frames, len(current_samples), len(next_samples))
+    return min(requested_frames, len(content_samples), len(next_samples))
 
 
 def _adaptive_crossfade_seconds(
-    current_samples: np.ndarray,
+    content_samples: np.ndarray,
     next_samples: np.ndarray,
     sample_rate: int,
     crossfade_seconds: float,
@@ -697,29 +844,30 @@ def _adaptive_crossfade_seconds(
     ending_type: EndingType | None = None,
     current_bpm: float = 0.0,
     next_bpm: float = 0.0,
+    lead_seconds: float = 0.0,
 ) -> float:
-    max_seconds = min(
+    available = min(
         max_seconds,
-        len(current_samples) / sample_rate,
+        len(content_samples) / sample_rate,
         len(next_samples) / sample_rate,
     )
-    if max_seconds <= 0:
+    if available <= 0:
         return 0.0
-    tail_seconds = _active_tail_seconds(current_samples, sample_rate, max_seconds)
-    intro_seconds = _active_intro_seconds(next_samples, sample_rate, max_seconds)
-    base_seconds = max(2.0, min(8.0, (tail_seconds + intro_seconds) * 0.5))
-    if ending_type == EndingType.ABRUPT:
-        base_seconds = max(base_seconds, 8.0)
-    elif ending_type == EndingType.FADE_OUT:
-        base_seconds = min(base_seconds, 4.0)
-    elif ending_type == EndingType.LIVE:
-        base_seconds = min(base_seconds, 2.0)
-    elif ending_type == EndingType.SUSTAINED:
-        base_seconds = max(base_seconds, 6.0)
+
+    base_seconds = 2.0 + 5.0 * strength
+    if ending_type is EndingType.ABRUPT:
+        base_seconds = max(base_seconds, 3.0 + 5.0 * strength)
+    elif ending_type is EndingType.SUSTAINED:
+        base_seconds = max(base_seconds, 2.5 + 3.0 * strength)
+    elif ending_type is EndingType.FADE_OUT:
+        base_seconds = min(base_seconds, 2.0 + 3.0 * strength)
+    elif ending_type is EndingType.LIVE:
+        base_seconds = min(base_seconds, 1.5 + 2.0 * strength)
     if crossfade_seconds > 0:
-        base_seconds = max(base_seconds * 0.75, crossfade_seconds * strength)
-    else:
-        base_seconds *= 0.5 + strength * 0.5
+        base_seconds = max(
+            base_seconds,
+            min(crossfade_seconds, 8.0) * (0.5 + 0.5 * strength),
+        )
 
     bpm = current_bpm if current_bpm > 0 else next_bpm
     if bpm > 0:
@@ -727,101 +875,79 @@ def _adaptive_crossfade_seconds(
         phrase_seconds = beat_seconds * 4.0
         phrases = max(1, min(4, round(base_seconds / phrase_seconds)))
         base_seconds = phrase_seconds * phrases
-    return min(max_seconds, base_seconds)
+
+    if lead_seconds > 0:
+        base_seconds = max(
+            base_seconds,
+            min(lead_seconds + 1.5, _MAX_LEAD_COVER_SECONDS),
+        )
+
+    return min(available, max(2.0, base_seconds))
 
 
-def _active_tail_seconds(
-    samples: np.ndarray,
-    sample_rate: int,
-    max_seconds: float,
-) -> float:
-    frames = min(len(samples), int(max_seconds * sample_rate))
-    if frames <= 0:
-        return 0.0
-    tail = samples[-frames:]
-    window = max(1, sample_rate // 10)
-    energy = _window_energy(tail, window)
-    if len(energy) == 0:
-        return 0.0
-    positive = energy[energy > 0]
-    if len(positive) == 0:
-        return min(max_seconds, 3.0)
-    threshold = float(np.percentile(positive, 15))
-    active = np.flatnonzero(energy >= threshold)
-    if len(active) == 0:
-        return min(max_seconds, 3.0)
-    return min(max_seconds, (len(energy) - int(active[0])) * window / sample_rate)
-
-
-def _active_intro_seconds(
-    samples: np.ndarray,
-    sample_rate: int,
-    max_seconds: float,
-) -> float:
-    frames = min(len(samples), int(max_seconds * sample_rate))
-    if frames <= 0:
-        return 0.0
-    intro = samples[:frames]
-    window = max(1, sample_rate // 10)
-    energy = _window_energy(intro, window)
-    if len(energy) == 0:
-        return 0.0
-    positive = energy[energy > 0]
-    if len(positive) == 0:
-        return min(max_seconds, 3.0)
-    threshold = float(np.percentile(positive, 15))
-    active = np.flatnonzero(energy >= threshold)
-    if len(active) == 0:
-        return min(max_seconds, 3.0)
-    return min(max_seconds, (int(active[-1]) + 1) * window / sample_rate)
-
-
-def _window_energy(samples: np.ndarray, window: int) -> np.ndarray:
-    mono = np.mean(samples, axis=1)
-    usable = len(mono) // window * window
-    if usable <= 0:
-        return np.array([], dtype=np.float32)
-    frames = mono[:usable].reshape(-1, window)
-    return np.sqrt(np.mean(frames * frames, axis=1)).astype(np.float32)
-
-
-def _equal_power_fades(frames: int) -> tuple[np.ndarray, np.ndarray]:
+def _power_tilt_fades(frames: int, tilt: float) -> tuple[np.ndarray, np.ndarray]:
     if frames <= 1:
-        fade_out = np.zeros((frames, 1), dtype=np.float32)
-        fade_in = np.ones((frames, 1), dtype=np.float32)
-        return fade_out, fade_in
+        return (
+            np.zeros((max(frames, 0), 1), dtype=np.float32),
+            np.ones((max(frames, 0), 1), dtype=np.float32),
+        )
 
-    progress = np.linspace(0.0, 1.0, frames, dtype=np.float32).reshape(-1, 1)
-    fade_out = np.cos(progress * pi / 2).astype(np.float32, copy=False)
-    fade_in = np.sin(progress * pi / 2).astype(np.float32, copy=False)
-    return fade_out, fade_in
+    progress = np.linspace(0.0, 1.0, frames, dtype=np.float32)
+    exponent = max(tilt, 1.0)
+    fade_out = np.clip(np.cos(progress * pi / 2.0), 0.0, 1.0).astype(np.float32)
+    fade_in = np.clip(np.sin(progress * pi / 2.0), 0.0, 1.0).astype(np.float32)
+    fade_out = fade_out**exponent
+    fade_in = fade_in ** (1.0 / exponent)
+    power = np.maximum(np.sqrt(fade_out * fade_out + fade_in * fade_in), 1e-6)
+    fade_out = (fade_out / power).reshape(-1, 1)
+    fade_in = (fade_in / power).reshape(-1, 1)
+    return fade_out.astype(np.float32), fade_in.astype(np.float32)
 
 
-def _sigmoid_fades(
-    frames: int, steepness: float = 4.0
-) -> tuple[np.ndarray, np.ndarray]:
+def _sigmoid_values(frames: int) -> np.ndarray:
     if frames <= 1:
-        fade_out = np.zeros((frames, 1), dtype=np.float32)
-        fade_in = np.ones((frames, 1), dtype=np.float32)
-        return fade_out, fade_in
+        return np.ones(max(frames, 0), dtype=np.float32)
+    x = np.linspace(-4.0, 4.0, frames, dtype=np.float32)
+    values = 1.0 / (1.0 + np.exp(-x))
+    return ((values - values[0]) / (values[-1] - values[0])).astype(np.float32)
 
-    x = np.linspace(-steepness, steepness, frames, dtype=np.float32)
-    fade_in = 1.0 / (1.0 + np.exp(-x))
-    fade_in = (fade_in - fade_in[0]) / (fade_in[-1] - fade_in[0])
-    fade_in = fade_in.reshape(-1, 1)
-    fade_out = 1.0 - fade_in
-    return fade_out.astype(np.float32, copy=False), fade_in.astype(
-        np.float32, copy=False
-    )
+
+def _fade_in_curve(curve: str, tilt: float, frames: int) -> np.ndarray:
+    if curve == 'linear':
+        return np.linspace(0.0, 1.0, frames, dtype=np.float32).reshape(-1, 1)
+    if curve == 'sigmoid':
+        return _sigmoid_values(frames).reshape(-1, 1)
+    return _power_tilt_fades(frames, tilt)[1]
+
+
+def _fade_out_curve(curve: str, tilt: float, frames: int) -> np.ndarray:
+    if curve in ('linear', 'sigmoid'):
+        return 1.0 - _fade_in_curve(curve, tilt, frames)
+    return _power_tilt_fades(frames, tilt)[0]
 
 
 def _select_fade_curve(curve: str, frames: int) -> tuple[np.ndarray, np.ndarray]:
-    if curve == 'sigmoid':
-        return _sigmoid_fades(frames)
-    if curve == 'linear':
-        progress = np.linspace(0.0, 1.0, frames, dtype=np.float32).reshape(-1, 1)
-        return 1.0 - progress, progress
-    return _equal_power_fades(frames)
+    return _fade_out_curve(curve, 1.0, frames), _fade_in_curve(curve, 1.0, frames)
+
+
+def _smart_tilt(transition_type: str, ending_type: EndingType) -> float:
+    if transition_type == 'harmonic_blend':
+        return 1.05
+    if ending_type is EndingType.ABRUPT:
+        return _ABRUPT_TILT
+    if ending_type is EndingType.LIVE:
+        return 1.3
+    if ending_type is EndingType.FADE_OUT:
+        return 1.15
+    return _SMART_TILT
+
+
+def _fade_profile(values: np.ndarray, points: int = 9) -> tuple[float, ...]:
+    if len(values) == 0:
+        return ()
+    stride = max(1, len(values) // points)
+    sampled = values[::stride, 0][:points]
+    return tuple(float(value) for value in sampled)
 
 
 def _timbre_similarity(
@@ -893,64 +1019,33 @@ def _select_transition_type(
     return 'smart_crossfade'
 
 
-def _transition_fades(
-    transition_type: str, frames: int, beat_phase: float
+_SIMPLE_CURVES = ('equal_power', 'sigmoid', 'linear')
+
+
+def _build_fades(
+    curve: str,
+    ending_type: EndingType,
+    transition_type: str,
+    frames: int,
+    beat_phase: float,
 ) -> tuple[np.ndarray, np.ndarray]:
-    if transition_type == 'beat_cut' and frames > 1:
+    if curve in _SIMPLE_CURVES:
+        return _select_fade_curve(curve, frames)
+    if frames <= 1:
+        return _select_fade_curve(curve, frames)
+    if transition_type == 'beat_cut':
         progress = np.linspace(0.0, 1.0, frames, dtype=np.float32)
         center = 0.35 + beat_phase * 0.3
         fade_in = 1.0 / (1.0 + np.exp(-(progress - center) * 28.0))
         fade_in = fade_in.reshape(-1, 1).astype(np.float32, copy=False)
-        return 1.0 - fade_in, fade_in
-    if transition_type == 'texture_bridge' and frames > 1:
+        return (1.0 - fade_in).astype(np.float32, copy=False), fade_in
+    if transition_type == 'texture_bridge':
         progress = np.linspace(0.0, 1.0, frames, dtype=np.float32).reshape(-1, 1)
-        return np.sqrt(1.0 - progress), progress**0.75
-    return _equal_power_fades(frames)
-
-
-def _make_fade_profiles(
-    current_tail: np.ndarray,
-    next_head: np.ndarray,
-    sample_rate: int,
-    curve: str,
-    points: int = 9,
-) -> tuple[tuple[float, ...], tuple[float, ...]]:
-    """Create slowly varying gains that compensate for real song energy."""
-    if curve != 'smart' or len(current_tail) < 2 or len(next_head) < 2:
-        fade_out, fade_in = _select_fade_curve(
-            curve, min(len(current_tail), len(next_head))
+        return (
+            np.sqrt(1.0 - progress).astype(np.float32, copy=False),
+            (progress**0.75).astype(np.float32, copy=False),
         )
-        return tuple(
-            float(v) for v in fade_out[:: max(1, len(fade_out) // 9), 0]
-        ), tuple(float(v) for v in fade_in[:: max(1, len(fade_in) // 9), 0])
-
-    frames = min(len(current_tail), len(next_head))
-    fade_out, fade_in = _equal_power_fades(frames)
-    block = max(256, int(sample_rate * 0.08))
-    count = max(2, min(points, int(np.ceil(frames / block)) + 1))
-    positions = np.linspace(0, frames - 1, count).astype(np.intp)
-    rms_current = np.sqrt(np.mean(current_tail[:frames] ** 2, axis=1))
-    rms_next = np.sqrt(np.mean(next_head[:frames] ** 2, axis=1))
-    source_x = np.arange(frames, dtype=np.float32)
-    control_x = positions.astype(np.float32)
-    current = np.interp(control_x, source_x, rms_current)
-    following = np.interp(control_x, source_x, rms_next)
-    floor = max(float(np.percentile(np.concatenate((current, following)), 30)), 1e-4)
-    current /= floor
-    following /= floor
-    out = fade_out[positions, 0].astype(np.float64)
-    incoming = fade_in[positions, 0].astype(np.float64)
-    combined = np.sqrt((out * current) ** 2 + (incoming * following) ** 2)
-    target = np.maximum(combined[0], combined[-1])
-    compensation = np.sqrt(target / np.maximum(combined, 1e-4))
-    compensation = np.clip(compensation, 0.72, 1.18)
-    out *= compensation
-    incoming *= compensation
-    out = np.clip(out, 0.0, 1.0)
-    incoming = np.clip(incoming, 0.0, 1.0)
-    out[0], incoming[0] = 1.0, 0.0
-    out[-1], incoming[-1] = 0.0, 1.0
-    return tuple(float(v) for v in out), tuple(float(v) for v in incoming)
+    return _power_tilt_fades(frames, _smart_tilt(transition_type, ending_type))
 
 
 def _apply_agc(
@@ -1143,17 +1238,21 @@ def _apply_speed_transition(
     samples: np.ndarray,
     target_speed: float,
     frames: int,
+    window_start: int,
+    sample_rate: int,
 ) -> np.ndarray:
     if target_speed == 1.0 or frames <= 1:
-        return samples.copy().astype(np.float32, copy=False)
+        return samples[window_start : window_start + frames].copy()
 
-    src = np.arange(frames, dtype=np.float64)
-    mapped = src + (target_speed - 1.0) * src * src / (2.0 * frames)
-    mapped = np.clip(mapped, 0.0, float(frames - 1))
+    offsets = np.arange(frames, dtype=np.float64)
+    positions = (
+        window_start
+        + offsets
+        + (target_speed - 1.0) * offsets * offsets / (2.0 * frames)
+    )
+    positions = np.clip(positions, float(window_start), float(len(samples) - 1))
 
-    result = np.zeros((frames, samples.shape[1]), dtype=np.float32)
-    for ch in range(samples.shape[1]):
-        orig = samples[:frames, ch].astype(np.float64)
-        cs = CubicSpline(src, orig)
-        result[:, ch] = cs(mapped).astype(np.float32)
-    return result
+    stretcher = WsolaStretcher(
+        lambda start, stop: samples[start:stop], lambda: len(samples)
+    )
+    return stretcher.warp(positions, sample_rate, samples.shape[1])

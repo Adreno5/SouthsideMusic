@@ -1,0 +1,10 @@
+capture.jsonl
+capture.*.jsonl
+capture_runner.log
+capture_runner.err
+runner.*.log
+runner.*.err
+login_qr.png
+_probe.txt
+decrypted.txt
+requests.jsonl

@@ -14,6 +14,20 @@ from colorama import Fore, Style, init
 init(autoreset=True)
 
 _ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+_MEDIA_URL = re.compile(
+    r'((?:https?://)?(?:[\w-]+\.)?music\.126\.net)([^\s"\'>]*)',
+    re.IGNORECASE,
+)
+_MEDIA_REQUEST = re.compile(r'(?<=\s)(/[^\s"\']*vuutv=[^\s"\']*)')
+
+
+def _stars(text: str) -> str:
+    return '*' * len(text)
+
+
+def maskMediaUrls(text: str) -> str:
+    text = _MEDIA_URL.sub(lambda m: m.group(1) + _stars(m.group(2)), text)
+    return _MEDIA_REQUEST.sub(lambda m: _stars(m.group(1)), text)
 
 
 def _visible_len(text: str) -> int:
@@ -60,6 +74,7 @@ class LogHandler(logging.Handler):
             return
 
         message = record.getMessage()
+        message = maskMediaUrls(message)
 
         if 'QFluentWidgets' in message or '"QColor::setAlpha": invalid value' in message:
             return
@@ -97,16 +112,6 @@ class LogHandler(logging.Handler):
         prefix_width = _visible_len(plain_prefix)
         content_width = max(term_width - prefix_width - suffix_width - 1, 1)
         continuation_prefix = ' ' * prefix_width
-
-        match = re.search(r'(?:https?://)?(?:[\w-]+\.)?music\.126\.net', message)
-        if match:  # NeteaseCloudMusic private resource domain
-            domain_end = match.end()
-            remaining = message[domain_end:]
-            m = re.search(r'\s', remaining)
-            path_end = domain_end + m.start() if m else len(message)
-            path = message[domain_end:path_end]
-            masked = re.sub(r'[^/?.=&%_\-]', '*', path)
-            message = message[:domain_end] + masked + message[path_end:]
 
         if content_width < 15:
             fallback_width = max(term_width - prefix_width - 1, 20)

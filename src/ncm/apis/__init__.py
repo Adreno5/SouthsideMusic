@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from random import randrange
 
 from typing import Any
 
@@ -21,7 +20,7 @@ def eapi(path, data, session=None, method='POST') -> Any:
         'header': json.dumps(
             {
                 **session.eapi_config,
-                'requestId': str(randrange(20000000, 30000000)),
+                'requestId': '0',
             }
         ),
     }
@@ -46,10 +45,6 @@ def eapi(path, data, session=None, method='POST') -> Any:
 
 
 from . import (  # noqa: E402
-    artist as artist,
-    miniprograms as miniprograms,
-    album as album,
-    cloud as cloud,
     cloudsearch as cloudsearch,
     login as login,
     playmode as playmode,
@@ -58,5 +53,4 @@ from . import (  # noqa: E402
     recommend as recommend,
     track as track,
     user as user,
-    video as video,
 )

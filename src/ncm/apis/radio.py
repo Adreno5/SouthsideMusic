@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from . import weapi
+from . import eapi
 
 
 def getPersonalFM() -> dict:
     """Get private roaming / personal FM songs."""
-    return weapi('/api/v1/radio/get', {})
+    return eapi('/api/v1/radio/get', {'imageFm': '1'})

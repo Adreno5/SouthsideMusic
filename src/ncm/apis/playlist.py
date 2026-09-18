@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 
-from . import eapi, weapi
+from . import eapi
 
 
 def getPlaylistInfo(playlist_id, offset=0, total=True, limit=1000) -> dict:
-    """get playlist detail (web api).
+    """get playlist detail (pc client api).
 
     shows playlist name but not full tracks in one call.
     use getPlaylistAllTracks for complete track list.
@@ -20,14 +20,12 @@ def getPlaylistInfo(playlist_id, offset=0, total=True, limit=1000) -> dict:
     Returns:
         dict
     """
-    return weapi(
-        '/weapi/v6/playlist/detail',
+    return eapi(
+        '/api/v6/playlist/detail',
         {
             'id': str(playlist_id),
-            'offset': str(offset),
-            'total': str(total).lower(),
-            'limit': str(limit),
             'n': str(limit),
+            's': '8',
         },
     )
 
@@ -35,7 +33,7 @@ def getPlaylistInfo(playlist_id, offset=0, total=True, limit=1000) -> dict:
 def getPlaylistInfoEapi(playlist_id, n=100000, s=8) -> dict:
     """get playlist detail (pc client api)."""
     return eapi(
-        '/eapi/v6/playlist/detail',
+        '/api/v6/playlist/detail',
         {
             'id': str(playlist_id),
             'n': str(n),
@@ -64,7 +62,7 @@ def getPlaylistAllTracks(playlist_id, offset=0, limit=1000) -> dict:
 
 
 def getPlaylistComments(playlist_id: str, offset=0, limit=20, beforeTime=0) -> dict:
-    """get playlist comments (web api).
+    """get playlist comments (pc client api).
 
     Args:
         playlist_id: playlist id.
@@ -75,10 +73,10 @@ def getPlaylistComments(playlist_id: str, offset=0, limit=20, beforeTime=0) -> d
     Returns:
         dict
     """
-    return weapi(
-        '/v1/resource/comments/A_PL_0_%s' % playlist_id,
+    return eapi(
+        '/api/v1/resource/comments/A_PL_0_%s' % playlist_id,
         {
-            'rid': str(playlist_id),
+            'rid': 'A_PL_0_%s' % playlist_id,
             'limit': str(limit),
             'offset': str(offset),
             'beforeTime': str(beforeTime * 1000),
@@ -101,8 +99,8 @@ def setManipulatePlaylistTracks(
         dict
     """
     trackIds = trackIds if isinstance(trackIds, list) else [trackIds]
-    return weapi(
-        '/weapi/v1/playlist/manipulate/tracks',
+    return eapi(
+        '/api/playlist/manipulate/tracks',
         {
             'trackIds': json.dumps(trackIds),
             'pid': str(playlistId),
@@ -123,7 +121,7 @@ def setCreatePlaylist(name: str, privacy=False) -> dict:
         dict
     """
     return eapi(
-        '/eapi/playlist/create',
+        '/api/playlist/create',
         {
             'name': str(name),
             'privacy': str(1 if privacy else 0),
@@ -132,7 +130,7 @@ def setCreatePlaylist(name: str, privacy=False) -> dict:
 
 
 def setRemovePlaylist(ids: list, self=True) -> dict:
-    """delete playlist (mobile api).
+    """delete playlist (pc client api).
 
     Args:
         ids: playlist ids.
@@ -143,9 +141,9 @@ def setRemovePlaylist(ids: list, self=True) -> dict:
     """
     ids = ids if isinstance(ids, list) else [ids]
     return eapi(
-        '/eapi/playlist/remove',
+        '/api/playlist/remove',
         {
-            'ids': str(ids),
+            'ids': json.dumps(ids),
             'self': str(self),
         },
     )

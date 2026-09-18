@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from . import weapi
+from . import eapi
 
 
 def getArtistAlbums(artist_id: str, offset=0, total=True, limit=1000) -> dict:
-    """get artist's albums (web api).
+    """get artist's albums (pc client api).
 
     Args:
         artist_id: artist id.
@@ -15,8 +15,8 @@ def getArtistAlbums(artist_id: str, offset=0, total=True, limit=1000) -> dict:
     Returns:
         dict
     """
-    return weapi(
-        '/weapi/artist/albums/%s' % artist_id,
+    return eapi(
+        '/api/artist/albums/%s' % artist_id,
         {
             'offset': str(offset),
             'total': str(total).lower(),
@@ -28,7 +28,7 @@ def getArtistAlbums(artist_id: str, offset=0, total=True, limit=1000) -> dict:
 def getArtistTracks(
     artist_id: str, offset=0, total=True, limit=1000, order='hot'
 ) -> dict:
-    """get artist's tracks sorted by order (web api).
+    """get artist's tracks sorted by order (pc client api).
 
     Args:
         artist_id: artist id.
@@ -40,8 +40,8 @@ def getArtistTracks(
     Returns:
         dict
     """
-    return weapi(
-        '/weapi/v1/artist/songs',
+    return eapi(
+        '/api/v1/artist/songs',
         {
             'id': str(artist_id),
             'offset': str(offset),
@@ -53,7 +53,7 @@ def getArtistTracks(
 
 
 def getArtistDetails(artist_id: str) -> dict:
-    """get artist detail (web api).
+    """get artist detail (pc client api).
 
     Args:
         artist_id: artist id.
@@ -61,4 +61,4 @@ def getArtistDetails(artist_id: str) -> dict:
     Returns:
         dict
     """
-    return weapi('/weapi/artist/head/info/get', {'id': str(artist_id)})
+    return eapi('/api/artist/head/info/get', {'id': str(artist_id)})

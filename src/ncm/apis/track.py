@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import json
-from typing import Literal
 
-from . import eapi, getCurrentSession, weapi
+from . import eapi, getCurrentSession
 from ..utils import _random_string
 
 
 def getTrackDetail(song_ids: list) -> dict:
-    """get track detail (web api).
+    """get track detail (pc client api).
 
     Args:
         song_ids: track ids, up to 1000 per call.
@@ -17,8 +16,8 @@ def getTrackDetail(song_ids: list) -> dict:
         dict
     """
     ids = song_ids if isinstance(song_ids, list) else [song_ids]
-    return weapi(
-        '/weapi/v3/song/detail',
+    return eapi(
+        '/api/v3/song/detail',
         {
             'c': json.dumps([{'id': str(id)} for id in ids]),
         },
@@ -38,7 +37,7 @@ def getTrackAudio(song_ids: list, bitrate=320000, encodeType='aac') -> dict:
     """
     ids = song_ids if isinstance(song_ids, list) else [song_ids]
     return eapi(
-        '/eapi/song/enhance/player/url',
+        '/api/song/enhance/player/url',
         {
             'ids': ids,
             'encodeType': str(encodeType),
@@ -60,7 +59,7 @@ def getTrackAudioV1(song_ids: list, level='standard', encodeType='flac') -> dict
     """
     ids = song_ids if isinstance(song_ids, list) else [song_ids]
     return eapi(
-        '/eapi/song/enhance/player/url/v1',
+        '/api/song/enhance/player/url/v1',
         {
             'ids': ids,
             'encodeType': str(encodeType),
@@ -69,23 +68,20 @@ def getTrackAudioV1(song_ids: list, level='standard', encodeType='flac') -> dict
     )
 
 
-def getTrackDownloadURL(song_ids: list, bitrate=320000, encodeType='aac') -> dict:
+def getTrackDownloadURL(song_id: int | str, bitrate=999000) -> dict:
     """get download url (pc client api).
 
     Args:
-        song_ids: track ids, up to 1000 per call.
-        bitrate: defaults to 320000.
-        encodeType: defaults to 'aac'.
+        song_id: track id.
+        bitrate: defaults to 999000.
 
     Returns:
         dict
     """
-    ids = song_ids if isinstance(song_ids, list) else [song_ids]
     return eapi(
-        '/eapi/song/enhance/download/url',
+        '/api/song/enhance/download/url',
         {
-            'ids': ids,
-            'encodeType': 'aac',
+            'id': str(song_id),
             'br': str(bitrate),
         },
     )
@@ -102,7 +98,7 @@ def getTrackDownloadURLV1(song_id: int, level='standard') -> dict:
         dict
     """
     return eapi(
-        '/eapi/song/enhance/download/url/v1',
+        '/api/song/enhance/download/url/v1',
         {
             'id': '%s_0' % song_id,
             'level': str(level),
@@ -111,7 +107,7 @@ def getTrackDownloadURLV1(song_id: int, level='standard') -> dict:
 
 
 def getTrackLyrics(song_id: int, lv=-1, tv=-1, rv=-1) -> dict:
-    """get track lyrics (web api). pass -1 for latest version.
+    """get track lyrics (pc client api). pass -1 for latest version.
 
     Args:
         song_id: track id.
@@ -122,8 +118,8 @@ def getTrackLyrics(song_id: int, lv=-1, tv=-1, rv=-1) -> dict:
     Returns:
         dict
     """
-    return weapi(
-        '/weapi/song/lyric',
+    return eapi(
+        '/api/song/lyric',
         {
             'id': str(song_id),
             'lv': str(lv),
@@ -134,7 +130,7 @@ def getTrackLyrics(song_id: int, lv=-1, tv=-1, rv=-1) -> dict:
 
 
 def getTrackLyricsNew(song_id: str) -> dict:
-    """get track lyrics v2 (pc client api).
+    """get track lyrics v2 with word-by-word lines (pc client api).
 
     Args:
         song_id: track id.
@@ -143,7 +139,7 @@ def getTrackLyricsNew(song_id: str) -> dict:
         dict
     """
     return eapi(
-        '/eapi/song/lyric/v1',
+        '/api/song/lyric/v1',
         {
             'id': str(song_id),
             'cp': False,
@@ -154,30 +150,6 @@ def getTrackLyricsNew(song_id: str) -> dict:
             'yv': 0,
             'ytv': 0,
             'yrv': 0,
-        },
-    )
-
-
-def getTrackComments(song_id, offset=0, limit=20, beforeTime=0) -> dict:
-    """get track comments (web api).
-
-    Args:
-        song_id: track id.
-        offset: time offset. defaults to 0.
-        limit: page size. defaults to 20.
-        beforeTime: comment timestamp in seconds. defaults to 0.
-
-    Returns:
-        dict
-    """
-    return weapi(
-        '/weapi/v1/resource/comments/R_SO_4_%s' % song_id,
-        {
-            'rid': str(song_id),
-            'offset': str(offset),
-            'total': 'true',
-            'limit': str(limit),
-            'beforeTime': str(beforeTime * 1000),
         },
     )
 
@@ -194,7 +166,7 @@ def setLikeTrack(trackId, like=True, userid=0, e_r=True) -> dict:
         dict
     """
     return eapi(
-        '/eapi/song/like',
+        '/api/song/like',
         {
             'trackId': str(trackId),
             'userid': str(userid),
@@ -210,7 +182,7 @@ DEFAULT_AUDIO_MATCHER_SESSION_ID = _random_string(16)
 def getMatchTrackByFP(
     audioFP: str, duration: float, sessionId=DEFAULT_AUDIO_MATCHER_SESSION_ID
 ) -> dict:
-    """audio fingerprint matching (mobile chrome plugin api).
+    """audio fingerprint matching (pc client api).
 
     Args:
         audioFP: base64-encoded afp. see https://github.com/mos9527/ncm-afp
@@ -220,8 +192,8 @@ def getMatchTrackByFP(
     Returns:
         dict
     """
-    return weapi(
-        '/weapi/music/audio/match',
+    return eapi(
+        '/api/music/audio/match',
         {
             'algorithmCode': 'shazam_v2',
             'sessionId': sessionId,
@@ -234,40 +206,31 @@ def getMatchTrackByFP(
     )
 
 
-def getComments(
-    id: str,
-    page: int,
-    limit: int,
-    sort: Literal['recommend', 'time', 'hot'],
-    cursor: str,
-):
-    """get comments of a song (web api).
+def getComments(id: str, offset: int = 0, limit: int = 20) -> dict:
+    """get comments of a song (pc client api).
 
     Args:
         id: song id
-        page: page number
+        offset: comment offset
         limit: page size
-        sort: sorting of results
 
     Returns:
         dict
     """
-    return weapi(
-        '/weapi/comment/resource/comments/get',
+    return eapi(
+        '/api/v1/resource/comments/R_SO_4_%s' % id,
         {
-            'cursor': cursor,
-            'offset': 0,
-            'orderType': {'recommend': 1, 'hot': 2, 'time': 3}.get(sort, 3),
-            'pageNo': page,
-            'pageSize': limit,
-            'rid': f'R_SO_4_{id}',
-            'threadId': f'R_SO_4_{id}',
+            'rid': str(id),
+            'offset': str(offset),
+            'total': 'true',
+            'limit': str(limit),
+            'beforeTime': '0',
         },
     )
 
 
-def addComment(id: str, content: str):
-    """add a comment for a song (web api).
+def addComment(id: str, content: str) -> dict:
+    """add a comment for a song (pc client api).
 
     Args:
         id: song id
@@ -276,8 +239,8 @@ def addComment(id: str, content: str):
     Returns:
         dict
     """
-    return weapi(
-        '/weapi/resource/comments/add',
+    return eapi(
+        '/api/resource/comments/add',
         {
             'checkToken': getCurrentSession().cookies.get(
                 'WM_NIKE', 'not logged in!!!!!'

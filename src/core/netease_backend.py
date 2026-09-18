@@ -5,11 +5,10 @@ import json
 import logging
 import time
 import urllib.parse
-import uuid
 from typing import Any, Literal
 
-import pyncm
-from pyncm import apis
+import ncm
+from ncm import apis
 
 from core.models import (
     AlbumInfo,
@@ -55,31 +54,31 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
         apis.login.writeLoginInfo(login_status)
 
     def currentSessionIsAnonymous(self) -> bool:
-        return bool(pyncm.getCurrentSession().is_anonymous)
+        return bool(ncm.getCurrentSession().is_anonymous)
 
     def loadSession(self, session: str) -> None:
-        pyncm.setCurrentSession(pyncm.loadSessionFromString(session))
+        ncm.setCurrentSession(ncm.loadSessionFromString(session))
 
     def dumpSession(self) -> str:
-        return pyncm.dumpSessionAsString(pyncm.getCurrentSession())
+        return ncm.dumpSessionAsString(ncm.getCurrentSession())
 
     def loginViaAnonymousAccount(self) -> BackendSessionSnapshot:
         apis.login.loginViaAnonymousAccount()
         return self._sessionSnapshot()
 
     def setRandomDeviceId(self) -> None:
-        session = pyncm.getCurrentSession()
-        session.deviceId = uuid.uuid4().hex
-        pyncm.setCurrentSession(session)
+        session = ncm.getCurrentSession()
+        session.deviceId = ncm.generateDeviceId()
+        ncm.setCurrentSession(session)
 
     def getSessionBindings(self) -> list[dict[str, Any]]:
-        bindings = pyncm.getCurrentSession().bindings
+        bindings = ncm.getCurrentSession().bindings
         return [binding for binding in bindings if isinstance(binding, dict)]
 
     def refreshSessionIfNeeded(
         self, expiry_window_seconds: int = 300
     ) -> BackendSessionSnapshot | None:
-        session = pyncm.getCurrentSession()
+        session = ncm.getCurrentSession()
         bindings = session.bindings
         if not bindings:
             return None
@@ -97,7 +96,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
         return self._sessionSnapshot()
 
     def getAccountInfo(self) -> BackendAccountInfo:
-        session = pyncm.getCurrentSession()
+        session = ncm.getCurrentSession()
         login_status = self.getCurrentLoginStatus()
         user_id: int | str | None = None
         avatar_url = ''
@@ -146,7 +145,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
 
     def logout(self) -> BackendSessionSnapshot:
         apis.login.loginLogout()
-        pyncm.setCurrentSession(pyncm.createNewSession())
+        ncm.setCurrentSession(ncm.createNewSession())
         return BackendSessionSnapshot(session=self.dumpSession(), login_status=None)
 
     def createLoginQRCode(self) -> LoginQRCodeInfo:
@@ -426,13 +425,13 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
         )
 
     def userPrivilegeLevel(self) -> int:
-        return pyncm.getCurrentSession().vipType
+        return ncm.getCurrentSession().vipType
 
     def loggedIn(self) -> bool:
-        return bool(pyncm.getCurrentSession().logged_in)
+        return bool(ncm.getCurrentSession().logged_in)
 
     def getUserPlaylists(self) -> list[CloudFolderInfo]:
-        with pyncm.getCurrentSession() as session:
+        with ncm.getCurrentSession() as session:
             response = apis.user.getUserPlaylists(session.uid)
             assert isinstance(response, dict), 'Invaild Response'
             assert not session.is_anonymous, 'Anonymous Account'
@@ -461,13 +460,13 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
         return playlists[0] if playlists else None
 
     def createPlaylist(self, name: str) -> str:
-        with pyncm.getCurrentSession():
+        with ncm.getCurrentSession():
             response = apis.playlist.setCreatePlaylist(name, False)
             assert isinstance(response, dict), 'Invalid Response'
             return str(response['id'])  # type: ignore
 
     def removePlaylist(self, id: str) -> None:
-        with pyncm.getCurrentSession():
+        with ncm.getCurrentSession():
             apis.playlist.setRemovePlaylist(id)  # type: ignore
 
     def editPlaylist(
@@ -476,7 +475,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
         song_ids: list[str],
         folder_id: str,
     ) -> bool:
-        with pyncm.getCurrentSession():
+        with ncm.getCurrentSession():
             result = apis.playlist.setManipulatePlaylistTracks(
                 song_ids, folder_id, op=option
             )
@@ -487,7 +486,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             return True
 
     def getPlaylistTracks(self, playlist_id: str) -> list[SongStorable]:
-        with pyncm.getCurrentSession():
+        with ncm.getCurrentSession():
             response = apis.playlist.getPlaylistAllTracks(int(playlist_id))
             assert isinstance(response, dict), 'Invalid Response'
             assert response.get('code') == 200, f'API Error: {response}'
@@ -500,10 +499,10 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             return result
 
     def getUserVipType(self) -> int | str:
-        return pyncm.getCurrentSession().vipType
+        return ncm.getCurrentSession().vipType
 
     def getDailyRecommendSongs(self) -> list[SongStorable]:
-        with pyncm.getCurrentSession():
+        with ncm.getCurrentSession():
             response = apis.user.getDailyRecommend()
             assert isinstance(response, dict), 'Invalid Response'
             assert response.get('code') == 200, f'API Error: {response}'
@@ -515,7 +514,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             return result
 
     def getDailyRecommendFolders(self) -> list[CloudFolderInfo]:
-        with pyncm.getCurrentSession():
+        with ncm.getCurrentSession():
             response = apis.user.getDailyRecommendResource()
             assert isinstance(response, dict), 'Invalid Response'
             assert response.get('code') == 200, f'API Error: {response}'
@@ -537,7 +536,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
         start_music_id: int | str | None = None,
         count: int = 20,
     ) -> list[SongStorable]:
-        with pyncm.getCurrentSession():
+        with ncm.getCurrentSession():
             response = apis.playmode.getIntelligenceList(
                 seed_song_id,
                 playlist_id,
@@ -560,7 +559,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             return result
 
     def getPersonalFMSongs(self) -> list[SongStorable]:
-        with pyncm.getCurrentSession():
+        with ncm.getCurrentSession():
             response = apis.radio.getPersonalFM()
             assert isinstance(response, dict), 'Invalid Response'
             assert response.get('code') == 200, f'API Error: {response}'
@@ -574,7 +573,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             return result
 
     def getPrivateRadarSongs(self) -> list[SongStorable]:
-        with pyncm.getCurrentSession():
+        with ncm.getCurrentSession():
             item = self._findPcRecommendItem(
                 module_types={'radar'},
                 cover_texts={'私人雷达'},
@@ -595,7 +594,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             return self._songsFromApiSongs(playlist.get('tracks') or [])
 
     def getSimilarFMSongs(self) -> list[SongStorable]:
-        with pyncm.getCurrentSession():
+        with ncm.getCurrentSession():
             item = self._findPcRecommendItem(
                 module_types={'song_fm'},
                 cover_texts={'相似歌曲'},
@@ -663,38 +662,46 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
         sort: Literal['recommend'] | Literal['time'] | Literal['hot'] = 'time',
         cursor: str = '-1',
     ):
-        with pyncm.getCurrentSession():
-            response = apis.track.getComments(song_id, page, limit, sort, cursor)
+        offset = int(cursor) if cursor.isdigit() else (page - 1) * limit
+        with ncm.getCurrentSession():
+            response = apis.track.getComments(song_id, offset, limit)
             assert isinstance(response, dict), 'Invaild response'
-            data: dict = response.get('data', {})
+            comments = response.get('comments') or []
         return CommentInfo(
             [
                 Comment(
                     str(obj['commentId']),
                     UserInfo(
-                        obj['user']['encryptUserId'],
+                        str(obj['user']['userId']),
                         obj['user']['avatarUrl'],
                         obj['user']['nickname'],
                     ),
                     obj['content'],
                     obj['likedCount'],
                     datetime.fromtimestamp(obj['time'] / 1000),
-                    [BeReplyComment(
-                        str(rep['beRepliedCommentId']),
-                        UserInfo(
-                            rep['user']['encryptUserId'],
-                            rep['user']['avatarUrl'],
-                            rep['user']['nickname'],
-                        ),
-                        rep['content'],
-                    ) for rep in obj['beReplied']] if obj['beReplied'] else None,
+                    [
+                        BeReplyComment(
+                            str(rep['beRepliedCommentId']),
+                            UserInfo(
+                                str(rep['user']['userId']),
+                                rep['user']['avatarUrl'],
+                                rep['user']['nickname'],
+                            ),
+                            rep['content'],
+                        )
+                        for rep in obj['beReplied']
+                    ]
+                    if obj['beReplied']
+                    else None,
                 )
-                for obj in data['comments']
+                for obj in comments
             ],
-            data['totalCount'],
-            str(data.get('cursor', cursor)),
+            int(response.get('total') or 0),
+            str(offset + len(comments))
+            if response.get('more') and comments
+            else cursor,
         )
-    
+
     def addComment(self, song_id: str, content: str) -> None:
         apis.track.addComment(song_id, content)
 

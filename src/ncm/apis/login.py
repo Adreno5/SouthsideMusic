@@ -1,41 +1,45 @@
 from __future__ import annotations
 
 from base64 import b64encode
+from time import time
+from urllib.parse import urlencode
+from uuid import uuid4
 
-from . import eapi, weapi
+from . import eapi
 from .exception import LoginFailedException
-from .. import writeLoginInfo, getCurrentSession
-from ..utils import _generate_s_device_id, _generate_chain_id
+from .. import CLIENT_OS, getCurrentSession, writeLoginInfo
 from ..utils.crypto import _hash_hex_digest
 from ..utils.security import cloudmusic_dll_encode_id
+
+QRCODE_LOGIN_URL = 'https://st.music.163.com/st/platform/scanlogin'
+QRCODE_CLIENT_TYPE = 3
 
 
 def loginLogout() -> dict:
     """log out current session."""
-    return weapi('/weapi/logout', {})
+    return eapi('/api/logout', {})
 
 
 def loginRefreshToken() -> dict:
     """refresh login token."""
-    return eapi('/eapi/login/token/refresh', {})
+    return eapi('/api/login/token/refresh', {})
 
 
-def loginQrcodeUnikey(dtype=1) -> dict:
-    """get qrcode login unikey.
+def loginQrcodeUnikey(dtype=QRCODE_CLIENT_TYPE) -> dict:
+    """get qrcode login unikey (pc client api).
 
-    - uuid applies to: music.163.com/login?codekey={uuid}
+    - scan url is built by getLoginQRCodeUrl.
     - requires netease cloud music mobile app to scan.
     - login status must be polled via loginQrcodeCheck.
 
     Args:
-        dtype: unknown. defaults to 1.
-        noCheckToken: skip token check. defaults to true.
+        dtype: qrcode client type. 3 for windows, 4 for macos.
 
     Returns:
         dict
     """
     return eapi(
-        '/eapi/login/qrcode/unikey',
+        '/api/login/qrcode/unikey',
         {
             'type': str(dtype),
             'noCheckToken': True,
@@ -43,19 +47,18 @@ def loginQrcodeUnikey(dtype=1) -> dict:
     )
 
 
-def loginQrcodeCheck(unikey, type=1) -> dict:
-    """check qrcode login status.
+def loginQrcodeCheck(unikey, type=QRCODE_CLIENT_TYPE) -> dict:
+    """check qrcode login status (pc client api).
 
     Args:
         unikey: qrcode unikey.
-        type: unknown. defaults to 1.
-        noCheckToken: skip token check. defaults to true.
+        type: qrcode client type. 3 for windows, 4 for macos.
 
     Returns:
         dict
     """
     return eapi(
-        '/eapi/login/qrcode/client/login',
+        '/api/login/qrcode/client/login',
         {
             'type': type,
             'noCheckToken': True,
@@ -66,12 +69,12 @@ def loginQrcodeCheck(unikey, type=1) -> dict:
 
 def loginTypeSwitch() -> dict:
     """switch login type."""
-    return weapi('/weapi/logout', {})
+    return eapi('/api/logout', {})
 
 
 def getCurrentLoginStatus() -> dict:
-    """get current login status (web api)."""
-    return weapi('/weapi/w/nuser/account/get', {})
+    """get current login status (pc client api)."""
+    return eapi('/api/w/nuser/account/get', {})
 
 
 def loginViaCookie(MUSIC_U='', **kwargs) -> dict:
@@ -118,7 +121,7 @@ def loginViaCellphone(
     Returns:
         dict
     """
-    path = '/eapi/w/login/cellphone'
+    path = '/api/w/login/cellphone'
     session = session or getCurrentSession()
     if password:
         passwordHash = _hash_hex_digest(password)
@@ -150,7 +153,7 @@ def loginViaCellphone(
 def loginViaEmail(
     email='', password='', passwordHash='', remeberLogin=True, session=None
 ) -> dict:
-    """login via email (web api).
+    """login via email (pc client api).
 
     if both password and passwordHash provided, password takes precedence.
 
@@ -166,7 +169,7 @@ def loginViaEmail(
     Returns:
         dict
     """
-    path = '/eapi/login'
+    path = '/api/login'
     session = session or getCurrentSession()
     if password:
         passwordHash = _hash_hex_digest(password)
@@ -190,7 +193,7 @@ def loginViaEmail(
 
 
 def getLoginQRCodeUrl(unikey: str) -> str:
-    """build qrcode login url from unikey.
+    """build the pc client scan login url from unikey.
 
     Args:
         unikey: from loginQrcodeUnikey.
@@ -198,15 +201,27 @@ def getLoginQRCodeUrl(unikey: str) -> str:
     Returns:
         str: qrcode url
     """
-    s_device_id = getCurrentSession().cookies.get('sDeviceId')
-    if not s_device_id:
-        s_device_id = _generate_s_device_id()
-    chain_id = _generate_chain_id(s_device_id)
-    return f'http://music.163.com/login?codekey={unikey}&chainId={chain_id}'
+    chain_id = 'v1_%s_%s_login_%d' % (
+        getCurrentSession().deviceId,
+        CLIENT_OS,
+        int(time() * 1000),
+    )
+    return '%s?%s' % (
+        QRCODE_LOGIN_URL,
+        urlencode(
+            {
+                'codekey': unikey,
+                'chainId': chain_id,
+                'hdw_device': CLIENT_OS,
+                'hdw_appid': CLIENT_OS,
+                'hitExp': '1',
+            }
+        ),
+    )
 
 
 def setSendRegisterVerificationCodeViaCellphone(cell: str, ctcode=86) -> dict:
-    """send sms verification code (web api). max 5 times per 24h.
+    """send sms verification code (pc client api). max 5 times per 24h.
 
     Args:
         cell: phone number.
@@ -215,8 +230,8 @@ def setSendRegisterVerificationCodeViaCellphone(cell: str, ctcode=86) -> dict:
     Returns:
         dict
     """
-    return weapi(
-        '/weapi/sms/captcha/sent',
+    return eapi(
+        '/api/sms/captcha/sent',
         {
             'cellphone': str(cell),
             'ctcode': ctcode,
@@ -227,7 +242,7 @@ def setSendRegisterVerificationCodeViaCellphone(cell: str, ctcode=86) -> dict:
 def getRegisterVerificationStatusViaCellphone(
     cell: str, captcha: str, ctcode=86
 ) -> dict:
-    """check sms code correctness (web api).
+    """check sms code correctness (pc client api).
 
     Args:
         cell: phone number.
@@ -237,8 +252,8 @@ def getRegisterVerificationStatusViaCellphone(
     Returns:
         dict
     """
-    return weapi(
-        '/weapi/sms/captcha/verify',
+    return eapi(
+        '/api/sms/captcha/verify',
         {
             'cellphone': str(cell),
             'captcha': str(captcha),
@@ -250,7 +265,7 @@ def getRegisterVerificationStatusViaCellphone(
 def setRegisterAccountViaCellphone(
     cell: str, captcha: str, nickname: str, password: str
 ) -> dict:
-    """register via phone number (web api).
+    """register via phone number (pc client api).
 
     requires prior setSendRegisterVerificationCodeViaCellphone.
     also used for password reset.
@@ -265,8 +280,8 @@ def setRegisterAccountViaCellphone(
     Returns:
         dict
     """
-    return weapi(
-        '/weapi/w/register/cellphone',
+    return eapi(
+        '/api/w/register/cellphone',
         {
             'captcha': str(captcha),
             'nickname': str(nickname),
@@ -291,8 +306,10 @@ def loginViaAnonymousAccount(deviceId=None, session=None) -> dict:
     username = b64encode(
         ('%s %s' % (deviceId, cloudmusic_dll_encode_id(deviceId))).encode()
     ).decode()
-    login_status = weapi(
-        '/api/register/anonimous', {'username': username}, session=session
+    login_status = eapi(
+        '/api/register/anonimous',
+        {'username': username, 'nonce': str(uuid4())},
+        session=session,
     )
     assert login_status['code'] == 200, 'anonymous login failed'
     writeLoginInfo(
@@ -306,7 +323,7 @@ def loginViaAnonymousAccount(deviceId=None, session=None) -> dict:
 
 
 def checkIsCellphoneRegistered(cell: str, prefix=86) -> dict:
-    """check if a phone number is registered (mobile api).
+    """check if a phone number is registered (pc client api).
 
     Args:
         cell: phone number.
@@ -316,7 +333,7 @@ def checkIsCellphoneRegistered(cell: str, prefix=86) -> dict:
         dict
     """
     return eapi(
-        '/eapi/cellphone/existence/check',
+        '/api/cellphone/existence/check',
         {
             'cellphone': cell,
             'countrycode': prefix,

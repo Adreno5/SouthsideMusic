@@ -1,19 +1,19 @@
 import json
 
-import pyncm
-import pyncm.apis
+import ncm
+import ncm.apis
 
 with open('config.json', 'r', encoding='utf-8') as f:
     data = json.load(f)
 
-pyncm.writeLoginInfo(data['login_status'])
-pyncm.setCurrentSession(pyncm.loadSessionFromString(data['session']))
+ncm.writeLoginInfo(data['login_status'])
+ncm.setCurrentSession(ncm.loadSessionFromString(data['session']))
 
-with pyncm.getCurrentSession():
+with ncm.getCurrentSession():
     with open('res.json', 'w') as f:
         f.write(
             json.dumps(
-                pyncm.apis.track.getComments('1388960663', 1, 20, 'time', '-1'),
+                ncm.apis.track.getComments('1388960663', 0, 20),
                 indent=4,
             )
         )

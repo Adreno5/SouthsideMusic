@@ -67,7 +67,7 @@ src/
   core/            # audio, config, models, lyrics, theme, icons, backends
   services/        # event bus and update checks
   views/           # PySide6 UI pages, cards, windows, widgets
-  pyncm/           # forked NetEase CloudMusic API client
+  ncm/             # forked NetEase CloudMusic API client
 docs/              # English/Chinese user documentation
 data/              # runtime caches for music, images, lyrics, temp data
 icons/, images/    # packaged UI resources
@@ -105,7 +105,7 @@ from imports import QTimer, QVBoxLayout, QWidget, Qt, Signal, event_bus
 ## Types
 
 - Annotate all parameters and return types in new or changed functions.
-- Use PEP 604 unions (`str | None`) except when preserving existing `pyncm/` style.
+- Use PEP 604 unions (`str | None`) except when preserving existing `ncm/` style.
 - Use `@dataclass` for config/data containers.
 - Use `ABC` / `@abstractmethod` for explicit backend interfaces only.
 - Use `cast()` for fields populated after construction when needed.

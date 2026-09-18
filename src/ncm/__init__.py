@@ -9,31 +9,32 @@ from typing import Any
 
 import requests
 
+from .utils import _random_string
 from .utils.crypto import _eapi_decrypt, _eapi_encrypt, _hex_compose
 
-"""pyncm - netease cloud music python api / download tool.
+"""ncm - netease cloud music python api / download tool.
 
 usage::
 
-    >>> from pyncm import apis
+    >>> from ncm import apis
     >>> apis.loginViaCellphone(phone='...', password='...', ctcode=86)
     >>> apis.track.getTrackAudio(29732235)
     {'data': [{'id': 29732235, 'url': 'http://...', ...}]}
     >>> apis.track.getTrackDetail(29732235)
     {'songs': [{'name': 'Supernova', 'id': 29732235, ...}]}
-    >>> apis.track.getTrackComments(29732235)
+    >>> apis.track.getComments(29732235)
     {'isMusician': False, 'userId': -1, ...}
 
-all api requests go through a singleton pyncm.Session::
+all api requests go through a singleton ncm.Session::
 
-    >>> session = pyncm.getCurrentSession()
-    >>> pyncm.setCurrentSession(session)
-    >>> pyncm.setNewSession()
+    >>> session = ncm.getCurrentSession()
+    >>> ncm.setCurrentSession(session)
+    >>> ncm.setNewSession()
 
 session serialization::
 
-    >>> save = pyncm.dumpSessionAsString()
-    >>> pyncm.setNewSession(pyncm.loadSessionFromString(save))
+    >>> save = ncm.dumpSessionAsString()
+    >>> ncm.setNewSession(ncm.loadSessionFromString(save))
 
 notes:
     - (PR#11) overseas users may get 460 'cheating' errors.
@@ -46,7 +47,7 @@ __VERSION_PATCH__ = 1
 
 __version__ = '%s.%s.%s' % (__VERSION_MAJOR__, __VERSION_MINOR__, __VERSION_PATCH__)
 
-logger = logging.getLogger('pyncm.api')
+logger = logging.getLogger('ncm.api')
 if 'PYNCM_DEBUG' in os.environ:
     debug_level = os.environ['PYNCM_DEBUG'].upper()
     if debug_level not in {'CRITICAL', 'DEBUG', 'ERROR', 'FATAL', 'INFO', 'WARNING'}:
@@ -55,7 +56,47 @@ if 'PYNCM_DEBUG' in os.environ:
         level=debug_level, format='[%(levelname).4s] %(name)s %(message)s'
     )
 
-DEVICE_ID_DEFAULT = 'pyncm!'
+API_HOST = 'interface.music.163.com'
+CLIENT_OS = 'pc'
+CLIENT_APPVER = '3.1.40.205461'
+CLIENT_CHANNEL = 'netease'
+CLIENT_UA = (
+    'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) '
+    'Safari/537.36 Chrome/91.0.4472.164 NeteaseMusicDesktop/3.1.40.205461'
+)
+DEVICE_ID_CHARS = '0123456789ABCDEF'
+
+
+def _osVersion() -> str:
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r'SOFTWARE\Microsoft\Windows NT\CurrentVersion',
+        ) as key:
+            product = str(winreg.QueryValueEx(key, 'ProductName')[0])
+            build = str(winreg.QueryValueEx(key, 'CurrentBuildNumber')[0])
+        return 'Microsoft %s (build %s),64bit' % (product, build)
+    except OSError:
+        return ''
+
+
+def _eapiConfig(deviceId: str) -> dict:
+    return {
+        'os': CLIENT_OS,
+        'appver': CLIENT_APPVER,
+        'osver': _osVersion(),
+        'channel': CLIENT_CHANNEL,
+        'deviceId': str(deviceId),
+    }
+
+
+def generateDeviceId() -> str:
+    return _random_string(52, DEVICE_ID_CHARS)
+
+
+DEVICE_ID_DEFAULT = generateDeviceId()
 SESSION_STACK: dict = {}
 
 
@@ -79,9 +120,9 @@ class Session(requests.Session):
 
     HOST = 'music.163.com'
     UA_DEFAULT = (
-        'Mozilla/5.0 (linux@github.com/mos9527/pyncm) Chrome/PyNCM.%s' % __version__
+        'Mozilla/5.0 (linux@github.com/mos9527/ncm) Chrome/PyNCM.%s' % __version__
     )
-    UA_EAPI = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/91.0.4472.164 NeteaseMusicDesktop/2.10.2.200154'
+    UA_EAPI = CLIENT_UA
     UA_LINUX_API = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36'
     force_http = False
 
@@ -106,13 +147,7 @@ class Session(requests.Session):
             'tick': time(),
             'content': None,
         }
-        self.eapi_config = {
-            'os': 'iPhone OS',
-            'appver': '10.0.0',
-            'osver': '16.2',
-            'channel': 'distribution',
-            'deviceId': DEVICE_ID_DEFAULT,
-        }
+        self.eapi_config = _eapiConfig(DEVICE_ID_DEFAULT)
         self.csrf_token = ''
 
     @property
@@ -207,11 +242,13 @@ class Session(requests.Session):
     def load(self, dumped):
         for k, v in dumped.items():
             self._session_info[k][1](self, v)
+        stored = self.eapi_config if isinstance(self.eapi_config, dict) else {}
+        self.eapi_config = _eapiConfig(stored.get('deviceId') or DEVICE_ID_DEFAULT)
         return True
 
 
 class SessionManager:
-    """pyncm session singleton storage."""
+    """ncm session singleton storage."""
 
     def __init__(self) -> None:
         self.session = Session()

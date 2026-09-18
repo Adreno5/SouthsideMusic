@@ -17,7 +17,7 @@ def getSportsFMRecommendations(limit=3, bpm: int = 50, e_r=True) -> dict:
         dict
     """
     return eapi(
-        '/eapi/radio/sport/get',
+        '/api/radio/sport/get',
         {
             'limit': str(limit),
             'bpm': str(bpm),
@@ -44,7 +44,7 @@ def getCalculatedSportsFMStatus(
         dict
     """
     return eapi(
-        '/eapi/radio/sport/calculate',
+        '/api/radio/sport/calculate',
         {
             'distance': str(distance),
             'maxbpm': str(maxbpm),

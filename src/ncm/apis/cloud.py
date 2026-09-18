@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from . import eapi, weapi, getCurrentSession
+from . import eapi, getCurrentSession
 
 BUCKET = 'jd-musicrep-privatecloud-audio-public'
 
@@ -17,7 +17,7 @@ def getCloudDriveInfo(limit=30, offset=0) -> dict:
     Returns:
         dict
     """
-    return weapi('/weapi/v1/cloud/get', {'limit': str(limit), 'offset': str(offset)})
+    return eapi('/api/v1/cloud/get', {'limit': str(limit), 'offset': str(offset)})
 
 
 def getCloudDriveItemInfo(song_ids: list) -> dict:
@@ -30,7 +30,7 @@ def getCloudDriveItemInfo(song_ids: list) -> dict:
         dict
     """
     ids = song_ids if isinstance(song_ids, list) else [song_ids]
-    return weapi('/weapi/v1/cloud/get/byids', {'songIds': ids})
+    return eapi('/api/v1/cloud/get/byids', {'songIds': ids})
 
 
 def getNosToken(
@@ -59,7 +59,7 @@ def getNosToken(
         dict
     """
     return eapi(
-        '/eapi/nos/token/alloc',
+        '/api/nos/token/alloc',
         {
             'type': str(ftype),
             'nos_product': str(nos_product),
@@ -126,7 +126,7 @@ def getCheckCloudUpload(md5, ext='', length=0, bitrate=0, songId=0, version=1) -
         dict
     """
     return eapi(
-        '/eapi/cloud/upload/check',
+        '/api/cloud/upload/check',
         {
             'songId': str(songId),
             'version': str(version),
@@ -160,7 +160,7 @@ def setUploadCloudInfo(
         dict
     """
     return eapi(
-        '/eapi/upload/cloud/info/v2',
+        '/api/upload/cloud/info/v2',
         {
             'resourceId': str(resourceId),
             'songid': str(songid),
@@ -183,7 +183,7 @@ def setPublishCloudResource(songid) -> dict:
     Returns:
         dict
     """
-    return eapi('/eapi/cloud/pub/v2', {'songid': str(songid)})
+    return eapi('/api/cloud/pub/v2', {'songid': str(songid)})
 
 
 def setRectifySongId(oldSongId, newSongId, session=None) -> dict:

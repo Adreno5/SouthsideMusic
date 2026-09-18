@@ -50,6 +50,7 @@ Type: filesandordirs; Name: "{app}\core"
 Type: filesandordirs; Name: "{app}\views"
 Type: filesandordirs; Name: "{app}\services"
 Type: filesandordirs; Name: "{app}\pyncm"
+Type: filesandordirs; Name: "{app}\src\pyncm"
 Type: filesandordirs; Name: "{app}\__pycache__"
 ; Older builds left the launcher and its GIL-build python DLL in {app} or
 ; {app}\runtime. Either place breaks the app's free-threaded Python, so drop

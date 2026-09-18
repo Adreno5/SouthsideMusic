@@ -26,7 +26,7 @@ def getSearchResult(keyword: str, stype=SONG, limit=30, offset=0) -> dict:
         dict
     """
     return eapi(
-        '/eapi/cloudsearch/pc',
+        '/api/cloudsearch/pc',
         {
             's': str(keyword),
             'type': str(stype),

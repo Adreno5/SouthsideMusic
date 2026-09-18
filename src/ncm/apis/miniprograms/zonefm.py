@@ -17,7 +17,7 @@ def getFmZoneInfo(limit=3, zone='CLASSICAL', e_r=True) -> dict:
         dict
     """
     return eapi(
-        '/eapi/zone/fm/get',
+        '/api/zone/fm/get',
         {
             'limit': str(limit),
             'zone': zone,
@@ -38,7 +38,7 @@ def setSkipFmTrack(songId, zone='CLASSICAL', e_r=True) -> dict:
         dict
     """
     return eapi(
-        '/eapi/zone/fm/skip',
+        '/api/zone/fm/skip',
         {
             'songId': str(songId),
             'zone': zone,

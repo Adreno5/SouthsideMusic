@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from . import weapi
+from . import eapi
 
 
 def getMVDetail(mv_id: str) -> dict:
-    """get mv detail (web api).
+    """get mv detail (pc client api).
 
     Args:
         mv_id: mv id.
@@ -12,11 +12,11 @@ def getMVDetail(mv_id: str) -> dict:
     Returns:
         dict
     """
-    return weapi('/weapi/v1/mv/detail', {'id': str(mv_id)})
+    return eapi('/api/v1/mv/detail', {'id': str(mv_id)})
 
 
 def getMVResource(mv_id: str, res=1080) -> dict:
-    """get mv video/audio url (web api).
+    """get mv video/audio url (pc client api).
 
     Args:
         mv_id: mv id.
@@ -25,8 +25,8 @@ def getMVResource(mv_id: str, res=1080) -> dict:
     Returns:
         dict
     """
-    return weapi(
-        '/weapi/song/enhance/play/mv/url',
+    return eapi(
+        '/api/song/enhance/play/mv/url',
         {
             'id': str(mv_id),
             'r': str(res),
@@ -35,7 +35,7 @@ def getMVResource(mv_id: str, res=1080) -> dict:
 
 
 def getMVComments(mv_id: str, offset=0, limit=20, total=False) -> dict:
-    """get mv comments (web api).
+    """get mv comments (pc client api).
 
     Args:
         mv_id: mv id.
@@ -46,8 +46,8 @@ def getMVComments(mv_id: str, offset=0, limit=20, total=False) -> dict:
     Returns:
         dict
     """
-    return weapi(
-        '/weapi/v1/resource/comments/R_MV_5_%s' % mv_id,
+    return eapi(
+        '/api/v1/resource/comments/R_MV_5_%s' % mv_id,
         {
             'rid': 'R_MV_5_%s' % mv_id,
             'offset': str(offset),

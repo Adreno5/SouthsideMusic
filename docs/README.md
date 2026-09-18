@@ -272,7 +272,7 @@ src/
   core/            Audio, configuration, models, lyrics, themes, backends
   services/        Event bus, updates, and application services
   views/           Pages, cards, panels, windows, and widgets
-  pyncm/           Bundled NetEase CloudMusic API client
+  ncm/             Bundled NetEase CloudMusic API client
 docs/              English and Chinese documentation
 data/              Runtime caches and local favorite data
 fonts/             Bundled HarmonyOS Sans SC fonts
@@ -288,7 +288,7 @@ config.json        Persistent user configuration
 | Windowing | qframelesswindow + hPyT |
 | Audio and DSP | sounddevice + pydub + NumPy + SciPy |
 | Metadata | mutagen |
-| NetEase API | Bundled `pyncm` client |
+| NetEase API | Bundled `ncm` client |
 | Networking | requests + Tornado WebSocket server |
 | Assistant | OpenAI SDK + Anthropic SDK |
 | Packaging | Nuitka + Inno Setup |

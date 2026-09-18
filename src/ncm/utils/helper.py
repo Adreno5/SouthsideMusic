@@ -9,7 +9,7 @@ import logging
 """helper utilities for working with api responses."""
 
 truncate_length = 64
-logger = logging.getLogger('pyncm.helper')
+logger = logging.getLogger('ncm.helper')
 
 
 def _substitute_with_fullwidth(string, sub=set('\x00\\/:<>|?*".')):
@@ -60,7 +60,7 @@ class IDCahceHelper:
 
 class AlbumHelper(IDCahceHelper):
     def __init__(self, item_id):
-        from pyncm.apis.album import getAlbumInfo
+        from ncm.apis.album import getAlbumInfo
 
         super().__init__(item_id, getAlbumInfo)
 
@@ -106,7 +106,7 @@ class AlbumHelper(IDCahceHelper):
 
 class ArtistHelper(IDCahceHelper):
     def __init__(self, item_id):
-        from pyncm.apis.artist import getArtistDetails
+        from ncm.apis.artist import getArtistDetails
 
         super().__init__(item_id, getArtistDetails)
 
@@ -133,7 +133,7 @@ class ArtistHelper(IDCahceHelper):
 
 class UserHelper(IDCahceHelper):
     def __init__(self, item_id):
-        from pyncm.apis.user import getUserDetail
+        from ncm.apis.user import getUserDetail
 
         super().__init__(item_id, getUserDetail)
 

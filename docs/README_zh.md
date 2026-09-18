@@ -272,7 +272,7 @@ src/
   core/            音频、配置、模型、歌词、主题和后端
   services/        事件总线、更新和应用服务
   views/           页面、卡片、面板、窗口和控件
-  pyncm/           内置网易云音乐 API 客户端
+  ncm/            内置网易云音乐 API 客户端
 docs/              中英文项目文档
 data/              运行时缓存和本地收藏数据
 fonts/             内置 HarmonyOS Sans SC 字体
@@ -288,7 +288,7 @@ config.json        持久化用户配置
 | 窗口 | qframelesswindow + hPyT |
 | 音频与 DSP | sounddevice + pydub + NumPy + SciPy |
 | 元数据 | mutagen |
-| 网易云 API | 内置 `pyncm` 客户端 |
+| 网易云 API | 内置 `ncm` 客户端 |
 | 网络 | requests + Tornado WebSocket server |
 | 助手 | OpenAI SDK + Anthropic SDK |
 | 打包 | Nuitka + Inno Setup |

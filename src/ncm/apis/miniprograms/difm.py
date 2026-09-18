@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .. import weapi
+from .. import eapi
 
 
 def getCurrentPlayingTrackList(channelId=101, limit=10, source=0) -> dict:
@@ -14,7 +14,7 @@ def getCurrentPlayingTrackList(channelId=101, limit=10, source=0) -> dict:
     Returns:
         dict
     """
-    return weapi(
+    return eapi(
         '/api/dj/difm/playing/tracks/list',
         {
             'limit': str(limit),
@@ -33,7 +33,7 @@ def getChannelCollection(source=0) -> dict:
     Returns:
         dict
     """
-    return weapi('/api/dj/difm/all/style/channel/v2', {'sources': '[%s]' % source})
+    return eapi('/api/dj/difm/all/style/channel/v2', {'sources': '[%s]' % source})
 
 
 def getChannelSubscriptionCollection(source=0) -> dict:
@@ -45,7 +45,7 @@ def getChannelSubscriptionCollection(source=0) -> dict:
     Returns:
         dict
     """
-    return weapi('/api/dj/difm/subscribe/channels/get/v2', {'sources': '[%s]' % source})
+    return eapi('/api/dj/difm/subscribe/channels/get/v2', {'sources': '[%s]' % source})
 
 
 def setChannelSubscribiton(id, set_subsubscribe=True) -> dict:
@@ -63,4 +63,4 @@ def setChannelSubscribiton(id, set_subsubscribe=True) -> dict:
         if set_subsubscribe
         else '/api/dj/difm/channel/unsubscribe'
     )
-    return weapi(url, {'id': str(id)})
+    return eapi(url, {'id': str(id)})

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from . import weapi
+from . import eapi
 
 
 def getAlbumInfo(album_id: str) -> dict:
-    """get album info (web api).
+    """get album info (pc client api).
 
     Args:
         album_id: album id.
@@ -12,11 +12,11 @@ def getAlbumInfo(album_id: str) -> dict:
     Returns:
         dict
     """
-    return weapi('/weapi/v1/album/%s' % album_id, {})
+    return eapi('/api/v1/album/%s' % album_id, {})
 
 
 def getAlbumComments(album_id: str, offset=0, limit=20, beforeTime=0) -> dict:
-    """get album comments (web api).
+    """get album comments (pc client api).
 
     Args:
         album_id: album id.
@@ -27,8 +27,8 @@ def getAlbumComments(album_id: str, offset=0, limit=20, beforeTime=0) -> dict:
     Returns:
         dict
     """
-    return weapi(
-        '/weapi/v1/resource/comments/R_AL_3_%s' % album_id,
+    return eapi(
+        '/api/v1/resource/comments/R_AL_3_%s' % album_id,
         {
             'rid': 'R_AL_3_%s' % album_id,
             'offset': str(offset),

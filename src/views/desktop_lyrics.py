@@ -28,7 +28,7 @@ from core.color import mixColor
 from core.config import cfg
 from core import theme
 from core.lyrics import LyricInfo, YRCLyricInfo
-from services.events.events import EMIT_DEBUG_INFO
+from services.events.events import DESKTOP_LYRICS_ANCHOR_CHANGED, EMIT_DEBUG_INFO
 from views.lyrics_viewer import LyricsViewer
 
 
@@ -232,6 +232,7 @@ class DesktopLyricsViewer(LyricsViewer):
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         self.dragging = False
+        event_bus.emit(DESKTOP_LYRICS_ANCHOR_CHANGED)
 
     def moveEvent(self, event: QMoveEvent) -> None:
         if self.dragging:
@@ -389,6 +390,7 @@ class DesktopLyricsPage(QWidget):
     def onResetPos(self):
         self.viewer.move(0, 0)
         cfg.desktop_lyrics_anchor = 'normal'
+        event_bus.emit(DESKTOP_LYRICS_ANCHOR_CHANGED)
 
     def setLyricsVisible(self, visible: bool) -> None:
         cfg.enable_desktop_lyrics = visible

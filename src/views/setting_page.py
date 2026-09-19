@@ -9,6 +9,7 @@ from core.app_context import AppContext
 from imports import (
     BACKGROUND_RATIO_CHANGED,
     DB_CHANGED,
+    DESKTOP_LYRICS_ANCHOR_CHANGED,
     LANGUAGE_CHANGED,
     LUFS_TARGET_CHANGED,
     POST_THEME_CHANGED,
@@ -292,6 +293,7 @@ class SettingPage(QWidget):
         event_bus.subscribe(POST_THEME_CHANGED, self.updateTheme)
         event_bus.subscribe(LANGUAGE_CHANGED, self.updateLanguage)
         event_bus.subscribe(DB_CHANGED, self._onVolumeChanged)
+        event_bus.subscribe(DESKTOP_LYRICS_ANCHOR_CHANGED, self._refreshAnchorBox)
 
     @property
     def _dp(self):
@@ -320,6 +322,7 @@ class SettingPage(QWidget):
         self._refreshLanguageBox()
         self._refreshPlayMethodBox()
         self._refreshConnectionStatus()
+        self._refreshAnchorBox()
         if hasattr(self, 'target_lufs_label'):
             self.target_lufs_label.setText(tr('setting_page.target_lufs_value'))
 
@@ -338,9 +341,50 @@ class SettingPage(QWidget):
             'setting_page.enable_advanced_settings',
             'setting_page.enable_advanced_settings_description',
             self.advanced_settings_box,
-            easy=False,
         )
 
+        self._addAppSection()
+        self._addAppearanceSection()
+        self._addPlaybackSection()
+        self._addCrossfadeSection()
+        self._addEffectsSection()
+
+        if lw:
+            lw.subtitle('Setting up Desktop lyrics options...')
+        self._addDesktopLyricsSection()
+
+        if lw:
+            lw.subtitle('Setting up storage options...')
+        self._addStorageSection()
+
+        if lw:
+            lw.subtitle('Setting up loudness balance...')
+        self._addLoudnessSection()
+
+        if lw:
+            lw.subtitle('Setting up lyrics options...')
+        self._addLyricsSection()
+
+        if lw:
+            lw.subtitle('Setting up FFT options...')
+        self._addFftSection()
+
+        if lw:
+            lw.subtitle('Setting up beat detection options...')
+        self._addBeatSection()
+
+        if lw:
+            lw.subtitle('Setting up LLM options...')
+        self._addLlmSection()
+
+        if lw:
+            lw.subtitle('Setting up connection options...')
+        self._addConnectionSection()
+
+        for slider in self.findChildren(QSlider):
+            slider.wheelEvent = lambda e: e.ignore()  # type: ignore[method-assign]
+
+    def _addAppSection(self) -> None:
         self.addSection(
             'setting_page.app', 'setting_page.language_and_application_behavior'
         )
@@ -353,43 +397,23 @@ class SettingPage(QWidget):
             'setting_page.change_the_display_language_immediately',
             self.language_box,
         )
-        self.addNumberSetting(
-            'setting_page.download_concurrent_threads',
-            'setting_page.download_concurrent_threads_description',
-            1,
-            128,
-            1,
-            'download_concurrent_threads',
-            advanced=True,
-        )
-        if lw:
-            lw.subtitle('Setting up storage options...')
+
+    def _addAppearanceSection(self) -> None:
         self.addSection(
-            'setting_page.cache_storage',
-            'setting_page.cache_storage_description',
-        )
-        self.addCheckSetting(
-            'setting_page.data_cleanup_enabled',
-            'setting_page.data_cleanup_enabled_description',
-            'data_cleanup_enabled',
-        )
-        self.addNumberSetting(
-            'setting_page.data_cache_max_age_minutes',
-            'setting_page.data_cache_max_age_minutes_description',
-            1,
-            1440,
-            1,
-            'data_cache_max_age_minutes',
-        )
-        self.addNumberSetting(
-            'setting_page.data_cache_max_mb',
-            'setting_page.data_cache_max_mb_description',
-            512,
-            102400,
-            512,
-            'data_cache_max_mb',
+            'setting_page.window', 'setting_page.theme_sensitive_background_mixing'
         )
 
+        self.addNumberSetting(
+            'setting_page.window_background_mix_ratio',
+            'setting_page.larger_value_make_color_of_backgound_nearly_to_image_of_playing_song',
+            0,
+            1,
+            0.05,
+            'background_ratio',
+            lambda v: self._onBackgroundRatioChanged(v),
+        )
+
+    def _addPlaybackSection(self) -> None:
         self.addSection(
             'setting_page.playback',
             'setting_page.playback_order_stereo_output_speed_and_skip_behavior',
@@ -404,49 +428,76 @@ class SettingPage(QWidget):
             self.play_method_box,
         )
 
-        self.addCheckSetting(
-            'setting_page.enable_stereo',
-            'setting_page.enable_stereo_effect',
-            'stereo',
-            lambda: self.ctx.playing_manager.restartPlaybackEffects(),
-            advanced=True,
+        self.device_selector = ComboBox()
+        self.device_selector.addItems(
+            [f'{obj.index + 1}. {obj.display_name}' for obj in getAudioDevices()]
         )
+        self.device_selector.setCurrentIndex(self._player._device_id)
+        self.device_selector.currentIndexChanged.connect(self.deviceChanged)
+        self.device_selector.setCurrentIndex(cfg.output_device_index)
+        self.addSetting(
+            'setting_page.output_device',
+            'setting_page.the_device_to_output_audio',
+            self.device_selector,
+        )
+
         self.addNumberSetting(
-            'setting_page.stereo_haas_index_ms',
-            'setting_page.adjust_the_right_channel_delay_of_stereo_haas_effect',
-            0,
-            30,
-            5,
-            'stereo_haas_index',
-            lambda val: self.ctx.playing_manager.restartPlaybackEffects(),
-            advanced=True,
-        )
-        self.addCheckSetting(
-            'setting_page.enable_reverb',
-            'setting_page.enable_reverb_effect',
-            'enable_reverb',
-            lambda: self.ctx.playing_manager.restartPlaybackEffects(),
-            advanced=True,
-        )
-        self.addNumberSetting(
-            'setting_page.reverb_intensity',
-            'setting_page.adjust_the_strength_of_the_reverb_effect',
-            0,
+            'setting_page.playback_speed',
+            'setting_page.speed_of_playing',
+            0.1,
             3,
-            0.05,
-            'reverb_intensity',
-            lambda val: self.ctx.playing_manager.restartPlaybackEffects(),
+            0.1,
+            'play_speed',
+            lambda val: self.ctx.playing_manager.setPlaySpeed(val),
+        )
+        self.addNumberSetting(
+            'setting_page.playback_pitch',
+            'setting_page.pitch_shift_in_semitones',
+            -12,
+            12,
+            0.1,
+            'play_pitch',
+            lambda val: self.ctx.playing_manager.setPlayPitch(val),
             advanced=True,
         )
+
+        self.addSpliter()
+
         self.addCheckSetting(
             'setting_page.smart_skip',
             'setting_page.skip_the_no_sound_section_when_song_ends',
             'skip_nosound',
         )
-        self.addSection(
-            'setting_page.crossfade',
-            'setting_page.crossfade_settings_description',
+        self.addNumberSetting(
+            'setting_page.skip_threshold',
+            'setting_page.the_threshold_of_the_skip',
+            -100,
+            0,
+            1,
+            'skip_threshold',
+            advanced=True,
         )
+        self.addNumberSetting(
+            'setting_page.remain_time_to_skip',
+            'setting_page.start_detecting_volume_during_the_remaining_specified_seconds',
+            1,
+            60,
+            1,
+            'skip_remain_time',
+            advanced=True,
+        )
+        self.addSetting(
+            'setting_page.current_volume',
+            'setting_page.live_playback_volume_in_db',
+            self.now_volume,
+            advanced=True,
+        )
+
+    def _addCrossfadeSection(self) -> None:
+        self.addSection(
+            'setting_page.crossfade', 'setting_page.crossfade_settings_description'
+        )
+
         self.addCheckSetting(
             'setting_page.enable_crossfade',
             'setting_page.enable_crossfade_effect',
@@ -459,20 +510,10 @@ class SettingPage(QWidget):
             1,
             0.05,
             'crossfade_strength',
-            advanced=True,
         )
-        crossfade_curve_box = ComboBox()
-        crossfade_curve_box.addItems(['equal_power', 'sigmoid', 'linear'])
-        crossfade_curve_box.setCurrentText(cfg.crossfade_curve)
-        crossfade_curve_box.currentTextChanged.connect(
-            lambda value: setattr(cfg, 'crossfade_curve', value)
-        )
-        self.addSetting(
-            'setting_page.crossfade_curve',
-            'setting_page.crossfade_curve_description',
-            crossfade_curve_box,
-            advanced=True,
-        )
+
+        self.addSpliter(advanced=True)
+
         self.addNumberSetting(
             'setting_page.crossfade_max_duration',
             'setting_page.crossfade_max_duration_description',
@@ -480,6 +521,18 @@ class SettingPage(QWidget):
             24,
             0.5,
             'crossfade_max_duration',
+            advanced=True,
+        )
+        self.addChoiceSetting(
+            'setting_page.crossfade_curve',
+            'setting_page.crossfade_curve_description',
+            'crossfade_curve',
+            [
+                ('smart', 'smart'),
+                ('equal_power', 'equal_power'),
+                ('sigmoid', 'sigmoid'),
+                ('linear', 'linear'),
+            ],
             advanced=True,
         )
         self.addNumberSetting(
@@ -509,111 +562,177 @@ class SettingPage(QWidget):
             'crossfade_agc',
             advanced=True,
         )
+
+    def _addEffectsSection(self) -> None:
         self.addSection(
-            'setting_page.playback_effects',
-            'setting_page.playback_effects_description',
+            'setting_page.playback_effects', 'setting_page.playback_effects_description'
+        )
+
+        self.addCheckSetting(
+            'setting_page.enable_stereo',
+            'setting_page.enable_stereo_effect',
+            'stereo',
+            lambda: self.ctx.playing_manager.restartPlaybackEffects(),
         )
         self.addNumberSetting(
-            'setting_page.playback_speed',
-            'setting_page.speed_of_playing',
-            0.1,
+            'setting_page.stereo_haas_index_ms',
+            'setting_page.adjust_the_right_channel_delay_of_stereo_haas_effect',
+            0,
+            30,
+            5,
+            'stereo_haas_index',
+            lambda val: self.ctx.playing_manager.restartPlaybackEffects(),
+            advanced=True,
+        )
+
+        self.addSpliter()
+
+        self.addCheckSetting(
+            'setting_page.enable_reverb',
+            'setting_page.enable_reverb_effect',
+            'enable_reverb',
+            lambda: self.ctx.playing_manager.restartPlaybackEffects(),
+        )
+        self.addNumberSetting(
+            'setting_page.reverb_intensity',
+            'setting_page.adjust_the_strength_of_the_reverb_effect',
+            0,
             3,
-            0.1,
-            'play_speed',
-            lambda val: self.ctx.playing_manager.setPlaySpeed(val),
-        )
-        self.addNumberSetting(
-            'setting_page.playback_pitch',
-            'setting_page.pitch_shift_in_semitones',
-            -12,
-            12,
-            0.1,
-            'play_pitch',
-            lambda val: self.ctx.playing_manager.setPlayPitch(val),
-            advanced=True,
-        )
-        self.addNumberSetting(
-            'setting_page.skip_threshold',
-            'setting_page.the_threshold_of_the_skip',
-            -100,
-            0,
-            1,
-            'skip_threshold',
-            advanced=True,
-        )
-        self.addSetting(
-            'setting_page.current_volume',
-            'setting_page.live_playback_volume_in_db',
-            self.now_volume,
-            advanced=True,
-        )
-
-        self.addNumberSetting(
-            'setting_page.remain_time_to_skip',
-            'setting_page.start_detecting_volume_during_the_remaining_specified_seconds',
-            1,
-            60,
-            1,
-            'skip_remain_time',
-            advanced=True,
-        )
-
-        self.device_selector = ComboBox()
-        self.device_selector.addItems(
-            [f'{obj.index + 1}. {obj.display_name}' for obj in getAudioDevices()]
-        )
-        self.device_selector.setCurrentIndex(self._player._device_id)
-        self.device_selector.currentIndexChanged.connect(self.deviceChanged)
-        self.device_selector.setCurrentIndex(cfg.output_device_index)
-        self.addSetting(
-            'setting_page.output_device',
-            'setting_page.the_device_to_output_audio',
-            self.device_selector,
-            advanced=True,
-        )
-
-        if lw:
-            lw.subtitle('Setting up LLM options...')
-        self.addSection(
-            'setting_page.llm',
-            'setting_page.llm_provider_model_and_authentication',
-            advanced=True,
-        )
-        self.llm_section = self._current_section
-
-        self.llm_provider_form: QWidget | None = None
-        self.llm_editing_provider_name = ''
-        self.llm_fetched_models: list[str] = []
-        self.llm_provider_list_widget = QWidget()
-        self.llm_provider_list_layout = QVBoxLayout()
-        self.llm_provider_list_layout.setContentsMargins(0, 0, 0, 0)
-        self.llm_provider_list_layout.setSpacing(6)
-        self.llm_provider_list_widget.setLayout(self.llm_provider_list_layout)
-        self._refreshLlmProvidersView()
-        self.addSeparateWidget(self.llm_provider_list_widget, advanced=True)
-
-        if lw:
-            lw.subtitle('Setting up window options...')
-        self.addSection(
-            'setting_page.window', 'setting_page.theme_sensitive_background_mixing'
-        )
-        self.addNumberSetting(
-            'setting_page.window_background_mix_ratio',
-            'setting_page.larger_value_make_color_of_backgound_nearly_to_image_of_playing_song',
-            0,
-            1,
             0.05,
-            'background_ratio',
-            lambda v: self._onBackgroundRatioChanged(v),
+            'reverb_intensity',
+            lambda val: self.ctx.playing_manager.restartPlaybackEffects(),
+            advanced=True,
         )
 
-        if lw:
-            lw.subtitle('Setting up lyrics options...')
+    def _addDesktopLyricsSection(self) -> None:
+        self.addSection(
+            'setting_page.desktop_lyrics',
+            'setting_page.floating_lyrics_window_controls',
+        )
+        dsp = self._dsp
+        assert dsp is not None, (
+            'Desktop lyrics page must be initialized before settings'
+        )
+
+        self.desktop_lyrics_box = CheckBox()
+        bindText(self.desktop_lyrics_box, 'setting_page.enable_desktop_lyrics')
+        self.desktop_lyrics_box.checkStateChanged.connect(
+            lambda: self._onDesktopLyricsEnableChanged()
+        )
+        self.desktop_lyrics_box.setChecked(cfg.enable_desktop_lyrics)
+        self.addSetting(
+            'setting_page.enable_desktop_lyrics',
+            'setting_page.show_lyrics_in_a_floating_always_on_top_window',
+            self.desktop_lyrics_box,
+        )
+
+        self.anchor_box = ComboBox()
+        self._refreshAnchorBox()
+        self.anchor_box.currentIndexChanged.connect(self._onAnchorChanged)
+        self.addSetting(
+            'setting_page.desktop_lyrics_anchor',
+            'setting_page.desktop_lyrics_anchor_description',
+            self.anchor_box,
+        )
+
+        self.desktop_lyrics_reset_pos = PushButton(FluentIcon.SYNC, '')
+        bindText(self.desktop_lyrics_reset_pos, 'setting_page.reset_position')
+        self.desktop_lyrics_reset_pos.clicked.connect(dsp.onResetPos)
+        self.addSetting(
+            'setting_page.reset_position',
+            'setting_page.move_the_desktop_lyrics_window_back_to_the_origin',
+            self.desktop_lyrics_reset_pos,
+        )
+
+    def _addStorageSection(self) -> None:
+        self.addSection(
+            'setting_page.cache_storage', 'setting_page.cache_storage_description'
+        )
+
+        self.addCheckSetting(
+            'setting_page.data_cleanup_enabled',
+            'setting_page.data_cleanup_enabled_description',
+            'data_cleanup_enabled',
+        )
+        self.addNumberSetting(
+            'setting_page.data_cache_max_age_minutes',
+            'setting_page.data_cache_max_age_minutes_description',
+            1,
+            1440,
+            1,
+            'data_cache_max_age_minutes',
+        )
+        self.addNumberSetting(
+            'setting_page.data_cache_max_mb',
+            'setting_page.data_cache_max_mb_description',
+            512,
+            102400,
+            512,
+            'data_cache_max_mb',
+        )
+
+        self.addSpliter(advanced=True)
+
+        self.addNumberSetting(
+            'setting_page.download_concurrent_threads',
+            'setting_page.download_concurrent_threads_description',
+            1,
+            128,
+            1,
+            'download_concurrent_threads',
+            advanced=True,
+        )
+
+    def _addLoudnessSection(self) -> None:
+        self.addSection(
+            'setting_page.loudness',
+            'setting_page.target_volume_normalization_for_playback',
+            advanced=True,
+        )
+
+        self.target_lufs = Slider(Qt.Orientation.Horizontal)
+        self.target_lufs.valueChanged.connect(self.onTargetLUFSChanged)
+        self.target_lufs.wheelEvent = lambda e: e.ignore()
+        self.target_lufs.sliderReleased.connect(self.onSliderReleased)
+        self.target_lufs.setRange(-60, 0)
+        self.target_lufs.setSingleStep(1)
+        self.target_lufs.setValue(cfg.target_lufs)
+        self.target_lufs_label = SubtitleLabel(tr('setting_page.target_lufs_value'))
+        self.addSetting(
+            'setting_page.target_lufs',
+            'setting_page.restart_to_apply_loudness_changes',
+            self.target_lufs,
+            advanced=True,
+        )
+
+        middle_widget = QWidget()
+        middle_layout = QHBoxLayout()
+        middle_layout.addWidget(self.target_lufs_label)
+        self.target_lufs_viewer = NumberViewer(self.ctx.harmony_font_family, self.ctx)
+        self.target_lufs_viewer.setText(str(cfg.target_lufs))
+        middle_layout.addWidget(self.target_lufs_viewer)
+        middle_layout.addSpacerItem(
+            QSpacerItem(
+                10, 10, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+            )
+        )
+        middle_layout.setSpacing(8)
+        middle_widget.setLayout(middle_layout)
+        self.addSeparateWidget(middle_widget, advanced=True)
+
+        self.addInfoBlock(
+            'setting_page.reference',
+            'setting_page.range_60_quietest_0_loudest_recommend_16_18_youtube_14_lufs_netflix_27',
+            advanced=True,
+        )
+
+    def _addLyricsSection(self) -> None:
         self.addSection(
             'setting_page.lyrics',
             'setting_page.smoothing_controls_for_the_main_lyrics_animation',
             advanced=True,
         )
+
         self.addNumberSetting(
             'setting_page.lyrics_smooth_factor',
             'setting_page.larger_value_means_a_more_sudden_change',
@@ -633,51 +752,42 @@ class SettingPage(QWidget):
             advanced=True,
         )
 
-        if lw:
-            lw.subtitle('Setting up Desktop lyrics options...')
-
-        self.addSection(
-            'setting_page.desktop_lyrics',
-            'setting_page.floating_lyrics_window_controls',
-        )
-        dsp = self._dsp
-        assert dsp is not None, (
-            'Desktop lyrics page must be initialized before settings'
-        )
-        self.desktop_lyrics_box = CheckBox()
-        bindText(self.desktop_lyrics_box, 'setting_page.enable_desktop_lyrics')
-        self.desktop_lyrics_box.checkStateChanged.connect(
-            lambda: self._onDesktopLyricsEnableChanged()
-        )
-        self.desktop_lyrics_box.setChecked(cfg.enable_desktop_lyrics)
-        self.addSetting(
-            'setting_page.enable_desktop_lyrics',
-            'setting_page.show_lyrics_in_a_floating_always_on_top_window',
-            self.desktop_lyrics_box,
-        )
-        self.desktop_lyrics_reset_pos = PushButton(FluentIcon.SYNC, '')
-        bindText(self.desktop_lyrics_reset_pos, 'setting_page.reset_position')
-        self.desktop_lyrics_reset_pos.clicked.connect(dsp.onResetPos)
-        self.addSetting(
-            'setting_page.reset_position',
-            'setting_page.move_the_desktop_lyrics_window_back_to_the_origin',
-            self.desktop_lyrics_reset_pos,
-        )
-
-        if lw:
-            lw.subtitle('Setting up FFT options...')
+    def _addFftSection(self) -> None:
         self.addSection(
             'setting_page.fft',
             'setting_page.frequency_visualization_tuning_for_local_and_client_output',
             advanced=True,
         )
-        self.enableFFT_box = CheckBox()
-        bindText(self.enableFFT_box, 'setting_page.enable_frequency_graphics')
-        self.enableFFT_box.setChecked(cfg.enable_fft)
-        self.addSetting(
+
+        self.enableFFT_box = self.addCheckSetting(
             'setting_page.frequency_graphics',
             'setting_page.enable_fft_driven_visual_effects',
-            self.enableFFT_box,
+            'enable_fft',
+            advanced=True,
+        )
+
+        self.addSpliter()
+
+        self.addNumberSetting(
+            'setting_page.fft_size',
+            'setting_page.fft_size_desc',
+            1024,
+            32768,
+            1024,
+            'fft_size',
+            lambda size: self.fftSizeChanged(size),
+            advanced=True,
+        )
+        self.addNumberSetting(
+            'setting_page.fft_buffer_seconds',
+            'setting_page.fft_buffer_seconds_desc',
+            0.1,
+            60,
+            0.1,
+            'fft_buffer_seconds',
+            lambda seconds: self.ctx.main_window.controller.setFFTBufferSeconds(
+                seconds
+            ),
             advanced=True,
         )
         self.addNumberSetting(
@@ -699,28 +809,22 @@ class SettingPage(QWidget):
             advanced=True,
         )
         self.addNumberSetting(
-            'setting_page.fft_buffer_seconds',
-            'setting_page.fft_buffer_seconds_desc',
-            0.1,
-            60,
-            0.1,
-            'fft_buffer_seconds',
+            'setting_page.fft_min_frequency_hz',
+            'setting_page.fft_min_frequency_hz_description',
+            20,
+            2000,
+            10,
+            'fft_min_frequency_hz',
             advanced=True,
-            onChanged=lambda seconds: (
-                self.ctx.main_window.controller.setFFTBufferSeconds(seconds)
-            ),
-            easy=False,
         )
         self.addNumberSetting(
-            'setting_page.fft_size',
-            'setting_page.fft_size_desc',
-            1024,
-            32768,
-            1024,
-            'fft_size',
-            onChanged=lambda size: self.fftSizeChanged(size),
+            'setting_page.fft_max_frequency_hz',
+            'setting_page.fft_max_frequency_hz_description',
+            1000,
+            20000,
+            100,
+            'fft_max_frequency_hz',
             advanced=True,
-            easy=False,
         )
         self.addNumberSetting(
             'setting_page.southside_music_side_fft_multiple_factor',
@@ -734,48 +838,39 @@ class SettingPage(QWidget):
         self.addNumberSetting(
             'setting_page.southside_client_side_fft_multiple_factor',
             'setting_page.larger_value_means_more_intense_changing_only_on_southside_client_side',
-            00,
+            0,
             15.0,
             0.5,
             'sfft_multiple',
             advanced=True,
         )
-        flash_box = CheckBox()
-        flash_box.setChecked(cfg.beat_detection_visual_flash)
-        flash_box.stateChanged.connect(
-            lambda state: setattr(cfg, 'beat_detection_visual_flash', bool(state))
+
+    def _addBeatSection(self) -> None:
+        self.addSection(
+            'setting_page.beat', 'setting_page.beat_description', advanced=True
         )
-        self.addSetting(
-            'setting_page.beat_detection_visual_flash',
-            'setting_page.beat_detection_visual_flash_description',
-            flash_box,
+
+        self.addCheckSetting(
+            'setting_page.beat_detection',
+            'setting_page.beat_detection_description',
+            'beat_detection_enabled',
             advanced=True,
         )
-        
-        lyrics_flash = CheckBox()
-        lyrics_flash.setChecked(cfg.beat_detection_visual_lyrics)
-        lyrics_flash.stateChanged.connect(
-            lambda state: setattr(cfg, 'beat_detection_visual_lyrics', bool(state))
-        )
-        self.addSetting(
+        self.addCheckSetting(
             'setting_page.beat_detection_visual_flash',
+            'setting_page.beat_detection_visual_flash_description',
+            'beat_detection_visual_flash',
+            advanced=True,
+        )
+        self.addCheckSetting(
+            'setting_page.beat_detection_visual_lyrics',
             'setting_page.beat_detection_visual_lyrics_description',
-            lyrics_flash,
+            'beat_detection_visual_lyrics',
             advanced=True,
         )
 
-        lw.subtitle('Setting up beat detection options...')
-        beat_box = CheckBox()
-        beat_box.setChecked(cfg.beat_detection_enabled)
-        beat_box.stateChanged.connect(
-            lambda state: setattr(cfg, 'beat_detection_enabled', bool(state))
-        )
-        self.addSetting(
-            'setting_page.beat_detection',
-            'setting_page.beat_detection_description',
-            beat_box,
-            advanced=True,
-        )
+        self.addSpliter()
+
         self.addNumberSetting(
             'setting_page.beat_detection_sensitivity',
             'setting_page.beat_detection_sensitivity_description',
@@ -821,97 +916,80 @@ class SettingPage(QWidget):
             'beat_detection_point_threshold',
             advanced=True,
         )
+        self.addNumberSetting(
+            'setting_page.beat_detection_low_hz',
+            'setting_page.beat_detection_low_hz_description',
+            20,
+            500,
+            10,
+            'beat_detection_low_hz',
+            advanced=True,
+        )
+        self.addNumberSetting(
+            'setting_page.beat_detection_high_hz',
+            'setting_page.beat_detection_high_hz_description',
+            100,
+            4000,
+            10,
+            'beat_detection_high_hz',
+            advanced=True,
+        )
 
-        if lw:
-            lw.subtitle('Setting up loudness balance...')
+    def _addLlmSection(self) -> None:
         self.addSection(
-            'setting_page.loudness',
-            'setting_page.target_volume_normalization_for_playback',
+            'setting_page.llm',
+            'setting_page.llm_provider_model_and_authentication',
             advanced=True,
         )
-        self.target_lufs = Slider(Qt.Orientation.Horizontal)
-        self.target_lufs.valueChanged.connect(self.onTargetLUFSChanged)
-        self.target_lufs.wheelEvent = lambda e: e.ignore()
-        self.target_lufs.sliderReleased.connect(self.onSliderReleased)
-        self.target_lufs.setRange(-60, 0)
-        self.target_lufs.setSingleStep(1)
-        self.target_lufs.setValue(cfg.target_lufs)
-        self.target_lufs_label = SubtitleLabel(tr('setting_page.target_lufs_value'))
-        self.addSetting(
-            'setting_page.target_lufs',
-            'setting_page.restart_to_apply_loudness_changes',
-            self.target_lufs,
-            advanced=True,
-        )
-        middle_widget = QWidget()
-        middle_layout = QHBoxLayout()
-        middle_layout.addWidget(self.target_lufs_label)
-        self.target_lufs_viewer = NumberViewer(self.ctx.harmony_font_family, self.ctx)
-        self.target_lufs_viewer.setText(str(cfg.target_lufs))
-        middle_layout.addWidget(self.target_lufs_viewer)
-        middle_layout.addSpacerItem(
-            QSpacerItem(
-                10, 10, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
-            )
-        )
-        middle_layout.setSpacing(8)
-        middle_widget.setLayout(middle_layout)
-        self.addSeparateWidget(middle_widget, advanced=True)
-        self.addInfoBlock(
-            'setting_page.reference',
-            'setting_page.range_60_quietest_0_loudest_recommend_16_18_youtube_14_lufs_netflix_27',
-            advanced=True,
-        )
+        self.llm_section = self._current_section
 
-        if lw:
-            lw.subtitle('Setting up connection options...')
+        self.llm_provider_form: QWidget | None = None
+        self.llm_editing_provider_name = ''
+        self.llm_fetched_models: list[str] = []
+        self.llm_provider_list_widget = QWidget()
+        self.llm_provider_list_layout = QVBoxLayout()
+        self.llm_provider_list_layout.setContentsMargins(0, 0, 0, 0)
+        self.llm_provider_list_layout.setSpacing(6)
+        self.llm_provider_list_widget.setLayout(self.llm_provider_list_layout)
+        self._refreshLlmProvidersView()
+        self.addSeparateWidget(self.llm_provider_list_widget, advanced=True)
+
+    def _addConnectionSection(self) -> None:
         self.addSection(
             'setting_page.connection',
             'setting_page.southside_client_websocket_status_and_controls',
             advanced=True,
         )
+
         self.southsideclient_status_label = SubtitleLabel()
         self.addSeparateWidget(self.southsideclient_status_label, advanced=True)
 
+        self.sent_label = NumberViewer(self.ctx.harmony_font_family, self.ctx)
+        self.received_label = NumberViewer(self.ctx.harmony_font_family, self.ctx)
+        self.latency_label = NumberViewer(self.ctx.harmony_font_family, self.ctx)
+
         self.status_widget = QWidget()
         status_layout = QHBoxLayout()
-        prefix_label = QLabel('')
-        bindText(prefix_label, 'setting_page.sent_size')
-        self.sent_label = NumberViewer(self.ctx.harmony_font_family, self.ctx)
+        status_layout.setSpacing(8)
+        for key, viewer, unit in (
+            ('setting_page.sent_size', self.sent_label, 'MB'),
+            ('setting_page.received_size', self.received_label, 'KB'),
+            ('setting_page.latency', self.latency_label, 'ms'),
+        ):
+            prefix_label = QLabel('')
+            bindText(prefix_label, key)
+            status_layout.addWidget(prefix_label)
+            status_layout.addWidget(viewer)
+            status_layout.addWidget(QLabel(unit))
+            status_layout.addSpacerItem(
+                QSpacerItem(
+                    0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+                )
+            )
+        self.status_widget.setLayout(status_layout)
+        self.addSeparateWidget(self.status_widget, advanced=True)
+
         self.update_statuses_timer = QTimer(self)
-        status_layout.addWidget(prefix_label)
-        status_layout.addWidget(self.sent_label)
-        status_layout.addWidget(QLabel('MB'))
-        status_layout.addSpacerItem(
-            QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-        )
-
-        prefix_label = QLabel('')
-        bindText(prefix_label, 'setting_page.received_size')
-        self.received_label = NumberViewer(self.ctx.harmony_font_family, self.ctx)
-        status_layout.addWidget(prefix_label)
-        status_layout.addWidget(self.received_label)
-        status_layout.addWidget(QLabel('KB'))
-        status_layout.addSpacerItem(
-            QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-        )
-        status_layout.setSpacing(8)
-        self.status_widget.setLayout(status_layout)
-        self.addSeparateWidget(self.status_widget, advanced=True)
-
-        prefix_label = QLabel('')
-        bindText(prefix_label, 'setting_page.latency')
-        self.latency_label = NumberViewer(self.ctx.harmony_font_family, self.ctx)
-        status_layout.addWidget(prefix_label)
-        status_layout.addWidget(self.latency_label)
-        status_layout.addWidget(QLabel('ms'))
-        status_layout.addSpacerItem(
-            QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-        )
-        status_layout.setSpacing(8)
-        self.status_widget.setLayout(status_layout)
-        self.addSeparateWidget(self.status_widget, advanced=True)
-
         self.update_statuses_timer.timeout.connect(
             lambda: self.sent_label.setText(f'{self.ctx.ws_handler.sent:.2f}')
         )
@@ -942,21 +1020,26 @@ class SettingPage(QWidget):
         connection_buttons.setLayout(connection_layout)
         self.addSeparateWidget(connection_buttons, advanced=True)
         self._refreshConnectionStatus()
-        
+
         self.addSpliter()
+
         self.addNumberSetting(
             'setting_page.ws_lyrics_interval_title',
             'setting_page.ws_lyrics_interval_desc',
-            0.005, 1, 0.005, 'ws_lyrics_interval'
+            0.005,
+            1,
+            0.005,
+            'ws_lyrics_interval',
         )
         self.addNumberSetting(
-                    'setting_page.ws_fft_interval_title',
-                    'setting_page.ws_fft_interval_desc',
-                    0.005, 1, 0.005, 'ws_fft_interval'
-                )
-
-        for slider in self.findChildren(QSlider):
-            slider.wheelEvent = lambda e: e.ignore()  # type: ignore[method-assign]
+            'setting_page.ws_fft_interval_title',
+            'setting_page.ws_fft_interval_desc',
+            0.005,
+            1,
+            0.005,
+            'ws_fft_interval',
+        )
+        self.addInfoBlock('setting_page.notice', 'setting_page.ws_interval_tip')
 
     def deviceChanged(self, idx: int):
         try:
@@ -1037,7 +1120,6 @@ class SettingPage(QWidget):
         configurationName: str,
         onChanged: Callable[[float], None] | None = None,
         advanced: bool = False,
-        easy: bool = True,
     ) -> None:
         box = SettableNumberViewer(self.ctx.harmony_font_family, self.ctx)
         box.setRange(min, max_v)
@@ -1052,7 +1134,7 @@ class SettingPage(QWidget):
                 onChanged(value)
 
         box.valueChanged.connect(_valueChanged)
-        self.addSetting(title, description, box, advanced=advanced, easy=easy)
+        self.addSetting(title, description, box, advanced=advanced)
 
     def addCheckSetting(
         self,
@@ -1061,10 +1143,9 @@ class SettingPage(QWidget):
         configurationName: str,
         onChanged: Callable[[], None] | None = None,
         advanced: bool = False,
-        easy: bool = True,
-    ) -> None:
+    ) -> CheckBox:
         box = CheckBox()
-        self._bindSettingText(box, title, easy)
+        self._bindSettingText(box, title, not advanced)
         self._easy_text_widgets.append(box)
 
         def __valueChanged():
@@ -1074,23 +1155,47 @@ class SettingPage(QWidget):
 
         box.stateChanged.connect(__valueChanged)
         box.setChecked(getattr(cfg, configurationName))
-        self.addSetting(title, description, box, advanced=advanced, easy=easy)
+        self.addSetting(title, description, box, advanced=advanced)
+        return box
+
+    def addChoiceSetting(
+        self,
+        title: str,
+        description: str,
+        configurationName: str,
+        options: list[tuple[str, str]],
+        onChanged: Callable[[str], None] | None = None,
+        advanced: bool = False,
+    ) -> ComboBox:
+        box = ComboBox()
+        for label, value in options:
+            box.addItem(label, userData=value)
+        box.setCurrentIndex(max(box.findData(getattr(cfg, configurationName)), 0))
+
+        def __valueChanged() -> None:
+            value = str(box.currentData())
+            setattr(cfg, configurationName, value)
+            if onChanged:
+                onChanged(value)
+
+        box.currentIndexChanged.connect(__valueChanged)
+        self.addSetting(title, description, box, advanced=advanced)
+        return box
 
     def addSection(
         self,
         title: str,
         description: str,
         advanced: bool = False,
-        easy: bool = True,
-    ) -> None:
+    ) -> SectionContainer:
         if self._section_count:
             spacer = QWidget()
             spacer.setFixedHeight(12)
             self._trackAdvancedWidget(spacer, advanced)
             self.options_layout.addWidget(spacer)
         section = SectionContainer(title, description)
-        self._bindSettingText(section.title_l, title, easy)
-        self._bindSettingText(section.desc_l, description, easy)
+        self._bindSettingText(section.title_l, title, not advanced)
+        self._bindSettingText(section.desc_l, description, not advanced)
         self._easy_text_widgets.extend([section.title_l, section.desc_l])
         self._trackAdvancedWidget(section, advanced)
         section.expandedChanged.connect(self._onSectionExpandedChanged)
@@ -1098,6 +1203,7 @@ class SettingPage(QWidget):
         self._current_section = section
         self._sections.append(section)
         self._section_count += 1
+        return section
 
     def _onSectionExpandedChanged(self, title: str, expanded: bool) -> None:
         cfg.setting_section_expanded[title] = expanded
@@ -1124,7 +1230,6 @@ class SettingPage(QWidget):
         description: str,
         widget: QWidget,
         advanced: bool = False,
-        easy: bool = True,
     ) -> None:
         card = self._createTransparentCard()
         card._llm_setting_name = name  # type: ignore
@@ -1138,11 +1243,11 @@ class SettingPage(QWidget):
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(4)
         name_l = QLabel()
-        self._bindSettingText(name_l, name, easy)
+        self._bindSettingText(name_l, name, not advanced)
         name_l.setStyleSheet('font-weight: bold;')
         name_l.setWordWrap(True)
         desc_l = QLabel()
-        self._bindSettingText(desc_l, description, easy)
+        self._bindSettingText(desc_l, description, not advanced)
         desc_l.setWordWrap(True)
         desc_l.setStyleSheet(f'color: {"#A8A8A8" if theme.isDark() else "#666666"};')
         self._easy_text_widgets.extend([name_l, desc_l])
@@ -1158,17 +1263,16 @@ class SettingPage(QWidget):
         title: str,
         text: str,
         advanced: bool = False,
-        easy: bool = True,
     ) -> None:
         card = self._createTransparentCard()
         self._trackAdvancedWidget(card, advanced)
         layout = QVBoxLayout()
         layout.setContentsMargins(16, 12, 16, 12)
         title_l = QLabel()
-        self._bindSettingText(title_l, title, easy)
+        self._bindSettingText(title_l, title, not advanced)
         title_l.setStyleSheet('font-weight: bold;')
         body_l = QLabel()
-        self._bindSettingText(body_l, text, easy)
+        self._bindSettingText(body_l, text, not advanced)
         body_l.setWordWrap(True)
         body_l.setStyleSheet(f'color: {"#A8A8A8" if theme.isDark() else "#666666"};')
         self._easy_text_widgets.extend([title_l, body_l])
@@ -1255,10 +1359,10 @@ class SettingPage(QWidget):
         self._trackAdvancedWidget(widget, advanced)
         self._addOptionWidget(widget)
 
-    def addSpliter(self) -> None:
+    def addSpliter(self, advanced: bool = False) -> None:
         separator = SectionSeparator()
         self._separators.append(separator)
-        self.addSeparateWidget(separator)
+        self.addSeparateWidget(separator, advanced=advanced)
 
     def disconnectFromSouthsideClient(self):
         self._ws_server.tryGetHandler()
@@ -1329,6 +1433,27 @@ class SettingPage(QWidget):
         mode = self.play_method_box.currentData()
         if mode in ('Repeat one', 'Repeat list', 'Shuffle', 'Play in order'):
             cfg.play_method = mode
+
+    def _refreshAnchorBox(self) -> None:
+        if not hasattr(self, 'anchor_box'):
+            return
+        self.anchor_box.blockSignals(True)
+        self.anchor_box.clear()
+        self.anchor_box.addItem(
+            tr('setting_page.desktop_lyrics_anchor_top_center'),
+            userData='top-center',
+        )
+        self.anchor_box.addItem(
+            tr('setting_page.desktop_lyrics_anchor_normal'), userData='normal'
+        )
+        index = self.anchor_box.findData(cfg.desktop_lyrics_anchor)
+        self.anchor_box.setCurrentIndex(max(index, 0))
+        self.anchor_box.blockSignals(False)
+
+    def _onAnchorChanged(self) -> None:
+        anchor = self.anchor_box.currentData()
+        if anchor in ('normal', 'top-center'):
+            cfg.desktop_lyrics_anchor = anchor
 
     def _refreshLlmProvidersView(self) -> None:
         while self.llm_provider_list_layout.count():

@@ -793,8 +793,8 @@ TRANSLATIONS: dict[str, list[str]] = {
         '按半音调整音调',
     ],
     'setting_page.playback_order_stereo_output_speed_and_skip_behavior': [
-        'Playback order, stereo output, speed and skip behavior.',
-        '播放顺序、立体声输出、速度和跳过行为。',
+        'Playback order, output device, speed and skip behavior.',
+        '播放顺序、输出设备、速度和跳过行为。',
     ],
     'setting_page.playback_order_stereo_output_speed_and_skip_behavior_easy': [
         'Everyday playback preferences.',
@@ -864,12 +864,12 @@ TRANSLATIONS: dict[str, list[str]] = {
     'setting_page.playback_effects': ['Playback Effects', '播放效果'],
     'setting_page.playback_effects_easy': ['Playback Effects', '播放效果'],
     'setting_page.playback_effects_description': [
-        'Speed, pitch and other active playback effects.',
-        '速度、音调和其他播放效果。',
+        'Stereo width and reverb for local playback.',
+        '本机播放的立体声宽度与混响。',
     ],
     'setting_page.playback_effects_description_easy': [
-        'Playback speed and pitch controls.',
-        '播放速度和音调控制。',
+        'Make the sound wider or add a little reverb.',
+        '让声音更宽广，或者加上一点混响。',
     ],
     'setting_page.playing_easy': ['Playback', '听歌'],
     'setting_page.llm': ['LLM', 'LLM'],
@@ -1120,43 +1120,42 @@ TRANSLATIONS: dict[str, list[str]] = {
         'Enable beat intensity estimation from low-frequency FFT energy',
         '根据低频 FFT 能量估算节拍强度',
     ],
-    'setting_page.beat_detection_sensitivity': [
-        'Beat Sensitivity', '节拍灵敏度'
-    ],
+    'setting_page.beat_detection_sensitivity': ['Beat Sensitivity', '节拍灵敏度'],
     'setting_page.beat_detection_sensitivity_description': [
-        'Multiplier applied to beat energy', '节拍能量倍率'
+        'Multiplier applied to beat energy',
+        '节拍能量倍率',
     ],
-    'setting_page.beat_detection_smoothing': [
-        'Beat Smoothing', '节拍平滑系数'
-    ],
+    'setting_page.beat_detection_smoothing': ['Beat Smoothing', '节拍平滑系数'],
     'setting_page.beat_detection_smoothing_description': [
-        'Higher values smooth the intensity curve more', '值越高曲线越平滑'
+        'Higher values smooth the intensity curve more',
+        '值越高曲线越平滑',
     ],
-    'setting_page.beat_detection_hop_seconds': [
-        'Beat Analysis Hop', 'Beat 分析步长'
-    ],
+    'setting_page.beat_detection_hop_seconds': ['Beat Analysis Hop', 'Beat 分析步长'],
     'setting_page.beat_detection_hop_seconds_description': [
-        'Time step between beat analysis frames', '相邻 Beat 分析帧的时间间隔'
+        'Time step between beat analysis frames',
+        '相邻 Beat 分析帧的时间间隔',
     ],
     'setting_page.beat_detection_min_interval': [
-        'Minimum Beat Interval', 'Beat 最短间隔'
+        'Minimum Beat Interval',
+        'Beat 最短间隔',
     ],
     'setting_page.beat_detection_min_interval_description': [
-        'Shortest time allowed between beat points', 'Beat 点之间允许的最短时间'
+        'Shortest time allowed between beat points',
+        'Beat 点之间允许的最短时间',
     ],
     'setting_page.beat_detection_point_threshold': [
-        'Beat Point Threshold', 'Beat 点阈值'
+        'Beat Point Threshold',
+        'Beat 点阈值',
     ],
     'setting_page.beat_detection_point_threshold_description': [
         'Instant intensity increase required to mark a beat point',
         '瞬时强度增长达到此值时标记 Beat 点',
     ],
     'setting_page.beat_detection_visual_flash': [
-        'Beat Progress Flash', 'Beat 进度条闪烁'
+        'Beat Progress Flash',
+        'Beat 进度条闪烁',
     ],
-    'setting_page.beat_detection_visual_lyrics': [
-        'Beat Lyrics Flash', 'Beat 歌词闪烁'
-    ],
+    'setting_page.beat_detection_visual_lyrics': ['Beat Lyrics Flash', 'Beat 歌词闪烁'],
     'setting_page.beat_detection_visual_flash_description': [
         'Flash the progress bar on detected beat points',
         '检测到 Beat 点时闪烁进度条',
@@ -1176,13 +1175,78 @@ TRANSLATIONS: dict[str, list[str]] = {
         '向 Southside Legacy 发送 FFT 信息的间隔',
     ],
     'setting_page.ws_interval_tip': [
-        'Notice: shorter interval can cuase CPU too busy, make your other applications lagging or make SouthsideMusic\'s itself busy',
+        "Notice: shorter interval can cuase CPU too busy, make your other applications lagging or make SouthsideMusic's itself busy",
         '注意：间隔过短可能导致 CPU 占用过高，使其他应用程序卡顿，或使 SouthsideMusic 本身运行繁忙',
     ],
     'setting_page.fft_size': ['FFT Sampling Size', 'FFT 采样大小'],
     'setting_page.fft_size_desc': [
         'larger value makes more data points on',
         '更大的值代表更密集的数据点',
+    ],
+    'setting_page.beat': ['Beat Reaction', '节拍响应'],
+    'setting_page.beat_description': [
+        'Beat intensity estimation and the visual reaction to it.',
+        '节拍强度估算与对应的视觉响应。',
+    ],
+    'setting_page.fft_min_frequency_hz': [
+        'Visual Range Low (Hz)',
+        '可视化低频下限（Hz）',
+    ],
+    'setting_page.fft_min_frequency_hz_description': [
+        'Lowest frequency drawn in the spectrum.',
+        '频谱图显示的最低频率。',
+    ],
+    'setting_page.fft_max_frequency_hz': [
+        'Visual Range High (Hz)',
+        '可视化高频上限（Hz）',
+    ],
+    'setting_page.fft_max_frequency_hz_description': [
+        'Highest frequency drawn in the spectrum.',
+        '频谱图显示的最高频率。',
+    ],
+    'setting_page.beat_detection_low_hz': [
+        'Detection Range Low (Hz)',
+        '检测频段下限（Hz）',
+    ],
+    'setting_page.beat_detection_low_hz_description': [
+        'Lowest frequency counted as a beat.',
+        '参与 Beat 判定的最低频率。',
+    ],
+    'setting_page.beat_detection_high_hz': [
+        'Detection Range High (Hz)',
+        '检测频段上限（Hz）',
+    ],
+    'setting_page.beat_detection_high_hz_description': [
+        'Highest frequency counted as a beat.',
+        '参与 Beat 判定的最高频率。',
+    ],
+    'setting_page.desktop_lyrics_anchor': ['Lyrics Position', '歌词位置'],
+    'setting_page.desktop_lyrics_anchor_easy': ['Where the Lyrics Are', '歌词放在哪里'],
+    'setting_page.desktop_lyrics_anchor_description': [
+        'Pin the window to the top center of the screen, or keep it free to drag.',
+        '把窗口固定在屏幕顶部居中，或者保持自由拖动。',
+    ],
+    'setting_page.desktop_lyrics_anchor_description_easy': [
+        'keep the window centered at the top of your screen, or drag it anywhere',
+        '让窗口固定在屏幕顶部居中，或者随手拖到任意位置',
+    ],
+    'setting_page.desktop_lyrics_anchor_top_center': ['Top Center', '屏幕顶部居中'],
+    'setting_page.desktop_lyrics_anchor_normal': ['Free', '自由拖动'],
+    'setting_page.notice': ['Notice', '注意'],
+    'setting_page.crossfade_strength_easy': ['Transition Strength', '过渡强度'],
+    'setting_page.crossfade_strength_description_easy': [
+        'how much the two songs overlap',
+        '两首歌重叠的程度',
+    ],
+    'setting_page.enable_stereo_easy': ['Wider Sound', '声音更宽广'],
+    'setting_page.enable_stereo_effect_easy': [
+        'spread the sound a bit left and right',
+        '让左右声道稍微拉开一点',
+    ],
+    'setting_page.enable_reverb_easy': ['Add Reverb', '添加混响'],
+    'setting_page.enable_reverb_effect_easy': [
+        'add a little room echo to the sound',
+        '给声音加上一点空间回响',
     ],
     'song_card.add_to': ['Add to ...', '添加到...'],
     'song_card.add_to_folder': ['Add to Folder', '添加到文件夹'],

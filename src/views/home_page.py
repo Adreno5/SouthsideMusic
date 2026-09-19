@@ -293,20 +293,6 @@ class HomePage(SScrollArea):
         contents_layout.addLayout(hbox)
         contents_layout.addLayout(self.recommend_folders_layout)
 
-        hbox = QHBoxLayout()
-        hbox.setSpacing(12)
-        title_label = SubtitleLabel('')
-        bindText(title_label, 'home_page.recommend_songs')
-        hbox.addWidget(title_label)
-        self.songs_counter = NumberViewer(
-            self.ctx.harmony_font_family, self.ctx, 15, 1.3
-        )
-        hbox.addWidget(self.songs_counter)
-        self.recommend_songs_layout = SFlowLayout(yAnimations=False)
-        self.recommend_songs_layout.setAnimation(300)
-        contents_layout.addLayout(hbox)
-        contents_layout.addLayout(self.recommend_songs_layout)
-
         contents_layout.addSpacerItem(
             QSpacerItem(
                 0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
@@ -323,12 +309,9 @@ class HomePage(SScrollArea):
 
     def fetchDailyRecommend(self):
         removeWidgets(self.recommend_folders_layout)
-        removeWidgets(self.recommend_songs_layout)
 
         self.folders_counter.setText('0')
-        self.songs_counter.setText('0')
         self.folders_counter.y_map.clear()
-        self.songs_counter.y_map.clear()
 
         def _fetchFolders():
             folders: list[CloudFolderInfo] = []
@@ -352,35 +335,7 @@ class HomePage(SScrollArea):
             )
             self.ctx.addScheduledTask(add)
 
-        def _fetchSongs():
-            songs = getBackend().getDailyRecommendSongs()
-            idx = -1
-
-            def add():
-                nonlocal songs, idx
-                idx += 1
-                if idx >= len(songs):
-                    return
-                song = songs[idx]
-                card = CloudFavoriteSongCard(
-                    song,
-                    self.ctx.playing_page,
-                    self.ctx.main_window,
-                    self.ctx.playlist_page,
-                )
-                card.clicked.connect(self._playSong)
-                card.queued.connect(self._queueSong)
-                self.recommend_songs_layout.insertWidget(0, card)
-
-                QTimer.singleShot(0, add)
-
-            self.ctx.addScheduledTask(
-                lambda: self.songs_counter.setText(str(len(songs)))
-            )
-            self.ctx.addScheduledTask(add)
-
         asyncTask(_fetchFolders, (), self)
-        asyncTask(_fetchSongs, (), self)
 
     def _playSong(self, song: SongStorable) -> None:
         event_bus.emit(PLAY_STORABLE, song)

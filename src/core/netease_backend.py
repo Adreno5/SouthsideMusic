@@ -506,12 +506,10 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             response = apis.user.getDailyRecommend()
             assert isinstance(response, dict), 'Invalid Response'
             assert response.get('code') == 200, f'API Error: {response}'
-            result: list[SongStorable] = []
-            for obj in response['recommend']:
-                storable = self._songStorableFromApiSong(obj)
-                if storable is not None:
-                    result.append(storable)
-            return result
+            data = response.get('data') or {}
+            if not isinstance(data, dict):
+                return []
+            return self._songsFromApiSongs(data.get('dailySongs') or [])
 
     def getDailyRecommendFolders(self) -> list[CloudFolderInfo]:
         with ncm.getCurrentSession():

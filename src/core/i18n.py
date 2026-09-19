@@ -486,7 +486,6 @@ TRANSLATIONS: dict[str, list[str]] = {
     'main_window.library': ['Library', '库'],
     'home_page.title': ['Home', '首页'],
     'home_page.recommend_folders': ['Recommend Folders', '推荐歌单'],
-    'home_page.recommend_songs': ['Recommend Songs', '每日推荐'],
     'home_page.welcome_back': ['Welcome back,', '欢迎回来，'],
     'home_page.heart_mode': ['HeartBeat Mode', '心动模式'],
     'home_page.heart_mode_subtitle': [

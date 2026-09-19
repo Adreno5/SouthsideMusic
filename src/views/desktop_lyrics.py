@@ -32,6 +32,8 @@ from services.events.events import DESKTOP_LYRICS_ANCHOR_CHANGED, EMIT_DEBUG_INF
 from views.lyrics_viewer import LyricsViewer
 from views.playing_page import _artists_text
 
+_PURE_MUSIC_PLACEHOLDER = '纯音乐，请欣赏'
+
 
 class DesktopLyricsViewer(LyricsViewer):
     def __init__(
@@ -84,6 +86,12 @@ class DesktopLyricsViewer(LyricsViewer):
                 return line.time
         return float('inf')
 
+    def _isPureMusicPlaceholder(self, position: float) -> bool:
+        mgr = self._ymgr if self._ymgr.hasYrcTiming() else self._mgr
+        if not mgr.parsed:
+            return False
+        return mgr.getCurrentLyric(position).content.strip() == _PURE_MUSIC_PLACEHOLDER
+
     def _titleLine(self, position: float) -> LyricInfo | None:
         song = getattr(self._dp, 'cur', None)
         storable = song.storable if song else None
@@ -93,7 +101,9 @@ class DesktopLyricsViewer(LyricsViewer):
             self._title_line = LyricInfo(time=0.0, content=storable.name)
         self._title_line.content = storable.name
         self._title_artist = _artists_text(storable)
-        if position >= self._firstLyricTime():
+        if position >= self._firstLyricTime() and not self._isPureMusicPlaceholder(
+            position
+        ):
             return None
         return self._title_line
 

@@ -2990,6 +2990,12 @@ class BootstrapWindow(QWidget):
                 self._text('resolving_wheels', count=len(batch))
             )
             outcomes = self.resolveBatch(index, batch, wheelhouse)
+            uncached: list[WheelFile] = []
+            for requirement in batch:
+                candidate = outcomes.get(requirement.name)
+                if candidate is not None and candidate.path is None:
+                    uncached.append(candidate)
+            self.warmWheelMetadata(index, uncached)
             done = 0
             next_level: list[RequirementInfo] = []
             for requirement in batch:
@@ -3025,6 +3031,20 @@ class BootstrapWindow(QWidget):
             len(requirements),
         )
         return final, failed
+
+    def warmWheelMetadata(self, index: WheelIndex, wheels: list[WheelFile]) -> None:
+        """Parse a whole level's wheel metadata concurrently.
+
+        A wheel that publishes no PEP 658 metadata has to be downloaded and
+        unzipped before its dependencies are known, and the level is expanded
+        one wheel at a time below. Parsing here keeps that serial loop from
+        paying for every download itself.
+        """
+        if len(wheels) < 2:
+            return
+        with ThreadPoolExecutor(max_workers=min(INDEX_WORKERS, len(wheels))) as pool:
+            for _ in pool.map(index.wheelMetadata, wheels):
+                pass
 
     def resolveBatch(
         self,

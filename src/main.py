@@ -25,6 +25,11 @@ QApplication.setHighDpiScaleFactorRoundingPolicy(
 QApplication.setAttribute(Qt.ApplicationAttribute.AA_CompressHighFrequencyEvents)
 
 app = QApplication(sys.argv)
+
+from core.smtc import SmtcController, initAppIdentity
+
+initAppIdentity()
+
 launchwindow: LaunchWindow | None = LaunchWindow(app)
 launchwindow.subtitle('Loading libraries...')
 app.processEvents()
@@ -592,6 +597,7 @@ if __name__ == '__main__':
     ctx.launch_window = launchwindow
     ctx.llm = LLM()
     ctx.playing_manager = PlayingManager(ctx)
+    ctx.smtc = SmtcController(ctx)
 
     launchwindow.subtitle('Preparing (checking dependences...)')
     depwindow = DependencesWindow(ctx)
@@ -653,6 +659,7 @@ if __name__ == '__main__':
         app.aboutToQuit.connect(atExitListener)
 
         mwindow.init()
+        ctx.smtc.setEnabled(ctx.config.smtc_enabled)
 
         fp.refresh()
 

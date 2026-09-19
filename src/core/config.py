@@ -120,6 +120,7 @@ class Config:
 
     show_translation: bool = True
     show_advanced_settings: bool = False
+    smtc_enabled: bool = True
     setting_section_expanded: dict[str, bool] = field(default_factory=dict)
 
     lyric_video_export_ext: str = '.mp4'
@@ -146,7 +147,7 @@ class Config:
     llm_current_provider: str = ''
     llm_current_model: str = ''
     llm_viewer_expanded: bool = False
-    
+
     ws_lyrics_interval = 0.032
     ws_fft_interval = 0.032
 

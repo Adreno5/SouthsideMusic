@@ -684,6 +684,11 @@ TRANSLATIONS: dict[str, list[str]] = {
         'show every setting, including options for tuning audio, model providers and client links',
         '显示全部设置，包括音效调节、模型服务和客户端连接等高级选项',
     ],
+    'setting_page.enable_smtc': ['SMTC Service', 'SMTC 服务'],
+    'setting_page.enable_smtc_description': [
+        'show and control playback in the Windows media overlay',
+        '在 Windows 媒体浮出控件中显示并控制播放',
+    ],
     'setting_page.enable_fft_driven_visual_effects': [
         'enable FFT-driven visual effects',
         '启用 FFT 驱动的视觉效果',

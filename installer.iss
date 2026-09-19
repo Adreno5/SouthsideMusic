@@ -1,5 +1,5 @@
 #define AppName "Southside Music"
-#define AppVersion "v44"
+#define AppVersion "v45"
 #define AppPublisher "Adreno9135"
 #define AppURL "https://github.com/Adreno5/SouthsideMusic"
 #define AppExeName "Launch.exe"
@@ -88,7 +88,7 @@ Type: files; Name: "{app}\winsound.pyd"
 ; Launch.lnk holds absolute paths from the build machine, so it must not be
 ; installed; the [Icons] entries below create the real shortcuts with
 ; WorkingDir {app}.
-Source: "build.result\raw\*"; DestDir: "{app}"; Excludes: "Launch.lnk"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "build.result\raw\*"; DestDir: "{app}"; Excludes: "Launch.lnk,data,data\*"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExePath}"; IconFilename: "{app}\{#AppExePath}"; WorkingDir: "{app}"

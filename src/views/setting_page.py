@@ -398,6 +398,13 @@ class SettingPage(QWidget):
             self.language_box,
         )
 
+        self.addCheckSetting(
+            'setting_page.enable_smtc',
+            'setting_page.enable_smtc_description',
+            'smtc_enabled',
+            lambda: self.ctx.smtc.setEnabled(cfg.smtc_enabled),
+        )
+
     def _addAppearanceSection(self) -> None:
         self.addSection(
             'setting_page.window', 'setting_page.theme_sensitive_background_mixing'

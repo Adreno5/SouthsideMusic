@@ -20,6 +20,7 @@ if TYPE_CHECKING:
         SongStorable,
     )
     from core.playing_manager import PlayingManager
+    from core.smtc import SmtcController
     from core.ws_server import WebSocketServer, QObjectHandler
     from PySide6.QtWidgets import QApplication
     from services.services import EventsServices
@@ -106,6 +107,8 @@ class AppContext:
         self.dependences_window: DependencesWindow = cast('DependencesWindow', None)
         self.debugging_obj: Debugging = cast('Debugging', None)
         self.events_service: EventsServices = cast('EventsServices', None)
+
+        self.smtc: SmtcController = cast('SmtcController', None)
 
     def addScheduledTask(
         self,

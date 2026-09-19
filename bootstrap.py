@@ -187,6 +187,8 @@ def warmArtifactHost() -> None:
         daemon=True,
         name='southside-mirror-probe',
     ).start()
+
+
 # Dependencies that ship with CPython and must never be fetched from an index.
 _STDLIB_NAMES = {
     'argparse',
@@ -372,6 +374,8 @@ class WheelIndex:
         self._cache_lock = threading.Lock()
         self._metadata_cache: dict[str, bytes | None] = {}
         self._metadata_lock = threading.Lock()
+        self._resolve_cache: dict[tuple[str, str, str], WheelFile] = {}
+        self._resolve_lock = threading.Lock()
         self._loadCache()
 
     def _loadCache(self) -> None:
@@ -597,6 +601,11 @@ class WheelIndex:
     def resolveBest(self, requirement: RequirementInfo) -> WheelFile | None:
         """Pick the newest wheel matching a version range, like a resolver."""
         package = normalizePackageName(requirement.name)
+        key = (package, requirement.version, requirement.specifier)
+        with self._resolve_lock:
+            cached = self._resolve_cache.get(key)
+        if cached is not None:
+            return cached
         versions = self.wheelVersions(package)
         if not versions:
             return None
@@ -608,7 +617,11 @@ class WheelIndex:
         if not usable:
             return None
         best = max(usable, key=versionKey)
-        return self.resolve(RequirementInfo(requirement.name, best))
+        wheel = self.resolve(RequirementInfo(requirement.name, best))
+        if wheel is not None:
+            with self._resolve_lock:
+                self._resolve_cache[key] = wheel
+        return wheel
 
     def wheelMetadata(self, wheel: WheelFile) -> bytes | None:
         key = wheel.path.as_posix() if wheel.path is not None else wheel.url
@@ -887,9 +900,7 @@ def versionMatchesPin(pin: str, version: str) -> bool:
 
 def requirementNames(requirement: str) -> str:
     """Strip extras, specifiers and markers: "anyio<5,>=3.5 ; extra == 'x'"."""
-    return re.split(r'[<>=!~\[;]', requirement.split(';', 1)[0], maxsplit=1)[
-        0
-    ].strip()
+    return re.split(r'[<>=!~\[;]', requirement.split(';', 1)[0], maxsplit=1)[0].strip()
 
 
 def parseWheelRequirements(metadata: bytes) -> list[str]:
@@ -951,7 +962,7 @@ def _evaluateMarker(marker: str) -> bool | None:
 def _evaluateClause(clause: str) -> bool | None:
     clause = clause.strip().strip('()').strip()
     match = re.match(
-        r"(?P<left>[a-z_]+)\s*(?P<op>==|!=|<=|>=|<|>|~=)\s*"
+        r'(?P<left>[a-z_]+)\s*(?P<op>==|!=|<=|>=|<|>|~=)\s*'
         r"[\"'](?P<right>[^\"']*)[\"']",
         clause,
     )
@@ -1005,6 +1016,7 @@ def _evaluateClause(clause: str) -> bool | None:
             return left > right
         return left >= right
     return None
+
 
 _MARKER_ENVIRONMENT: dict[str, str] = {
     'os_name': 'nt' if os.name == 'nt' else 'posix',
@@ -2725,9 +2737,7 @@ class BootstrapWindow(QWidget):
         self._stopGuiHeartbeat()
         self.mwindow.mainBar().setValue(0)
         self.mwindow.hideSlots()
-        self.status_label.setText(
-            self._text('startup_failed', code=returncode)
-        )
+        self.status_label.setText(self._text('startup_failed', code=returncode))
         self.elapsed_label.hide()
         self.show()
         self.mwindow.applyWindowHeight()
@@ -2929,9 +2939,7 @@ class BootstrapWindow(QWidget):
                                     batch_expected[0] = sum(batch_files.values())
                             self.updateStatus(package, 'Downloading')
                     elif line_text.startswith('Saved '):
-                        package = parseWheelPackageName(
-                            line_text.split('Saved ', 1)[1]
-                        )
+                        package = parseWheelPackageName(line_text.split('Saved ', 1)[1])
                         with batch_lock:
                             batch_name[0] = ''
                         self.updateStatus(package, 'Cached')
@@ -2951,6 +2959,7 @@ class BootstrapWindow(QWidget):
         for requirement in requirements:
             self.markDownloadComplete(requirement.name, True)
         return []
+
     def metadataWheelPath(self, wheel: WheelFile) -> Path:
         """Where a wheel downloaded for its metadata is kept for reuse."""
         return stagedWheelPath(wheel)
@@ -2986,9 +2995,7 @@ class BootstrapWindow(QWidget):
             if not batch:
                 break
             self.mwindow.reportParallel(0, len(batch))
-            self.updateStatusText(
-                self._text('resolving_wheels', count=len(batch))
-            )
+            self.updateStatusText(self._text('resolving_wheels', count=len(batch)))
             outcomes = self.resolveBatch(index, batch, wheelhouse)
             uncached: list[WheelFile] = []
             for requirement in batch:
@@ -2996,6 +3003,7 @@ class BootstrapWindow(QWidget):
                 if candidate is not None and candidate.path is None:
                     uncached.append(candidate)
             self.warmWheelMetadata(index, uncached)
+            self.warmDependencyResolve(index, uncached, seen, queued)
             done = 0
             next_level: list[RequirementInfo] = []
             for requirement in batch:
@@ -3044,6 +3052,35 @@ class BootstrapWindow(QWidget):
             return
         with ThreadPoolExecutor(max_workers=min(INDEX_WORKERS, len(wheels))) as pool:
             for _ in pool.map(index.wheelMetadata, wheels):
+                pass
+
+    def warmDependencyResolve(
+        self,
+        index: WheelIndex,
+        wheels: list[WheelFile],
+        seen: set[str],
+        queued: set[str],
+    ) -> None:
+        """Resolve this level's new dependencies in one concurrent pass.
+
+        dependencyWheels() below expands the level one wheel at a time, so
+        without this every index lookup it makes would go out on its own. The
+        index memo also keeps a package from being resolved again once a later
+        level asks for it.
+        """
+        wanted: dict[str, RequirementInfo] = {}
+        for wheel in wheels:
+            for requirement in self.wheelDependencies(
+                index,
+                wheel,
+                seen,
+                queued | set(wanted),
+            ):
+                wanted.setdefault(normalizePackageName(requirement.name), requirement)
+        if len(wanted) < 2:
+            return
+        with ThreadPoolExecutor(max_workers=min(INDEX_WORKERS, len(wanted))) as pool:
+            for _ in pool.map(index.resolveBest, wanted.values()):
                 pass
 
     def resolveBatch(
@@ -3113,13 +3150,35 @@ class BootstrapWindow(QWidget):
         seen: set[str],
         queued: set[str],
     ) -> list[tuple[RequirementInfo, WheelFile]]:
+        found: list[tuple[RequirementInfo, WheelFile]] = []
+        for requirement in self.wheelDependencies(index, wheel, seen, queued):
+            dependency = index.resolveBest(requirement)
+            if dependency is None:
+                _logger.debug(
+                    'dependency %s of %s not resolvable',
+                    requirement.name,
+                    wheel.filename,
+                )
+                continue
+            queued.add(normalizePackageName(requirement.name))
+            found.append((requirement, dependency))
+        return found
+
+    def wheelDependencies(
+        self,
+        index: WheelIndex,
+        wheel: WheelFile,
+        seen: set[str],
+        queued: set[str],
+    ) -> list[RequirementInfo]:
+        """Dependency requirements a wheel asks for that we have not seen yet."""
         if wheel.path is not None:
             # Already in the wheelhouse; its dependencies were handled before.
             return []
         metadata = index.wheelMetadata(wheel)
         if metadata is None:
             return []
-        found: list[tuple[RequirementInfo, WheelFile]] = []
+        found: list[RequirementInfo] = []
         for raw in parseWheelRequirements(metadata):
             if not appliesToThisEnvironment(raw):
                 continue
@@ -3129,17 +3188,7 @@ class BootstrapWindow(QWidget):
                 continue
             if package in _STDLIB_NAMES:
                 continue
-            requirement = RequirementInfo(name, '', requirementSpecifier(raw))
-            dependency = index.resolveBest(requirement)
-            if dependency is None:
-                _logger.debug(
-                    'dependency %s of %s not resolvable',
-                    name,
-                    wheel.filename,
-                )
-                continue
-            queued.add(package)
-            found.append((requirement, dependency))
+            found.append(RequirementInfo(name, '', requirementSpecifier(raw)))
         return found
 
     def downloadRequirementWheelsNative(
@@ -3157,9 +3206,7 @@ class BootstrapWindow(QWidget):
         """
         wheelhouse.mkdir(parents=True, exist_ok=True)
         index = WheelIndex(mirror_url, python_exe, env=env)
-        self.updateStatusText(
-            self._text('resolving_wheels', count=len(requirements))
-        )
+        self.updateStatusText(self._text('resolving_wheels', count=len(requirements)))
         self.beginPhase('resolve')
         self.startElapsedTicker()
         warmArtifactHost()
@@ -3168,9 +3215,7 @@ class BootstrapWindow(QWidget):
         self.endPhase()
         self.beginPhase('download')
         to_download = [
-            (requirement, wheel)
-            for requirement, wheel in resolved
-            if wheel.url
+            (requirement, wheel) for requirement, wheel in resolved if wheel.url
         ]
         expected_sizes = {
             requirement.name: wheel.size
@@ -3351,8 +3396,10 @@ class BootstrapWindow(QWidget):
                         percent = min(99, max(0, int(downloaded * 100 / total)))
                     else:
                         percent = 0
-                    if not force and percent == last_percent and (
-                        downloaded == last_downloaded or downloaded <= 0
+                    if (
+                        not force
+                        and percent == last_percent
+                        and (downloaded == last_downloaded or downloaded <= 0)
                     ):
                         return
                     last_percent = percent
@@ -3718,6 +3765,7 @@ class BootstrapWindow(QWidget):
             total_percent * 100.0,
             self._downloadText(headline, entry, done, total),
         )
+
     def _pickHeadlineLocked(self, updated: str) -> str:
         """Keep one package on the label until it finishes."""
         if not self._download_active:

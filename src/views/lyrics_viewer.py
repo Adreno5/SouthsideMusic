@@ -93,6 +93,7 @@ class LyricsViewer(QWidget):
         self.mouse_pos: QPointF | None = None
         self.last_wheel: float = time.time()
 
+        self.x_pad: float = 0
         self.draw_x_offset: float = 0
 
         self.last_draw: int = time.perf_counter_ns()
@@ -760,8 +761,8 @@ class LyricsViewer(QWidget):
                 else (255 if is_current_line else 120)
             )
             y = top_offset + y_offsets[i]
-            x = 0.0
-            text_x = self.draw_x_offset if is_current_line else 0.0
+            x = self.x_pad
+            text_x = self.x_pad + (self.draw_x_offset if is_current_line else 0.0)
             color = self._primaryColorForLine(line, is_current_line, alpha)
             if is_current_line and self.ctx.debugging:
                 color = QColor(0, 255, 0)

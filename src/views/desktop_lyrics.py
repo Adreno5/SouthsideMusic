@@ -30,6 +30,7 @@ from core import theme
 from core.lyrics import LyricInfo, YRCLyricInfo
 from services.events.events import DESKTOP_LYRICS_ANCHOR_CHANGED, EMIT_DEBUG_INFO
 from views.lyrics_viewer import LyricsViewer
+from views.playing_page import _artists_text
 
 
 class DesktopLyricsViewer(LyricsViewer):
@@ -46,6 +47,8 @@ class DesktopLyricsViewer(LyricsViewer):
         self.dragging: bool = False
         self.dragging_point: QPoint = QPoint(0, 0)
         self._draw_progress_ratio = 0.0
+        self._title_line: LyricInfo | None = None
+        self._title_artist: str = ''
 
         self.scr_size: QSize = ctx.app.primaryScreen().size()
         super().__init__(ctx)
@@ -74,12 +77,53 @@ class DesktopLyricsViewer(LyricsViewer):
             return
         self.indentation = False
 
+    def _firstLyricTime(self) -> float:
+        lines = self._ymgr.parsed if self._ymgr.hasYrcTiming() else self._mgr.parsed
+        for line in lines:
+            if line.content.strip() and not line.isMetadata:
+                return line.time
+        return float('inf')
+
+    def _titleLine(self, position: float) -> LyricInfo | None:
+        song = getattr(self._dp, 'cur', None)
+        storable = song.storable if song else None
+        if storable is None or not storable.name:
+            return None
+        if self._title_line is None:
+            self._title_line = LyricInfo(time=0.0, content=storable.name)
+        self._title_line.content = storable.name
+        self._title_artist = _artists_text(storable)
+        if position >= self._firstLyricTime():
+            return None
+        return self._title_line
+
+    def _lyricsForPosition(
+        self, position: float
+    ) -> tuple[list[LyricInfo | YRCLyricInfo], int, bool]:
+        title = self._titleLine(position)
+        if title is None:
+            return super()._lyricsForPosition(position)
+        lines: list[LyricInfo | YRCLyricInfo] = [title]
+        return lines, 0, False
+
+    def _translationTextForLine(
+        self,
+        line: LyricInfo | YRCLyricInfo,
+        use_yrc: bool | None = None,
+    ) -> str:
+        if self._title_line is not None and line is self._title_line:
+            return self._title_artist
+        return super()._translationTextForLine(line, use_yrc)
+
     def _currentLyricLine(
         self,
         position: float | None = None,
     ) -> YRCLyricInfo | LyricInfo | None:
         if position is None:
             position = self.ctx.playing_manager.getDisplayPosition()
+        title = self._titleLine(position)
+        if title is not None:
+            return title
         if self._ymgr.hasYrcTiming():
             line = self._ymgr.getCurrentLyric(position)
             if line.content.strip():
@@ -147,32 +191,23 @@ class DesktopLyricsViewer(LyricsViewer):
                 tar_height = self.font_height + 10
             self.height_timer.target_value = tar_height
         self.setFixedHeight(max(1, int(self.height_timer.current_value)))
+        self.x_pad = self.height() / 2
 
-        tar_width = 0
-        if self._ymgr.hasYrcTiming():
-            yidx = self._ymgr.getCurrentIndex(position)
-            y_line = (
-                self._ymgr.parsed[0]
-                if yidx < 0
-                else self._ymgr.getCurrentLyric(position)
-            )
+        tar_width = 10
+        if cur_line:
             tar_width = max(
                 10,
-                int(self.metri.horizontalAdvance(y_line.content)),
+                int(self.metri.horizontalAdvance(cur_line.content)),
             )
-        elif self._mgr.parsed:
-            lidx = self._mgr.getCurrentIndex(position)
-            l_line = (
-                self._mgr.parsed[0] if lidx < 0 else self._mgr.getCurrentLyric(position)
+        if self.ctx.config.show_translation and cur_line:
+            translation = self._translationTextForLine(
+                cur_line, self._ymgr.hasYrcTiming()
             )
-            tar_width = max(
-                10,
-                int(self.metri.horizontalAdvance(l_line.content)),
-            )
-        tar_width += self.draw_x_offset + self.height() * 0.5 + 10
+            tar_width = max(tar_width, int(self.tmetri.horizontalAdvance(translation)))
+        tar_width += int(self.x_pad * 2)
 
         self.width_timer.target_value = tar_width
-        self.setFixedWidth(max(1, int(self.width_timer.current_value)))
+        self.setFixedWidth(max(1, int(self.width_timer.current_value), tar_width))
 
         if self._dp.total_length > 0:
             self._draw_progress_ratio = max(
@@ -205,7 +240,6 @@ class DesktopLyricsViewer(LyricsViewer):
         if not self.dragging:
             self.move(target_point)
 
-        self.draw_x_offset = self.height() / 2
         self._updateViewLayout(multiple_factor)
         self.update()
 

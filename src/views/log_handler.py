@@ -4,10 +4,18 @@ import datetime
 import logging
 
 import os
+import shutil
 import re
 import sys
 import threading
 from typing import TextIO, Optional
+import ctypes
+from ctypes import wintypes
+from imports import event_bus, TERMINAL_SIZE_CHANGED
+
+kernel32 = ctypes.windll.kernel32
+STD_INPUT_HANDLE = -10
+h = kernel32.GetStdHandle(STD_INPUT_HANDLE)
 
 from colorama import Fore, Style, init
 
@@ -61,6 +69,13 @@ class LogHandler(logging.Handler):
     def __init__(self, level: int | str = 0) -> None:
         super().__init__(level)
         self.buffer: str = ''
+        
+        self.terminal_width = shutil.get_terminal_size().columns
+        
+        event_bus.subscribe(TERMINAL_SIZE_CHANGED, self._onTerminalSizeChanged)
+        
+    def _onTerminalSizeChanged(self):
+        self.terminal_width = shutil.get_terminal_size().columns
 
     def emit(self, record: logging.LogRecord) -> None:
         if record.name in (
@@ -91,10 +106,7 @@ class LogHandler(logging.Handler):
         plain_prefix = f'[{time_str}/{record.levelname}] [{record.name}] - '
         plain_suffix = f'[{record.thread}/{record.threadName}]'
 
-        try:
-            term_width = os.get_terminal_size().columns
-        except Exception:
-            term_width = 80
+        term_width = self.terminal_width
 
         suffix_width = _visible_len(plain_suffix)
 
@@ -248,3 +260,16 @@ def hijackStreams():
     sys.stderr = stderr_stream
 
     return original_stdout, original_stderr, stderr_redirector
+
+class INPUT_RECORD(ctypes.Structure):
+    _fields_ = [("EventType", wintypes.WORD),
+                ("_pad", wintypes.WORD),
+                ("Event", ctypes.c_byte * 16)]
+    
+def terminalSizeListen():
+    record = INPUT_RECORD()
+    read = wintypes.DWORD()
+    while True:
+        kernel32.ReadConsoleInputW(h, ctypes.byref(record), 1, ctypes.byref(read))
+        if record.EventType == 0x0004:  # WINDOW_BUFFER_SIZE_EVENT
+            event_bus.emit(TERMINAL_SIZE_CHANGED)

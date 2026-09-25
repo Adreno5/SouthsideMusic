@@ -63,3 +63,5 @@ BEAT_POINT = 'beat_point'
 
 START_CROSSFADE = 'start_crossfade'
 FINISH_CROSSFADE = 'stop_crossfade'
+
+TERMINAL_SIZE_CHANGED = 'terminal_size_changed'

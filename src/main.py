@@ -67,7 +67,7 @@ from core.netease_backend import NeteaseCloudMusicBackend
 from core.playing_manager import PlayingManager
 from core import theme as themeModule
 from core.ws_server import ws_server, ws_handler
-from views.log_handler import LogHandler, hijackStreams
+from views.log_handler import LogHandler, hijackStreams, terminalSizeListen
 from views.search_page import SearchPage
 from views.playing_page import PlayingPage
 from views.desktop_lyrics import DesktopLyricsPage
@@ -77,6 +77,9 @@ from views.error_popup import ErrorPopupWindow
 from core.debugging import Debugging
 from services.update import startUpdateCheck
 
+terminal_thread = threading.Thread(target=terminalSizeListen, daemon=True)
+terminal_thread.start()
+
 logging_handler = LogHandler()
 logging.basicConfig(level=logging.DEBUG, handlers=[logging_handler])
 hijackStreams()
@@ -84,13 +87,14 @@ hijackStreams()
 _logger = logging.getLogger('main')
 _exit_cleanup_done = False
 
-
 def atExitListener():
     global _exit_cleanup_done
     if _exit_cleanup_done:
         return
     _exit_cleanup_done = True
     logging.info('exiting by listener')
+    
+    terminal_thread.join(0)
 
     context = globals().get('ctx')
     if context is None:

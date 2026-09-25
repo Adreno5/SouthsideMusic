@@ -53,6 +53,7 @@ if errorlevel 1 (
 )
 
 echo Building - Remove unneeded files
+for /d /r "build.result\raw" %%d in (__pycache__) do @if exist "%%d" RD /S /Q "%%d" >nul
 RD /S /Q "build.result\raw\python\Lib\site-packages\__pycache__" >nul
 RD /S /Q "build.result\raw\python\Lib\site-packages\*.dist-info" >nul
 RD /S /Q "build.result\raw\python\Lib\site-packages\*.egg-info" >nul

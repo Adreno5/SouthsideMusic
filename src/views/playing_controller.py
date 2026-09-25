@@ -71,6 +71,7 @@ if TYPE_CHECKING:
     from views.main_window import MainWindow
     from views.playing_page import PlayingPage
 
+
 class PlayingControllerLyricsViewer(QWidget):
     def __init__(
         self,
@@ -330,14 +331,14 @@ class PlayingController(QWidget):
 
         self.bar_alpha_timer = EaseOutTimer(0.3, 2)
         self.beat_flash_timer = EaseOutTimer(0.6, 2)
-        self.beat_flash_timer.target_value = 0
+        self.beat_flash_timer.target_value = 1
         self.bar_alpha_timer.target_value = 1
         self.tip_handler = TranslationHandler()
-        
+
         self.update_acc_timer = QTimer(self)
         self.update_acc_timer.timeout.connect(self._updateXAcc)
         self.update_acc_timer.start(100)
-        
+
         self.draw_x_acc = 0
         self.last_play_time_acc = 0
         self.draw_x_acc_timer = EaseOutTimer(0.1, 2)
@@ -432,12 +433,12 @@ class PlayingController(QWidget):
             self.song_title_label.setText(song.name)
 
         self.update()
-        
+
     def _onRepaintTick(self, multiple_factor: float = 1):
         self._updateFFTAndRepaint(multiple_factor)
         self._updateLyric(multiple_factor)
         self.draw_x_acc = self.draw_x_acc_timer.current_value
-        
+
     def _updateXAcc(self):
         playing = self.ctx.player.isPlaying()
         play_time = self.ctx.player.getPosition()
@@ -884,29 +885,37 @@ class PlayingController(QWidget):
                 0,
             )
 
-        flash = 1 - self.beat_flash_timer.current_value
+        flash = self.beat_flash_timer.current_value
         theme_color = self.ctx.main_window.song_theme
         if flash > 0 and theme_color:
-                width = self.width() * 0.1
-                gradient = QLinearGradient(self._draw_current_x - width, 0, self._draw_current_x + 5, 0)
-                gradient.setColorAt(0, QColor(255, 255, 255, 0))
-                mixed = mixColor(QColor(255, 255, 255), theme_color, 1 - (flash * 0.5 + 0.1))
-                gradient.setColorAt(1, mixed)
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(gradient)
-                painter.drawRect(QRectF(self._draw_current_x - width, -4, width + 5, 8))
-                offset = max(-self.width() * 0.05, min(self.width() * 0.05, self.draw_x_acc * 100))
-                gradient = QLinearGradient(self._draw_current_x + 5, 0, self._draw_current_x + offset + 5, 0)
-                gradient.setColorAt(0, mixed)
-                gradient.setColorAt(1, QColor(mixed.red(), mixed.green(), mixed.blue(), 0))
-                painter.setBrush(gradient)
-                rect_left = min(self._draw_current_x, self._draw_current_x + offset) + 5
-                rect_width = abs(offset)
-                painter.drawRect(QRectF(rect_left, 0, rect_width, self.height()))
+            width = self.width() * 0.1
+            gradient = QLinearGradient(
+                self._draw_current_x - width, 0, self._draw_current_x + 5, 0
+            )
+            gradient.setColorAt(0, QColor(255, 255, 255, 0))
+            mixed = mixColor(
+                QColor(255, 255, 255), theme_color, 1 - (flash * 0.5 + 0.1)
+            )
+            gradient.setColorAt(1, mixed)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(gradient)
+            painter.drawRect(QRectF(self._draw_current_x - width, -4, width + 5, 8))
+            offset = max(
+                -self.width() * 0.05, min(self.width() * 0.05, self.draw_x_acc * 100)
+            )
+            gradient = QLinearGradient(
+                self._draw_current_x + 5, 0, self._draw_current_x + offset + 5, 0
+            )
+            gradient.setColorAt(0, mixed)
+            gradient.setColorAt(1, QColor(mixed.red(), mixed.green(), mixed.blue(), 0))
+            painter.setBrush(gradient)
+            rect_left = min(self._draw_current_x, self._draw_current_x + offset) + 5
+            rect_width = abs(offset)
+            painter.drawRect(QRectF(rect_left, 0, rect_width, self.height()))
 
         painter.end()
 
     def _onBeatPoint(self) -> None:
         if not cfg.beat_detection_visual_flash:
             return
-        self.beat_flash_timer.current_value = 1
+        self.beat_flash_timer.current_value = 0

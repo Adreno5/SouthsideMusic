@@ -47,8 +47,8 @@ FREE_THREADED_OPTIONAL_PACKAGES = [
     'pyside6',
 ]
 
-PYTHON_VERSION = '3.14.2'
-DOWNLOAD_BASE = 'https://www.python.org/ftp/python/3.14.2'
+PYTHON_VERSION = '3.14.7'
+DOWNLOAD_BASE = 'https://www.python.org/ftp/python/3.14.7'
 
 DEFAULT_TIMEOUT = 600  # seconds for subprocess calls
 DOWNLOAD_CHUNK_SIZE = 8192
@@ -708,10 +708,7 @@ def _setup_build_venv() -> None:
         base_python = embed_python
         print(f'  Using {embed_python} as the base interpreter.')
     else:
-        print(
-            f'  [WARNING] {embed_python} not found; building with '
-            f'{base_python}.'
-        )
+        print(f'  [WARNING] {embed_python} not found; building with {base_python}.')
     try:
         run([base_python, '-m', 'venv', BUILD_VENV, '--clear'])
     except subprocess.CalledProcessError:

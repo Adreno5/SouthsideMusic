@@ -22,18 +22,17 @@ from imports import (
     QWheelEvent,
     tr,
 )
-from imports import QVBoxLayout, QWidget
+from imports import QVBoxLayout, QWidget, QCursor
 from qfluentwidgets import CheckBox, FlowLayout, PushButton, FluentIcon, TitleLabel
 from core.color import mixColor
 from core.config import cfg
 from core import theme
 from core.lyrics import LyricInfo, YRCLyricInfo
-from services.events.events import DESKTOP_LYRICS_ANCHOR_CHANGED, EMIT_DEBUG_INFO
+from services.events.events import DESKTOP_LYRICS_ANCHOR_CHANGED, EMIT_DEBUG_INFO, COLLECT_DEBUG_INFO
 from views.lyrics_viewer import LyricsViewer
 from views.playing_page import _artists_text
-
-_PURE_MUSIC_PLACEHOLDER = '纯音乐，请欣赏'
-
+import ctypes
+from ctypes import wintypes
 
 class DesktopLyricsViewer(LyricsViewer):
     def __init__(
@@ -54,15 +53,31 @@ class DesktopLyricsViewer(LyricsViewer):
 
         self.scr_size: QSize = ctx.app.primaryScreen().size()
         super().__init__(ctx)
-        self.indentation_timer = QTimer(self)
-        self.indentation_timer.timeout.connect(self.unindentation)
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
+            | Qt.WindowType.BypassWindowManagerHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        
+        hwnd = int(self.winId())
+        
+        user32 = ctypes.windll.user32
+        user32.SetWindowPos(wintypes.HWND(hwnd), wintypes.HWND(-1) if ctypes.sizeof(wintypes.HWND) == 8 else -1, 0, 0, 0, 0, 0x0002 | 0x0001)
+
+        self.check_mouse_timer = QTimer(self)
+        self.check_mouse_timer.timeout.connect(self._checkMouse)
+        self.check_mouse_timer.start(200)
+        
+        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+        
+    def _checkMouse(self):
+        self.indentation = QRect(-5, -int(self.indentation_y), self.width() + 5, self.height()).contains(self.mapFromGlobal(QCursor.pos()))
+
+    def showMinimized(self) -> None:
+        self.showNormal()
 
     def prewarmFontMetrics(self):
         pass
@@ -71,13 +86,8 @@ class DesktopLyricsViewer(LyricsViewer):
         event_bus.emit(
             EMIT_DEBUG_INFO,
             'Desktop Lyrics Viewer',
-            [f'{len(self._shown_lines)=}', f'{self.last_lyric=}'],
+            [f'{len(self._shown_lines)=}', f'{self.last_lyric=}', f'{self.indentation_y=}'],
         )
-
-    def unindentation(self):
-        if not cfg.desktop_lyrics_anchor == 'top-center':
-            return
-        self.indentation = False
 
     def _firstLyricTime(self) -> float:
         lines = self._ymgr.parsed if self._ymgr.hasYrcTiming() else self._mgr.parsed
@@ -90,7 +100,7 @@ class DesktopLyricsViewer(LyricsViewer):
         mgr = self._ymgr if self._ymgr.hasYrcTiming() else self._mgr
         if not mgr.parsed:
             return False
-        return mgr.getCurrentLyric(position).content.strip() == _PURE_MUSIC_PLACEHOLDER
+        return mgr.getCurrentLyric(position).content.strip() == '纯音乐，请欣赏'
 
     def _titleLine(self, position: float) -> LyricInfo | None:
         song = getattr(self._dp, 'cur', None)
@@ -180,9 +190,10 @@ class DesktopLyricsViewer(LyricsViewer):
         return self.font_height * 1.85
 
     def updateDatas(self, multiple_factor: float = 1.0) -> None:
+        playing = self.ctx.player.isPlaying()
         self.indentation_y += (
-            ((-self.height() + 8 if self.indentation else 0) - self.indentation_y)
-            * 0.2
+            (((-self.height() + 8 if self.indentation else 0) if playing else -self.height()) - self.indentation_y)
+            * (0.2 if playing else 0.05)
             * multiple_factor
         )
 
@@ -258,14 +269,8 @@ class DesktopLyricsViewer(LyricsViewer):
         self.dragging_point = event.pos()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        if not self.dragging:
-            self.indentation = True
-            if self.indentation_timer.isActive():
-                self.indentation_timer.stop()
-            self.indentation_timer.start(1000)
-
         if self.dragging:
-            tp: QPoint = self.pos() + event.pos() - self.dragging_point
+            tp: QPoint = event.globalPos() - self.dragging_point
             center_x = tp.x() + self.width() * 0.5
             screen_center_x = self.scr_size.width() * 0.5
             if abs(center_x - screen_center_x) < 30 and tp.y() < 15:

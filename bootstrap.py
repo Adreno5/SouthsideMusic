@@ -499,6 +499,14 @@ class WheelIndex:
         ]
         if not files:
             return None
+        if not any(entry.get('metadata') for entry in files):
+            # An old-style simple index carries no PEP 658 metadata, which would
+            # force a full wheel download for every dependency read.
+            markers = self._canonicalMetadata(package)
+            for entry in files:
+                marker = markers.get(entry['filename'])
+                if marker is not None:
+                    entry['metadata'], entry['metadata_from'] = marker
         # Big projects publish megabytes of index; cache only the wheels this
         # interpreter could install so the file stays small and fast to read.
         with self._cache_lock:
@@ -512,6 +520,44 @@ class WheelIndex:
             }
             self._writeCacheEntries(self._entries)
         return files
+
+    def _canonicalMetadata(self, package: str) -> dict[str, tuple[str, str]]:
+        """PEP 658 markers from the canonical index, keyed by file name.
+
+        A mirror that publishes an old-style simple index advertises no
+        dist-info-metadata, so every wheel would have to be downloaded in full
+        before its dependencies are known. The canonical index publishes the
+        marker for the very same artifact.
+        """
+        base = canonicalSimpleUrl(self.mirror_url)
+        if base == self.mirror_url:
+            return {}
+        try:
+            payload = fetchBytes(
+                urljoin(base, f'{package}/'),
+                SIMPLE_INDEX_ACCEPT,
+                timeout=INDEX_TIMEOUT,
+            )
+        except Exception as e:
+            _logger.debug('canonical metadata index miss for %s: %s', package, e)
+            return {}
+        try:
+            entries = _parseSimpleJson(payload)
+        except (ValueError, UnicodeDecodeError):
+            entries = _parseSimpleHtml(payload)
+        except Exception as e:
+            _logger.debug('canonical index parse failed for %s: %s', package, e)
+            return {}
+        if not entries:
+            entries = _parseSimpleHtml(payload)
+        return {
+            entry['filename']: (
+                entry['metadata'],
+                _absoluteUrl(base, entry['url']).split('#', 1)[0],
+            )
+            for entry in entries
+            if entry.get('metadata')
+        }
 
     def _filterFiles(self, files: list[dict]) -> list[dict]:
         """Keep only wheels this interpreter can install."""
@@ -557,6 +603,9 @@ class WheelIndex:
         hashes = best.get('hashes') or {}
         # The hash fragment is metadata, not part of the request URL.
         download_url = best['url'].split('#', 1)[0]
+        # PEP 658 publishes the distribution metadata beside the wheel itself, so
+        # an entry whose marker came from another index keeps that host's URL.
+        metadata_base = str(best.get('metadata_from') or download_url)
         return WheelFile(
             filename=best['filename'],
             url=download_url,
@@ -564,12 +613,8 @@ class WheelIndex:
             version=requirement.version,
             requires_python=best.get('requires_python') or '',
             size=int(best.get('size') or 0),
-            metadata_url=(
-                urljoin(download_url, str(best.get('metadata')))
-                if best.get('metadata')
-                else ''
-            ),
-            metadata_hash=parseHashFragment(str(best.get('metadata') or '')),
+            metadata_url=f'{metadata_base}.metadata' if best.get('metadata') else '',
+            metadata_hash=_metadataHash(best.get('metadata')),
         )
 
     def resolve(self, requirement: RequirementInfo) -> WheelFile | None:
@@ -1436,6 +1481,13 @@ def parseHashFragment(url: str) -> str:
     return fragment[len('sha256=') :].strip().lower()
 
 
+def _metadataHash(value: object) -> str:
+    text = str(value or '')
+    if 'sha256=' not in text:
+        return ''
+    return text.split('sha256=', 1)[1].strip().lower()
+
+
 def verifyWheelHash(path: Path, sha256: str) -> bool:
     if not sha256:
         return True
@@ -1467,11 +1519,14 @@ def _indexCacheKey(mirror_url: str) -> str:
 
 
 def _metadataUrl(value: object) -> str:
-    """Normalise the PEP 658 dist-info metadata URL, which may be true or a hash."""
+    """Normalise the PEP 658 dist-info metadata marker, which may be true or a hash."""
     if isinstance(value, str) and value:
         return value
+    if isinstance(value, dict):
+        sha256 = str(value.get('sha256') or '')
+        return f'sha256={sha256}' if sha256 else 'true'
     if value:
-        return 'METADATA'
+        return 'true'
     return ''
 
 

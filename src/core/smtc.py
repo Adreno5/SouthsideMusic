@@ -4,10 +4,11 @@ import ctypes
 import datetime
 import logging
 import os
+import threading
 import winreg
 from typing import TYPE_CHECKING
 
-from core.models import IMAGE_DATA_DIR, SongStorable
+from core.models import IMAGE_DATA_DIR, SongStorable, TrackDetailInfo
 from imports import QObject, QTimer
 from services.events.event_bus import event_bus
 from services.events.events import (
@@ -19,6 +20,7 @@ from services.events.events import (
 from winrt.windows.media import (
     MediaPlaybackStatus,
     MediaPlaybackType,
+    MediaPlaybackAutoRepeatMode,
     PlaybackPositionChangeRequestedEventArgs,
     SystemMediaTransportControls,
     SystemMediaTransportControlsButton,
@@ -110,9 +112,13 @@ class SmtcController(QObject):
         self._cover: RandomAccessStreamReference | None = None
         self._timer = QTimer(self)
         self._timer.setInterval(1000)
-        self._timer.timeout.connect(self._updateTimeline)
+        self._timer.timeout.connect(self._tick)
         event_bus.subscribe(SONG_CHANGED, self._onSongChanged)
         event_bus.subscribe(PLAY_STATE_CHANGED, self._onPlayStateChanged)
+
+    def _tick(self) -> None:
+        self._updateTimeline()
+        self._updatePlayMode()
 
     def setEnabled(self, enabled: bool) -> None:
         if enabled and self._smtc is None:
@@ -125,6 +131,7 @@ class SmtcController(QObject):
             return
         self._updateMetadata()
         self._updateTimeline()
+        self._updatePlayMode()
         self._setStatus(self.ctx.player.isPlaying())
         self._timer.start()
 
@@ -172,14 +179,40 @@ class SmtcController(QObject):
             self._cover = None
             return
         updater.type = MediaPlaybackType.MUSIC
+        updater.app_media_id = str(song.id)
         properties = updater.music_properties
+        artists = ', '.join(artist.name for artist in song.artists)
         properties.title = song.name
-        properties.artist = ', '.join(artist.name for artist in song.artists)
+        properties.artist = artists
+        properties.album_artist = artists
         properties.album_title = ''
+        properties.track_number = 0
         thumbnail = _thumbnailReference(song)
         if thumbnail is not None:
             self._cover = thumbnail
             updater.thumbnail = thumbnail
+        updater.update()
+        self._loadDetail(song)
+
+    def _loadDetail(self, song: SongStorable) -> None:
+        def _fetch() -> None:
+            try:
+                from core.backend import getBackend
+
+                detail = getBackend().getTrackDetail(song.id)
+            except Exception as e:
+                _logger.exception(e)
+                return
+            self.ctx.addScheduledTask(self._applyDetail, song, detail)
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _applyDetail(self, song: SongStorable, detail: TrackDetailInfo) -> None:
+        if self._smtc is None or self._currentSong() != song:
+            return
+        updater = self._smtc.display_updater
+        updater.music_properties.album_title = detail.album_name
+        updater.music_properties.track_number = max(0, detail.track_no)
         updater.update()
 
     def _updateTimeline(self) -> None:
@@ -196,6 +229,19 @@ class SmtcController(QObject):
         timeline.min_seek_time = datetime.timedelta(0)
         timeline.max_seek_time = datetime.timedelta(seconds=duration)
         self._smtc.update_timeline_properties(timeline)
+
+    def _updatePlayMode(self) -> None:
+        manager = self.ctx.playing_manager
+        if self._smtc is None or manager is None:
+            return
+        mode = manager.play_mode
+        self._smtc.shuffle_enabled = mode == 'Shuffle'
+        if mode == 'Repeat one':
+            self._smtc.auto_repeat_mode = MediaPlaybackAutoRepeatMode.TRACK
+        elif mode == 'Repeat list':
+            self._smtc.auto_repeat_mode = MediaPlaybackAutoRepeatMode.LIST
+        else:
+            self._smtc.auto_repeat_mode = MediaPlaybackAutoRepeatMode.NONE
 
     def _setStatus(self, is_playing: bool) -> None:
         if self._smtc is None:

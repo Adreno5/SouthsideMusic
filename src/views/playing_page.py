@@ -558,7 +558,9 @@ class PlayingPage(QWidget):
             self.cur = DummyCard(song)
             self.title_label.setText(song.name)
             self.artists_label.setText(_artists_text(song))
-        self.translation_button.setVisible(bool(song and song.translated_lyric))
+        self.translation_button.setVisible(
+            self.cur is not None and bool(self.cur.storable.translated_lyric)
+        )
         self.lyric_video_export_button.setVisible(self.cur is not None)
         self.lyric_editor_button.setVisible(self.cur is not None)
 
@@ -933,7 +935,7 @@ class PlayingPage(QWidget):
         self._ws_handler.sendJsonFactory(
             lambda img_bytes=img_bytes, song_name=song_name, position=position, duration=duration, translation_enabled=translation_enabled, use_yrc=use_yrc, artists=artists, is_playing=is_playing: {
                 'option': 'cover',
-                'image': jsonBase64Bytes(img_bytes), # type: ignore
+                'image': jsonBase64Bytes(img_bytes),  # type: ignore
                 'song_name': song_name,
                 'position': position,
                 'duration': duration,

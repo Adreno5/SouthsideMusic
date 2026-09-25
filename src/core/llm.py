@@ -682,6 +682,93 @@ Rules:
   the exact pending tools JSON so the app can show an executable confirmation card.
 - if the user rejects or is unsure, revise the plan and ask again.
 """.strip(),
+    'get_current_lyrics': """
+Purpose:
+Read the lyrics of the currently playing song.
+
+Arguments:
+- none.
+
+Returns:
+- song title and artists, playback position, and the current lyric line index.
+- has_translation, translation_enabled, and has_word_timing flags.
+- lines: ordered lines with time, text, translation, and a current flag.
+
+Use when:
+- the user asks for the lyrics, the current line, or what the song is singing.
+- the user asks to translate, explain, or rewrite lyric lines.
+- set_current_lyrics needs the existing timings before replacing text.
+
+Rules:
+- lines are ordered by time; current marks the line at the playback position.
+- translation is empty when the song has no translation.
+- this is read-only.
+""".strip(),
+    'set_current_lyrics': """
+Purpose:
+Replace the lyric and translation text of the current song.
+
+Arguments:
+- lyric: full LRC text with [mm:ss.xxx] timestamps. Required.
+- translated_lyric: full translated LRC text, one line per lyric line.
+- yrc_lyric: optional word-by-word lyric text.
+
+Behavior:
+- write the lyric cache for the current song.
+- re-parse and re-render the playing page and desktop lyrics immediately.
+- keep the current translation or word timing when that argument is empty.
+
+Use when:
+- the user asks to set, fix, or provide a lyric translation.
+- the user asks to write corrected lyrics for the current song.
+
+Rules:
+- call get_current_lyrics first so the new text keeps the original timing.
+- a translation always goes in translated_lyric; never append translated text to lyric.
+- keep exactly one translated line per lyric line; never merge or reorder lines.
+- empty translated_lyric or yrc_lyric keeps the stored value instead of clearing it.
+- refresh_lyrics restores the online lyrics after a wrong edit.
+""".strip(),
+    'set_translation_enabled': """
+Purpose:
+Show or hide translated lyric lines.
+
+Arguments:
+- enabled: "true" or "false".
+
+Behavior:
+- same setting as the translation button on the playing page.
+- applies to the playing page and desktop lyrics right away.
+
+Use when:
+- the user asks to show or hide lyric translations.
+- the current song has a translation that is not visible.
+
+Rules:
+- call get_current_lyrics first when it is unclear whether a translation exists.
+- this only changes the display; use set_current_lyrics to change the text.
+""".strip(),
+    'refresh_lyrics': """
+Purpose:
+Fetch lyrics online again for the current song.
+
+Arguments:
+- none.
+
+Behavior:
+- query the app's lyric sources in the background.
+- apply each candidate that is better than the stored lyrics and save the cache.
+- return immediately; the playing page updates when a candidate arrives.
+
+Use when:
+- the current lyrics are wrong, missing, or not timed.
+- the user asks to re-download or update lyrics.
+- a local lyric or translation edit should be reverted to the online version.
+
+Rules:
+- call get_current_lyrics first when the user asks about lyric content.
+- the result is not final; the update happens in the background.
+""".strip(),
 }
 
 
@@ -744,6 +831,8 @@ Style:
 
 Tool use rules:
 - Never invent tool results.
+- Never write lyrics or translations from memory. Call get_current_lyrics and work
+  from the real lyric text.
 - Use get_tool_usage to learn exact purpose, arguments, behavior, and safety rules.
 - Do not assume a tool's exact usage from its name.
 - get_confirm is for plan approval, batch work, and high-risk actions. It is not
@@ -765,7 +854,8 @@ Tool use rules:
   jump_to_option, get_options, set_option_value, get_llm_providers,
   fetch_llm_models, add_llm_provider, set_llm_provider_model,
   get_southside_legacy_connection, connect_southside_legacy, disconnect_southside_legacy,
-  reset_desktop_lyrics_position, get_nickname, login, remove_song."""
+  reset_desktop_lyrics_position, get_current_lyrics, set_current_lyrics,
+  set_translation_enabled, refresh_lyrics, get_nickname, login, remove_song."""
 
 LLMMessage = dict[str, str]
 ToolRunner = Callable[[str, dict[str, Any]], str]

@@ -5,14 +5,17 @@ import json
 import os
 import queue
 import re
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from core.app_context import AppContext
 from core.backend import getBackend
 from core.config import cfg, encryptSecret, saveConfig
-from core.favorites import favorites_manager
+from core.downloader import asyncTask
+from core.favorites import favorites_manager, saveFavorites
 from core.i18n import language
 from core.llm import LLM, TOOL_USAGE, getToolUsage
+from core.lyric_sources import iterLyricUpdates
+from core.lyrics import LyricInfo, YRCLyricInfo
 from core.models import (
     CloudFolderInfo,
     LocalFolderInfo,
@@ -21,7 +24,11 @@ from core.models import (
     SongStorable,
 )
 from imports import QApplication, QCheckBox, QComboBox, QThread, QWidget, event_bus, tr
-from services.events.events import FAVORITES_CHANGED, MWINDOW_REFRESH_FOLDERS
+from services.events.events import (
+    FAVORITES_CHANGED,
+    MWINDOW_REFRESH_FOLDERS,
+    PLAYBACK_LYRICS_UPDATED,
+)
 from views.number_viewer import SettableNumberViewer
 
 
@@ -103,6 +110,29 @@ def llmToolSchemas() -> list[dict[str, Any]]:
             },
         ),
         _schema('get_current_song', TOOL_SCHEMA_DESCRIPTION, {}),
+        _schema('get_current_lyrics', TOOL_SCHEMA_DESCRIPTION, {}),
+        _schema(
+            'set_current_lyrics',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'lyric': _prop('string', TOOL_ARG_DESCRIPTION, required=True),
+                'translated_lyric': _prop('string', TOOL_ARG_DESCRIPTION),
+                'yrc_lyric': _prop('string', TOOL_ARG_DESCRIPTION),
+            },
+        ),
+        _schema(
+            'set_translation_enabled',
+            TOOL_SCHEMA_DESCRIPTION,
+            {
+                'enabled': _prop(
+                    'string',
+                    TOOL_ARG_DESCRIPTION,
+                    enum=['true', 'false'],
+                    required=True,
+                ),
+            },
+        ),
+        _schema('refresh_lyrics', TOOL_SCHEMA_DESCRIPTION, {}),
         _schema(
             'get_song_details',
             TOOL_SCHEMA_DESCRIPTION,
@@ -491,6 +521,20 @@ class LLMToolRunner:
             )
         if name == 'get_current_song':
             return self.getCurrentSong()
+        if name == 'get_current_lyrics':
+            return self.getCurrentLyrics()
+        if name == 'set_current_lyrics':
+            return self.setCurrentLyrics(
+                str(arguments.get('lyric', '')),
+                str(arguments.get('translated_lyric', '')),
+                str(arguments.get('yrc_lyric', '')),
+            )
+        if name == 'set_translation_enabled':
+            return self.setTranslationEnabled(
+                self._convert(str(arguments.get('enabled', '')), 'bool')
+            )
+        if name == 'refresh_lyrics':
+            return self.refreshLyrics()
         if name == 'get_song_details':
             return self.getSongDetails(str(arguments.get('song', '')))
         if name == 'get_folders':
@@ -660,6 +704,139 @@ class LLMToolRunner:
             'mark_tags': detail.mark_tags,
             'song_feature': detail.song_feature,
         }
+
+    def getCurrentLyrics(self) -> dict[str, Any]:
+        pm = self.ctx.playing_manager
+        song = pm.current_song if pm else None
+        if song is None:
+            return {'has_song': False}
+        mgr = self.ctx.mgr
+        ymgr = self.ctx.ymgr
+        parser = mgr if mgr.parsed else ymgr
+        lines = cast(list[LyricInfo | YRCLyricInfo], parser.parsed)
+        position = self.ctx.player.getPosition()
+        index = parser.getCurrentIndex(position)
+        translations = {
+            round(line.time * 1000): line.content for line in self.ctx.transmgr.parsed
+        }
+        return {
+            'has_song': True,
+            'song': self._songToDict(song, self._songHandle(song)),
+            'position': position,
+            'current_index': index,
+            'line_count': len(lines),
+            'has_word_timing': bool(ymgr.parsed),
+            'has_translation': bool(self.ctx.transmgr.parsed),
+            'translation_enabled': bool(cfg.show_translation),
+            'lines': [
+                {
+                    'time': round(line.time, 3),
+                    'text': line.content,
+                    'translation': translations.get(round(line.time * 1000), ''),
+                    'current': index == order,
+                }
+                for order, line in enumerate(lines)
+            ],
+        }
+
+    def setCurrentLyrics(
+        self,
+        lyric: str,
+        translated_lyric: str,
+        yrc_lyric: str,
+    ) -> dict[str, Any]:
+        if not lyric.strip():
+            return {'error': 'lyric is required'}
+        return self._run_main_thread(
+            lambda: self._set_current_lyrics(lyric, translated_lyric, yrc_lyric)
+        )
+
+    def _set_current_lyrics(
+        self,
+        lyric: str,
+        translated_lyric: str,
+        yrc_lyric: str,
+    ) -> dict[str, Any]:
+        pm = self.ctx.playing_manager
+        song = pm.current_song if pm else None
+        if song is None:
+            return {'error': 'no song is loaded'}
+        stored = song.getLyrics()
+        self._write_lyrics(
+            song,
+            lyric,
+            translated_lyric or stored['translated_lyric'],
+            yrc_lyric or stored['yrc_lyric'],
+        )
+        return {
+            'updated': True,
+            'title': song.name,
+            'has_translation': bool(song.getLyrics()['translated_lyric']),
+            'translation_enabled': bool(cfg.show_translation),
+        }
+
+    def setTranslationEnabled(self, enabled: bool) -> dict[str, Any]:
+        def _apply() -> None:
+            cfg.show_translation = enabled
+            page = self.ctx.playing_page
+            if page is not None:
+                page.translation_button.setChecked(enabled)
+
+        self._run_main_thread(_apply)
+        return {'translation_enabled': bool(cfg.show_translation)}
+
+    def refreshLyrics(self) -> dict[str, Any]:
+        pm = self.ctx.playing_manager
+        song = pm.current_song if pm else None
+        if song is None:
+            return {'error': 'no song is loaded'}
+        stored = song.getLyrics()
+        artists = [artist.name for artist in song.artists if artist.name]
+
+        def _download() -> None:
+            for candidate in iterLyricUpdates(
+                song.name,
+                artists[0] if artists else '',
+                str(song.id),
+                song.duration,
+                cached=stored,
+            ):
+                if pm.current_song is not song:
+                    return
+                self.ctx.addScheduledTask(
+                    self._write_lyrics,
+                    song,
+                    candidate.lyric,
+                    candidate.translated_lyric,
+                    candidate.yrc_lyric,
+                )
+
+        asyncTask(_download, (), self.ctx.main_window, None)
+        return {
+            'started': True,
+            'title': song.name,
+            'has_translation': bool(stored['translated_lyric']),
+            'translation_enabled': bool(cfg.show_translation),
+        }
+
+    def _write_lyrics(
+        self,
+        song: SongStorable,
+        lyric: str,
+        translated_lyric: str,
+        yrc_lyric: str,
+    ) -> None:
+        song.writeLyrics(lyric, translated_lyric, yrc_lyric)
+        pm = self.ctx.playing_manager
+        if pm is not None and pm.current_song is song:
+            self.ctx.mgr.cur = lyric or yrc_lyric or '[00:00.000]'
+            self.ctx.ymgr.cur = yrc_lyric
+            self.ctx.transmgr.cur = translated_lyric or '[00:00.000]'
+            self.ctx.mgr.parse()
+            self.ctx.ymgr.parse()
+            self.ctx.transmgr.parse()
+        saveFavorites()
+        event_bus.emit(PLAYBACK_LYRICS_UPDATED, song)
 
     def getFolders(self) -> dict[str, Any]:
         local = []

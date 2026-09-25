@@ -31,11 +31,11 @@ from core.favorites import saveFavorites
 from core.free_threaded_worker import FreeThreadedJsonSender
 from core.image import getAverageColorFromBytes
 from core.loudness import getAdjustedGainFactor
+from core.lyric_sources import LyricCandidate, iterLyricUpdates
 from core.models import (
     IMAGE_DATA_DIR,
     MUSIC_DATA_DIR,
     SongStorable,
-    TrackLyricsInfo,
 )
 from core.weighted_random import AdvancedRandom
 from services.events.event_bus import event_bus
@@ -685,7 +685,11 @@ class PlayingManager:
         if current_audio is None:
             self._logger.info('crossfade skipped -> current audio missing')
             return None
-        rate = self._player.sample_rate if self._player is not None else current_audio.frame_rate
+        rate = (
+            self._player.sample_rate
+            if self._player is not None
+            else current_audio.frame_rate
+        )
         current_audio = current_audio.set_frame_rate(rate).set_channels(2)
         next_audio = next_audio.set_frame_rate(rate).set_channels(2)
         crossfade_seconds = self._lyricCrossfadeSeconds()
@@ -1625,7 +1629,7 @@ class PlayingManager:
                 if image_missing:
                     detail = getBackend().getTrackDetail(song_storable.id)
                     image_url = detail.cover_url
-                    prepared['image'] = requests.get(image_url).content
+                    prepared['image'] = requests.get(image_url, timeout=30).content
 
                 if music_missing:
                     audio = getBackend().getTrackAudio(
@@ -2174,7 +2178,7 @@ class PlayingManager:
             try:
                 if image_missing:
                     detail = getBackend().getTrackDetail(song_storable.id)
-                    image_bytes = requests.get(detail.cover_url).content
+                    image_bytes = requests.get(detail.cover_url, timeout=30).content
                     prepared['image'] = image_bytes
                 audio = getBackend().getTrackAudio(
                     str(song_storable.id),
@@ -2451,71 +2455,83 @@ class PlayingManager:
 
         threading.Thread(target=_compute_and_apply, daemon=True).start()
 
+    def _applyLyricTexts(
+        self,
+        song: SongStorable,
+        lyric: str,
+        yrc_lyric: str,
+        translated_lyric: str,
+        source: str,
+    ) -> bool:
+        if self.current_song is not song:
+            return False
+
+        mgr = self.ctx.mgr
+        ymgr = self.ctx.ymgr
+        transmgr = self.ctx.transmgr
+        mgr.cur = lyric or yrc_lyric or '[00:00.000]'
+        ymgr.cur = yrc_lyric
+        transmgr.cur = translated_lyric or '[00:00.000]'
+        mgr.parse()
+        ymgr.parse()
+        transmgr.parse()
+        self._logger.info('applied %s lyrics for %s', source, song.name)
+        return True
+
+    def _applyLyricUpdate(self, song: SongStorable, candidate: LyricCandidate) -> None:
+        if not self._applyLyricTexts(
+            song,
+            candidate.lyric,
+            candidate.yrc_lyric,
+            candidate.translated_lyric,
+            candidate.source,
+        ):
+            return
+
+        song.writeLyrics(
+            candidate.lyric,
+            candidate.translated_lyric,
+            candidate.yrc_lyric,
+        )
+        saveFavorites()
+        event_bus.emit(PLAYBACK_LYRICS_UPDATED, song)
+
     def _download_update_lyrics(self, song_storable: SongStorable) -> None:
         lyric_target = song_storable
-        lyric_result: TrackLyricsInfo | None = None
+        lyrics = lyric_target.getLyrics()
+        self._applyLyricTexts(
+            lyric_target,
+            lyrics['lyric'],
+            lyrics['yrc_lyric'],
+            lyrics['translated_lyric'],
+            'cache',
+        )
+        event_bus.emit(PLAYBACK_LYRICS_UPDATED, lyric_target)
+
+        if lyrics['yrc_lyric'].strip() and lyrics['translated_lyric'].strip():
+            return
 
         def _download() -> None:
-            nonlocal lyric_result
-            need_yrc = song_storable.yrcLyricsMissing()
-            need_translated_lyric = song_storable.translatedLyricsMissing()
-            need_ytlrc = song_storable.ytlrcMissing()
-            if not need_yrc and not need_translated_lyric and not need_ytlrc:
-                return
+            artists = [artist.name for artist in song_storable.artists if artist.name]
             try:
-                lyric_result = getBackend().getTrackLyrics(song_storable.id)
+                for candidate in iterLyricUpdates(
+                    song_storable.name,
+                    artists[0] if artists else '',
+                    song_storable.id,
+                    song_storable.duration,
+                    cached=lyrics,
+                ):
+                    if self.current_song is not song_storable:
+                        return
+                    self.ctx.addScheduledTask(
+                        self._applyLyricUpdate, lyric_target, candidate
+                    )
             except Exception:
                 self._logger.exception(
                     'failed to download lyrics for storable playback'
                 )
-                lyric_result = None
 
-        def _apply() -> None:
-            if self.current_song is not lyric_target:
-                return
-
-            if self.ctx:
-                mgr = self.ctx.mgr
-                transmgr = self.ctx.transmgr
-                ymgr = self.ctx.ymgr
-
-            if lyric_result is None:
-                lyrics = lyric_target.getLyrics()
-                mgr.cur = lyrics['lyric'] or '[00:00.000]'
-                ymgr.cur = lyrics['yrc_lyric']
-                ytlrc = lyrics.get('ytlrc_lyric', '')
-                if ymgr.cur and ytlrc:
-                    transmgr.cur = ytlrc
-                else:
-                    transmgr.cur = lyrics['translated_lyric'] or '[00:00.000]'
-            else:
-                lyrics = lyric_target.getLyrics()
-                lyric = lyrics['lyric'] or lyric_result.lyric or '[00:00.000]'
-                translated_lyric = (
-                    lyrics['translated_lyric'] or lyric_result.translated_lyric or ''
-                )
-                yrc_lyric = lyrics['yrc_lyric'] or lyric_result.yrc_lyric or ''
-                ytlrc = lyrics.get('ytlrc_lyric', '') or lyric_result.ytlrc_lyric or ''
-                mgr.cur = lyric
-                ymgr.cur = yrc_lyric
-                if ymgr.cur and ytlrc:
-                    transmgr.cur = ytlrc
-                else:
-                    transmgr.cur = translated_lyric or '[00:00.000]'
-                lyric_target.writeLyrics(
-                    mgr.cur,
-                    translated_lyric,
-                    ymgr.cur,
-                    ytlrc,
-                )
-                saveFavorites()
-
-            mgr.parse()
-            transmgr.parse()
-            ymgr.parse()
-            event_bus.emit(PLAYBACK_LYRICS_UPDATED, lyric_target)
-
-        asyncTask(_download, (), self._mwindow_obj, _apply)
+        asyncTask(_download, (), self._mwindow_obj, None)
 
     def loadMusicFromBase64(self, content_base64: str, gain: float) -> None:
         self.loadMusicFromBytes(self._decodeBase64(content_base64), gain)

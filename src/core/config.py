@@ -344,13 +344,11 @@ def _normalizeLLMProvider(data: Any) -> dict[str, Any] | None:
             display_name = str(item.get('display_name', '')).strip()
             if not model_id or not display_name:
                 continue
-            models.append(
-                {
-                    'id': model_id,
-                    'display_name': display_name,
-                    'enable_1m_context': bool(item.get('enable_1m_context', False)),
-                }
-            )
+            models.append({
+                'id': model_id,
+                'display_name': display_name,
+                'enable_1m_context': bool(item.get('enable_1m_context', False)),
+            })
     return {
         'name': name,
         'api_format': api_format,
@@ -369,12 +367,10 @@ def _migrateLegacyLLMConfig() -> None:
         return
     models: list[dict[str, str]] = []
     if _instance.llm_model:
-        models.append(
-            {
-                'id': _instance.llm_model,
-                'display_name': _instance.llm_model,
-            }
-        )
+        models.append({
+            'id': _instance.llm_model,
+            'display_name': _instance.llm_model,
+        })
     _instance.llm_providers = [
         {
             'name': 'Default',

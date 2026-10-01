@@ -446,9 +446,9 @@ class SettingPage(QWidget):
         )
 
         self.device_selector = ComboBox()
-        self.device_selector.addItems(
-            [f'{obj.index + 1}. {obj.display_name}' for obj in getAudioDevices()]
-        )
+        self.device_selector.addItems([
+            f'{obj.index + 1}. {obj.display_name}' for obj in getAudioDevices()
+        ])
         self.device_selector.setCurrentIndex(self._player._device_id)
         self.device_selector.currentIndexChanged.connect(self.deviceChanged)
         self.device_selector.setCurrentIndex(cfg.output_device_index)
@@ -1712,13 +1712,11 @@ class SettingPage(QWidget):
                 model_id = model_widget.text().strip()
             display_name = display_edit.text().strip()
             if model_id or display_name:
-                models.append(
-                    {
-                        'id': model_id,
-                        'display_name': display_name,
-                        'enable_1m_context': context_box.isChecked(),
-                    }
-                )
+                models.append({
+                    'id': model_id,
+                    'display_name': display_name,
+                    'enable_1m_context': context_box.isChecked(),
+                })
         return models
 
     def _saveLlmProviderForm(self) -> None:

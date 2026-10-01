@@ -17,12 +17,10 @@ def eapi(path, data, session=None, method='POST') -> Any:
     session = session or getCurrentSession()
     payload = {
         **data,
-        'header': json.dumps(
-            {
-                **session.eapi_config,
-                'requestId': '0',
-            }
-        ),
+        'header': json.dumps({
+            **session.eapi_config,
+            'requestId': '0',
+        }),
     }
     digest = _eapi_encrypt(path, json.dumps(payload))
     rsp = session.request(

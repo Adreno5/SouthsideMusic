@@ -645,54 +645,47 @@ class LyricsViewer(QWidget):
             debug_acc_target_y = -int(self.target_acc) + debug_center
             debug_acc_y = -int(self.target_acc - self.acc) + debug_center
 
-            payload_lines.append(
-                {
-                    'index': i,
-                    'offset': i - current_index,
-                    'time': line.time,
-                    'text': line.content.strip(),
-                    'translation': translation_text,
-                    'is_current': is_current_line,
-                    'is_metadata': line.isMetadata,
-                    'is_hovered': is_hovered,
-                    'draw_text': line.content.strip(),
-                    'hover_time_text': hover_time_text,
-                    'hover_time_x': hover_time_x,
-                    'debug_center_y': debug_center,
-                    'debug_offset_target_y': debug_offset_target_y,
-                    'debug_acc_target_y': debug_acc_target_y,
-                    'debug_acc_y': debug_acc_y,
-                    'alpha': int(alpha),
-                    'alpha_ratio': alpha / 255,
-                    'baseline_y': baseline_y,
-                    'baseline_y_from_center': baseline_y - center_y,
-                    'top_y': baseline_y - self.metri.ascent(),
-                    'top_y_from_center': baseline_y - self.metri.ascent() - center_y,
-                    'bottom_y': baseline_y + self.metri.descent(),
-                    'bottom_y_from_center': baseline_y
-                    + self.metri.descent()
-                    - center_y,
-                    'x': self.draw_x_offset if is_current_line else 0.0,
-                    'primary_color': self._colorPayload(primary_color),
-                    'yrc_base_color': self._colorPayload(
-                        QColor(
-                            primary_color.red(),
-                            primary_color.green(),
-                            primary_color.blue(),
-                            120,
-                        )
-                    ),
-                    'yrc_clip_ratio': yrc_clip_ratio,
-                    'yrc_clip_width': yrc_clip_width,
-                    'translation_baseline_y': translation_baseline_y,
-                    'translation_baseline_y_from_center': translation_baseline_y
-                    - center_y,
-                    'translation_alpha': self._translationColor(alpha).alpha(),
-                    'translation_color': self._colorPayload(
-                        self._translationColor(alpha)
-                    ),
-                }
-            )
+            payload_lines.append({
+                'index': i,
+                'offset': i - current_index,
+                'time': line.time,
+                'text': line.content.strip(),
+                'translation': translation_text,
+                'is_current': is_current_line,
+                'is_metadata': line.isMetadata,
+                'is_hovered': is_hovered,
+                'draw_text': line.content.strip(),
+                'hover_time_text': hover_time_text,
+                'hover_time_x': hover_time_x,
+                'debug_center_y': debug_center,
+                'debug_offset_target_y': debug_offset_target_y,
+                'debug_acc_target_y': debug_acc_target_y,
+                'debug_acc_y': debug_acc_y,
+                'alpha': int(alpha),
+                'alpha_ratio': alpha / 255,
+                'baseline_y': baseline_y,
+                'baseline_y_from_center': baseline_y - center_y,
+                'top_y': baseline_y - self.metri.ascent(),
+                'top_y_from_center': baseline_y - self.metri.ascent() - center_y,
+                'bottom_y': baseline_y + self.metri.descent(),
+                'bottom_y_from_center': baseline_y + self.metri.descent() - center_y,
+                'x': self.draw_x_offset if is_current_line else 0.0,
+                'primary_color': self._colorPayload(primary_color),
+                'yrc_base_color': self._colorPayload(
+                    QColor(
+                        primary_color.red(),
+                        primary_color.green(),
+                        primary_color.blue(),
+                        120,
+                    )
+                ),
+                'yrc_clip_ratio': yrc_clip_ratio,
+                'yrc_clip_width': yrc_clip_width,
+                'translation_baseline_y': translation_baseline_y,
+                'translation_baseline_y_from_center': translation_baseline_y - center_y,
+                'translation_alpha': self._translationColor(alpha).alpha(),
+                'translation_color': self._colorPayload(self._translationColor(alpha)),
+            })
 
         return {
             'schema': 'southside_lyric_layout_v1',

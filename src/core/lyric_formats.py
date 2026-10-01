@@ -9,26 +9,24 @@ from dataclasses import dataclass, field
 
 _QRC_KEY = b'!@#)(*$%123ZXC!@!@#)(NHL'
 
-_KRC_KEY = bytes(
-    (
-        0x40,
-        0x47,
-        0x61,
-        0x77,
-        0x5E,
-        0x32,
-        0x74,
-        0x47,
-        0x51,
-        0x36,
-        0x31,
-        0x2D,
-        0xCE,
-        0xD2,
-        0x6E,
-        0x69,
-    )
-)
+_KRC_KEY = bytes((
+    0x40,
+    0x47,
+    0x61,
+    0x77,
+    0x5E,
+    0x32,
+    0x74,
+    0x47,
+    0x51,
+    0x36,
+    0x31,
+    0x2D,
+    0xCE,
+    0xD2,
+    0x6E,
+    0x69,
+))
 
 _SBOX1 = (
     14,
@@ -1495,13 +1493,11 @@ def isInfoLine(text: str) -> bool:
 def alignTranslation(original: Sequence[LyricLine], translation: Sequence[str]) -> str:
     times = [line.start for line in contentLines(original) if not isInfoLine(line.text)]
     texts = [text for text in translation if not isInfoLine(text)]
-    return toLrc(
-        [
-            LyricLine(start=start, end=start, text=text)
-            for start, text in zip(times, texts)
-            if text.strip()
-        ]
-    )
+    return toLrc([
+        LyricLine(start=start, end=start, text=text)
+        for start, text in zip(times, texts)
+        if text.strip()
+    ])
 
 
 def yrcToLrc(text: str) -> str:

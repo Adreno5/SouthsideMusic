@@ -183,12 +183,10 @@ class AES:
         Assumes data is already padded.
         """
         return bytearray(
-            b''.join(
-                [
-                    self.encrypt_block(plaintext_block)
-                    for plaintext_block in split_blocks(plaintext)
-                ]
-            )
+            b''.join([
+                self.encrypt_block(plaintext_block)
+                for plaintext_block in split_blocks(plaintext)
+            ])
         )
 
     def decrypt_ecb_nopadding(self, ciphertext):
@@ -197,12 +195,10 @@ class AES:
         Assumes data is already padded.
         """
         return bytearray(
-            b''.join(
-                [
-                    self.decrypt_block(plaintext_block)
-                    for plaintext_block in split_blocks(ciphertext)
-                ]
-            )
+            b''.join([
+                self.decrypt_block(plaintext_block)
+                for plaintext_block in split_blocks(ciphertext)
+            ])
         )
 
     def encrypt_cbc_nopadding(self, plaintext, iv):

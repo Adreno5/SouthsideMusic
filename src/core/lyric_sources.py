@@ -250,25 +250,24 @@ def _fetchNeteasePublic(netease_id: str, cancel: threading.Event) -> _Raw | None
 def _qqSearch(query: str) -> list[_Pick]:
     response = requests.post(
         'https://u.y.qq.com/cgi-bin/musicu.fcg',
-        data=json.dumps(
-            {
-                'music.search.SearchCgiService': {
-                    'method': 'DoSearchForQQMusicDesktop',
-                    'module': 'music.search.SearchCgiService',
-                    'param': {
-                        'num_per_page': 10,
-                        'page_num': 1,
-                        'query': query,
-                        'search_type': 0,
-                    },
-                }
+        data=json.dumps({
+            'music.search.SearchCgiService': {
+                'method': 'DoSearchForQQMusicDesktop',
+                'module': 'music.search.SearchCgiService',
+                'param': {
+                    'num_per_page': 10,
+                    'page_num': 1,
+                    'query': query,
+                    'search_type': 0,
+                },
             }
-        ),
+        }),
         headers=_QQ_HEADERS,
         timeout=_TIMEOUT,
     )
     songs = (
-        response.json()
+        response
+        .json()
         .get('music.search.SearchCgiService', {})
         .get('data', {})
         .get('body', {})
@@ -527,14 +526,12 @@ def _musixmatchToken(cancel: threading.Event) -> str:
 
 def _musixmatchCall(request: str, params: dict[str, Any], token: str) -> dict[str, Any]:
     merged = dict(params)
-    merged.update(
-        {
-            'usertoken': token,
-            'format': 'json',
-            'app_id': _MUSIXMATCH_APP_ID,
-            't': str(time.time()),
-        }
-    )
+    merged.update({
+        'usertoken': token,
+        'format': 'json',
+        'app_id': _MUSIXMATCH_APP_ID,
+        't': str(time.time()),
+    })
     response = requests.get(
         _MUSIXMATCH_BASE + request,
         params=merged,

@@ -58,9 +58,9 @@ def test_generate_yrc_and_lrc_from_krc() -> None:
 
 def test_krcTranslations_keeps_positions_and_blanks_placeholders() -> None:
     payload = base64.b64encode(
-        json.dumps(
-            {'content': [{'type': 1, 'lyricContent': [['一'], ['//'], ['三']]}]}
-        ).encode()
+        json.dumps({
+            'content': [{'type': 1, 'lyricContent': [['一'], ['//'], ['三']]}]
+        }).encode()
     ).decode()
     assert krcTranslations(f'[language:{payload}]\n{KRC}') == ['一', '', '三']
     assert krcTranslations(KRC) == []
@@ -154,16 +154,14 @@ def test_parseAny_detects_each_format() -> None:
 
 
 def test_musixmatch_richsync_word_positions() -> None:
-    raw = json.dumps(
-        [
-            {
-                'ts': 1.0,
-                'te': 2.0,
-                'x': 'Hello you',
-                'l': [{'c': 'Hello', 'o': 0}, {'c': ' you', 'o': 0.5}],
-            }
-        ]
-    )
+    raw = json.dumps([
+        {
+            'ts': 1.0,
+            'te': 2.0,
+            'x': 'Hello you',
+            'l': [{'c': 'Hello', 'o': 0}, {'c': ' you', 'o': 0.5}],
+        }
+    ])
     lines = parseRichsync(raw)
     assert len(lines) == 1
     assert lines[0].start == 1000

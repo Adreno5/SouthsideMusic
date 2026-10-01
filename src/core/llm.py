@@ -971,16 +971,14 @@ class LLM:
 
             tool_call_payloads: list[dict[str, Any]] = []
             for _, part in sorted(tool_call_parts.items()):
-                tool_call_payloads.append(
-                    {
-                        'id': part['id'],
-                        'type': 'function',
-                        'function': {
-                            'name': part['name'],
-                            'arguments': part['arguments'],
-                        },
-                    }
-                )
+                tool_call_payloads.append({
+                    'id': part['id'],
+                    'type': 'function',
+                    'function': {
+                        'name': part['name'],
+                        'arguments': part['arguments'],
+                    },
+                })
             messages.append(
                 cast(
                     ChatCompletionMessageParam,
@@ -1234,14 +1232,12 @@ class LLM:
             name = str(function.get('name', '')).strip()
             if not name:
                 continue
-            response_tools.append(
-                {
-                    'type': 'function',
-                    'name': name,
-                    'description': str(function.get('description', '')),
-                    'parameters': function.get('parameters', {'type': 'object'}),
-                }
-            )
+            response_tools.append({
+                'type': 'function',
+                'name': name,
+                'description': str(function.get('description', '')),
+                'parameters': function.get('parameters', {'type': 'object'}),
+            })
         return response_tools
 
     def _responsesOutputItems(self, response: Any) -> list[dict[str, Any]]:
@@ -1249,14 +1245,12 @@ class LLM:
         for item in getattr(response, 'output', []) or []:
             item_type = getattr(item, 'type', '')
             if item_type == 'function_call':
-                output_items.append(
-                    {
-                        'type': 'function_call',
-                        'call_id': getattr(item, 'call_id', ''),
-                        'name': getattr(item, 'name', ''),
-                        'arguments': getattr(item, 'arguments', '{}'),
-                    }
-                )
+                output_items.append({
+                    'type': 'function_call',
+                    'call_id': getattr(item, 'call_id', ''),
+                    'name': getattr(item, 'name', ''),
+                    'arguments': getattr(item, 'arguments', '{}'),
+                })
             elif item_type == 'message':
                 content: list[dict[str, str]] = []
                 for part in getattr(item, 'content', []) or []:
@@ -1264,13 +1258,11 @@ class LLM:
                     if text:
                         content.append({'type': 'output_text', 'text': text})
                 if content:
-                    output_items.append(
-                        {
-                            'type': 'message',
-                            'role': 'assistant',
-                            'content': content,
-                        }
-                    )
+                    output_items.append({
+                        'type': 'message',
+                        'role': 'assistant',
+                        'content': content,
+                    })
         return output_items
 
     def _responsesToolOutputs(
@@ -1290,13 +1282,11 @@ class LLM:
                 result = json.dumps({'error': str(e)}, ensure_ascii=False)
             else:
                 result = tool_runner(getattr(item, 'name', ''), arguments)
-            outputs.append(
-                {
-                    'type': 'function_call_output',
-                    'call_id': getattr(item, 'call_id', ''),
-                    'output': result,
-                }
-            )
+            outputs.append({
+                'type': 'function_call_output',
+                'call_id': getattr(item, 'call_id', ''),
+                'output': result,
+            })
         return outputs
 
     def _anthropicClient(self) -> Anthropic:

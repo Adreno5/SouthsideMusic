@@ -3,3 +3,5 @@ indent-width = 4
 
 [format]
 quote-style = "single"
+indent-style = "space"
+preview = true

@@ -525,13 +525,11 @@ def _findQtSidecarInterpreter() -> str | None:
         value = os.environ.get(env_name)
         if value:
             candidates.append(Path(value))
-    candidates.extend(
-        [
-            root / '.venv' / 'Scripts' / 'python.exe',
-            root / 'venv' / 'Scripts' / 'python.exe',
-            Path(sys.executable),
-        ]
-    )
+    candidates.extend([
+        root / '.venv' / 'Scripts' / 'python.exe',
+        root / 'venv' / 'Scripts' / 'python.exe',
+        Path(sys.executable),
+    ])
     for candidate in candidates:
         if candidate.is_file() and _pythonCanImportPySide(candidate):
             return str(candidate)
@@ -1509,15 +1507,13 @@ def _segmentWorkerMain(payload_path: str) -> int:
                 if _shouldSendPreview(current_frame, frame_count, preview_interval)
                 else ''
             )
-            _writeJsonLine(
-                {
-                    'type': 'progress',
-                    'worker_index': worker_index,
-                    'rendered': rendered,
-                    'fps': _fpsFromFrameSamples(frame_samples),
-                    'preview': preview,
-                }
-            )
+            _writeJsonLine({
+                'type': 'progress',
+                'worker_index': worker_index,
+                'rendered': rendered,
+                'fps': _fpsFromFrameSamples(frame_samples),
+                'preview': preview,
+            })
 
         stdin.close()
         stderr_bytes = process.stderr.read() if process.stderr is not None else b''

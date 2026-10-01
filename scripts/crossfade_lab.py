@@ -132,20 +132,18 @@ def plotEnvelope(
 
 def style() -> None:
     plt.style.use('dark_background')
-    plt.rcParams.update(
-        {
-            'figure.facecolor': BG,
-            'axes.facecolor': BG,
-            'axes.edgecolor': GRID,
-            'axes.labelcolor': MUTED,
-            'axes.titlecolor': TEXT,
-            'grid.color': GRID,
-            'xtick.color': MUTED,
-            'ytick.color': MUTED,
-            'text.color': MUTED,
-            'figure.dpi': 130,
-        }
-    )
+    plt.rcParams.update({
+        'figure.facecolor': BG,
+        'axes.facecolor': BG,
+        'axes.edgecolor': GRID,
+        'axes.labelcolor': MUTED,
+        'axes.titlecolor': TEXT,
+        'grid.color': GRID,
+        'xtick.color': MUTED,
+        'ytick.color': MUTED,
+        'text.color': MUTED,
+        'figure.dpi': 130,
+    })
 
 
 def legend(ax) -> None:

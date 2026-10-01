@@ -402,15 +402,13 @@ class SourceTree:
                 continue
             for line_index, line in enumerate(source.lines):
                 for match in regex.finditer(line):
-                    matches.append(
-                        {
-                            'path': source.path,
-                            'line': line_index + 1,
-                            'column': match.start() + 1,
-                            'match': match.group(0),
-                            'text': line,
-                        }
-                    )
+                    matches.append({
+                        'path': source.path,
+                        'line': line_index + 1,
+                        'column': match.start() + 1,
+                        'match': match.group(0),
+                        'text': line,
+                    })
         return {
             'path': rel,
             'pattern': pattern,
@@ -843,28 +841,24 @@ class LLMToolRunner:
         for index, local_folder in enumerate(favorites_manager.folders):
             handle = f'local:{index}:{local_folder.folder_name}'
             self._folder_handles[handle] = local_folder
-            local.append(
-                {
-                    'handle': handle,
-                    'name': local_folder.folder_name,
-                    'kind': 'local',
-                    'song_count': len(local_folder.songs),
-                }
-            )
+            local.append({
+                'handle': handle,
+                'name': local_folder.folder_name,
+                'kind': 'local',
+                'song_count': len(local_folder.songs),
+            })
         cloud = []
         if getBackend().loggedIn():
             for index, cloud_folder in enumerate(getBackend().getUserPlaylists()):
                 handle = f'cloud:{index}:{cloud_folder.id}'
                 self._folder_handles[handle] = cloud_folder
-                cloud.append(
-                    {
-                        'handle': handle,
-                        'name': cloud_folder.folder_name,
-                        'kind': 'cloud',
-                        'song_count': self._cloudSongCount(cloud_folder),
-                        'id': cloud_folder.id,
-                    }
-                )
+                cloud.append({
+                    'handle': handle,
+                    'name': cloud_folder.folder_name,
+                    'kind': 'cloud',
+                    'song_count': self._cloudSongCount(cloud_folder),
+                    'id': cloud_folder.id,
+                })
         return {'local': local, 'cloud': cloud}
 
     def getFolderSongs(
@@ -1178,26 +1172,21 @@ class LLMToolRunner:
         for provider in cfg.llm_providers:
             models = provider.get('models', [])
             model_items = models if isinstance(models, list) else []
-            providers.append(
-                {
-                    'name': str(provider.get('name', '')),
-                    'api_format': str(provider.get('api_format', 'openai_chat')),
-                    'base_url': str(provider.get('base_url', '')),
-                    'models': [
-                        {
-                            'id': str(item.get('id', '')),
-                            'display_name': str(item.get('display_name', '')),
-                            'enable_1m_context': bool(
-                                item.get('enable_1m_context', False)
-                            ),
-                        }
-                        for item in model_items
-                        if isinstance(item, dict)
-                    ],
-                    'current': str(provider.get('name', ''))
-                    == cfg.llm_current_provider,
-                }
-            )
+            providers.append({
+                'name': str(provider.get('name', '')),
+                'api_format': str(provider.get('api_format', 'openai_chat')),
+                'base_url': str(provider.get('base_url', '')),
+                'models': [
+                    {
+                        'id': str(item.get('id', '')),
+                        'display_name': str(item.get('display_name', '')),
+                        'enable_1m_context': bool(item.get('enable_1m_context', False)),
+                    }
+                    for item in model_items
+                    if isinstance(item, dict)
+                ],
+                'current': str(provider.get('name', '')) == cfg.llm_current_provider,
+            })
         return {
             'current_provider': cfg.llm_current_provider,
             'current_model': cfg.llm_current_model,
@@ -1344,13 +1333,11 @@ class LLMToolRunner:
                 continue
             seen_ids.add(model_id)
             seen_names.add(display_name)
-            models.append(
-                {
-                    'id': model_id,
-                    'display_name': display_name,
-                    'enable_1m_context': enable_1m_context,
-                }
-            )
+            models.append({
+                'id': model_id,
+                'display_name': display_name,
+                'enable_1m_context': enable_1m_context,
+            })
         return models
 
     def _get_southside_legacy_connection(self) -> dict[str, Any]:
@@ -1373,17 +1360,15 @@ class LLMToolRunner:
                 continue
             title_text = tr(section.title)
             description_text = tr(section._title)
-            sections.append(
-                {
-                    'title': title_text,
-                    'title_text': title_text,
-                    'title_key': section.title,
-                    'description': description_text,
-                    'description_text': description_text,
-                    'description_key': section._title,
-                    'expanded': section.isExpanded(),
-                }
-            )
+            sections.append({
+                'title': title_text,
+                'title_text': title_text,
+                'title_key': section.title,
+                'description': description_text,
+                'description_text': description_text,
+                'description_key': section._title,
+                'expanded': section.isExpanded(),
+            })
         return {'sections': sections}
 
     def _has_section(self, section: str) -> bool:
@@ -1404,19 +1389,17 @@ class LLMToolRunner:
             value = self._widget_value(value_widget)
             name_text = tr(name)
             description_text = tr(desc)
-            options.append(
-                {
-                    'name': name_text,
-                    'name_text': name_text,
-                    'name_key': name,
-                    'description': description_text,
-                    'description_text': description_text,
-                    'description_key': desc,
-                    'value': value,
-                    'value_type': type(value).__name__,
-                    'choices': self._widget_choices(value_widget),
-                }
-            )
+            options.append({
+                'name': name_text,
+                'name_text': name_text,
+                'name_key': name,
+                'description': description_text,
+                'description_text': description_text,
+                'description_key': desc,
+                'value': value,
+                'value_type': type(value).__name__,
+                'choices': self._widget_choices(value_widget),
+            })
         return {'section': section, 'options': options}
 
     def _set_option_value(

@@ -137,9 +137,9 @@ class BeatDetector:
     def _spectralNovelty(self, frame: np.ndarray) -> float:
         spectra = np.abs(rfft(frame * self._window[:, None], axis=0))
         spectrum = np.sqrt(np.mean(spectra**2, axis=1)) * (2.0 / self._window.sum())
-        energies = np.array(
-            [float(np.linalg.norm(spectrum[band])) for band in self._bands]
-        )
+        energies = np.array([
+            float(np.linalg.norm(spectrum[band])) for band in self._bands
+        ])
         if self._background is None:
             self._background = spectrum.copy()
         background = self._background
@@ -162,25 +162,21 @@ class BeatDetector:
         percussive = median_filter(spectrum, size=9)
         flux *= percussive**2 / (percussive**2 + (harmonic * 2.0) ** 2 + floor**2)
         flux[spectrum < floor] = 0.0
-        band_flux = np.array(
-            [float(np.mean(flux[band])) if band.any() else 0.0 for band in self._bands]
-        )
-        widths = np.array(
-            [
-                float(np.sum(difference[band]) ** 2)
-                / max(
-                    float(np.sum(difference[band] ** 2)) * np.count_nonzero(band),
-                    1e-12,
-                )
-                for band in self._bands
-            ]
-        )
-        flatness = np.array(
-            [
-                self._spectralFlatness(difference[band]) if band.any() else 0.0
-                for band in self._bands
-            ]
-        )
+        band_flux = np.array([
+            float(np.mean(flux[band])) if band.any() else 0.0 for band in self._bands
+        ])
+        widths = np.array([
+            float(np.sum(difference[band]) ** 2)
+            / max(
+                float(np.sum(difference[band] ** 2)) * np.count_nonzero(band),
+                1e-12,
+            )
+            for band in self._bands
+        ])
+        flatness = np.array([
+            self._spectralFlatness(difference[band]) if band.any() else 0.0
+            for band in self._bands
+        ])
 
         energy_floor = max(level * 0.02, 1e-6)
         attack = np.log((energies + energy_floor) / (self._energies[-3] + energy_floor))

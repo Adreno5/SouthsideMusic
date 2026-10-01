@@ -159,15 +159,13 @@ def getLoginQRCodeUrl(unikey: str) -> str:
     )
     return '%s?%s' % (
         QRCODE_LOGIN_URL,
-        urlencode(
-            {
-                'codekey': unikey,
-                'chainId': chain_id,
-                'hdw_device': CLIENT_OS,
-                'hdw_appid': CLIENT_OS,
-                'hitExp': '1',
-            }
-        ),
+        urlencode({
+            'codekey': unikey,
+            'chainId': chain_id,
+            'hdw_device': CLIENT_OS,
+            'hdw_appid': CLIENT_OS,
+            'hitExp': '1',
+        }),
     )
 
 
@@ -234,11 +232,9 @@ def loginViaAnonymousAccount(deviceId=None, session=None) -> dict:
         session=session,
     )
     assert login_status['code'] == 200, 'anonymous login failed'
-    writeLoginInfo(
-        {
-            **login_status,
-            'profile': {'nickname': '', **login_status},
-            'account': {'id': login_status['userId'], **login_status},
-        }
-    )
+    writeLoginInfo({
+        **login_status,
+        'profile': {'nickname': '', **login_status},
+        'account': {'id': login_status['userId'], **login_status},
+    })
     return session.login_info

@@ -423,26 +423,24 @@ def main() -> None:
 
         if audio_path is None:
             print(f'  [!] Audio file not found')
-            results.append(
-                {
-                    'track_id': track['id'],
-                    'track_name': track['name'],
-                    'artists': track['artists'],
-                    'duration_s': track['duration_ms'] / 1000.0,
-                    'beat_count': 0,
-                    'beats_per_minute': 0.0,
-                    'interval_mean_s': 0.0,
-                    'interval_std_s': 0.0,
-                    'interval_cv': 0.0,
-                    'detection_value_mean': 0.0,
-                    'detection_value_std': 0.0,
-                    'detection_value_cv': 0.0,
-                    'detection_value_min': 0.0,
-                    'detection_value_max': 0.0,
-                    'has_audio': False,
-                    'error': 'Audio file not found',
-                }
-            )
+            results.append({
+                'track_id': track['id'],
+                'track_name': track['name'],
+                'artists': track['artists'],
+                'duration_s': track['duration_ms'] / 1000.0,
+                'beat_count': 0,
+                'beats_per_minute': 0.0,
+                'interval_mean_s': 0.0,
+                'interval_std_s': 0.0,
+                'interval_cv': 0.0,
+                'detection_value_mean': 0.0,
+                'detection_value_std': 0.0,
+                'detection_value_cv': 0.0,
+                'detection_value_min': 0.0,
+                'detection_value_max': 0.0,
+                'has_audio': False,
+                'error': 'Audio file not found',
+            })
             continue
 
         print(f'  Audio: {audio_path.name}')

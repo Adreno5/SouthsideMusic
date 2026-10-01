@@ -292,7 +292,8 @@ class DependencesWindow(QWidget):
                 [ffmpeg_exe, '-version'], text=True, capture_output=True
             )
             version = (
-                output.stdout.splitlines()[0]
+                output.stdout
+                .splitlines()[0]
                 .removeprefix('ffmpeg version ')
                 .split(' ')[0]
             )

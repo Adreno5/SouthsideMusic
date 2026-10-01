@@ -1543,17 +1543,15 @@ def _parseSimpleJson(payload: bytes) -> list[dict]:
         url = entry.get('url')
         if not isinstance(filename, str) or not isinstance(url, str):
             continue
-        result.append(
-            {
-                'filename': filename,
-                'url': url,
-                'hashes': entry.get('hashes') or {},
-                'requires_python': entry.get('requires-python') or '',
-                'size': entry.get('size') or 0,
-                # PEP 658: the METADATA file can be fetched without the wheel.
-                'metadata': _metadataUrl(entry.get('dist-info-metadata')),
-            }
-        )
+        result.append({
+            'filename': filename,
+            'url': url,
+            'hashes': entry.get('hashes') or {},
+            'requires_python': entry.get('requires-python') or '',
+            'size': entry.get('size') or 0,
+            # PEP 658: the METADATA file can be fetched without the wheel.
+            'metadata': _metadataUrl(entry.get('dist-info-metadata')),
+        })
     return result
 
 
@@ -1580,21 +1578,19 @@ def _parseSimpleHtml(payload: bytes) -> list[dict]:
             r'data-dist-info-metadata="([^"]*)"',
             attributes,
         )
-        result.append(
-            {
-                'filename': filename,
-                'url': raw_url,
-                'hashes': {},
-                # The attribute is HTML escaped in the page ("&gt;=3.9").
-                'requires_python': (
-                    html.unescape(data_python.group(1)) if data_python else ''
-                ),
-                'size': 0,
-                'metadata': _metadataUrl(
-                    html.unescape(data_metadata.group(1)) if data_metadata else ''
-                ),
-            }
-        )
+        result.append({
+            'filename': filename,
+            'url': raw_url,
+            'hashes': {},
+            # The attribute is HTML escaped in the page ("&gt;=3.9").
+            'requires_python': (
+                html.unescape(data_python.group(1)) if data_python else ''
+            ),
+            'size': 0,
+            'metadata': _metadataUrl(
+                html.unescape(data_metadata.group(1)) if data_metadata else ''
+            ),
+        })
     return result
 
 

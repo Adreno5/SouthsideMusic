@@ -50,21 +50,17 @@ def install_hook() -> None:
             cookie_names = sorted({ck.name for ck in s.cookies})
         except Exception:
             cookie_names = []
-        RECORDS.append(
-            {
-                'path': path,
-                'method': method,
-                'url': 'https://%s/eapi/%s' % (apis.API_HOST, path[5:]),
-                'host': apis.API_HOST,
-                'envelope_fields': sorted(s.eapi_config.keys()),
-                'cookie_names': cookie_names,
-                'params': redact({k: v for k, v in data.items() if k != 'header'}),
-                'code': resp.get('code') if isinstance(resp, dict) else None,
-                'resp_top_keys': sorted(resp.keys())
-                if isinstance(resp, dict)
-                else None,
-            }
-        )
+        RECORDS.append({
+            'path': path,
+            'method': method,
+            'url': 'https://%s/eapi/%s' % (apis.API_HOST, path[5:]),
+            'host': apis.API_HOST,
+            'envelope_fields': sorted(s.eapi_config.keys()),
+            'cookie_names': cookie_names,
+            'params': redact({k: v for k, v in data.items() if k != 'header'}),
+            'code': resp.get('code') if isinstance(resp, dict) else None,
+            'resp_top_keys': sorted(resp.keys()) if isinstance(resp, dict) else None,
+        })
         return resp
 
     apis.eapi = wrapper

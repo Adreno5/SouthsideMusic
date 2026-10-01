@@ -225,14 +225,12 @@ class QObjectHandler(QObject):
     def _sendPingPacket(self, option: str, stage: str, ping_id: object) -> None:
         try:
             self.send(
-                dumpJsonPayload(
-                    {
-                        'option': option,
-                        'stage': stage,
-                        'id': ping_id,
-                        'sent_at': time.perf_counter(),
-                    }
-                )
+                dumpJsonPayload({
+                    'option': option,
+                    'stage': stage,
+                    'id': ping_id,
+                    'sent_at': time.perf_counter(),
+                })
             )
         except Exception as e:
             self._logger.debug('failed to send websocket ping packet: %s', e)

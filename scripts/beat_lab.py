@@ -158,9 +158,9 @@ def score(
         nearest = np.min(distances, axis=1)
         offsets = detected[np.argmin(distances, axis=1)] - target
         recall = np.mean(nearest <= tolerance).item()
-        precision = np.mean(
-            [np.min(np.abs(target - at)) <= tolerance for at in detected]
-        ).item()
+        precision = np.mean([
+            np.min(np.abs(target - at)) <= tolerance for at in detected
+        ]).item()
         row['precision'] = round(precision, 3)
         row['recall'] = round(recall, 3)
         row['f1'] = (

@@ -200,12 +200,34 @@ _CAMELOT_MAP: dict[str, str] = {
     'Dm': '7A',
 }
 
-_KS_PROFILES_MAJOR = np.array(
-    [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
-)
-_KS_PROFILES_MINOR = np.array(
-    [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
-)
+_KS_PROFILES_MAJOR = np.array([
+    6.35,
+    2.23,
+    3.48,
+    2.33,
+    4.38,
+    4.09,
+    2.52,
+    5.19,
+    2.39,
+    3.66,
+    2.29,
+    2.88,
+])
+_KS_PROFILES_MINOR = np.array([
+    6.33,
+    2.68,
+    3.52,
+    5.38,
+    2.60,
+    3.53,
+    2.54,
+    4.75,
+    3.98,
+    2.69,
+    3.34,
+    3.17,
+])
 
 _NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
@@ -223,12 +245,10 @@ _KEY_FOCUS_FLOOR = 0.5
 _KEY_BASS_WEIGHT = 0.4
 _KEY_MARGIN_SPREAD = 0.15
 
-_KEY_PROFILES = np.vstack(
-    (
-        np.stack([np.roll(_KS_PROFILES_MAJOR, shift) for shift in range(12)]),
-        np.stack([np.roll(_KS_PROFILES_MINOR, shift) for shift in range(12)]),
-    )
-).astype(np.float64)
+_KEY_PROFILES = np.vstack((
+    np.stack([np.roll(_KS_PROFILES_MAJOR, shift) for shift in range(12)]),
+    np.stack([np.roll(_KS_PROFILES_MINOR, shift) for shift in range(12)]),
+)).astype(np.float64)
 _KEY_PROFILES_CENTERED = _KEY_PROFILES - _KEY_PROFILES.mean(axis=1, keepdims=True)
 _KEY_PROFILE_NORMS = np.maximum(np.linalg.norm(_KEY_PROFILES_CENTERED, axis=1), 1e-9)
 
@@ -503,25 +523,23 @@ def _cache_token(
     current_gain: float,
     next_gain: float,
 ) -> str:
-    payload = '|'.join(
-        (
-            current_id,
-            next_id,
-            'structural-transition-v5',
-            str(sample_rate),
-            str(channels),
-            f'{crossfade_seconds:.6f}',
-            f'{crossfade_strength:.6f}',
-            f'{max_duration:.6f}',
-            curve,
-            str(bpm_window),
-            str(tempo_match),
-            str(key_match),
-            str(agc),
-            f'{current_gain:.6f}',
-            f'{next_gain:.6f}',
-        )
-    ).encode('utf-8')
+    payload = '|'.join((
+        current_id,
+        next_id,
+        'structural-transition-v5',
+        str(sample_rate),
+        str(channels),
+        f'{crossfade_seconds:.6f}',
+        f'{crossfade_strength:.6f}',
+        f'{max_duration:.6f}',
+        curve,
+        str(bpm_window),
+        str(tempo_match),
+        str(key_match),
+        str(agc),
+        f'{current_gain:.6f}',
+        f'{next_gain:.6f}',
+    )).encode('utf-8')
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -993,9 +1011,9 @@ def _detect_beat_phase(samples: np.ndarray, sample_rate: int, bpm: float) -> flo
     period = int(round(envelope_rate * 60.0 / bpm))
     if period < 2 or len(envelope) < period * 2:
         return 0.0
-    scores = np.array(
-        [float(np.sum(envelope[offset::period])) for offset in range(period)]
-    )
+    scores = np.array([
+        float(np.sum(envelope[offset::period])) for offset in range(period)
+    ])
     strongest = int(np.argmax(scores))
     tail_phase = (len(envelope) - 1 - strongest) % period
     return float((period - tail_phase) % period) / period

@@ -32,9 +32,10 @@ _INLINE_CODE_PATTERN = re.compile(r'(?<!\\)(`+)(?:(?!\1)[^\n])*?\1')
 _MATH_PATTERN = re.compile(
     r'(?s)(\$\$.*?\$\$|(?<!\\)\$[^$\n]+?(?<!\\)\$|\\\[.*?\\\]|\\\(.*?\\\))'
 )
-_MARKDOWN = MarkdownIt('commonmark', {'html': False, 'breaks': True}).enable(
-    ['table', 'strikethrough']
-)
+_MARKDOWN = MarkdownIt('commonmark', {'html': False, 'breaks': True}).enable([
+    'table',
+    'strikethrough',
+])
 _DEFAULT_FENCE_RENDERER = _MARKDOWN.renderer.rules['fence']
 _LATEX_FENCE_LANGUAGES = frozenset({'latex', 'math', 'tex'})
 logging.getLogger('markdown_it').setLevel(logging.WARNING)

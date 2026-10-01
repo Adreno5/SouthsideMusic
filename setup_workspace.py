@@ -153,16 +153,14 @@ def pip_install(package: str, *, retries: int = 3) -> bool:
     """Attempt to pip-install *package* with retry. Returns True on success."""
     for attempt in range(1, retries + 1):
         try:
-            run(
-                [
-                    sys.executable,
-                    '-m',
-                    'pip',
-                    'install',
-                    '--no-cache-dir',
-                    package,
-                ]
-            )
+            run([
+                sys.executable,
+                '-m',
+                'pip',
+                'install',
+                '--no-cache-dir',
+                package,
+            ])
             return True
         except subprocess.CalledProcessError:
             if attempt < retries:
@@ -720,17 +718,15 @@ def _setup_build_venv() -> None:
         print('  Installing Nuitka...')
         for attempt in range(1, 4):
             try:
-                run(
-                    [
-                        build_python,
-                        '-m',
-                        'pip',
-                        'install',
-                        '--no-input',
-                        '--no-cache-dir',
-                        'nuitka',
-                    ]
-                )
+                run([
+                    build_python,
+                    '-m',
+                    'pip',
+                    'install',
+                    '--no-input',
+                    '--no-cache-dir',
+                    'nuitka',
+                ])
                 break
             except subprocess.CalledProcessError:
                 if attempt < 3:
@@ -783,17 +779,15 @@ def _install_embed_requirements() -> None:
     print('  Installing setuptools...')
     for attempt in range(1, 4):
         try:
-            run(
-                [
-                    embed_exe,
-                    '-m',
-                    'pip',
-                    'install',
-                    '--no-input',
-                    '--no-cache-dir',
-                    'setuptools',
-                ]
-            )
+            run([
+                embed_exe,
+                '-m',
+                'pip',
+                'install',
+                '--no-input',
+                '--no-cache-dir',
+                'setuptools',
+            ])
             break
         except subprocess.CalledProcessError:
             if attempt < 3:
@@ -816,18 +810,16 @@ def _install_embed_requirements() -> None:
 
     for attempt in range(1, 4):
         try:
-            run(
-                [
-                    embed_exe,
-                    '-m',
-                    'pip',
-                    'install',
-                    '--no-input',
-                    '--no-cache-dir',
-                    '-r',
-                    REQUIREMENTS,
-                ]
-            )
+            run([
+                embed_exe,
+                '-m',
+                'pip',
+                'install',
+                '--no-input',
+                '--no-cache-dir',
+                '-r',
+                REQUIREMENTS,
+            ])
             _save_requirements_hash()
             return
         except subprocess.CalledProcessError:

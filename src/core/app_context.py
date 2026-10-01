@@ -70,20 +70,22 @@ class _ScheduledTaskRunner(QObject):
 
 class AppContext:
     def __init__(self) -> None:
-        self.app: QApplication = cast('QApplication', None)
-        self.player: AudioPlayer = cast('AudioPlayer', None)
-        self.config: Config = cast('Config', None)
-        self.mgr: LRCLyricParser = cast('LRCLyricParser', None)
-        self.transmgr: LRCLyricParser = cast('LRCLyricParser', None)
-        self.ymgr: YRCLyricParser = cast('YRCLyricParser', None)
-        self.ws_server: WebSocketServer = cast('WebSocketServer', None)
-        self.ws_handler: QObjectHandler = cast('QObjectHandler', None)
+        self.app: QApplication = cast('QApplication', cast(object, None))
+        self.player: AudioPlayer = cast('AudioPlayer', cast(object, None))
+        self.config: Config = cast('Config', cast(object, None))
+        self.mgr: LRCLyricParser = cast('LRCLyricParser', cast(object, None))
+        self.transmgr: LRCLyricParser = cast('LRCLyricParser', cast(object, None))
+        self.ymgr: YRCLyricParser = cast('YRCLyricParser', cast(object, None))
+        self.ws_server: WebSocketServer = cast('WebSocketServer', cast(object, None))
+        self.ws_handler: QObjectHandler = cast('QObjectHandler', cast(object, None))
         self.harmony_font_family: str = ''
         self.favs: list[LocalFolderInfo | CloudFolderInfo] = []
         self.lock: threading.Lock = threading.Lock()
         self._scheduled_task_runner = _ScheduledTaskRunner()
-        self.playing_manager: PlayingManager = cast('PlayingManager', None)
-        self.llm: LLM = cast('LLM', None)
+        self.playing_manager: PlayingManager = cast(
+            'PlayingManager', cast(object, None)
+        )
+        self.llm: LLM = cast('LLM', cast(object, None))
         self.llm_song_handles: dict[str, SearchSongInfo | SongStorable] = {}
         self.llm_folder_handles: dict[str, LocalFolderInfo | CloudFolderInfo] = {}
         self.llm_cloud_search_query: str = ''
@@ -92,23 +94,29 @@ class AppContext:
         self.debugging: bool = False
         self.process_pids: dict[str, int] = {}
 
-        self.launch_window: LaunchWindow = cast('LaunchWindow', None)
+        self.launch_window: LaunchWindow = cast('LaunchWindow', cast(object, None))
         self.main_window: MainWindow = cast('MainWindow', None)
-        self.playing_page: PlayingPage = cast('PlayingPage', None)
-        self.search_page: SearchPage = cast('SearchPage', None)
-        self.desktop_lyrics_page: DesktopLyricsPage = cast('DesktopLyricsPage', None)
-        self.favorites_page: FavoritesPage = cast('FavoritesPage', None)
-        self.setting_page: SettingPage = cast('SettingPage', None)
-        self.playlist_page: PlaylistPage = cast('PlaylistPage', None)
-        self.home_page: HomePage = cast('HomePage', None)
-        self.library_page: LibraryPage = cast('LibraryPage', None)
-        self.lyric_editor_page: LyricEditorPage = cast('LyricEditorPage', None)
-        self.comments_page: CommentsPage = cast('CommentsPage', None)
-        self.dependences_window: DependencesWindow = cast('DependencesWindow', None)
-        self.debugging_obj: Debugging = cast('Debugging', None)
-        self.events_service: EventsServices = cast('EventsServices', None)
+        self.playing_page: PlayingPage = cast('PlayingPage', cast(object, None))
+        self.search_page: SearchPage = cast('SearchPage', cast(object, None))
+        self.desktop_lyrics_page: DesktopLyricsPage = cast(
+            'DesktopLyricsPage', cast(object, None)
+        )
+        self.favorites_page: FavoritesPage = cast('FavoritesPage', cast(object, None))
+        self.setting_page: SettingPage = cast('SettingPage', cast(object, None))
+        self.playlist_page: PlaylistPage = cast('PlaylistPage', cast(object, None))
+        self.home_page: HomePage = cast('HomePage', cast(object, None))
+        self.library_page: LibraryPage = cast('LibraryPage', cast(object, None))
+        self.lyric_editor_page: LyricEditorPage = cast(
+            'LyricEditorPage', cast(object, None)
+        )
+        self.comments_page: CommentsPage = cast('CommentsPage', cast(object, None))
+        self.dependences_window: DependencesWindow = cast(
+            'DependencesWindow', cast(object, None)
+        )
+        self.debugging_obj: Debugging = cast('Debugging', cast(object, None))
+        self.events_service: EventsServices = cast('EventsServices', cast(object, None))
 
-        self.smtc: SmtcController = cast('SmtcController', None)
+        self.smtc: SmtcController = cast('SmtcController', cast(object, None))
 
     def addScheduledTask(
         self,

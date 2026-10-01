@@ -31,12 +31,45 @@ from core.models import (
     SearchCloudFolderInfo,
     UserInfo,
     getCachedHashes,
+    QualityPrivilegeInfo,
+    QualityLevelInfo,
 )
 
 _logger = logging.getLogger(__name__)
 
 
 class NeteaseCloudMusicBackend(MusicServiceBackend):
+    def getSongPrivilege(self, song_id: str) -> QualityPrivilegeInfo:
+        data = apis.track.getTrackPrivilege([song_id])
+        assert isinstance(data, dict), 'Invalid privilege response'
+        result = data['data'][0]
+        table = {
+            96000: '标准',
+            128000: '标准',
+            192000: '高',
+            320000: '极高',
+            999000: '无损',
+            1900000: 'Hi-Res 高解析',
+            1999000: 'Hi-Res 高解析',
+            2999000: 'Dolby Atmos 杜比全景声',
+            3999000: '沉浸环绕声 Surround Audio',
+            4999000: '超清母带 Master',
+            5999000: '高清臻音',
+            6999000: '臻音全景声 Auto Vivid',
+        }
+        return QualityPrivilegeInfo(
+            result['downloadMaxbr'],
+            table.get(result['downloadMaxbr'], '未知音质'),
+            [
+                QualityLevelInfo(
+                    charge['rate'],
+                    bool(charge['chargeType']),
+                    table.get(charge['rate'], '未知音质'),
+                )
+                for charge in result['chargeInfoList']
+            ],
+        )
+
     def _sessionSnapshot(self) -> BackendSessionSnapshot:
         return BackendSessionSnapshot(
             session=self.dumpSession(),
@@ -399,8 +432,8 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
         if isinstance(resp, bytes):
             resp = json.loads(resp.decode())
         assert isinstance(resp, dict), 'Invalid track audio response'
-        url = resp['data'][0]['url']  # type: ignore
-        return TrackAudioInfo(url=url)
+        audio = resp['data'][0]
+        return TrackAudioInfo(url=audio['url'], sample_rate=int(audio.get('sr') or 0))
 
     def getTrackLyrics(self, track_id: int | str) -> TrackLyricsInfo:
         data = apis.track.getTrackLyricsNew(str(track_id))
@@ -619,38 +652,34 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
             return result
 
     def recordPlayed(self, song_id: str, song_name: str, time: float) -> None:
-        apis.user.setWeblog(
-            {
-                'action': 'play',
-                'json': {
-                    'content': '',
-                    'download': 0,
-                    'end': 'ui',
-                    'id': int(song_id),
-                    'mainsite': '1',
-                    'mainsiteWeb': '1',
-                    'source': 'search',
-                    'sourceId': song_name,
-                    'time': int(time),
-                    'type': 'song',
-                    'wifi': 0,
-                },
-            }
-        )
+        apis.user.setWeblog({
+            'action': 'play',
+            'json': {
+                'content': '',
+                'download': 0,
+                'end': 'ui',
+                'id': int(song_id),
+                'mainsite': '1',
+                'mainsiteWeb': '1',
+                'source': 'search',
+                'sourceId': song_name,
+                'time': int(time),
+                'type': 'song',
+                'wifi': 0,
+            },
+        })
 
     def recordPlay(self, song_id: str) -> None:
-        apis.user.setWeblog(
-            {
-                'action': 'startplay',
-                'json': {
-                    'content': '',
-                    'id': int(song_id),
-                    'mainsite': '1',
-                    'mainsiteWeb': '1',
-                    'type': 'song',
-                },
-            }
-        )
+        apis.user.setWeblog({
+            'action': 'startplay',
+            'json': {
+                'content': '',
+                'id': int(song_id),
+                'mainsite': '1',
+                'mainsiteWeb': '1',
+                'type': 'song',
+            },
+        })
 
     def getComments(
         self,

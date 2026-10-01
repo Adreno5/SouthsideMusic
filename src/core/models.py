@@ -632,6 +632,7 @@ class TrackDetailInfo:
 @dataclass
 class TrackAudioInfo:
     url: str
+    sample_rate: int = 0
 
 
 @dataclass
@@ -693,6 +694,20 @@ class CommentInfo:
     comments: list[Comment]
     total: int
     cursor: str
+
+
+@dataclass
+class QualityLevelInfo:
+    rate: int
+    charge_type: bool
+    display_text: str
+
+
+@dataclass
+class QualityPrivilegeInfo:
+    max_br: int
+    max_display_text: str
+    levels: list[QualityLevelInfo]
 
 
 class MusicServiceBackend(ABC):
@@ -845,3 +860,6 @@ class MusicServiceBackend(ABC):
 
     @abstractmethod
     def addComment(self, song_id: str, content: str) -> None: ...
+
+    @abstractmethod
+    def getSongPrivilege(self, song_id: str) -> QualityPrivilegeInfo: ...

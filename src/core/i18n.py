@@ -96,6 +96,7 @@ TRANSLATIONS: dict[str, list[str]] = {
     'desktop_lyrics.reset_position': ['Reset Position', '重置位置'],
     'dialog.yes': ['OK', '确定'],
     'dialog.no': ['Cancel', '取消'],
+    'dialog.back': ['Back', '返回'],
     'dialogs.i_scanned': ['I scanned', '我已扫码'],
     'dialogs.login_anomaly_risk_control': [
         'Login anomaly risk control',
@@ -1316,6 +1317,19 @@ TRANSLATIONS: dict[str, list[str]] = {
     ],
     'comments_page.title': ['Comments', '评论'],
     'comments_page.say_sth': ['Say something...', '说点什么...'],
+    'quality_dialog.null_song': ["There's no any song...", '还没有任何歌曲...'],
+    'quality_display.96000': ['Standard', '标准'],
+    'quality_display.128000': ['Standard', '标准'],
+    'quality_display.192000': ['High', '高'],
+    'quality_display.320000': ['Extra High', '极高'],
+    'quality_display.999000': ['Lossless', '无损'],
+    'quality_display.1900000': ['Hi-Res', 'Hi-Res 高解析'],
+    'quality_display.1999000': ['Hi-Res', 'Hi-Res 高解析'],
+    'quality_display.2999000': ['Dolby Atmos', 'Dolby Atmos 杜比全景声'],
+    'quality_display.3999000': ['Surround Audio', '沉浸环绕声 Surround Audio'],
+    'quality_display.4999000': ['Master', '超清母带 Master'],
+    'quality_display.5999000': ['Hi-Def Vivid', '高清臻音'],
+    'quality_display.6999000': ['Immersive Auto Vivid', '臻音全景声 Auto Vivid'],
 }
 
 

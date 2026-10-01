@@ -43,6 +43,7 @@ class SouthsideIcon(FluentIconBase, Enum):
     TRASH = 'trash'
     LIBRARY = 'library'
     COMMENT = 'comment'
+    QUALITY = 'quality'
 
     @lru_cache
     def path(self, theme=Theme.AUTO) -> str:

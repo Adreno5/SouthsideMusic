@@ -28,11 +28,18 @@ from core.color import mixColor
 from core.config import cfg
 from core import theme
 from core.lyrics import LyricInfo, YRCLyricInfo
-from services.events.events import DESKTOP_LYRICS_ANCHOR_CHANGED, EMIT_DEBUG_INFO, COLLECT_DEBUG_INFO
+from services.events.events import (
+    DESKTOP_LYRICS_ANCHOR_CHANGED,
+    EMIT_DEBUG_INFO,
+    COLLECT_DEBUG_INFO,
+    REPAINT,
+    REPAINT_ALWAYS,
+)
 from views.lyrics_viewer import LyricsViewer
 from views.playing_page import _artists_text
 import ctypes
 from ctypes import wintypes
+
 
 class DesktopLyricsViewer(LyricsViewer):
     def __init__(
@@ -61,20 +68,32 @@ class DesktopLyricsViewer(LyricsViewer):
             | Qt.WindowType.BypassWindowManagerHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        
+
         hwnd = int(self.winId())
-        
+
         user32 = ctypes.windll.user32
-        user32.SetWindowPos(wintypes.HWND(hwnd), wintypes.HWND(-1) if ctypes.sizeof(wintypes.HWND) == 8 else -1, 0, 0, 0, 0, 0x0002 | 0x0001)
+        user32.SetWindowPos(
+            wintypes.HWND(hwnd),
+            wintypes.HWND(-1) if ctypes.sizeof(wintypes.HWND) == 8 else -1,
+            0,
+            0,
+            0,
+            0,
+            0x0002 | 0x0001,
+        )
 
         self.check_mouse_timer = QTimer(self)
         self.check_mouse_timer.timeout.connect(self._checkMouse)
         self.check_mouse_timer.start(200)
-        
+
         event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
-        
+        event_bus.unsubscribe(REPAINT, self._onRepaintTick)
+        event_bus.subscribe(REPAINT_ALWAYS, self._onRepaintTick)
+
     def _checkMouse(self):
-        self.indentation = QRect(-5, -int(self.indentation_y), self.width() + 5, self.height()).contains(self.mapFromGlobal(QCursor.pos()))
+        self.indentation = QRect(
+            -5, -int(self.indentation_y), self.width() + 5, self.height()
+        ).contains(self.mapFromGlobal(QCursor.pos()))
 
     def showMinimized(self) -> None:
         self.showNormal()
@@ -86,7 +105,11 @@ class DesktopLyricsViewer(LyricsViewer):
         event_bus.emit(
             EMIT_DEBUG_INFO,
             'Desktop Lyrics Viewer',
-            [f'{len(self._shown_lines)=}', f'{self.last_lyric=}', f'{self.indentation_y=}'],
+            [
+                f'{len(self._shown_lines)=}',
+                f'{self.last_lyric=}',
+                f'{self.indentation_y=}',
+            ],
         )
 
     def _firstLyricTime(self) -> float:
@@ -192,7 +215,14 @@ class DesktopLyricsViewer(LyricsViewer):
     def updateDatas(self, multiple_factor: float = 1.0) -> None:
         playing = self.ctx.player.isPlaying()
         self.indentation_y += (
-            (((-self.height() + 8 if self.indentation else 0) if playing else -self.height()) - self.indentation_y)
+            (
+                (
+                    (-self.height() + 8 if self.indentation else 0)
+                    if playing
+                    else -self.height()
+                )
+                - self.indentation_y
+            )
             * (0.2 if playing else 0.05)
             * multiple_factor
         )

@@ -41,6 +41,7 @@ def saveConfig() -> None:
 @dataclass
 class Config:
     language: Literal['en_US', 'zh_CN'] = 'en_US'
+    afk_secs: int = 180
 
     search_type: Literal['Songs', 'Playlists'] = 'Songs'
 

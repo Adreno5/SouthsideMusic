@@ -689,6 +689,11 @@ TRANSLATIONS: dict[str, list[str]] = {
         'show and control playback in the Windows media overlay',
         '在 Windows 媒体浮出控件中显示并控制播放',
     ],
+    'setting_page.afk_secs': ['AFK Timeout (secs)', 'AFK 时长（秒）'],
+    'setting_page.afk_secs_desc': [
+        'weaken animations after the specified number of seconds to save resources',
+        '在指定秒数后削弱动画效果，以节省资源',
+    ],
     'setting_page.enable_fft_driven_visual_effects': [
         'enable FFT-driven visual effects',
         '启用 FFT 驱动的视觉效果',

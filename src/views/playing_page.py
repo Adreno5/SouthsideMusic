@@ -13,6 +13,7 @@ from core.config import saveConfig
 from core.downloader import asyncTask
 from core.free_threaded_worker import jsonBase64Bytes
 from core.icons import bindIcon
+from core.smooth import EaseInOutTimer
 from core.lyric_video_export import (
     LyricVideoExportOptions,
     LyricVideoExportProgress,
@@ -493,6 +494,9 @@ class PlayingPage(QWidget):
         self.comments_button.setFixedSize(32, 32)
         bindIcon(self.comments_button, 'comment')
         self.comments_button.clicked.connect(self.viewComments)
+
+        self.buttons_expand = EaseInOutTimer(0.3, 3)
+        self.buttons_expand.target_value = 0
 
         event_bus.subscribe(PLAYBACK_SONG_LOADING, self._onPlaybackSongLoading)
         event_bus.subscribe(PLAYBACK_IMAGE_LOADED, self._onPlaybackImageLoaded)

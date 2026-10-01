@@ -117,3 +117,11 @@ class EaseOutBackTimer(_BaseSmoothTimer):
 class EaseOutTimer(_BaseSmoothTimer):
     def _ease_progress(self, progress: float) -> float:
         return 1.0 - pow(1.0 - progress, self._power_number)
+
+
+class EaseInOutTimer(_BaseSmoothTimer):
+    def _ease_progress(self, progress: float) -> float:
+        if progress < 0.5:
+            return pow(2.0 * progress, self._power_number) / 2.0
+
+        return 1.0 - pow(2.0 * (1.0 - progress), self._power_number) / 2.0

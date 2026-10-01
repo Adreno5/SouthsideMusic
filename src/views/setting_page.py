@@ -405,6 +405,16 @@ class SettingPage(QWidget):
             lambda: self.ctx.smtc.setEnabled(cfg.smtc_enabled),
         )
 
+        self.addNumberSetting(
+            'setting_page.afk_secs',
+            'setting_page.afk_secs_desc',
+            10,
+            6000,
+            10,
+            'afk_secs',
+            advanced=True,
+        )
+
     def _addAppearanceSection(self) -> None:
         self.addSection(
             'setting_page.window', 'setting_page.theme_sensitive_background_mixing'

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import logging
+import time
+
+from PySide6.QtGui import QMouseEvent
 
 from core.app_context import AppContext
 
@@ -23,6 +26,8 @@ from imports import (
     VIEW_FOLDER,
     WEBSOCKET_CONNECTED,
     WEBSOCKET_DISCONNECTED,
+    REPAINT_EVENT_INTERVAL,
+    REPAINT,
     FluentIcon,
     Path,
     QAbstractAnimation,
@@ -249,6 +254,8 @@ class MainWindow(FluentWindowBase):
         self.controller.setFixedSize(max(1, self.width()), 52)
         self.controller.move(0, self.height() - self.controller.height())
 
+        self.last_action = time.time()
+
         self.dp_expanded = False
         self.dp_animating = False
         self._dp.setParent(self)
@@ -274,6 +281,8 @@ class MainWindow(FluentWindowBase):
         self.debug_overlay.setGeometry(geo)
         self.debug_overlay.raise_()
 
+        self.setMouseTracking(True)
+
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(START_INTER_LOADING, self.onStartInterLoading)
         event_bus.subscribe(STOP_INTER_LOADING, self.onStopInterLoading)
@@ -286,8 +295,36 @@ class MainWindow(FluentWindowBase):
         event_bus.subscribe(MWINDOW_REFRESH_FOLDERS, self.refreshFolders)
         event_bus.subscribe(LANGUAGE_CHANGED, self.updateLanguage)
         event_bus.subscribe(POST_THEME_CHANGED, self.onPostThemeChanged)
-
+        event_bus.subscribe(REPAINT, self.checkAFK)
         self.refreshLoginInformations()
+
+    def checkAFK(self, _):
+        if time.time() - self.last_action > 180 and not self.isActiveWindow():
+            event_bus.emit(REPAINT_EVENT_INTERVAL, 200)
+        else:
+            event_bus.emit(
+                REPAINT_EVENT_INTERVAL, 1000 / self.ctx.events_service.refresh_rate
+            )
+
+    def mousePressEvent(self, e):
+        self.last_action = time.time()
+        return super().mousePressEvent(e)
+
+    def enterEvent(self, e):
+        self.last_action = time.time()
+        return super().enterEvent(e)
+
+    def leaveEvent(self, e):
+        self.last_action = time.time()
+        return super().leaveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        self.last_action = time.time()
+        return super().mouseReleaseEvent(e)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        self.last_action = time.time()
+        return super().mouseMoveEvent(event)
 
     def onPostThemeChanged(self) -> None:
         self.llm_viewer_panel.onPostThemeChanged()

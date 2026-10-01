@@ -37,6 +37,7 @@ LYRIC_LINE_CHANGED = 'lyric_line_changed'
 
 REFRESH_RATE_CHANGED = 'refresh_rate_changed'
 REPAINT = 'repaint'
+REPAINT_ALWAYS = 'repaint_always'
 
 UPDATE_COVER = 'update_cover'
 
@@ -65,3 +66,5 @@ START_CROSSFADE = 'start_crossfade'
 FINISH_CROSSFADE = 'stop_crossfade'
 
 TERMINAL_SIZE_CHANGED = 'terminal_size_changed'
+
+REPAINT_EVENT_INTERVAL = 'repaint_event_interval'

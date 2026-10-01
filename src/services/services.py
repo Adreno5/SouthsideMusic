@@ -23,6 +23,8 @@ from imports import (
     LOCAL_RENAME_FOLDER,
     REPAINT,
     SONG_CHANGED,
+    REPAINT_EVENT_INTERVAL,
+    REPAINT_ALWAYS,
     InfoBar,
     MessageBox,
     QObject,
@@ -46,9 +48,14 @@ class EventsServices(QObject):
 
         self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
         self.last_repaint = time.perf_counter_ns()
+        self.last_always_repaint = time.perf_counter_ns()
         self.repaint_timer = QTimer(self)
         self.repaint_timer.timeout.connect(self._emitRepaint)
         self.repaint_timer.start(int(1000 / self.refresh_rate))
+
+        self.repaint_always_timer = QTimer(self)
+        self.repaint_always_timer.timeout.connect(self._emitAlwaysRepaint)
+        self.repaint_always_timer.start(int(1000 / self.refresh_rate))
         self._app.primaryScreen().refreshRateChanged.connect(
             lambda: event_bus.emit(REFRESH_RATE_CHANGED)
         )
@@ -65,6 +72,8 @@ class EventsServices(QObject):
         self.pids_collect_timer.timeout.connect(self.collectPids)
         self.pids_collect_timer.start(1000)
 
+        self.last_interval = 0
+
         event_bus.subscribe(
             SONG_CHANGED, lambda s: event_bus.emit(BACKGROUND_RATIO_CHANGED)
         )
@@ -74,6 +83,13 @@ class EventsServices(QObject):
         event_bus.subscribe(CLOUD_REMOVE_FOLDER, self.cloudRemoveFolder)
         event_bus.subscribe(CLOUD_RENAME_FOLDER, self.cloudRenameFolder)
         event_bus.subscribe(CLOUD_ADD_TO_LOCAL, self.cloudAddToLocal)
+        event_bus.subscribe(REPAINT_EVENT_INTERVAL, self._setRepaintInterval)
+
+    def _setRepaintInterval(self, interval):
+        if int(interval) == self.last_interval:
+            return
+        self.last_interval = interval
+        self.repaint_timer.setInterval(int(interval))
 
     def updateMemoryUsage(self):
         if not self.ctx.debugging:
@@ -234,6 +250,13 @@ class EventsServices(QObject):
         self.last_repaint = now
         multiple_factor = elapsed * self.refresh_rate
         event_bus.emit(REPAINT, multiple_factor)
+
+    def _emitAlwaysRepaint(self) -> None:
+        now = time.perf_counter_ns()
+        elapsed = min((now - self.last_always_repaint) / 1_000_000_000, 0.1)
+        self.last_always_repaint = now
+        multiple_factor = elapsed * self.refresh_rate
+        event_bus.emit(REPAINT_ALWAYS, multiple_factor)
 
     @staticmethod
     def _start_session_refresher() -> None:

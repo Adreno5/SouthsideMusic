@@ -39,6 +39,7 @@ from imports import (
     STOP_PROGRESS_LOADING,
     UPDATE_COVER,
     UPDATE_LOADING_PROGRESS,
+    REPAINT,
     QColorDialog,
     QBuffer,
     QFileDialog,
@@ -57,6 +58,7 @@ from imports import (
     Qt,
     QVBoxLayout,
     QWidget,
+    QCursor,
     event_bus,
     tr,
 )
@@ -76,6 +78,7 @@ from qfluentwidgets import (
     PillToolButton,
 )
 from views.lyrics_viewer import LyricsViewer
+from views.quality_dialog import QualityDialog
 from views.song_card import DummyCard
 
 
@@ -495,6 +498,11 @@ class PlayingPage(QWidget):
         bindIcon(self.comments_button, 'comment')
         self.comments_button.clicked.connect(self.viewComments)
 
+        self.quality_button = PillToolButton(self)
+        self.quality_button.setFixedSize(32, 32)
+        bindIcon(self.quality_button, 'quality')
+        self.quality_button.clicked.connect(self.viewQualityDialog)
+
         self.buttons_expand = EaseInOutTimer(0.3, 3)
         self.buttons_expand.target_value = 0
 
@@ -505,6 +513,7 @@ class PlayingPage(QWidget):
         event_bus.subscribe(POST_PLAY_STORABLE, self._onPostPlayStorable)
         event_bus.subscribe(SONG_CHANGED, self._updateDatas)
         event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
+        event_bus.subscribe(REPAINT, self._onRepaintTick)
         event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
 
     @property
@@ -549,6 +558,57 @@ class PlayingPage(QWidget):
 
     def translationToggled(self, state: bool):
         self.ctx.config.show_translation = state
+
+    def _onRepaintTick(self, _):
+        self.buttons_expand.target_value = (
+            1
+            if QRect(
+                0,
+                self.height() - self.img_label.height() - 10,
+                45,
+                self.img_label.height() + 10,
+            ).contains(self.mapFromGlobal(QCursor.pos()))
+            else 0
+        )
+        if self.buttons_expand.is_animating:
+            self.updateButtonPositions()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        self.updateButtonPositions()
+        return super().resizeEvent(event)
+
+    def updateButtonPositions(self):
+        button_x = int(50 * self.buttons_expand.current_value) - 35
+        translation_y = self.height() - 15 - self.translation_button.height()
+        self.translation_button.move(button_x, translation_y)
+        self.lyric_video_export_button.move(
+            button_x,
+            translation_y - 7 - self.lyric_video_export_button.height(),
+        )
+        self.lyric_editor_button.move(
+            button_x,
+            translation_y
+            - 14
+            - self.lyric_video_export_button.height()
+            - self.lyric_editor_button.height(),
+        )
+        self.comments_button.move(
+            button_x,
+            translation_y
+            - 24
+            - self.lyric_video_export_button.height()
+            - self.lyric_editor_button.height()
+            - self.comments_button.height(),
+        )
+        self.quality_button.move(
+            button_x,
+            translation_y
+            - 34
+            - self.lyric_video_export_button.height()
+            - self.lyric_editor_button.height()
+            - self.comments_button.height()
+            - self.quality_button.height(),
+        )
 
     def _updateDatas(self, song: SongStorable | None = None) -> None:
         self.bg_color = mixColor(
@@ -747,6 +807,12 @@ class PlayingPage(QWidget):
         if self._mwindow_obj.dp_expanded:
             self._mwindow_obj.togglePlayingPageExpand()
         self._mwindow_obj.contents_widget.setCurrentWidget(editor_page)
+
+    def viewQualityDialog(self):
+        self.quality_button.setChecked(False)
+
+        dialog = QualityDialog(self.ctx.main_window, self.ctx)
+        dialog.exec()
 
     def viewComments(self):
         self.comments_button.setChecked(False)
@@ -950,32 +1016,6 @@ class PlayingPage(QWidget):
             },
             coalesce_key='cover',
         )
-
-    def resizeEvent(self, event: QResizeEvent) -> None:
-        self.update()
-        button_x = 15
-        translation_y = self.height() - 15 - self.translation_button.height()
-        self.translation_button.move(button_x, translation_y)
-        self.lyric_video_export_button.move(
-            button_x,
-            translation_y - 7 - self.lyric_video_export_button.height(),
-        )
-        self.lyric_editor_button.move(
-            button_x,
-            translation_y
-            - 14
-            - self.lyric_video_export_button.height()
-            - self.lyric_editor_button.height(),
-        )
-        self.comments_button.move(
-            button_x,
-            translation_y
-            - 24
-            - self.lyric_video_export_button.height()
-            - self.lyric_editor_button.height()
-            - self.comments_button.height(),
-        )
-        return super().resizeEvent(event)
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)

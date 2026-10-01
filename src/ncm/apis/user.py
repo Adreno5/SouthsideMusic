@@ -5,6 +5,21 @@ from json import dumps
 from . import eapi
 
 
+SOUND_QUALITY_RESOURCE_TYPES = {
+    'jymaster': 31,
+    'sky': 32,
+    'jyeffect': 33,
+    'vivid': 41,
+}
+
+
+def getSoundQualityRights(level: str) -> dict:
+    return eapi(
+        '/api/vipauth/app/auth/query',
+        {'resourceIdList': 0, 'resourceTypeList': SOUND_QUALITY_RESOURCE_TYPES[level]},
+    )
+
+
 def getUserDetail(user_id=0) -> dict:
     """get user detail (pc client api).
 
@@ -14,7 +29,9 @@ def getUserDetail(user_id=0) -> dict:
     Returns:
         dict
     """
-    return eapi('/api/w/v1/user/detail/%s' % user_id, {'all': 'true', 'userId': str(user_id)})
+    return eapi(
+        '/api/w/v1/user/detail/%s' % user_id, {'all': 'true', 'userId': str(user_id)}
+    )
 
 
 def getUserPlaylists(user_id, offset=0, limit=1001) -> dict:

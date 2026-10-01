@@ -5,12 +5,19 @@ import json
 from . import eapi, getCurrentSession
 
 LEVEL_BY_BITRATE = {
+    64000: '64aac',
     96000: 'standard',
-    128000: 'higher',
-    192000: 'exhigh',
+    128000: 'standard',
+    192000: 'higher',
     320000: 'exhigh',
     999000: 'lossless',
     1900000: 'hires',
+    1999000: 'hires',
+    2999000: 'dolby',
+    3999000: 'jyeffect',
+    4999000: 'jymaster',
+    5999000: 'sky',
+    6999000: 'vivid',
 }
 
 
@@ -33,17 +40,11 @@ def getTrackDetail(song_ids: list) -> dict:
     )
 
 
-def getTrackAudio(song_ids: list, bitrate=320000, encodeType='aac') -> dict:
-    """get track audio urls (pc client api).
-
-    Args:
-        song_ids: track ids, up to 1000 per call.
-        bitrate: 96k/320k/320k+ lossless/sq. defaults to 320000.
-        encodeType: 'aac' etc. ignored at high bitrate.
-
-    Returns:
-        dict
-    """
+def getTrackAudio(
+    song_ids: list[int | str] | int | str,
+    bitrate: int = 320000,
+    encodeType: str = 'aac',
+) -> dict:
     ids = song_ids if isinstance(song_ids, list) else [song_ids]
     return getTrackAudioV1(
         ids,
@@ -52,17 +53,13 @@ def getTrackAudio(song_ids: list, bitrate=320000, encodeType='aac') -> dict:
     )
 
 
-def getTrackAudioV1(song_ids: list, level='standard', encodeType='flac') -> dict:
-    """get track audio urls v1 (pc client api).
-
-    Args:
-        song_ids: track ids, up to 1000 per call.
-        level: 'standard' / 'exhigh' / 'lossless' / 'hires'.
-        encodeType: defaults to 'flac'. ignored at high level.
-
-    Returns:
-        dict
-    """
+def getTrackAudioV1(
+    song_ids: list[int | str] | int | str,
+    level: str = 'standard',
+    encodeType: str = 'flac',
+    immerseType: str = 'c51',
+    trialMode: int = -1,
+) -> dict:
     ids = song_ids if isinstance(song_ids, list) else [song_ids]
     return eapi(
         '/api/song/enhance/player/url/v1',
@@ -70,8 +67,38 @@ def getTrackAudioV1(song_ids: list, level='standard', encodeType='flac') -> dict
             'ids': ids,
             'encodeType': str(encodeType),
             'level': str(level),
+            'immerseType': immerseType,
+            'trialMode': trialMode,
         },
     )
+
+
+def getTrackAudioDownload(
+    song_id: int | str,
+    level: str = 'standard',
+    immerseType: str = 'c51',
+) -> dict:
+    return eapi(
+        '/api/song/enhance/download/url/v1',
+        {'id': str(song_id), 'level': level, 'immerseType': immerseType},
+    )
+
+
+def getTrackQuality(song_id: int | str, immerseType: str = 'c51') -> dict:
+    return eapi(
+        '/api/song/music/detail/get',
+        {'songId': str(song_id), 'immerseType': immerseType},
+    )
+
+
+def getTrackPrivilege(
+    song_ids: list[int | str] | int | str, trialMode: int | None = None
+) -> dict:
+    ids = song_ids if isinstance(song_ids, list) else [song_ids]
+    data: dict = {'ids': json.dumps(ids)}
+    if trialMode is not None:
+        data['trialMode'] = trialMode
+    return eapi('/api/song/enhance/privilege', data)
 
 
 def getTrackLyricsNew(song_id: str) -> dict:
@@ -87,14 +114,14 @@ def getTrackLyricsNew(song_id: str) -> dict:
         '/api/song/lyric/v1',
         {
             'id': str(song_id),
-            'cp': False,
-            'lv': 0,
-            'tv': 0,
-            'rv': 0,
-            'kv': 0,
-            'yv': 0,
-            'ytv': 0,
-            'yrv': 0,
+            'cp': True,
+            'lv': 1,
+            'tv': 1,
+            'rv': 1,
+            'kv': 1,
+            'yv': 1,
+            'ytv': 1,
+            'yrv': 1,
         },
     )
 

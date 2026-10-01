@@ -175,20 +175,20 @@ Southside Music 会在本机 `15489` 端口启动 WebSocket 服务。连接会�
 
 设置页面默认保持精简。启用 **Advanced Settings / 高级设置** 后，会显示完整的音频、FFT、LLM、存储和歌曲衔接参数。
 
-| 分组 | 主要选项 |
-| --- | --- |
-| 应用 | 语言和下载并发数 |
-| 缓存存储 | 自动清理、缓存时限和空间上限 |
-| 播放 | 播放顺序、智能跳过、立体声、混响、输出设备 |
-| 交叉淡化 | 强度、曲线、时长、BPM、节拍、调性和增益匹配 |
-| 播放效果 | 速度、音调、静音阈值和检测窗口 |
-| LLM | 提供商、API 格式、密钥、Base URL 和模型 |
-| 窗口 | 封面颜色背景混合 |
-| 歌词 | 动画平滑参数 |
-| 桌面歌词 | 显示开关和位置重置 |
-| FFT | 频谱、平滑、缓冲、大小和客户端缩放 |
-| 响度 | 目标 LUFS |
-| 连接 | SouthsideClient 状态、流量、延迟和控制 |
+| 分组   | 主要选项                        |
+| ---- | --------------------------- |
+| 应用   | 语言和下载并发数                    |
+| 缓存存储 | 自动清理、缓存时限和空间上限              |
+| 播放   | 播放顺序、智能跳过、立体声、混响、输出设备       |
+| 交叉淡化 | 强度、曲线、时长、BPM、节拍、调性和增益匹配     |
+| 播放效果 | 速度、音调、静音阈值和检测窗口             |
+| LLM  | 提供商、API 格式、密钥、Base URL 和模型  |
+| 窗口   | 封面颜色背景混合                    |
+| 歌词   | 动画平滑参数                      |
+| 桌面歌词 | 显示开关和位置重置                   |
+| FFT  | 频谱、平滑、缓冲、大小和客户端缩放           |
+| 响度   | 目标 LUFS                     |
+| 连接   | SouthsideClient 状态、流量、延迟和控制 |
 
 ---
 
@@ -282,16 +282,16 @@ config.json        持久化用户配置
 
 ### 技术栈
 
-| 层级 | 技术 |
-| --- | --- |
-| 界面 | PySide6 + PySide6-Fluent-Widgets |
-| 窗口 | qframelesswindow + hPyT |
+| 层级      | 技术                                  |
+| ------- | ----------------------------------- |
+| 界面      | PySide6 + PySide6-Fluent-Widgets    |
+| 窗口      | qframelesswindow + hPyT             |
 | 音频与 DSP | sounddevice + pydub + NumPy + SciPy |
-| 元数据 | mutagen |
-| 网易云 API | 内置 `ncm` 客户端 |
-| 网络 | requests + Tornado WebSocket server |
-| 助手 | OpenAI SDK + Anthropic SDK |
-| 打包 | Nuitka + Inno Setup |
+| 元数据     | mutagen                             |
+| 网易云 API | 内置 `ncm` 客户端                        |
+| 网络      | requests + Tornado WebSocket server |
+| 助手      | OpenAI SDK + Anthropic SDK          |
+| 打包      | Nuitka + Inno Setup                 |
 
 ### 配置与数据
 
@@ -308,3 +308,5 @@ config.json        持久化用户配置
 Southside Music 使用 [PolyForm Noncommercial License 1.0.0](../LICENSE)。
 
 本软件仅供个人学习、研究和私人娱乐使用，禁止商业用途。通过应用导出的音乐由用户自行负责，不得传播或倒卖导出的音频文件。
+
+

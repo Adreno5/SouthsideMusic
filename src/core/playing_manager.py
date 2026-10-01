@@ -15,6 +15,8 @@ import time as timeLib
 import numpy as np
 
 import requests
+import sounddevice as sd
+from pydub.utils import get_prober_name
 from core.audio_player import (
     AudioPlayer,
     PatchedAudioSegment as AudioSegment_,
@@ -78,9 +80,7 @@ _AUDIO_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
 }
-_STREAM_SAMPLE_RATE = 44100
 _STREAM_CHANNELS = 2
-_STREAM_PCM_READ_BYTES = _STREAM_SAMPLE_RATE * _STREAM_CHANNELS * 4
 _STREAM_PLAY_MIN_SECONDS = 5.0
 _STREAM_ANALYSIS_SECONDS = 30
 _LYRIC_TIME_RE = re.compile(r'\[(\d+):(\d+(?:\.\d+)?)\]')
@@ -122,6 +122,7 @@ class PlayingManager:
         self.next_song_selection: PlaySelection | None = None
         self.current_song_audio: AudioSegment_ | None = None
         self.current_song: SongStorable | None = None
+        self._request_br = 3200 * 1000
         self._next_song_buffer: PreparedAudioBuffer | None = None
         self._queued_selection: PlaySelection | None = None
         self._queued_boundary: tuple[int, int] | None = None
@@ -411,6 +412,54 @@ class PlayingManager:
         self.current_index = index
         self.clearReservedNext()
 
+    def getCurrentRequestBr(self) -> int:
+        return self._request_br
+
+    def setRequestBr(self, br: int) -> None:
+        if br == self._request_br:
+            return
+        self._request_br = br
+        if self._workers_shutdown:
+            return
+
+        self._play_seq += 1
+        play_seq = self._play_seq
+        song = self.current_song
+        player = self._player
+        position = player.getPosition() if player is not None else 0.0
+        pause_after_load = player.is_paused if player is not None else False
+        self._cancelCrossfadePlayback()
+        self.clearPreload()
+        self.preloaded = False
+        self.current_song_audio = None
+        self._stream_analysis_tail = None
+        if player is not None and song is not None:
+            player.loadPrepared(
+                PreparedAudioBuffer(
+                    np.zeros((0, player.channels), dtype=np.float32),
+                    player.sample_rate,
+                    player.channels,
+                )
+            )
+        self._terminateStreamProcesses()
+        if song is None or player is None:
+            return
+
+        song.content_cache_hash = ''
+        song.loaded_loudness_gain = False
+        player.setVolume(1.0)
+        self.total_length = self._storableDuration(song)
+        event_bus.emit(STOP_PROGRESS_LOADING)
+        event_bus.emit(PLAYBACK_SONG_LOADING, song)
+        self._playDownloadingStorable(
+            song,
+            not song.imageCached(),
+            play_seq,
+            False,
+            position,
+            pause_after_load,
+        )
+
     def clearReservedNext(self) -> None:
         self._reserved_next = None
 
@@ -446,7 +495,6 @@ class PlayingManager:
         if player is None or not isinstance(audio, AudioSegment_):
             return
         was_playing = player.isPlaying()
-        rate = player.sample_rate
         gain = player.loudness_gain
         # Restoring the pre-splice PCM keeps the live timeline usable, so the
         # seek can reuse it instead of reloading the track and tearing the
@@ -459,7 +507,7 @@ class PlayingManager:
             self._preload_triggered = True
             self.preloadNextSong()
             return
-        prepared = AudioPlayer.convertBuffer(AudioPlayer.prepareBuffer(audio), rate)
+        prepared = AudioPlayer.prepareBuffer(audio)
         player.loadPrepared(prepared)
         player.setGain(gain)
         position = max(0.0, min(seconds, player.getLength()))
@@ -649,6 +697,9 @@ class PlayingManager:
         if not self.isSelectionCurrent(selection):
             self.clearPreload()
             return
+        prepared = self._next_song_buffer
+        if prepared is None:
+            return
         frames = self._queued_frames
         self._queued_selection = None
         self._queued_boundary = None
@@ -657,8 +708,10 @@ class PlayingManager:
         self.current_song = selection.song
         self.current_song_audio = audio
         self._play_seq += 1
-        player.beginQueuedTrack(boundary[0], frames, gain)
-        self.total_length = frames / player.sample_rate
+        boundary = player.beginQueuedTrack(
+            boundary[0], frames, gain, prepared, boundary[1]
+        )
+        self.total_length = player.getLength()
         self.crossfading = boundary[1] > player.current_index
         self._transition_end = boundary[1] if self.crossfading else None
         if self.crossfading:
@@ -1016,9 +1069,10 @@ class PlayingManager:
 
             next_song = selection.song
             self._logger.debug(next_song)
+            play_seq = self._play_seq
 
             def _is_preload_current() -> bool:
-                return self.isSelectionCurrent(selection)
+                return play_seq == self._play_seq and self.isSelectionCurrent(selection)
 
             def _start_preload(redownload_on_failure: bool = True) -> None:
                 threading.Thread(
@@ -1617,6 +1671,8 @@ class PlayingManager:
         music_missing: bool,
         finished: Callable[[bool], None],
     ) -> None:
+        request_br = self._request_br
+
         class PrepareInfo(TypedDict):
             error: Optional[str]
             image: Optional[bytes]
@@ -1634,7 +1690,7 @@ class PlayingManager:
                 if music_missing:
                     audio = getBackend().getTrackAudio(
                         str(song_storable.id),
-                        bitrate=3200 * 1000,
+                        bitrate=request_br,
                     )
                     self._logger.debug(f'{audio.url=}')
                     prepared['music_url'] = audio.url
@@ -1643,6 +1699,8 @@ class PlayingManager:
                 prepared['error'] = str(e)
 
         def _persist_assets(music_bytes: bytes | None = None) -> bool:
+            if request_br != self._request_br:
+                return False
             try:
                 image_just_persisted = False
                 if image_missing:
@@ -1673,6 +1731,9 @@ class PlayingManager:
             finished(_persist_assets(music_bytes))
 
         def _on_prepared() -> None:
+            if request_br != self._request_br:
+                finished(False)
+                return
             if prepared.get('error'):
                 self._logger.warning(
                     f'failed to prepare storable asset download: {prepared["error"]}'
@@ -1685,8 +1746,9 @@ class PlayingManager:
                 if not isinstance(music_url, str) or not music_url:
                     self._logger.warning(
                         'preload download: backend returned empty music URL '
-                        '(song %s may not support requested bitrate 3200k)',
+                        '(song %s may not support requested bitrate %s)',
                         song_storable.id,
+                        request_br,
                     )
                     finished(False)
                     return
@@ -1874,15 +1936,22 @@ class PlayingManager:
         image_missing: bool,
         play_seq: int,
         mark_loaded: bool,
+        restore_position: float | None = None,
+        pause_after_load: bool = False,
     ) -> None:
         self._stream_analysis_tail = None
+        request_br = self._request_br
 
         class PrepareInfo(TypedDict):
             error: Optional[str]
             image: Optional[bytes]
             music_url: Optional[str]
+            sample_rate: int
 
-        prepared: PrepareInfo = PrepareInfo(error=None, image=None, music_url=None)
+        prepared: PrepareInfo = PrepareInfo(
+            error=None, image=None, music_url=None, sample_rate=0
+        )
+        stream_sample_rate = 0
         result: dict[str, object] = {}
         analysis_chunks: list[np.ndarray] = []
         analysis_frames = 0
@@ -1916,7 +1985,7 @@ class PlayingManager:
                 analysis_audio = AudioSegment_(
                     data=pcm.tobytes(),
                     sample_width=4,
-                    frame_rate=_STREAM_SAMPLE_RATE,
+                    frame_rate=stream_sample_rate,
                     channels=_STREAM_CHANNELS,
                 )
 
@@ -1979,13 +2048,21 @@ class PlayingManager:
                 player.getLength(),
             )
             self._applyStoredLoudnessGain(song_storable)
-            player.play()
+            if restore_position is None:
+                player.play()
+            else:
+                position = min(restore_position, player.getLength())
+                if pause_after_load:
+                    player.setPosition(position)
+                    player.is_paused = True
+                else:
+                    player.playFromPosition(position)
             self._loadPlaybackImage(song_storable, result)
             self._finishPlaybackLoad(
                 song_storable,
                 play_seq,
                 result,
-                False,
+                pause_after_load,
                 mark_loaded,
                 None,
             )
@@ -2026,7 +2103,7 @@ class PlayingManager:
                     download_done.wait()
                     return
                 while True:
-                    pcm_data = stdout.read(_STREAM_PCM_READ_BYTES)
+                    pcm_data = stdout.read(stream_sample_rate * _STREAM_CHANNELS * 4)
                     if not pcm_data:
                         break
                     player = self._player
@@ -2036,7 +2113,8 @@ class PlayingManager:
                         return
                     valid_len = len(pcm_data) - (len(pcm_data) % (_STREAM_CHANNELS * 4))
                     chunk = (
-                        np.frombuffer(pcm_data[:valid_len], dtype='<f4')
+                        np
+                        .frombuffer(pcm_data[:valid_len], dtype='<f4')
                         .reshape(-1, _STREAM_CHANNELS)
                         .astype(np.float32, copy=True)
                     )
@@ -2047,7 +2125,7 @@ class PlayingManager:
                     )
                     analysis_chunks.append(chunk)
                     analysis_frames += len(chunk)
-                    max_frames = _STREAM_ANALYSIS_SECONDS * _STREAM_SAMPLE_RATE
+                    max_frames = _STREAM_ANALYSIS_SECONDS * stream_sample_rate
                     if analysis_frames > max_frames:
                         trim = analysis_frames - max_frames
                         while trim > 0 and analysis_chunks:
@@ -2060,7 +2138,9 @@ class PlayingManager:
                                 analysis_chunks[0] = first[trim:]
                                 analysis_frames -= trim
                                 trim = 0
-                    if loaded_time >= _STREAM_PLAY_MIN_SECONDS:
+                    if loaded_time >= (
+                        _STREAM_PLAY_MIN_SECONDS + (restore_position or 0.0)
+                    ):
                         _schedule_start(path)
                 returncode = process.wait()
                 download_done.wait()
@@ -2111,11 +2191,18 @@ class PlayingManager:
                             downloaded += len(chunk)
                             _on_progress(downloaded, total_size)
 
+                if not _is_current():
+                    state['cancelled'] = True
+                    return
                 success = True
                 if success:
                     try:
                         with open(path, 'rb') as f:
                             music_bytes = f.read()
+                        if not _is_current():
+                            state['cancelled'] = True
+                            success = False
+                            return
                         song_storable.cacheAudio(music_bytes)
                         saveFavorites()
                     except Exception:
@@ -2146,7 +2233,11 @@ class PlayingManager:
                 _cleanup(path)
                 if _is_current() and not state['started']:
                     if state['download_success']:
-                        self.playStorable(song_storable)
+                        self.playStorable(
+                            song_storable,
+                            restore_position=restore_position,
+                            pause_after_load=pause_after_load,
+                        )
                     else:
                         self._emitError(
                             tr('playing_manager.playback_failed'),
@@ -2182,14 +2273,36 @@ class PlayingManager:
                     prepared['image'] = image_bytes
                 audio = getBackend().getTrackAudio(
                     str(song_storable.id),
-                    bitrate=3200 * 1000,
+                    bitrate=request_br,
                 )
                 prepared['music_url'] = audio.url
+                prepared['sample_rate'] = audio.sample_rate
+                if audio.url and prepared['sample_rate'] <= 0:
+                    probe = subprocess.run(
+                        [
+                            get_prober_name(),
+                            '-v',
+                            'error',
+                            '-select_streams',
+                            'a:0',
+                            '-show_entries',
+                            'stream=sample_rate',
+                            '-of',
+                            'default=noprint_wrappers=1:nokey=1',
+                            audio.url,
+                        ],
+                        capture_output=True,
+                        check=True,
+                        timeout=30,
+                    )
+                    prepared['sample_rate'] = int(probe.stdout.strip())
+                if prepared['sample_rate'] <= 0:
+                    raise ValueError('Invalid streaming audio sample rate')
             except Exception as e:
                 prepared['error'] = str(e)
 
         def _on_prepared() -> None:
-            nonlocal temp_path
+            nonlocal temp_path, stream_sample_rate
             if not _is_current():
                 return
             if prepared.get('error'):
@@ -2235,9 +2348,32 @@ class PlayingManager:
                 _cleanup(temp_path)
                 return
             try:
+                stream_sample_rate = prepared['sample_rate']
+                device = sd.query_devices(player._device_id, 'output')
+                channels = min(_STREAM_CHANNELS, int(device['max_output_channels']))
+                try:
+                    sd.check_output_settings(
+                        device=player._device_id,
+                        channels=channels,
+                        dtype='float32',
+                        samplerate=stream_sample_rate,
+                    )
+                except sd.PortAudioError:
+                    stream_sample_rate = int(device['default_samplerate'])
+                    sd.check_output_settings(
+                        device=player._device_id,
+                        channels=channels,
+                        dtype='float32',
+                        samplerate=stream_sample_rate,
+                    )
+                    self._logger.info(
+                        'streaming audio resampled for output device: %s -> %s Hz',
+                        prepared['sample_rate'],
+                        stream_sample_rate,
+                    )
                 player.loadGrowingStream(
                     temp_path,
-                    _STREAM_SAMPLE_RATE,
+                    stream_sample_rate,
                     _STREAM_CHANNELS,
                 )
                 process = subprocess.Popen(
@@ -2256,7 +2392,7 @@ class PlayingManager:
                         '-ac',
                         str(_STREAM_CHANNELS),
                         '-ar',
-                        str(_STREAM_SAMPLE_RATE),
+                        str(stream_sample_rate),
                         'pipe:1',
                     ],
                     stdin=subprocess.PIPE,

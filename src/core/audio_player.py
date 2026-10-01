@@ -642,6 +642,7 @@ class AudioPlayer(QObject):
         self._producer_index = 0
         self._prepared_start_index = 0
         self._prepared_end_index = 0
+        self._clearQueue()
         self._producer_target_lead = _PRODUCER_EARLY_LEAD
         self._resetWsola()
         self._resetStereoEffect()
@@ -654,16 +655,47 @@ class AudioPlayer(QObject):
     def _applyAudio(self, audio: PatchedAudioSegment) -> None:
         self._applyPreparedBuffer(self.prepareBuffer(audio))
 
+    def _reloadPreparedBuffer(
+        self, prepared: PreparedAudioBuffer, position: float | None = None
+    ) -> None:
+        was_playing = self.is_playing or (
+            self.stream is not None and self.stream.active
+        )
+        was_paused = self.is_paused
+        if position is None:
+            position = self._getExactPosition()
+        self._stopProducer()
+        if self.stream is not None:
+            self.stream.abort()
+            self.stream.close()
+            self.stream = None
+        self._applyPreparedBuffer(prepared)
+        self.current_index = min(
+            round(max(0.0, position) * self.sample_rate), len(self.samples)
+        )
+        self._playback_time = self.current_index / self.sample_rate
+        self._smooth_position_start = self._playback_time
+        self._smooth_position_end = self._playback_time
+        self._clearQueue()
+        self.is_paused = was_paused
+        self._ensureStream()
+        if was_playing:
+            self.is_playing = True
+            self.is_paused = False
+            self._startProducer()
+            self._startStream()
+
     def load(self, audio: PatchedAudioSegment) -> None:
         with self._lock:
             self._stopProducer()
-            self.stop()
+            self.stop(drain_stream=False)
             if self.stream:
                 self.stream.close()
                 self.stream = None
 
             self._applyAudio(audio)
             self._resetGrowingFile()
+            self._ensureStream()
 
     def loadPrepared(self, prepared: PreparedAudioBuffer) -> None:
         with self._lock:
@@ -677,6 +709,7 @@ class AudioPlayer(QObject):
 
             self._applyPreparedBuffer(prepared)
             self._resetGrowingFile()
+            self._ensureStream()
 
     @staticmethod
     def convertBuffer(
@@ -828,9 +861,52 @@ class AudioPlayer(QObject):
                 self._startProducer()
             return True
 
-    def beginQueuedTrack(self, origin: int, frames: int, gain: float) -> None:
-        """Change the displayed track, leaving queued PCM and DSP untouched."""
+    def beginQueuedTrack(
+        self,
+        origin: int,
+        frames: int,
+        gain: float,
+        prepared: PreparedAudioBuffer,
+        transition_end: int,
+    ) -> tuple[int, int]:
         with self._lock:
+            if prepared.sample_rate != self.sample_rate:
+                position = (self.current_index - origin) / self.sample_rate
+                following = self.convertBuffer(prepared, prepared.sample_rate)
+                samples = following.samples
+                fade_frames = min(
+                    round(
+                        (transition_end - origin)
+                        * following.sample_rate
+                        / self.sample_rate
+                    ),
+                    len(samples),
+                )
+                transition_start = max(origin, self.current_index)
+                if transition_end > transition_start:
+                    transition = self.convertBuffer(
+                        PreparedAudioBuffer(
+                            self._readSamples(transition_start, transition_end),
+                            self.sample_rate,
+                            self.channels,
+                        ),
+                        following.sample_rate,
+                    )
+                    offset = round(
+                        (transition_start - origin)
+                        * following.sample_rate
+                        / self.sample_rate
+                    )
+                    count = min(len(transition.samples), len(samples) - offset)
+                    samples = samples.copy()
+                    samples[offset : offset + count] = transition.samples[:count] / (
+                        gain if gain > 0 else 1.0
+                    )
+                self.loudness_gain = gain
+                self._reloadPreparedBuffer(
+                    PreparedAudioBuffer(samples, following.sample_rate, 2), position
+                )
+                return 0, fade_frames
             self._track_origin = origin
             self._track_frames = frames
             self._queued_restore = None
@@ -838,6 +914,7 @@ class AudioPlayer(QObject):
             self._playback_time = (self.current_index - origin) / self.sample_rate
             self._smooth_position_end = self._playback_time
             self._smooth_position_start = self._playback_time
+            return origin, transition_end
 
     def loadFromFile(self, file_path: Path) -> None:
         audio = self._decodeFile(file_path)
@@ -856,7 +933,7 @@ class AudioPlayer(QObject):
         file_size = file_path.stat().st_size
         with self._lock:
             self._stopProducer()
-            self.stop(clear_growing_file=False)
+            self.stop(clear_growing_file=False, drain_stream=False)
             if self.stream:
                 self.stream.close()
                 self.stream = None
@@ -867,6 +944,7 @@ class AudioPlayer(QObject):
             self._growing_file_size = file_size
             self._growing_file_last_decode = time.perf_counter()
             self._growing_stream_mode = False
+            self._ensureStream()
         return audio
 
     def loadGrowingStream(
@@ -877,7 +955,7 @@ class AudioPlayer(QObject):
     ) -> None:
         with self._lock:
             self._stopProducer()
-            self.stop(clear_growing_file=False)
+            self.stop(clear_growing_file=False, drain_stream=False)
             if self.stream:
                 self.stream.close()
                 self.stream = None
@@ -894,6 +972,7 @@ class AudioPlayer(QObject):
             self._producer_index = 0
             self._prepared_start_index = 0
             self._prepared_end_index = 0
+            self._clearQueue()
             self._producer_target_lead = _PRODUCER_EARLY_LEAD
             self._resetWsola()
             self._resetStereoEffect()
@@ -907,6 +986,7 @@ class AudioPlayer(QObject):
             self._growing_file_size = 0
             self._growing_file_last_decode = time.perf_counter()
             self._growing_stream_mode = True
+            self._ensureStream()
 
     def appendGrowingStreamPcm(
         self,
@@ -1013,11 +1093,18 @@ class AudioPlayer(QObject):
                 return False
             self._growing_file_size = file_size
             self._growing_file_last_decode = now
-            if len(samples) <= old_len and not force:
+            if (
+                audio.frame_rate == self.sample_rate
+                and len(samples) <= old_len
+                and not force
+            ):
                 return False
-            if self.sample_rate != audio.frame_rate and old_len > 0:
-                return False
-            self.sample_rate = audio.frame_rate
+            channels = samples.shape[1] if samples.ndim == 2 else 1
+            if self.sample_rate != audio.frame_rate or self.channels != channels:
+                self._reloadPreparedBuffer(
+                    PreparedAudioBuffer(samples, audio.frame_rate, channels)
+                )
+                return True
             self.samples = samples
             self.channels = self.samples.shape[1] if self.samples.ndim == 2 else 1
             if self.stream is None:
@@ -1035,7 +1122,13 @@ class AudioPlayer(QObject):
             with self._lock:
                 if self._growing_file_path != file_path:
                     return False
-                self.sample_rate = audio.frame_rate
+                channels = samples.shape[1] if samples.ndim == 2 else 1
+                if self.sample_rate != audio.frame_rate or self.channels != channels:
+                    self._reloadPreparedBuffer(
+                        PreparedAudioBuffer(samples, audio.frame_rate, channels)
+                    )
+                    self._resetGrowingFile()
+                    return True
                 self.samples = samples
                 self.channels = self.samples.shape[1] if self.samples.ndim == 2 else 1
                 if self.stream is None:
@@ -1829,15 +1922,13 @@ class AudioPlayer(QObject):
 
             if self.fft_enabled or cfg.beat_detection_enabled:
                 try:
-                    self.fft_queue.put_nowait(
-                        (
-                            generation,
-                            sequence,
-                            sample_rate,
-                            monitor_chunk,
-                            chunk[:copy_len, : self.output_channels],
-                        )
-                    )
+                    self.fft_queue.put_nowait((
+                        generation,
+                        sequence,
+                        sample_rate,
+                        monitor_chunk,
+                        chunk[:copy_len, : self.output_channels],
+                    ))
                 except Full:
                     pass
 

@@ -5,7 +5,9 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src'))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src')
+)
 
 from ncm.utils import _hex_compose
 from ncm.utils.crypto import _eapi_decrypt

@@ -6,7 +6,9 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src'))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src')
+)
 
 from ncm.utils import _hex_compose, _hash_hex_digest
 from ncm.utils.crypto import _eapi_decrypt
@@ -38,8 +40,19 @@ def redact_cookie(cookie: str) -> str:
 
 
 SENSITIVE_PARAM_KEYS = (
-    'phone', 'cellphone', 'password', 'passwordHash', 'captcha', 'username',
-    'nonce', 'uid', 'userid', 'userId', 'header', 'token', 'checkToken',
+    'phone',
+    'cellphone',
+    'password',
+    'passwordHash',
+    'captcha',
+    'username',
+    'nonce',
+    'uid',
+    'userid',
+    'userId',
+    'header',
+    'token',
+    'checkToken',
 )
 
 
@@ -93,7 +106,10 @@ def main() -> None:
             print('URL      : %s' % url)
             print('METHOD   : %s' % rec.get('method'))
             if not m:
-                print('BODY     : (no params= field, %d bytes)' % len(rec.get('body') or ''))
+                print(
+                    'BODY     : (no params= field, %d bytes)'
+                    % len(rec.get('body') or '')
+                )
                 continue
             try:
                 plain_url, text, ok = decrypt_params(m.group(1))
@@ -108,7 +124,9 @@ def main() -> None:
             print('ENVELOPE : %s' % plain_url)
             print('DIGEST OK: %s' % ok)
             try:
-                pretty = json.dumps(redact_params(json.loads(text)), ensure_ascii=False, indent=2)
+                pretty = json.dumps(
+                    redact_params(json.loads(text)), ensure_ascii=False, indent=2
+                )
             except Exception:
                 pretty = text
             print('PARAMS   :')

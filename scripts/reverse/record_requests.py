@@ -5,22 +5,36 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src'))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src')
+)
 
 import ncm
 from ncm import apis
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'requests.jsonl')
 SECRET_KEYS = (
-    'MUSIC_U', '__csrf', 'deviceId', 'clientSign', 'NMTID', 'WNMCID',
-    'uid', 'userid', 'userId', 'nickname', 'phone', 'cellphone',
+    'MUSIC_U',
+    '__csrf',
+    'deviceId',
+    'clientSign',
+    'NMTID',
+    'WNMCID',
+    'uid',
+    'userid',
+    'userId',
+    'nickname',
+    'phone',
+    'cellphone',
 )
 RECORDS: list[dict] = []
 
 
 def redact(obj):
     if isinstance(obj, dict):
-        return {k: ('<redacted>' if k in SECRET_KEYS else redact(v)) for k, v in obj.items()}
+        return {
+            k: ('<redacted>' if k in SECRET_KEYS else redact(v)) for k, v in obj.items()
+        }
     if isinstance(obj, list):
         return [redact(v) for v in obj]
     return obj
@@ -36,21 +50,34 @@ def install_hook() -> None:
             cookie_names = sorted({ck.name for ck in s.cookies})
         except Exception:
             cookie_names = []
-        RECORDS.append({
-            'path': path,
-            'method': method,
-            'url': 'https://%s/eapi/%s' % (apis.API_HOST, path[5:]),
-            'host': apis.API_HOST,
-            'envelope_fields': sorted(s.eapi_config.keys()),
-            'cookie_names': cookie_names,
-            'params': redact({k: v for k, v in data.items() if k != 'header'}),
-            'code': resp.get('code') if isinstance(resp, dict) else None,
-            'resp_top_keys': sorted(resp.keys()) if isinstance(resp, dict) else None,
-        })
+        RECORDS.append(
+            {
+                'path': path,
+                'method': method,
+                'url': 'https://%s/eapi/%s' % (apis.API_HOST, path[5:]),
+                'host': apis.API_HOST,
+                'envelope_fields': sorted(s.eapi_config.keys()),
+                'cookie_names': cookie_names,
+                'params': redact({k: v for k, v in data.items() if k != 'header'}),
+                'code': resp.get('code') if isinstance(resp, dict) else None,
+                'resp_top_keys': sorted(resp.keys())
+                if isinstance(resp, dict)
+                else None,
+            }
+        )
         return resp
 
     apis.eapi = wrapper
-    for name in ('login', 'track', 'cloudsearch', 'recommend', 'user', 'playlist', 'playmode', 'radio'):
+    for name in (
+        'login',
+        'track',
+        'cloudsearch',
+        'recommend',
+        'user',
+        'playlist',
+        'playmode',
+        'radio',
+    ):
         mod = getattr(apis, name, None)
         if mod is not None and hasattr(mod, 'eapi'):
             mod.eapi = wrapper
@@ -100,7 +127,9 @@ def main() -> None:
     print('--- in-use calls (read-only) ---')
     run('getCurrentLoginStatus', apis.login.getCurrentLoginStatus)
     run('getUserDetail', lambda: apis.user.getUserDetail(s.uid))
-    run('getSearchResult', lambda: apis.cloudsearch.getSearchResult('海阔天空', limit=3))
+    run(
+        'getSearchResult', lambda: apis.cloudsearch.getSearchResult('海阔天空', limit=3)
+    )
     run('getTrackDetail', lambda: apis.track.getTrackDetail([347230]))
     run('getTrackAudio', lambda: apis.track.getTrackAudio([347230]))
     run('getTrackLyricsNew', lambda: apis.track.getTrackLyricsNew('347230'))
@@ -116,9 +145,18 @@ def main() -> None:
         playlists = pl.get('playlist') or []
         if playlists:
             pid = playlists[0].get('id')
-            run('getPlaylistInfoEapi', lambda: apis.playlist.getPlaylistInfoEapi(pid, 5, 8))
-            run('getPlaylistAllTracks', lambda: apis.playlist.getPlaylistAllTracks(pid, 0, 5))
-            run('getIntelligenceList', lambda: apis.playmode.getIntelligenceList(347230, pid, count=20))
+            run(
+                'getPlaylistInfoEapi',
+                lambda: apis.playlist.getPlaylistInfoEapi(pid, 5, 8),
+            )
+            run(
+                'getPlaylistAllTracks',
+                lambda: apis.playlist.getPlaylistAllTracks(pid, 0, 5),
+            )
+            run(
+                'getIntelligenceList',
+                lambda: apis.playmode.getIntelligenceList(347230, pid, count=20),
+            )
 
     with open(OUT, 'w', encoding='utf-8') as f:
         for rec in RECORDS:

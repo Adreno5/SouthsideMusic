@@ -5,7 +5,9 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src'))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src')
+)
 
 import ncm
 from ncm import apis
@@ -28,11 +30,16 @@ def extract_music_u(path: str) -> str:
 
 
 def main() -> None:
-    capture = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), 'capture.jsonl'
+    capture = (
+        sys.argv[1]
+        if len(sys.argv) > 1
+        else os.path.join(os.path.dirname(os.path.abspath(__file__)), 'capture.jsonl')
     )
     music_u = extract_music_u(capture)
-    print('token source = capture (value not printed) | found = %s | len = %d' % (bool(music_u), len(music_u)))
+    print(
+        'token source = capture (value not printed) | found = %s | len = %d'
+        % (bool(music_u), len(music_u))
+    )
     if not music_u:
         return
 
@@ -62,7 +69,9 @@ def main() -> None:
     print('--- in-use chain (read-only) ---')
     show('getCurrentLoginStatus', apis.login.getCurrentLoginStatus)
     show('getUserDetail', lambda: apis.user.getUserDetail(uid))
-    show('getSearchResult', lambda: apis.cloudsearch.getSearchResult('海阔天空', limit=3))
+    show(
+        'getSearchResult', lambda: apis.cloudsearch.getSearchResult('海阔天空', limit=3)
+    )
     show('getTrackDetail', lambda: apis.track.getTrackDetail([347230]))
     show('getTrackAudio', lambda: apis.track.getTrackAudio([347230]))
     show('getTrackLyricsNew', lambda: apis.track.getTrackLyricsNew('347230'))
@@ -79,8 +88,14 @@ def main() -> None:
         playlists = pl.get('playlist') or []
         if playlists:
             pid = playlists[0].get('id')
-            show('getPlaylistInfoEapi', lambda: apis.playlist.getPlaylistInfoEapi(pid, 5, 8))
-            show('getPlaylistAllTracks', lambda: apis.playlist.getPlaylistAllTracks(pid, 0, 5))
+            show(
+                'getPlaylistInfoEapi',
+                lambda: apis.playlist.getPlaylistInfoEapi(pid, 5, 8),
+            )
+            show(
+                'getPlaylistAllTracks',
+                lambda: apis.playlist.getPlaylistAllTracks(pid, 0, 5),
+            )
 
     print('--- logout path (anonymous session only) ---')
     ncm.setNewSession()

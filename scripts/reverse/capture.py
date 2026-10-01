@@ -12,7 +12,12 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument('--pid', type=int, default=0)
     ap.add_argument('--name', default='cloudmusic.exe')
-    ap.add_argument('--script', default=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ncm_capture.js'))
+    ap.add_argument(
+        '--script',
+        default=os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'ncm_capture.js'
+        ),
+    )
     ap.add_argument('--seconds', type=float, default=60.0)
     ap.add_argument('--guard', type=float, default=20.0)
     ap.add_argument('--watch', action='store_true')
@@ -38,7 +43,10 @@ def main() -> None:
 
         def on_message(message, data, _pid=pid):
             if message.get('type') == 'error':
-                print('[script-error] pid=%d %s' % (_pid, message.get('description')), flush=True)
+                print(
+                    '[script-error] pid=%d %s' % (_pid, message.get('description')),
+                    flush=True,
+                )
 
         script.on('message', on_message)
         script.load()
@@ -52,7 +60,11 @@ def main() -> None:
         session.on('detached', on_detached)
 
     if args.watch:
-        print('watch mode: waiting for %s (no timeout, Ctrl+C / kill to stop)' % args.name, flush=True)
+        print(
+            'watch mode: waiting for %s (no timeout, Ctrl+C / kill to stop)'
+            % args.name,
+            flush=True,
+        )
         while True:
             try:
                 for proc in frida.get_local_device().enumerate_processes():
@@ -73,7 +85,9 @@ def main() -> None:
         raise
     pid_for_log = args.pid or (session.pid if hasattr(session, 'pid') else 0)
     log_path = os.path.join(args.log_dir, 'capture.%d.jsonl' % pid_for_log)
-    script = session.create_script(code.replace('__LOG_PATH__', log_path.replace('\\', '/')))
+    script = session.create_script(
+        code.replace('__LOG_PATH__', log_path.replace('\\', '/'))
+    )
 
     def on_message(message, data) -> None:
         if message.get('type') == 'error':
@@ -82,7 +96,10 @@ def main() -> None:
     script.on('message', on_message)
     script.load()
     guard.cancel()
-    print('capture running for %.0fs on %s -> %s' % (args.seconds, target, log_path), flush=True)
+    print(
+        'capture running for %.0fs on %s -> %s' % (args.seconds, target, log_path),
+        flush=True,
+    )
     try:
         time.sleep(args.seconds)
     except KeyboardInterrupt:

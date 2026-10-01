@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
@@ -266,8 +266,10 @@ class BeatDetector:
 
                     if timestamp - self._last_point >= self._min_interval:
                         density_gate = 1.0 + min(2.5, max(0, density - 5) * 0.3)
-                        effective_threshold = max(0.01, threshold) * density_gate * (
-                            1.0 - 0.30 * rhythm_confidence
+                        effective_threshold = (
+                            max(0.01, threshold)
+                            * density_gate
+                            * (1.0 - 0.30 * rhythm_confidence)
                         )
                         is_point = score >= effective_threshold
                         if is_point:

@@ -49,15 +49,31 @@ IN_USE = [
 ]
 
 SECRET_PARAM_KEYS = (
-    'phone', 'cellphone', 'password', 'passwordHash', 'captcha', 'username',
-    'nonce', 'uid', 'userid', 'userId', 'header', 'token', 'checkToken',
-    'MUSIC_U', 'deviceId', 'clientSign',
+    'phone',
+    'cellphone',
+    'password',
+    'passwordHash',
+    'captcha',
+    'username',
+    'nonce',
+    'uid',
+    'userid',
+    'userId',
+    'header',
+    'token',
+    'checkToken',
+    'MUSIC_U',
+    'deviceId',
+    'clientSign',
 )
 
 
 def redact(obj):
     if isinstance(obj, dict):
-        return {k: ('<redacted>' if k in SECRET_PARAM_KEYS else redact(v)) for k, v in obj.items()}
+        return {
+            k: ('<redacted>' if k in SECRET_PARAM_KEYS else redact(v))
+            for k, v in obj.items()
+        }
     if isinstance(obj, list):
         return [redact(v) for v in obj]
     return obj
@@ -85,7 +101,9 @@ def main() -> None:
                 if not m:
                     continue
                 try:
-                    envelope_text = _eapi_decrypt(_hex_compose(m.group(1))).decode('utf-8', 'replace')
+                    envelope_text = _eapi_decrypt(_hex_compose(m.group(1))).decode(
+                        'utf-8', 'replace'
+                    )
                 except Exception:
                     continue
                 envelope = envelope_text.split('-36cd479b6b5-')[0]
@@ -101,7 +119,9 @@ def main() -> None:
                 parts = envelope_text.split('-36cd479b6b5-')
                 params_text = parts[1] if len(parts) == 3 else ''
                 try:
-                    params_pretty = json.dumps(redact(json.loads(params_text)), ensure_ascii=False)
+                    params_pretty = json.dumps(
+                        redact(json.loads(params_text)), ensure_ascii=False
+                    )
                 except Exception:
                     params_pretty = params_text[:400]
 
@@ -109,17 +129,24 @@ def main() -> None:
                 resp_hex = rec.get('responseHex')
                 if resp_hex:
                     try:
-                        resp_plain = _eapi_decrypt(_hex_compose(resp_hex)).decode('utf-8', 'replace')
+                        resp_plain = _eapi_decrypt(_hex_compose(resp_hex)).decode(
+                            'utf-8', 'replace'
+                        )
                     except Exception:
                         resp_plain = ''
-                    resp_plain = re.sub(r'"MUSIC_U":"[^"]*"', '"MUSIC_U":"<redacted>"', resp_plain)
+                    resp_plain = re.sub(
+                        r'"MUSIC_U":"[^"]*"', '"MUSIC_U":"<redacted>"', resp_plain
+                    )
 
                 lines.append('## %s' % envelope)
                 lines.append('- host: %s' % rec.get('url', '').split('/eapi/')[0])
                 lines.append('- url: %s' % rec.get('url'))
                 lines.append('- method: %s' % rec.get('method'))
                 lines.append('- params(明文, 脱敏): %s' % params_pretty[:900])
-                lines.append('- response(明文, 截断): %s' % (resp_plain[:400] if resp_plain else '(未解出)'))
+                lines.append(
+                    '- response(明文, 截断): %s'
+                    % (resp_plain[:400] if resp_plain else '(未解出)')
+                )
                 lines.append('')
 
     lines.append('## 命中计数')

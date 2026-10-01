@@ -5,7 +5,9 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src'))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src')
+)
 
 import ncm
 from ncm import apis
@@ -29,8 +31,10 @@ def extract_music_u(path: str) -> str:
 
 
 def main() -> None:
-    capture = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), 'capture.jsonl'
+    capture = (
+        sys.argv[1]
+        if len(sys.argv) > 1
+        else os.path.join(os.path.dirname(os.path.abspath(__file__)), 'capture.jsonl')
     )
     music_u = extract_music_u(capture)
     if not music_u:
@@ -54,28 +58,46 @@ def main() -> None:
         print('no tracks in playlist')
         return
     sid = track_ids[0]
-    print('probe playlist=%s tracks=%d seed=%s' % (bool(pid), len(track_ids), bool(sid)))
+    print(
+        'probe playlist=%s tracks=%d seed=%s' % (bool(pid), len(track_ids), bool(sid))
+    )
 
     variants = {
         'A str values, no songIds': {
-            'songId': str(sid), 'playlistId': str(pid), 'startMusicId': str(sid),
-            'type': 'fromPlayOne', 'count': '20',
+            'songId': str(sid),
+            'playlistId': str(pid),
+            'startMusicId': str(sid),
+            'type': 'fromPlayOne',
+            'count': '20',
         },
         'B numbers, no songIds': {
-            'songId': sid, 'playlistId': pid, 'startMusicId': sid,
-            'type': 'fromPlayOne', 'count': 20,
+            'songId': sid,
+            'playlistId': pid,
+            'startMusicId': sid,
+            'type': 'fromPlayOne',
+            'count': 20,
         },
         'C numbers + sid field': {
-            'songId': sid, 'playlistId': pid, 'startMusicId': sid,
-            'type': 'fromPlayOne', 'count': 20, 'sid': str(sid),
+            'songId': sid,
+            'playlistId': pid,
+            'startMusicId': sid,
+            'type': 'fromPlayOne',
+            'count': 20,
+            'sid': str(sid),
         },
         'D numbers + fromPlayAll': {
-            'songId': sid, 'playlistId': pid, 'startMusicId': sid,
-            'type': 'fromPlayAll', 'count': 20,
+            'songId': sid,
+            'playlistId': pid,
+            'startMusicId': sid,
+            'type': 'fromPlayAll',
+            'count': 20,
         },
         'E query form numbers': {
-            'songId': str(sid), 'playlistId': str(pid), 'startMusicId': str(sid),
-            'type': 'fromPlayOne', 'count': str(len(track_ids)),
+            'songId': str(sid),
+            'playlistId': str(pid),
+            'startMusicId': str(sid),
+            'type': 'fromPlayOne',
+            'count': str(len(track_ids)),
         },
     }
     for name, params in variants.items():

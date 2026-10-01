@@ -4,7 +4,9 @@ import os
 import sys
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src'))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src')
+)
 
 import ncm
 from ncm import apis
@@ -59,7 +61,9 @@ def main() -> None:
 
     apis.login.writeLoginInfo(apis.login.getCurrentLoginStatus())
     s = ncm.getCurrentSession()
-    print('RESULT: 二维码登录成功 | logged_in=%s | vipType=%s' % (s.logged_in, s.vipType))
+    print(
+        'RESULT: 二维码登录成功 | logged_in=%s | vipType=%s' % (s.logged_in, s.vipType)
+    )
 
     def show(name, fn):
         try:
@@ -78,7 +82,9 @@ def main() -> None:
             return None
 
     print('--- 全新会话上的完整链路 ---')
-    show('getSearchResult', lambda: apis.cloudsearch.getSearchResult('海阔天空', limit=3))
+    show(
+        'getSearchResult', lambda: apis.cloudsearch.getSearchResult('海阔天空', limit=3)
+    )
     show('getTrackAudio', lambda: apis.track.getTrackAudio([347230]))
     show('getTrackLyricsNew', lambda: apis.track.getTrackLyricsNew('347230'))
     show('getUserPlaylists', lambda: apis.user.getUserPlaylists(s.uid))

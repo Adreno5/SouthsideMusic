@@ -7,7 +7,9 @@ import re
 import sys
 import zipfile
 
-ROUTE_RE = re.compile(rb'["\'`]((?:/api|/eapi|/weapi|/linux)[A-Za-z0-9_\-/\.{}\%\$:]{2,120})["\'`]')
+ROUTE_RE = re.compile(
+    rb'["\'`]((?:/api|/eapi|/weapi|/linux)[A-Za-z0-9_\-/\.{}\%\$:]{2,120})["\'`]'
+)
 
 
 def find_zip_offset(data: bytes) -> int:

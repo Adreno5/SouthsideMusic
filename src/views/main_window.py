@@ -299,7 +299,10 @@ class MainWindow(FluentWindowBase):
         self.refreshLoginInformations()
 
     def checkAFK(self, _):
-        if time.time() - self.last_action > 180 and not self.isActiveWindow():
+        if (
+            time.time() - self.last_action > self.ctx.config.afk_secs
+            and not self.isActiveWindow()
+        ):
             event_bus.emit(REPAINT_EVENT_INTERVAL, 200)
         else:
             event_bus.emit(
@@ -759,11 +762,9 @@ class MainWindow(FluentWindowBase):
         )
         QTimer.singleShot(
             500,
-            lambda: self._ws_handler.sendJson(
-                {
-                    'option': f'{"disable" if not self._stp.enableFFT_box.isChecked() else "enable"}_fft'
-                }
-            ),
+            lambda: self._ws_handler.sendJson({
+                'option': f'{"disable" if not self._stp.enableFFT_box.isChecked() else "enable"}_fft'
+            }),
         )
         QTimer.singleShot(500, self._dp.sendSongCoverAndInfo)
 

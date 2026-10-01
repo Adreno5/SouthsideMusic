@@ -13,7 +13,10 @@ with ncm.getCurrentSession():
     with open('res.json', 'w') as f:
         f.write(
             json.dumps(
-                ncm.apis.user,
+                ncm.apis.track.getTrackPrivilege(['405599119']),
                 indent=4,
             )
         )
+
+    with open('res.json', 'r') as f:
+        print(f'wrote {len(f.read())} chars')

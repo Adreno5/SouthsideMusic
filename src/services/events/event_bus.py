@@ -13,23 +13,30 @@ if TYPE_CHECKING:
 
 
 Listener = Callable[..., Any]
+_Entry = tuple[Listener, Any]
+
+_EMPTY: tuple[_Entry, ...] = ()
+_QUIET_EVENTS = frozenset({'image_asset_persisted', 'storable_count_changed'})
+_isValid = shiboken6.isValid
 
 
-def _isValidListener(listener: Listener) -> bool:
+def _resolveOwner(listener: Listener) -> Any:
     owner = getattr(listener, '__self__', None)
     if owner is None:
-        return True
+        return None
     try:
-        return shiboken6.isValid(owner)
+        _isValid(owner)
     except TypeError:
-        return True
+        return None
+    return owner
 
 
 class EventBus:
     def __init__(
         self, thread_safe: bool = True, launchwindow: LaunchWindow | None = None
     ) -> None:
-        self._listeners: dict[str, list[Listener]] = defaultdict(list)
+        self._listeners: dict[str, list[_Entry]] = defaultdict(list)
+        self._snapshots: dict[str, tuple[_Entry, ...]] = {}
         self._lock = threading.Lock() if thread_safe else None
         self._lw = launchwindow
         self.enabled = True
@@ -37,39 +44,66 @@ class EventBus:
         self._logger = logging.getLogger('event_bus')
 
     def subscribe(self, event: str, listener: Listener) -> None:
-        msg = f'subscribing {event} to {listener.__module__}.{listener.__name__}'
-        if event not in ('image_asset_persisted', 'storable_count_changed'):
-            self._logger.info(msg)
+        if self._logger.isEnabledFor(logging.INFO) and event not in _QUIET_EVENTS:
+            self._logger.info(
+                'subscribing %s to %s.%s',
+                event,
+                getattr(listener, '__module__', '?'),
+                getattr(listener, '__name__', repr(listener)),
+            )
+        entry = (listener, _resolveOwner(listener))
         if self._lock is not None:
             with self._lock:
-                self._listeners[event].append(listener)
+                self._listeners[event].append(entry)
+                self._snapshots.pop(event, None)
         else:
-            self._listeners[event].append(listener)
+            self._listeners[event].append(entry)
+            self._snapshots.pop(event, None)
 
     def unsubscribe(self, event: str, listener: Listener) -> None:
-        if event not in ('image_asset_persisted', 'storable_count_changed'):
-            self._logger.info(f'unsubscribing {event} from {listener.__name__}')
+        if self._logger.isEnabledFor(logging.INFO) and event not in _QUIET_EVENTS:
+            self._logger.info(
+                'unsubscribing %s from %s',
+                event,
+                getattr(listener, '__name__', repr(listener)),
+            )
         if self._lock is not None:
             with self._lock:
-                listeners = self._listeners.get(event)
+                self._drop(event, listener)
         else:
-            listeners = self._listeners.get(event)
-        if listeners:
-            try:
-                listeners.remove(listener)
-            except ValueError:
-                pass
+            self._drop(event, listener)
+
+    def _drop(self, event: str, listener: Listener) -> None:
+        entries = self._listeners.get(event)
+        if not entries:
+            return
+        for index, entry in enumerate(entries):
+            if entry[0] == listener:
+                del entries[index]
+                self._snapshots.pop(event, None)
+                return
+
+    def _snapshot(self, event: str) -> tuple[_Entry, ...]:
+        if self._lock is not None:
+            with self._lock:
+                return self._rebuild(event)
+        return self._rebuild(event)
+
+    def _rebuild(self, event: str) -> tuple[_Entry, ...]:
+        entries = tuple(self._listeners.get(event, _EMPTY))
+        self._snapshots[event] = entries
+        return entries
 
     def emit(self, event: str, *args: Any, **kwargs: Any) -> None:
         if not self.enabled:
             return
-        if self._lock is not None:
-            with self._lock:
-                listeners = list(self._listeners.get(event, []))
-        else:
-            listeners = list(self._listeners.get(event, []))
-        for listener in listeners:
-            if not _isValidListener(listener):
+        entries = self._snapshots.get(event)
+        if entries is None:
+            entries = self._snapshot(event)
+        if not entries:
+            return
+        for listener, owner in entries:
+            if owner is not None and not _isValid(owner):
                 self.unsubscribe(event, listener)
                 continue
             listener(*args, **kwargs)

@@ -12,8 +12,6 @@ ID_XOR_KEY_1 = b'3go8&$8*3*3h0k(2)2'
 # endregion
 
 
-
-
 # region cloudmusic.dll (Windows) security
 def cloudmusic_dll_encode_id(some_id):
     # XORs bytes then returns its base64 MD5 hash. Used in encodeAnonymousId

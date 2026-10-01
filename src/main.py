@@ -87,13 +87,14 @@ hijackStreams()
 _logger = logging.getLogger('main')
 _exit_cleanup_done = False
 
+
 def atExitListener():
     global _exit_cleanup_done
     if _exit_cleanup_done:
         return
     _exit_cleanup_done = True
     logging.info('exiting by listener')
-    
+
     terminal_thread.join(0)
 
     context = globals().get('ctx')

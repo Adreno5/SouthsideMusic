@@ -13,7 +13,7 @@ with ncm.getCurrentSession():
     with open('res.json', 'w') as f:
         f.write(
             json.dumps(
-                ncm.apis.track.getComments('1388960663', 0, 20),
+                ncm.apis.user,
                 indent=4,
             )
         )

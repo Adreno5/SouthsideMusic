@@ -8,7 +8,12 @@ import requests
 from core.app_context import AppContext
 from core.backend import getBackend
 from core.config import cfg, saveConfig
-from core.dialogs import CookieLoginDialog, QRCodeLoginDialog, getTextLineedit, getValueBylist
+from core.dialogs import (
+    CookieLoginDialog,
+    QRCodeLoginDialog,
+    getTextLineedit,
+    getValueBylist,
+)
 from core.i18n import tr
 from imports import (
     Action,

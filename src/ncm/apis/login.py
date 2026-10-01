@@ -213,7 +213,6 @@ def getRegisterVerificationStatusViaCellphone(
     )
 
 
-
 def loginViaAnonymousAccount(deviceId=None, session=None) -> dict:
     """anonymous login (pc client api).
 

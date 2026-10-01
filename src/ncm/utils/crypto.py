@@ -43,8 +43,6 @@ def _aes_decrypt(data: str, key: str, iv='', mode=AES.MODE_CBC):
         return _pkcs7_unpad(cipher.decrypt_ecb_nopadding(raw))
 
 
-
-
 # endregion
 
 
@@ -65,8 +63,6 @@ def _eapi_decrypt(cipher):
     """Implements EAPI response decryption"""
     cipher = bytearray(cipher) if isinstance(cipher, str) else cipher  # type: ignore
     return _aes_decrypt(cipher, EAPI_AES_KEY, mode=AES.MODE_ECB) if cipher else cipher  # type: ignore
-
-
 
 
 # endregion

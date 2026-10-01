@@ -69,11 +69,11 @@ class LogHandler(logging.Handler):
     def __init__(self, level: int | str = 0) -> None:
         super().__init__(level)
         self.buffer: str = ''
-        
+
         self.terminal_width = shutil.get_terminal_size().columns
-        
+
         event_bus.subscribe(TERMINAL_SIZE_CHANGED, self._onTerminalSizeChanged)
-        
+
     def _onTerminalSizeChanged(self):
         self.terminal_width = shutil.get_terminal_size().columns
 
@@ -91,7 +91,10 @@ class LogHandler(logging.Handler):
         message = record.getMessage()
         message = maskMediaUrls(message)
 
-        if 'QFluentWidgets' in message or '"QColor::setAlpha": invalid value' in message:
+        if (
+            'QFluentWidgets' in message
+            or '"QColor::setAlpha": invalid value' in message
+        ):
             return
 
         color = {
@@ -261,11 +264,15 @@ def hijackStreams():
 
     return original_stdout, original_stderr, stderr_redirector
 
+
 class INPUT_RECORD(ctypes.Structure):
-    _fields_ = [("EventType", wintypes.WORD),
-                ("_pad", wintypes.WORD),
-                ("Event", ctypes.c_byte * 16)]
-    
+    _fields_ = [
+        ('EventType', wintypes.WORD),
+        ('_pad', wintypes.WORD),
+        ('Event', ctypes.c_byte * 16),
+    ]
+
+
 def terminalSizeListen():
     record = INPUT_RECORD()
     read = wintypes.DWORD()

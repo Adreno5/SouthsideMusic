@@ -456,9 +456,9 @@ class AudioPlayer(QObject):
             dialog.exec()
             sys.exit(1)
         self._device_id: int = devices[0].index
-        self.fft_queue: Queue[
-            tuple[int, int, int, np.ndarray, np.ndarray] | None
-        ] = Queue(maxsize=8)
+        self.fft_queue: Queue[tuple[int, int, int, np.ndarray, np.ndarray] | None] = (
+            Queue(maxsize=8)
+        )
         self.fft_thread_running = True
         self.fft_thread = threading.Thread(target=self._fft_worker, daemon=True)
         self.fft_thread.start()
@@ -1275,9 +1275,9 @@ class AudioPlayer(QObject):
             start = min(self._prepared_start_index, self._prepared_end_index)
             end = max(self._prepared_start_index, self._prepared_end_index)
             return (
-            max(0.0, (start - self._track_origin) / self.sample_rate),
-            min(self.getLength(), (end - self._track_origin) / self.sample_rate),
-        )
+                max(0.0, (start - self._track_origin) / self.sample_rate),
+                min(self.getLength(), (end - self._track_origin) / self.sample_rate),
+            )
 
     def setVolume(self, volume: float) -> None:
         self.volume_gain = max(0.0, min(1.0, volume))

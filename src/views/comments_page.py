@@ -38,6 +38,7 @@ from core.models import BeReplyComment, Comment, CommentInfo, UserInfo
 if TYPE_CHECKING:
     from core.app_context import AppContext
 
+
 class CommentCard(QWidget):
     def __init__(
         self,
@@ -122,9 +123,9 @@ class CommentCard(QWidget):
         publisher: UserInfo,
         size: int,
     ) -> None:
-        avatar_path = Path(
-            f'.\\data\\image\\u_avatar{publisher.id}'
-        ).absolute().resolve()
+        avatar_path = (
+            Path(f'.\\data\\image\\u_avatar{publisher.id}').absolute().resolve()
+        )
         pixmap = QPixmap()
 
         def _final(image: QPixmap) -> None:
@@ -153,6 +154,7 @@ class CommentCard(QWidget):
             avatar_path.write_bytes(data)
 
         asyncTask(_download, (), self)
+
 
 class CommentsPage(SScrollArea):
     def __init__(self, ctx: AppContext):
@@ -204,7 +206,9 @@ class CommentsPage(SScrollArea):
         self.comments_layout = QVBoxLayout()
         layout.addLayout(self.comments_layout)
 
-        layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding))
+        layout.addSpacerItem(
+            QSpacerItem(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+        )
 
         self.setWidget(widget)
         self.setWidgetResizable(True)
@@ -291,7 +295,9 @@ class CommentsPage(SScrollArea):
         request_cursor = self.cursor
 
         def _load() -> None:
-            info = getBackend().getComments(current.id, self.page, 20, 'time', self.cursor)
+            info = getBackend().getComments(
+                current.id, self.page, 20, 'time', self.cursor
+            )
 
             def _loaded(info: CommentInfo) -> None:
                 added_count = self._addComments(info.comments)
@@ -317,16 +323,26 @@ class CommentsPage(SScrollArea):
     def send(self):
         backend = getBackend()
         if not backend.getAccountInfo().logged_in:
-            InfoBar.warning('Error', 'You\' not logged in!', duration=3500, parent=self.ctx.main_window)
+            InfoBar.warning(
+                'Error',
+                "You' not logged in!",
+                duration=3500,
+                parent=self.ctx.main_window,
+            )
             return
-        
+
         current = self.ctx.playing_manager.current_song
         if not current:
             return
         backend.addComment(current.id, self.inputer.toPlainText())
         self.inputer.clear()
 
-        InfoBar.success('Success', 'Added a comment successfully', duration=3500, parent=self.ctx.main_window)
+        InfoBar.success(
+            'Success',
+            'Added a comment successfully',
+            duration=3500,
+            parent=self.ctx.main_window,
+        )
 
     def refreshInformations(self):
         if os.path.exists('images/avatar.png'):

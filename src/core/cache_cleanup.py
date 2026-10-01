@@ -103,9 +103,10 @@ def cleanupDataFolder(
 
     if max_age_seconds > 0:
         for file in sorted(cache_files, key=lambda item: item.mtime):
-            if _fileAge(now, file) >= max_age_seconds and _fileAge(
-                now, file
-            ) >= _RECENT_FILE_GRACE_SECONDS:
+            if (
+                _fileAge(now, file) >= max_age_seconds
+                and _fileAge(now, file) >= _RECENT_FILE_GRACE_SECONDS
+            ):
                 removeFile(file, reduce_remaining=True)
 
     if remaining_bytes > max_bytes:

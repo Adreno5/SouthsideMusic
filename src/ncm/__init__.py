@@ -76,7 +76,11 @@ def _osVersion() -> str:
         ) as key:
             product = str(winreg.QueryValueEx(key, 'ProductName')[0])
             build = str(winreg.QueryValueEx(key, 'CurrentBuildNumber')[0])
-        name = product.replace('Windows 10', 'Windows 11') if int(build) >= 22000 else product
+        name = (
+            product.replace('Windows 10', 'Windows 11')
+            if int(build) >= 22000
+            else product
+        )
         return 'Microsoft-%s-build-%s-64bit' % (name.replace(' ', '-'), build)
     except OSError:
         return ''

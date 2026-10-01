@@ -28,7 +28,7 @@ from imports import (
     QPainter,
     QPaintEvent,
     QWheelEvent,
-    BEAT_POINT
+    BEAT_POINT,
 )
 from imports import QWidget
 
@@ -129,7 +129,7 @@ class LyricsViewer(QWidget):
         self._view_total_height = 0.0
         self._shown_lines: list[int] = []
         self._line_alphas: dict[int, EaseOutTimer] = {}
-        
+
         self.beat_flash_timer = EaseOutTimer(0.6, 2)
         self.beat_flash_timer.target_value = 0
 
@@ -139,7 +139,7 @@ class LyricsViewer(QWidget):
         event_bus.subscribe(REPAINT, self._onRepaintTick)
         event_bus.subscribe(PLAY_STORABLE, lambda _: self.prewarmFontMetrics())
         event_bus.subscribe(BEAT_POINT, self._onBeatPoint)
-        
+
     def _onBeatPoint(self):
         if not self.ctx.config.beat_detection_visual_lyrics:
             return
@@ -274,20 +274,21 @@ class LyricsViewer(QWidget):
         for line in translated_lines:
             self._translation_by_time[self._timeKey(line.time)] = line.content.strip()
 
-        if len(original_lines) < 2 or len(translated_lines) + 1 != len(original_lines):
+        missing_lines = len(original_lines) - len(translated_lines)
+        if not translated_lines or missing_lines < 1:
             return
 
         empty_times = getattr(self._transmgr, 'empty_times', [])
-        if not any(
-            self._timesClose(empty_time, original_lines[0].time)
-            for empty_time in empty_times
+        if not all(
+            any(self._timesClose(empty_time, line.time) for empty_time in empty_times)
+            for line in original_lines[:missing_lines]
         ):
             return
 
         shifted_timestamps_match = all(
             self._timesClose(translated_line.time, original_line.time)
             for translated_line, original_line in zip(
-                translated_lines, original_lines[1:]
+                translated_lines, original_lines[missing_lines:]
             )
         )
         if not shifted_timestamps_match:
@@ -439,9 +440,7 @@ class LyricsViewer(QWidget):
             return
 
         has_word_timing = bool(
-            self._view_use_yrc
-            and not line.isMetadata
-            and getattr(line, 'chars', None)
+            self._view_use_yrc and not line.isMetadata and getattr(line, 'chars', None)
         )
         if has_word_timing:
             _ratio, clip_w = self._yrcClipPayload(line, position)
@@ -809,8 +808,13 @@ class LyricsViewer(QWidget):
                     painter.restore()
             else:
                 color.setAlpha(
-                    (color.alpha() - 10 + int(10 * self.beat_flash_timer.current_value)) if not is_current_line else 
-                    (color.alpha() - 55 + int(55 * self.beat_flash_timer.current_value))
+                    (color.alpha() - 10 + int(10 * self.beat_flash_timer.current_value))
+                    if not is_current_line
+                    else (
+                        color.alpha()
+                        - 55
+                        + int(55 * self.beat_flash_timer.current_value)
+                    )
                 )
                 painter.setPen(color)
                 painter.drawText(

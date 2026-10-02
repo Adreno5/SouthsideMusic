@@ -46,6 +46,8 @@ class QualityCard(CardWidget):
 
         self.setLayout(layout)
 
+        self.has_clicked = False
+
         self.setClickEnabled(level.charge_type)
         self.clicked.connect(self._clickedOn)
         event_bus.subscribe(REQUEST_BR_CHANGED, self._syncQualityLevel)
@@ -59,8 +61,32 @@ class QualityCard(CardWidget):
         )
         self.tl.setTextColor(c, c)
         self.cl.setTextColor(c, c)
+        if self.has_clicked and br != self.level.br:
+            InfoBar.error(
+                tr('quality_dialog.failed'),
+                tr(
+                    'quality_dialog.failed_content',
+                    quality=tr(f'quality_display.{self.level.br}'),
+                ),
+                duration=10000,
+                position=InfoBarPosition.TOP,
+                parent=self.ctx.main_window,
+            )
+        else:
+            InfoBar.success(
+                tr('quality_dialog.success'),
+                tr(
+                    'quality_dialog.success_content',
+                    quality=tr(f'quality_display.{self.level.br}'),
+                ),
+                duration=5000,
+                position=InfoBarPosition.TOP,
+                parent=self.ctx.main_window,
+            )
+        self.has_clicked = False
 
     def _clickedOn(self):
+        self.has_clicked = True
         if self.level.br == self.cur_br:
             return
         InfoBar.info(

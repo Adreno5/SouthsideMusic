@@ -138,6 +138,7 @@ def _loudnessGain(payload: dict[str, Any]) -> float:
             samples_bytes,
             int(payload.get('sample_width', 2)),
             int(payload.get('frame_rate', 44100)),
+            int(payload.get('channels', 1)),
         )
     )
 

@@ -815,7 +815,9 @@ class SettingPage(QWidget):
             True,
         )
 
-        self._onLyricsAnimationTypeChanged(self.lyrics_type_box.currentText().lower(), False)
+        self._onLyricsAnimationTypeChanged(
+            self.lyrics_type_box.currentText().lower(), False
+        )
 
     def _onLyricsAnimationTypeChanged(self, selected: str, reload: bool = True):
         for b in self.lyrics_physics_boxes:

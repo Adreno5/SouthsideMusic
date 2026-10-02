@@ -418,6 +418,12 @@ class AudioPlayer(QObject):
         self._audio_queue: Queue[tuple[np.ndarray, int, float | None] | None] = Queue(
             maxsize=_PRODUCER_QUEUE_BLOCKS
         )
+        self._scrub_samples: np.ndarray | None = None
+        self._scrub_scale = 1.0
+        self._scrub_frame = 0
+        self._scrub_was_playing = False
+        self._scrub_was_paused = False
+        self._scrub_handoff = False
         self._producer_running = False
         self._producer_thread: Optional[threading.Thread] = None
         self._producer_seq = 0
@@ -438,6 +444,7 @@ class AudioPlayer(QObject):
         self._growing_file_size = 0
         self._growing_file_last_decode = 0.0
         self._growing_stream_mode = False
+        self._growing_stream_buffer: np.ndarray | None = None
         self._callback_events_lock = threading.Lock()
         self._pending_full_finished = False
         self._pending_ending_no_sound = False
@@ -456,9 +463,9 @@ class AudioPlayer(QObject):
             dialog.exec()
             sys.exit(1)
         self._device_id: int = devices[0].index
-        self.fft_queue: Queue[tuple[int, int, int, np.ndarray, np.ndarray] | None] = (
-            Queue(maxsize=8)
-        )
+        self.fft_queue: Queue[
+            tuple[int, int, int, float, np.ndarray, np.ndarray] | None
+        ] = Queue(maxsize=8)
         self.fft_thread_running = True
         self.fft_thread = threading.Thread(target=self._fft_worker, daemon=True)
         self.fft_thread.start()
@@ -618,6 +625,7 @@ class AudioPlayer(QObject):
         self._growing_file_size = 0
         self._growing_file_last_decode = 0.0
         self._growing_stream_mode = False
+        self._growing_stream_buffer = None
 
     def _decodeFile(self, file_path: Path) -> PatchedAudioSegment:
         return PatchedAudioSegment.from_file(str(file_path))
@@ -629,6 +637,8 @@ class AudioPlayer(QObject):
         return PreparedAudioBuffer(samples, audio.frame_rate, channels)
 
     def _applyPreparedBuffer(self, prepared: PreparedAudioBuffer) -> None:
+        self._scrub_samples = None
+        self._scrub_handoff = False
         self._timeline = None
         self._queued_restore = None
         self._track_origin = 0
@@ -986,6 +996,7 @@ class AudioPlayer(QObject):
             self._growing_file_size = 0
             self._growing_file_last_decode = time.perf_counter()
             self._growing_stream_mode = True
+            self._growing_stream_buffer = None
             self._ensureStream()
 
     def appendGrowingStreamPcm(
@@ -1004,10 +1015,28 @@ class AudioPlayer(QObject):
         with self._lock:
             if self._growing_file_path != file_path or self._growing_file_complete:
                 return self.getLength()
-            if len(self.samples) == 0:
-                self.samples = chunk
+            previous = self.samples
+            previous_length = len(previous)
+            buffer = self._growing_stream_buffer
+            required_length = previous_length + len(chunk)
+            if buffer is None or required_length > len(buffer):
+                capacity = max(required_length, self.sample_rate * 8)
+                if buffer is not None:
+                    capacity = max(capacity, len(buffer) * 2)
+                expanded = np.empty((capacity, channels), dtype=np.float32)
             else:
-                self.samples = np.concatenate((self.samples, chunk), axis=0)
+                expanded = None
+        if expanded is not None:
+            expanded[:previous_length] = previous
+        with self._lock:
+            if self._growing_file_path != file_path or self._growing_file_complete:
+                return self.getLength()
+            if expanded is not None:
+                buffer = expanded
+                self._growing_stream_buffer = buffer
+            assert buffer is not None
+            buffer[previous_length:required_length] = chunk
+            self.samples = buffer[:required_length]
             self._growing_file_size += valid_len
             self._growing_file_last_decode = time.perf_counter()
             return self.getLength()
@@ -1262,6 +1291,8 @@ class AudioPlayer(QObject):
 
     def pause(self) -> None:
         with self._lock:
+            self._scrub_samples = None
+            self._scrub_handoff = False
             self._stopProducer()
             self._clearQueue()
             if self.stream and self.stream.active:
@@ -1275,6 +1306,8 @@ class AudioPlayer(QObject):
 
     def stop(self, clear_growing_file: bool = True, drain_stream: bool = True) -> None:
         with self._lock:
+            self._scrub_samples = None
+            self._scrub_handoff = False
             self.stopVolumeAnimation()
             self.stopGainAnimation()
             self._stopProducer()
@@ -1323,6 +1356,78 @@ class AudioPlayer(QObject):
             self._clearQueue()
             if self.is_playing:
                 self._startProducer()
+
+    def beginScrub(
+        self, seconds: float, audio: PatchedAudioSegment | None = None
+    ) -> bool:
+        with self._lock:
+            if self._sampleCount() == 0:
+                return False
+            if self._timeline is not None:
+                if (
+                    audio is None
+                    or audio.frame_rate != self.sample_rate
+                    or audio.sample_width not in (1, 2, 4)
+                ):
+                    return False
+                dtype = {1: np.int8, 2: np.int16, 4: np.int32}[audio.sample_width]
+                source = np.frombuffer(audio.raw_data, dtype=dtype).reshape(
+                    -1, audio.channels
+                )
+                scale = (
+                    float(2**31)
+                    if audio.sample_width == 4
+                    else float(np.iinfo(dtype).max)
+                )
+            else:
+                source = self.samples
+                scale = 1.0
+            if len(source) == 0:
+                return False
+            self._scrub_was_playing = self.isPlaying()
+            self._scrub_was_paused = self.is_paused
+            self._stopProducer()
+            self._clearQueue()
+            self._scrub_samples = source
+            self._scrub_scale = scale
+            self._scrub_handoff = False
+            self.scrubTo(seconds)
+            if not self._scrub_was_playing:
+                self._startStream()
+            self.is_playing = True
+            self.is_paused = False
+            return True
+
+    def scrubTo(self, seconds: float) -> None:
+        with self._lock:
+            if self._growing_file_path is not None and self._timeline is None:
+                self._scrub_samples = self.samples
+            source = self._scrub_samples
+            if source is None:
+                return
+            self._last_seek_at = time.perf_counter()
+            self._scrub_frame = max(
+                0, min(round(seconds * self.sample_rate), len(source) - 1)
+            )
+            self._playback_time = self._scrub_frame / self.sample_rate
+            self._smooth_position_start = self._playback_time
+            self._smooth_position_end = self._playback_time
+
+    def endScrub(self, seconds: float) -> None:
+        with self._lock:
+            if self._scrub_samples is None:
+                return
+            self.scrubTo(seconds)
+            if self._scrub_was_playing:
+                self._scrub_handoff = True
+            else:
+                self._scrub_samples = None
+                self._scrub_handoff = False
+                if self.stream is not None and self.stream.active:
+                    self.stream.abort()
+                self.is_playing = False
+                self.is_paused = self._scrub_was_paused
+        self.setPosition(seconds)
 
     def getPosition(self) -> float:
         return round(self._playback_time, 2)
@@ -1640,38 +1745,79 @@ class AudioPlayer(QObject):
         self.beatDataReset.emit()
 
     @Slot(int, object)
-    def _publishBeatFrames(self, generation: int, frames: list[BeatFrame]) -> None:
+    def _publishBeatFrames(
+        self, generation: int, frames: list[tuple[BeatFrame, float]]
+    ) -> None:
         if generation != self._analysis_generation:
             return
         if not cfg.beat_detection_enabled:
             self.beatDataReady.emit(0.0, False)
             return
-        for beat in frames:
+        for beat, presentation_time in frames:
             self.beatDataReady.emit(beat.intensity, beat.is_point)
             if beat.is_point:
-                event_bus.emit(BEAT_POINT)
+                delay_ms = max(
+                    0, round((presentation_time - time.perf_counter()) * 1000)
+                )
+                if delay_ms == 0:
+                    self._publishBeatPoint(generation)
+                else:
+                    QTimer.singleShot(
+                        delay_ms,
+                        lambda g=generation: self._publishBeatPoint(g),
+                    )
+
+    def _publishBeatPoint(self, generation: int) -> None:
+        if generation != self._analysis_generation or not cfg.beat_detection_enabled:
+            return
+        event_bus.emit(BEAT_POINT)
 
     def _fft_worker(self) -> None:
         sample_history = np.zeros(0, dtype=np.float32)
         detector = BeatDetector()
         generation = -1
         sample_rate = 0
+        last_sequence = -1
+        analyzed_samples = 0
         beat_enabled = False
+        detector_settings: tuple[float, int, int, int] | None = None
         while self.fft_thread_running:
             packet = self.fft_queue.get()
             if packet is None:
                 break
-            packet_generation, _packet_sequence, rate, chunk, beat_samples = packet
+            (
+                packet_generation,
+                packet_sequence,
+                rate,
+                presentation_time,
+                chunk,
+                beat_samples,
+            ) = packet
             if packet_generation != self._analysis_generation:
                 continue
-            if packet_generation != generation or rate != sample_rate:
+            if (
+                packet_generation != generation
+                or rate != sample_rate
+                or (last_sequence >= 0 and packet_sequence != last_sequence + 1)
+            ):
                 sample_history = np.zeros(0, dtype=np.float32)
                 detector.reset()
+                analyzed_samples = 0
             generation = packet_generation
             sample_rate = rate
-            if beat_enabled != cfg.beat_detection_enabled:
+            last_sequence = packet_sequence
+            hop_seconds = cfg.beat_detection_hop_seconds
+            low_hz = cfg.beat_detection_low_hz
+            high_hz = cfg.beat_detection_high_hz
+            settings = (hop_seconds, low_hz, high_hz, beat_samples.shape[1])
+            if (
+                beat_enabled != cfg.beat_detection_enabled
+                or settings != detector_settings
+            ):
                 detector.reset()
+                analyzed_samples = 0
             beat_enabled = cfg.beat_detection_enabled
+            detector_settings = settings
 
             if beat_enabled:
                 beat_frames = detector.process(
@@ -1679,15 +1825,23 @@ class AudioPlayer(QObject):
                     sample_rate,
                     sensitivity=cfg.beat_detection_sensitivity,
                     smoothing=cfg.beat_detection_smoothing,
-                    hop_seconds=cfg.beat_detection_hop_seconds,
+                    hop_seconds=hop_seconds,
                     min_interval=cfg.beat_detection_min_interval,
-                    low_hz=cfg.beat_detection_low_hz,
-                    high_hz=cfg.beat_detection_high_hz,
+                    low_hz=low_hz,
+                    high_hz=high_hz,
                     point_threshold=cfg.beat_detection_point_threshold,
                 )
             else:
                 beat_frames = [BeatFrame(0.0, 0.0, False)]
-            self._beatFramesReady.emit(generation, beat_frames)
+            block_start = analyzed_samples / max(1, sample_rate)
+            analyzed_samples += len(beat_samples)
+            self._beatFramesReady.emit(
+                generation,
+                [
+                    (beat, presentation_time + beat.time - block_start)
+                    for beat in beat_frames
+                ],
+            )
 
             if not self.fft_enabled:
                 continue
@@ -1836,14 +1990,57 @@ class AudioPlayer(QObject):
         with self._lock:
             self._renderAudio(outdata, frames, _time_info, _status)
 
-    def _renderAudio(self, outdata, frames, _time_info, _status):
+    def _renderAudio(
+        self, outdata: np.ndarray, frames: int, _time_info: Any, _status: Any
+    ) -> None:
         generation = self._analysis_generation
+        presentation_time = time.perf_counter() + max(
+            0.0, _time_info.outputBufferDacTime - _time_info.currentTime
+        )
         self._analysis_sequence += 1
         sequence = self._analysis_sequence
         sample_rate = self.sample_rate
         outdata[:] = 0
         if _status.output_underflow:
             self._output_underflows += 1
+        source = self._scrub_samples
+        if source is not None:
+            if not self._scrub_handoff or self._audio_queue.empty():
+                start = self._scrub_frame
+                raw = source[start : start + frames]
+                copy_len = len(raw)
+                if copy_len:
+                    chunk = raw.astype(np.float32, copy=False) / self._scrub_scale
+                    if chunk.shape[1] == 1 and self.output_channels == 2:
+                        chunk = np.repeat(chunk, 2, axis=1)
+                    elif chunk.shape[1] > 2:
+                        chunk = np.stack(
+                            (chunk[:, ::2].mean(axis=1), chunk[:, 1::2].mean(axis=1)),
+                            axis=1,
+                        )
+                    if self.output_channels == 1 and chunk.shape[1] > 1:
+                        chunk = chunk.mean(axis=1, keepdims=True)
+                    elif not cfg.stereo and chunk.shape[1] == 2:
+                        chunk = np.repeat(chunk.mean(axis=1, keepdims=True), 2, axis=1)
+                    played_chunk = chunk * self.volume_gain * self.loudness_gain
+                    np.clip(
+                        played_chunk,
+                        -1.0,
+                        (61.0 + cfg.target_lufs) * 3.0,
+                        out=played_chunk,
+                    )
+                    outdata[:copy_len, : self.output_channels] = played_chunk[
+                        :, : self.output_channels
+                    ]
+                    self._scrub_frame += copy_len
+                    self._smooth_position_start = start / self.sample_rate
+                    self._playback_time = self._scrub_frame / self.sample_rate
+                    self._smooth_position_end = self._playback_time
+                    self._smooth_position_started_at = time.perf_counter()
+                    self._smooth_position_duration = frames / self.sample_rate
+                return
+            self._scrub_samples = None
+            self._scrub_handoff = False
         try:
             item = self._audio_queue.get_nowait()
         except Empty:
@@ -1899,11 +2096,11 @@ class AudioPlayer(QObject):
         )
         finished = self.current_index >= self._sampleCount() and not waiting_for_file
         skip_nosound = False
+        monitor_chunk = (
+            played_chunk.mean(axis=1) if played_chunk.ndim == 2 else played_chunk
+        )
 
         if not finished:
-            monitor_chunk = (
-                played_chunk.mean(axis=1) if played_chunk.ndim == 2 else played_chunk
-            )
             rms = np.sqrt(np.mean(monitor_chunk**2))
             if rms > 0:
                 self.db = 20 * np.log10(rms)
@@ -1920,17 +2117,18 @@ class AudioPlayer(QObject):
                     if self.db < cfg.skip_threshold:
                         skip_nosound = True
 
-            if self.fft_enabled or cfg.beat_detection_enabled:
-                try:
-                    self.fft_queue.put_nowait((
-                        generation,
-                        sequence,
-                        sample_rate,
-                        monitor_chunk,
-                        chunk[:copy_len, : self.output_channels],
-                    ))
-                except Full:
-                    pass
+        if copy_len > 0 and (self.fft_enabled or cfg.beat_detection_enabled):
+            try:
+                self.fft_queue.put_nowait((
+                    generation,
+                    sequence,
+                    sample_rate,
+                    presentation_time,
+                    monitor_chunk,
+                    chunk[:copy_len, : self.output_channels],
+                ))
+            except Full:
+                pass
 
         if finished:
             self.is_playing = False
@@ -1976,11 +2174,9 @@ class AudioPlayer(QObject):
             self.onEndingNoSound.emit()
 
     def _clearQueue(self) -> None:
-        while not self._audio_queue.empty():
-            try:
-                self._audio_queue.get_nowait()
-            except Empty:
-                break
+        with self._audio_queue.mutex:
+            self._audio_queue.queue.clear()
+            self._audio_queue.not_full.notify_all()
         self._producer_index = self.current_index
         self._prepared_start_index = self.current_index
         self._prepared_end_index = self.current_index
@@ -2119,6 +2315,15 @@ class AudioPlayer(QObject):
                         if waiting_for_growing_file:
                             break
                         finished = True
+                        break
+
+                    if self._growing_stream_mode and (
+                        self._sampleCount() - self._producer_index
+                        < max(
+                            self._BLOCK_SIZE, round(self._BLOCK_SIZE * self.play_speed)
+                        )
+                    ):
+                        waiting_for_growing_file = True
                         break
 
                     start_idx = int(self._producer_index)

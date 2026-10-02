@@ -370,6 +370,7 @@ class PlayingManager(QObject):
                     'samples': samples.tobytes(),
                     'sample_width': int(audio.sample_width),
                     'frame_rate': int(audio.frame_rate),
+                    'channels': int(audio.channels),
                 },
                 timeout=30.0,
             )
@@ -455,6 +456,11 @@ class PlayingManager(QObject):
         self.total_length = self._storableDuration(song)
         event_bus.emit(STOP_PROGRESS_LOADING)
         event_bus.emit(PLAYBACK_SONG_LOADING, song)
+        if song.imageCached():
+            try:
+                event_bus.emit(PLAYBACK_IMAGE_LOADED, song, song.getImageBytes(), None)
+            except (FileNotFoundError, PermissionError):
+                self._logger.warning('cached cover unavailable during quality switch')
         self._playDownloadingStorable(
             song,
             not song.imageCached(),
@@ -1055,7 +1061,7 @@ class PlayingManager(QObject):
             return
         gain = (
             song_storable.loudness_gain
-            if self._hasLoadedLoudnessGain(song_storable)
+            if song_storable.target_lufs == cfg.target_lufs
             else 1.0
         )
         player.setGain(gain)
@@ -1887,6 +1893,26 @@ class PlayingManager(QObject):
         if play_seq != self._play_seq or self.current_song is not song_storable:
             return
 
+        if gain_audio is not None:
+
+            def _setMaxBr() -> None:
+                target_br = min(
+                    getBackend().getSongQualityPrivilege(song_storable.id).max_br,
+                    self.ctx.config.target_request_br,
+                )
+
+                def _applyMaxBr() -> None:
+                    if (
+                        play_seq == self._play_seq
+                        and self.current_song is song_storable
+                    ):
+                        self._logger.debug(f'max usable br: {target_br}')
+                        self.setRequestBr(target_br)
+
+                self._schedule(_applyMaxBr)
+
+            asyncTask(_setMaxBr, (), self)
+
         self.clearPreload()
         if mark_loaded:
             self.preloaded = True
@@ -1948,13 +1974,18 @@ class PlayingManager(QObject):
         request_br = self._request_br
 
         class PrepareInfo(TypedDict):
-            error: Optional[str]
-            image: Optional[bytes]
-            music_url: Optional[str]
+            error: str | None
+            image: bytes | None
+            music_url: str | None
             sample_rate: int
+            request_br: int
 
         prepared: PrepareInfo = PrepareInfo(
-            error=None, image=None, music_url=None, sample_rate=0
+            error=None,
+            image=None,
+            music_url=None,
+            sample_rate=0,
+            request_br=request_br,
         )
         stream_sample_rate = 0
         result: dict[str, object] = {}
@@ -2254,6 +2285,13 @@ class PlayingManager(QObject):
 
             if _is_current() and player is not None:
                 player.finishGrowingStream(path)
+                if not state['started'] and player.getLength() <= 0:
+                    _cleanup(path)
+                    self._emitError(
+                        tr('playing_manager.playback_failed'),
+                        tr('playing_manager.failed_to_start_streaming_playback'),
+                    )
+                    return
                 self._stream_analysis_tail = (
                     np.concatenate(analysis_chunks, axis=0) if analysis_chunks else None
                 )
@@ -2276,9 +2314,13 @@ class PlayingManager(QObject):
                     detail = getBackend().getTrackDetail(song_storable.id)
                     image_bytes = requests.get(detail.cover_url, timeout=30).content
                     prepared['image'] = image_bytes
+                prepared['request_br'] = min(
+                    getBackend().getSongQualityPrivilege(song_storable.id).max_br,
+                    self.ctx.config.target_request_br,
+                )
                 audio = getBackend().getTrackAudio(
                     str(song_storable.id),
-                    bitrate=request_br,
+                    bitrate=prepared['request_br'],
                 )
                 prepared['music_url'] = audio.url
                 prepared['sample_rate'] = audio.sample_rate
@@ -2319,6 +2361,10 @@ class PlayingManager(QObject):
                     tr('playing_manager.failed_to_download_missing_cached_files'),
                 )
                 return
+
+            if prepared['request_br'] != self._request_br:
+                self._request_br = prepared['request_br']
+                event_bus.emit(REQUEST_BR_CHANGED, self._request_br)
 
             if image_missing:
                 image_bytes = prepared.get('image')
@@ -2455,12 +2501,6 @@ class PlayingManager(QObject):
         song_storable = self._selectStorableForPlayback(song_storable)
         self._logger.debug(f'{song_storable.target_lufs=} {cfg.target_lufs=}')
 
-        def _setMaxBr():
-            target_br = min(getBackend().getSongQualityPrivilege(song_storable.id).max_br, self.ctx.config.target_request_br)
-            self._logger.debug(f'max usable br: {target_br}')
-            self.setRequestBr(target_br)
-        asyncTask(_setMaxBr, (), self)
-
         player = self._player
         if player is None:
             return
@@ -2591,11 +2631,16 @@ class PlayingManager(QObject):
             player = self._player
             if player is None:
                 return
-            gain = self._computeLoudnessGain(cfg.target_lufs, raw_audio)
-            self._setStorableLoudness(song_storable, cfg.target_lufs, gain)
+            target_lufs = cfg.target_lufs
+            gain = self._computeLoudnessGain(target_lufs, raw_audio)
 
             def _apply() -> None:
-                if play_seq == self._play_seq and self.current_song is song_storable:
+                if (
+                    play_seq == self._play_seq
+                    and self.current_song is song_storable
+                    and target_lufs == cfg.target_lufs
+                ):
+                    self._setStorableLoudness(song_storable, target_lufs, gain)
                     player.animateLoudnessGain(gain)
 
             self.ctx.addScheduledTask(_apply)  # type: ignore

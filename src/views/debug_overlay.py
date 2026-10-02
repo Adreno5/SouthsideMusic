@@ -5,7 +5,6 @@ import time
 import psutil
 
 from imports import (
-    BEAT_POINT,
     REPAINT,
     QHideEvent,
     QMouseEvent,
@@ -83,15 +82,10 @@ class DebugOverlay(QWidget):
             player.beatDataReset.connect(self._resetBeatData)
 
         event_bus.subscribe(REPAINT, self.refresh)
-        event_bus.subscribe(BEAT_POINT, self._markBeatPoint)
 
     def onBeatData(self, intensity: float, is_point: bool) -> None:
         self.beat_datas.append(float(intensity))
-        self.beat_points.append(0)
-
-    def _markBeatPoint(self) -> None:
-        if self.beat_points:
-            self.beat_points[-1] = 1
+        self.beat_points.append(int(is_point))
 
     def _resetBeatData(self) -> None:
         self.beat_datas.clear()

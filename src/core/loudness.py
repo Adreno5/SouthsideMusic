@@ -382,15 +382,17 @@ def getAdjustedGainFactorFromSamples(
     samples_bytes: bytes,
     sample_width: int,
     frame_rate: int,
+    channels: int = 1,
 ) -> float:
     dtype_map = {1: np.int8, 2: np.int16, 4: np.int32}
     dtype = dtype_map[sample_width]
     samples = np.frombuffer(samples_bytes, dtype=dtype).astype(np.float32)
     max_val = np.iinfo(dtype).max  # type: ignore[type-var]
     samples = samples / max_val  # type: ignore[assignment]
+    meter_samples = samples.reshape(-1, 2) if channels == 2 else samples
 
     meter = Meter(frame_rate)
-    loudness = meter.integratedLoudness(samples)
+    loudness = meter.integratedLoudness(meter_samples)
 
     gain = 10 ** ((target_lufs - loudness) / 20.0)
     _logger.info(f'loudness adjusted, {gain=}, {target_lufs=}')
@@ -404,9 +406,10 @@ def getAdjustedGainFactorImpl(target_lufs: float, audio: AudioSegment) -> float:
     dtype = dtype_map[audio.sample_width]
     max_val = np.iinfo(dtype).max  # type: ignore[type-var]
     samples = samples / max_val  # type: ignore[assignment]
+    meter_samples = samples.reshape(-1, 2) if audio.channels == 2 else samples
 
     meter = Meter(audio.frame_rate)
-    loudness = meter.integratedLoudness(samples)
+    loudness = meter.integratedLoudness(meter_samples)
 
     gain = 10 ** ((target_lufs - loudness) / 20.0)
     _logger.info(f'loudness adjusted, {gain=}, {target_lufs=}')

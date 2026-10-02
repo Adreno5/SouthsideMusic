@@ -744,33 +744,34 @@ class PlayingController(QWidget):
         if (
             event.position().y() < 8
             and event.position().x() > self._progressLeft()
-            and self._dp.preloaded
             and not self.ctx.playing_manager.crossfading
         ):
-            self.dragging = True
-            self._player.setPosition(self._eventPlayingTime(event))
+            position = self._eventPlayingTime(event)
+            self.dragging = self._player.beginScrub(
+                position, self.ctx.playing_manager.current_song_audio
+            )
+            if self.dragging:
+                event.accept()
+                return
+            self._player.setPosition(position)
         elif event.position().y() > 8:
             if self._mwindow and not self._mwindow.dp_animating:
                 self._mwindow.togglePlayingPageExpand()
         return super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if (
-            self.dragging
-            and self._dp.preloaded
-            and not self.ctx.playing_manager.crossfading
-        ):
-            self._player.setPosition(self._eventPlayingTime(event))
+        if self.dragging:
             self.dragging = False
+            self._player.endScrub(self._eventPlayingTime(event))
+            event.accept()
+            return
         return super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        if (
-            self.dragging
-            and self._dp.preloaded
-            and not self.ctx.playing_manager.crossfading
-        ):
-            self._player.setPosition(self._eventPlayingTime(event))
+        if self.dragging:
+            self._player.scrubTo(self._eventPlayingTime(event))
+            event.accept()
+            return
         return super().mouseMoveEvent(event)
 
     def toggle(self):

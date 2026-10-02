@@ -1,18 +1,19 @@
 from __future__ import annotations
-# Inspiration from https://github.com/oguzhan-yilmaz/pyCrossfade
 
+# Inspiration from https://github.com/oguzhan-yilmaz/pyCrossfade
 import base64
-from dataclasses import dataclass
-from enum import Enum
 import hashlib
 import json
+import logging
 import os
-from math import pi
+from dataclasses import dataclass
+from enum import Enum
+from math import pi, sqrt
 
 import numpy as np
 from pydub import AudioSegment
-import logging
 
+from core.beat import BeatDetector
 from core.wsola import WsolaStretcher
 
 _logger = logging.getLogger(__name__)
@@ -526,7 +527,7 @@ def _cache_token(
     payload = '|'.join((
         current_id,
         next_id,
-        'structural-transition-v5',
+        'structural-transition-v6',
         str(sample_rate),
         str(channels),
         f'{crossfade_seconds:.6f}',
@@ -610,14 +611,8 @@ def getCrossfade(
         else len(current) / 1000.0
     )
     current_tail = current[-window_ms:]
-    current_analysis = current[:window_ms]
     next_head = next[:window_ms]
     current_samples = _segment_to_samples(current_tail, sample_rate, channels)  # type: ignore
-    current_analysis_samples = _segment_to_samples(
-        current_analysis,  # type: ignore
-        sample_rate,
-        channels,  # type: ignore
-    )
     next_samples = _segment_to_samples(next_head, sample_rate, channels)  # type: ignore
 
     _, tail_silence_frames = _silence_span(current_samples, sample_rate)
@@ -656,12 +651,10 @@ def getCrossfade(
         timbre_similarity,
     )
 
-    current_bpm = (
-        _detect_bpm_with_cache(
-            current_analysis_samples, sample_rate, current_song_id, bpm_window
-        )
+    current_bpm, beat_phase = (
+        _analyze_rhythm(content_samples, sample_rate, bpm_window, tail=True)
         if tempo_match
-        else 0.0
+        else (0.0, 0.0)
     )
     next_bpm = (
         _detect_bpm_with_cache(next_samples, sample_rate, next_song_id, bpm_window)
@@ -697,8 +690,6 @@ def getCrossfade(
         current_bpm,
         next_bpm,
     )
-    beat_phase = _detect_beat_phase(current_samples, sample_rate, current_bpm)
-
     if fade_frames <= 0:
         return CrossFadeInfo(
             start_seconds=current_duration,
@@ -732,6 +723,9 @@ def getCrossfade(
         transition_type,
         fade_frames,
         beat_phase,
+        current_bpm,
+        target_speed,
+        sample_rate,
     )
     mixed = outgoing * fade_out * _clamp(
         current_gain, 0.0, 4.0
@@ -1001,24 +995,6 @@ def _timbre_similarity(
     return _clamp((similarity + 1.0) * 0.5, 0.0, 1.0)
 
 
-def _detect_beat_phase(samples: np.ndarray, sample_rate: int, bpm: float) -> float:
-    """Return the normalized distance from the tail to its next likely beat."""
-    if bpm <= 0 or len(samples) < sample_rate * 2:
-        return 0.0
-    envelope_rate = 200
-    mono = np.mean(samples, axis=1).astype(np.float64)
-    envelope = _onset_envelope(mono, sample_rate, envelope_rate)
-    period = int(round(envelope_rate * 60.0 / bpm))
-    if period < 2 or len(envelope) < period * 2:
-        return 0.0
-    scores = np.array([
-        float(np.sum(envelope[offset::period])) for offset in range(period)
-    ])
-    strongest = int(np.argmax(scores))
-    tail_phase = (len(envelope) - 1 - strongest) % period
-    return float((period - tail_phase) % period) / period
-
-
 def _select_transition_type(
     ending_type: EndingType,
     key_compatibility: float,
@@ -1046,14 +1022,29 @@ def _build_fades(
     transition_type: str,
     frames: int,
     beat_phase: float,
+    current_bpm: float,
+    target_speed: float,
+    sample_rate: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     if curve in _SIMPLE_CURVES:
         return _select_fade_curve(curve, frames)
     if frames <= 1:
         return _select_fade_curve(curve, frames)
     if transition_type == 'beat_cut':
+        fade_seconds = frames / sample_rate
+        period = 60.0 / current_bpm
+        distance_to_next = beat_phase * period
+        midpoint_source = fade_seconds * (0.5 + (target_speed - 1.0) / 8.0)
+        beat_source = (
+            fade_seconds
+            + distance_to_next
+            + round((midpoint_source - fade_seconds - distance_to_next) / period)
+            * period
+        )
+        warp_ratio = 2.0 * (target_speed - 1.0) * beat_source / fade_seconds
+        warped_beat = 2.0 * beat_source / (1.0 + sqrt(1.0 + warp_ratio))
+        center = float(np.clip(warped_beat / fade_seconds, 0.15, 0.85))
         progress = np.linspace(0.0, 1.0, frames, dtype=np.float32)
-        center = 0.35 + beat_phase * 0.3
         fade_in = 1.0 / (1.0 + np.exp(-(progress - center) * 28.0))
         fade_in = fade_in.reshape(-1, 1).astype(np.float32, copy=False)
         return (1.0 - fade_in).astype(np.float32, copy=False), fade_in
@@ -1106,55 +1097,62 @@ def _limit_samples(samples: np.ndarray) -> np.ndarray:
     return samples.astype(np.float32, copy=False)
 
 
+def _analyze_rhythm(
+    samples: np.ndarray,
+    sample_rate: int,
+    analysis_seconds: int = 15,
+    *,
+    tail: bool = False,
+) -> tuple[float, float]:
+    if sample_rate <= 0:
+        return 0.0, 0.0
+    analysis_seconds = max(4, analysis_seconds)
+    analysis_frames = min(len(samples), sample_rate * analysis_seconds)
+    if analysis_frames < sample_rate * 4:
+        return 0.0, 0.0
+    window = samples[-analysis_frames:] if tail else samples[:analysis_frames]
+    grid: tuple[float, float] | None = None
+    grid_time = 0.0
+    strong_period = 0.0
+    try:
+        detector = BeatDetector()
+        chunk_frames = max(1, sample_rate // 2)
+        for start in range(0, analysis_frames, chunk_frames):
+            stop = min(start + chunk_frames, analysis_frames)
+            detector.process(window[start:stop], sample_rate)
+            if grid is not None and stop / sample_rate - grid_time > 2.0:
+                grid = None
+                strong_period = 0.0
+            period, next_beat, confidence = detector.getRhythm()
+            if not all(np.isfinite(value) for value in (period, next_beat, confidence)):
+                continue
+            if period > 0.0 and confidence >= 0.45:
+                strong_period = period
+            if (
+                strong_period > 0.0
+                and confidence >= 0.3
+                and abs(period - strong_period) / strong_period <= 0.1
+            ):
+                grid = period, next_beat
+                grid_time = stop / sample_rate
+    except Exception:
+        _logger.exception('Rhythm detection failed')
+        return 0.0, 0.0
+    duration = analysis_frames / sample_rate
+    if grid is None or duration - grid_time > 2.0:
+        return 0.0, 0.0
+    period, next_beat = grid
+    bpm = 60.0 / period
+    if not BPM_MIN <= bpm <= BPM_MAX:
+        return 0.0, 0.0
+    phase = ((next_beat - duration) / period) % 1.0
+    return bpm, phase
+
+
 def _detect_bpm(
     samples: np.ndarray, sample_rate: int, analysis_seconds: int = 15
 ) -> float:
-    analysis_seconds = max(4, int(round(analysis_seconds)))
-    analysis_frames = min(len(samples), sample_rate * analysis_seconds)
-    if analysis_frames < sample_rate * 4:
-        return 0.0
-
-    mono = np.mean(samples[:analysis_frames], axis=1).astype(np.float64)
-    mono -= float(np.mean(mono))
-    peak = float(np.max(np.abs(mono)))
-    if peak < 1e-5:
-        return 0.0
-    mono /= peak
-
-    envelope_rate = 200
-    envelope = _onset_envelope(mono, sample_rate, envelope_rate)
-    if len(envelope) < envelope_rate * 4:
-        return 0.0
-    envelope -= float(np.mean(envelope))
-    envelope = np.maximum(envelope, 0.0)
-    energy = float(np.sum(envelope * envelope))
-    if energy < 1e-6:
-        return 0.0
-
-    corr = _fft_autocorrelation(envelope)
-    if len(corr) < 2:
-        return 0.0
-    corr /= max(float(np.max(corr)), 1e-6)
-
-    min_lag = int(envelope_rate * 60 / BPM_MAX)
-    max_lag = int(envelope_rate * 60 / BPM_MIN)
-    min_lag = max(1, min_lag)
-    max_lag = min(len(corr), max_lag)
-    if max_lag <= min_lag:
-        return 0.0
-
-    candidates = _tempo_candidates(corr, min_lag, max_lag, envelope_rate)
-    if not candidates:
-        return 0.0
-    return _canonical_bpm(_select_tempo(candidates))
-
-
-def _fft_autocorrelation(signal: np.ndarray) -> np.ndarray:
-    n = len(signal)
-    fft_size = 1 << (2 * n - 1 - 1).bit_length()
-    spectrum = np.fft.rfft(signal, n=fft_size)
-    corr = np.fft.irfft(spectrum * spectrum.conj(), n=fft_size)
-    return corr[:n]
+    return _analyze_rhythm(samples, sample_rate, analysis_seconds)[0]
 
 
 _bpm_cache: dict[tuple[str, int, int], float] = {}
@@ -1180,76 +1178,6 @@ def _detect_bpm_with_cache(
     if song_id and bpm > 0:
         _bpm_cache[(song_id, sample_rate, analysis_seconds)] = bpm
     return bpm
-
-
-def _onset_envelope(
-    mono: np.ndarray,
-    sample_rate: int,
-    envelope_rate: int,
-) -> np.ndarray:
-    hop = max(1, sample_rate // envelope_rate)
-    usable = len(mono) // hop * hop
-    if usable <= hop:
-        return np.array([], dtype=np.float64)
-
-    frames = mono[:usable].reshape(-1, hop)
-    rms = np.sqrt(np.mean(frames * frames, axis=1))
-    flux = np.maximum(np.diff(rms, prepend=rms[0]), 0.0)
-    return _moving_average(flux, max(1, int(envelope_rate * 0.04)))
-
-
-def _tempo_candidates(
-    corr: np.ndarray,
-    min_lag: int,
-    max_lag: int,
-    envelope_rate: int,
-) -> list[tuple[float, float]]:
-    scores: list[tuple[float, float]] = []
-    lag_span = max(1, max_lag - min_lag)
-    for lag in range(min_lag, max_lag + 1):
-        score = float(corr[lag])
-        if lag > min_lag:
-            score += float(corr[lag - 1]) * 0.25
-        if lag + 1 < len(corr):
-            score += float(corr[lag + 1]) * 0.25
-        score *= 1.0 + (max_lag - lag) / lag_span * 0.35
-        bpm = 60.0 * envelope_rate / lag
-        scores.append((score, bpm))
-    scores.sort(reverse=True, key=lambda item: item[0])
-    return scores[:8]
-
-
-def _select_tempo(candidates: list[tuple[float, float]]) -> float:
-    best_score, best_bpm = candidates[0]
-    octave_min = best_bpm * 1.85
-    octave_max = best_bpm * 2.15
-    octave_candidates = [
-        (score, bpm)
-        for score, bpm in candidates[1:]
-        if octave_min <= bpm <= octave_max and bpm <= BPM_MAX * 1.03
-    ]
-    if not octave_candidates:
-        return best_bpm
-
-    octave_score, octave_bpm = max(octave_candidates, key=lambda item: item[0])
-    if octave_score >= best_score * 0.88:
-        return octave_bpm
-    return best_bpm
-
-
-def _canonical_bpm(bpm: float) -> float:
-    while bpm < BPM_MIN:
-        bpm *= 2.0
-    while bpm > BPM_MAX * 1.03:
-        bpm /= 2.0
-    return float(bpm)
-
-
-def _moving_average(data: np.ndarray, window: int) -> np.ndarray:
-    if window <= 1:
-        return data
-    kernel = np.ones(window, dtype=np.float64) / window
-    return np.convolve(data, kernel, mode='same')
 
 
 def _apply_speed_transition(

@@ -2,20 +2,19 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
-from math import exp, sqrt
+from itertools import pairwise
+from math import ceil, exp, pi, sqrt
 
 import numpy as np
 from scipy.fft import rfft, rfftfreq
 from scipy.ndimage import maximum_filter1d, median_filter
 
 _WINDOW_SECONDS = 0.046
-_BAND_EDGES_HZ = (450.0, 2200.0, 8000.0)
-_PULSE_WEIGHTS = np.array([2.0, 1.2, 1.0, 0.8])
-_HARMONIC_FRAMES = 21
-_PERCUSSIVE_RADIUS = 4
-_BACKGROUND_ALPHA = 0.02
-_SPECTRUM_FLOOR_RATIO = 0.01
-_ENERGY_FLOOR_RATIO = 0.02
+_HISTORY_SECONDS = 6.0
+_TEMPO_UPDATE_SECONDS = 0.25
+_MIN_PERIOD = 60.0 / 210.0
+_MAX_PERIOD = 60.0 / 50.0
+_ONSET_GAP_SECONDS = 0.19
 _SILENCE_LEVEL = 0.002
 _ATTACK_OFFSET = 0.08
 _ATTACK_SPAN = 0.25
@@ -25,32 +24,12 @@ _KICK_WIDTH_OFFSET = 0.3
 _KICK_WIDTH_SPAN = 0.3
 _KICK_FLATNESS_OFFSET = 0.18
 _KICK_FLATNESS_SPAN = 0.42
-_KICK_FLATNESS_WEIGHT = 0.8
 _UPPER_SUPPORT_OFFSET = 0.04
 _UPPER_SUPPORT_SPAN = 0.14
 _UPPER_KICK_WIDTH_OFFSET = 0.25
 _UPPER_KICK_WIDTH_SPAN = 0.35
 _SNARE_WIDTH_OFFSET = 0.35
 _SNARE_WIDTH_SPAN = 0.25
-_POINT_FLOOR = 0.035
-_POINT_DEVIATION = 3.0
-_POINT_REFERENCE_FLOOR = 0.12
-_NOISE_FRAMES = 150
-_NOISE_WARMUP = 5
-_CANDIDATE_SECONDS = 0.9
-_CANDIDATE_FRAMES = 64
-_POINT_HISTORY = 12
-_PEAK_HISTORY = 16
-_ONSET_LEAD_SECONDS = 0.003
-_RHYTHM_UPDATE_SECONDS = 0.12
-_RHYTHM_PULSES = 180
-_RHYTHM_TREND_FRAMES = 31
-_RHYTHM_RATIOS = (1.0, 1.5, 2.0, 2.5)
-_RHYTHM_RATIOS_WIDE = (0.5, 1.0, 1.5, 2.0, 2.5)
-_RHYTHM_FAST_RATIOS = (1.0, 1.5, 2.0)
-_RHYTHM_CONFIDENCE_SCALE = 0.5
-_RHYTHM_PHASE_SPAN = 0.16
-_RHYTHM_FALLBACK_PHASE_SPAN = 0.38
 
 
 @dataclass(frozen=True)
@@ -71,28 +50,34 @@ class BeatDetector:
         self._sample_rate = 0
         self._limits = (40.0, 180.0)
         self._buffer = np.empty((0, 1), dtype=np.float32)
-        self._window = np.empty(0, dtype=np.float32)
+        self._window = np.empty(0, dtype=np.float64)
         self._hop = 0
         self._hop_seconds = self.HOP_SECONDS
         self._min_interval = self._MIN_INTERVAL
-        self._time_origin = 0
         self._samples_seen = 0
         self._bands: list[np.ndarray] = []
         self._background: np.ndarray | None = None
         self._spectra: deque[np.ndarray] = deque(maxlen=3)
-        self._harmonics: deque[np.ndarray] = deque(maxlen=_HARMONIC_FRAMES)
+        self._harmonics: deque[np.ndarray] = deque(maxlen=21)
         self._energies: deque[np.ndarray] = deque(maxlen=5)
-        self._pulses: deque[float] = deque(maxlen=500)
         self._novelties: deque[float] = deque(maxlen=3)
-        self._noise_history: deque[float] = deque(maxlen=_NOISE_FRAMES)
-        self._peaks: deque[float] = deque(maxlen=_PEAK_HISTORY)
-        self._accepted_points: deque[tuple[float, float]] = deque(maxlen=_POINT_HISTORY)
-        self._candidate_events: deque[float] = deque(maxlen=_CANDIDATE_FRAMES)
+        self._noise_history: deque[float] = deque(maxlen=150)
+        self._peaks: deque[float] = deque(maxlen=16)
+        self._candidate_events: deque[float] = deque(maxlen=64)
+        self._tempo_history: deque[float] = deque()
+        self._meter_history: deque[float] = deque()
+        self._meter_attack = 0.0
+        self._events: deque[tuple[float, float]] = deque(maxlen=160)
+        self._off_grid: float | None = None
+        self._last_peak = -10.0
+        self._last_onset = -10.0
         self._last_point = -10.0
+        self._last_tempo_update = -10.0
+        self._period = 0.0
+        self._next_beat = 0.0
+        self._confidence = 0.0
+        self._missed = 0
         self._intensity = 0.0
-        self._rhythm_period = 0.0
-        self._rhythm_confidence = 0.0
-        self._last_rhythm_update = -10.0
 
     def process(
         self,
@@ -121,7 +106,8 @@ class BeatDetector:
 
         hop_seconds = float(np.clip(hop_seconds, 0.005, 0.05))
         min_interval = float(np.clip(min_interval, 0.08, 1.0))
-        limits = (max(25.0, low_hz), max(low_hz + 30.0, high_hz))
+        low = max(25.0, float(low_hz))
+        limits = (low, max(low + 30.0, float(high_hz)))
         if (
             sample_rate != self._sample_rate
             or audio.shape[1] != self._buffer.shape[1]
@@ -131,26 +117,36 @@ class BeatDetector:
             self._configure(
                 sample_rate, audio.shape[1], limits, hop_seconds, min_interval
             )
-        elif min_interval != self._min_interval:
+        else:
             self._min_interval = min_interval
-            self._accepted_points.clear()
-            self._candidate_events.clear()
-            self._last_point = -10.0
-        self._buffer = np.concatenate((self._buffer, audio))
 
-        results = []
+        self._buffer = np.concatenate((self._buffer, audio))
+        results: list[BeatFrame] = []
         size = len(self._window)
         consumed = 0
         while len(self._buffer) - consumed >= size:
             frame = self._buffer[consumed : consumed + size]
-            self._samples_seen += self._hop
-            novelty = self._spectralNovelty(frame)
-            results.append(
-                self._pickPeak(novelty, sensitivity, smoothing, point_threshold)
+            timestamp = (self._samples_seen + size * 0.5) / sample_rate
+            novelty = self._onsetStrength(frame)
+            beat = self._finishFrame(
+                timestamp, novelty, sensitivity, smoothing, point_threshold
             )
+            if beat is not None:
+                results.append(beat)
             consumed += self._hop
+            self._samples_seen += self._hop
         self._buffer = self._buffer[consumed:].copy()
         return results
+
+    def getRhythm(self) -> tuple[float, float, float]:
+        if self._period <= 0.0 or self._confidence < 0.3 or self._sample_rate <= 0:
+            return 0.0, 0.0, 0.0
+        end = (self._samples_seen + len(self._buffer)) / self._sample_rate
+        next_beat = (
+            self._next_beat
+            + max(0, ceil((end - self._next_beat) / self._period)) * self._period
+        )
+        return self._period, next_beat, self._confidence
 
     def _configure(
         self,
@@ -169,17 +165,20 @@ class BeatDetector:
         self._hop = max(1, round(sample_rate * hop_seconds))
         self._window = np.hanning(size)
         self._buffer = np.empty((0, channels), dtype=np.float32)
-        self._time_origin = (
-            self._hop - size // 2 + round(_ONSET_LEAD_SECONDS * sample_rate)
-        )
+        duration = self._hop / sample_rate
+        self._tempo_history = deque(maxlen=max(60, ceil(_HISTORY_SECONDS / duration)))
+        self._meter_history = deque(maxlen=self._tempo_history.maxlen)
         freqs = rfftfreq(size, 1.0 / sample_rate)
         low, high = limits
-        edges = (low, high, *[edge for edge in _BAND_EDGES_HZ if edge > high])
+        middle = max(450.0, high + 250.0)
+        upper = max(2200.0, middle + 1500.0)
+        edges = (low, high, middle, upper, max(8000.0, upper + 5800.0))
         self._bands = [
-            (freqs >= start) & (freqs < end) for start, end in zip(edges, edges[1:])
+            (freqs >= start) & (freqs < end) for start, end in pairwise(edges)
         ]
 
-    def _spectralNovelty(self, frame: np.ndarray) -> float:
+    def _onsetStrength(self, frame: np.ndarray) -> float:
+        self._meter_attack = 0.0
         spectra = np.abs(rfft(frame * self._window[:, None], axis=0))
         spectrum = np.sqrt(np.mean(spectra**2, axis=1)) * (
             2.0 / float(self._window.sum())
@@ -190,13 +189,10 @@ class BeatDetector:
         if self._background is None:
             self._background = spectrum.copy()
         background = self._background
-        self._background = (
-            background * (1.0 - _BACKGROUND_ALPHA) + spectrum * _BACKGROUND_ALPHA
-        )
+        self._background = background * 0.98 + spectrum * 0.02
         self._spectra.append(spectrum)
         self._harmonics.append(spectrum)
         self._energies.append(energies)
-        self._pulses.append(float(energies @ _PULSE_WEIGHTS))
         if len(self._energies) < 5:
             return 0.0
 
@@ -204,11 +200,28 @@ class BeatDetector:
         if level < _SILENCE_LEVEL:
             return 0.0
         previous = maximum_filter1d(self._spectra[0], size=3)
-        floor = max(level * _SPECTRUM_FLOOR_RATIO, 1e-6)
+        floor = max(level * 0.01, 1e-6)
         difference = np.maximum(spectrum - previous, 0.0)
         flux = np.log1p(difference / np.maximum(background, floor))
+        relative_flux = np.log1p(difference / np.maximum(spectrum, floor))
+        low_attack = (
+            float(np.mean(relative_flux[self._bands[0]]))
+            if self._bands[0].any()
+            else 0.0
+        )
+        upper_attack = (
+            float(np.mean(relative_flux[self._bands[3]]))
+            if self._bands[3].any()
+            else 0.0
+        )
+        broadband = (
+            0.55
+            * float(np.clip((low_attack - 0.10) / 0.35, 0.0, 1.0))
+            * float(np.clip((upper_attack - 0.35) / 0.3, 0.0, 1.0))
+        )
+        self._meter_attack = broadband
         harmonic = np.min(np.asarray(self._harmonics), axis=0)
-        percussive = median_filter(spectrum, size=_PERCUSSIVE_RADIUS * 2 + 1)
+        percussive = median_filter(spectrum, size=9)
         flux *= percussive**2 / (percussive**2 + (harmonic * 2.0) ** 2 + floor**2)
         flux[spectrum < floor] = 0.0
 
@@ -224,11 +237,10 @@ class BeatDetector:
             for band in self._bands
         ])
         flatness = np.array([
-            self._spectralFlatness(difference[band]) if band.any() else 0.0
-            for band in self._bands
+            self._spectralFlatness(difference[band]) for band in self._bands
         ])
 
-        energy_floor = max(level * _ENERGY_FLOOR_RATIO, 1e-6)
+        energy_floor = max(level * 0.02, 1e-6)
         attack = np.log((energies + energy_floor) / (self._energies[-3] + energy_floor))
         previous_attack = np.log(
             (self._energies[-3] + energy_floor) / (self._energies[0] + energy_floor)
@@ -251,9 +263,7 @@ class BeatDetector:
             0.0,
             1.0,
         )
-        kick_shape = (
-            1.0 - _KICK_FLATNESS_WEIGHT
-        ) * low_width + _KICK_FLATNESS_WEIGHT * low_flat
+        kick_shape = 0.2 * low_width + 0.8 * low_flat
         kick = evidence[0] * kick_shape * (0.005 + 0.995 * upper_support)
         upper_kick = (
             evidence[1]
@@ -268,7 +278,7 @@ class BeatDetector:
         snare = sqrt(evidence[2] * evidence[3]) * np.clip(
             (min(widths[2:]) - _SNARE_WIDTH_OFFSET) / _SNARE_WIDTH_SPAN, 0.0, 1.0
         )
-        return float(max(kick, upper_kick, snare))
+        return float(max(kick, upper_kick, snare, broadband))
 
     @staticmethod
     def _spectralFlatness(values: np.ndarray) -> float:
@@ -277,168 +287,293 @@ class BeatDetector:
             return 0.0
         return float(np.exp(np.mean(np.log(positive))) / np.mean(positive))
 
-    def _pickPeak(
-        self, novelty: float, sensitivity: float, smoothing: float, threshold: float
-    ) -> BeatFrame:
+    def _finishFrame(
+        self,
+        timestamp: float,
+        novelty: float,
+        sensitivity: float,
+        smoothing: float,
+        point_threshold: float,
+    ) -> BeatFrame | None:
         hop_seconds = self._hop / self._sample_rate
-        timestamp = (self._samples_seen - self._time_origin) / self._sample_rate
-        release = 0.10 + float(np.clip(smoothing, 0.0, 0.99)) * 0.24
-        self._intensity *= exp(-hop_seconds / release)
+        time = timestamp - hop_seconds
         self._novelties.append(novelty)
+        history = np.asarray(self._noise_history)
+        baseline = float(np.median(history)) if len(history) else 0.0
+        deviation = (
+            float(np.median(np.abs(history - baseline))) if len(history) else 0.0
+        )
+        floor = max(0.035, baseline + deviation * 3.0)
+        self._tempo_history.append(
+            min(2.0, max(0.0, novelty - floor) / max(0.12, floor))
+        )
+        self._meter_history.append(self._meter_attack)
+        smoothing = float(np.clip(smoothing, 0.0, 0.99))
+        release = 0.10 + smoothing * 0.24
+        self._intensity *= exp(-hop_seconds / release)
+        threshold = float(np.clip(point_threshold, 0.01, 1.0))
         is_point = False
-        if len(self._novelties) == 3 and len(self._noise_history) >= _NOISE_WARMUP:
+        candidate = False
+        new_event = False
+        score = 0.0
+        peak = 0.0
+        if len(self._novelties) == 3 and len(history) >= 5:
             left, peak, right = self._novelties
-            if peak > left and peak >= right:
-                history = np.asarray(self._noise_history)
-                baseline = float(np.median(history))
-                deviation = float(np.median(np.abs(history - baseline)))
-                floor = max(_POINT_FLOOR, baseline + deviation * _POINT_DEVIATION)
-                if peak > floor:
-                    reference = max(
-                        float(np.median(self._peaks)) if self._peaks else peak,
-                        _POINT_REFERENCE_FLOOR,
-                    )
-                    score = min(
-                        1.0,
-                        sqrt((peak - floor) / reference) * max(0.0, sensitivity),
-                    )
-                    self._candidate_events.append(timestamp)
-                    while (
-                        self._candidate_events
-                        and timestamp - self._candidate_events[0] > _CANDIDATE_SECONDS
-                    ):
-                        self._candidate_events.popleft()
+            if peak > left and peak >= right and peak > floor:
+                reference = max(
+                    float(np.median(self._peaks)) if self._peaks else peak,
+                    0.12,
+                )
+                raw_score = min(1.0, sqrt((peak - floor) / reference))
+                score = min(1.0, raw_score * max(0.0, sensitivity))
+                candidate = True
+                self._candidate_events.append(time)
+                while self._candidate_events and time - self._candidate_events[0] > 0.9:
+                    self._candidate_events.popleft()
+                if raw_score >= 0.25 and time - self._last_peak >= _ONSET_GAP_SECONDS:
+                    self._events.append((time, raw_score))
+                    self._last_peak = time
+                    self._last_onset = time
+                    new_event = True
+                attack = 0.24 + 0.20 * (1.0 - smoothing)
+                self._intensity += (score - self._intensity) * attack
 
-                    rhythm_confidence, rhythm_factor = self._rhythmSupport(timestamp)
-                    density = len(self._candidate_events)
-                    if rhythm_confidence < 0.45 and density > 5:
-                        crowding = min(0.86, 0.18 * (density - 5))
-                        rhythm_factor *= 1.0 - crowding
-                    score *= rhythm_factor
+        while self._events and time - self._events[0][0] > _HISTORY_SECONDS:
+            self._events.popleft()
+        self._updateTempo(time)
+        if self._period > 0.0 and self._confidence >= 0.3:
+            tolerance = max(
+                1.5 * hop_seconds,
+                min(0.08, self._period * 0.12),
+            )
+            while self._next_beat + tolerance < time:
+                self._next_beat += self._period
+                self._missed += 1
+                self._confidence *= 0.65 if self._missed >= 2 else 0.8
+            if (
+                candidate
+                and score >= threshold
+                and abs(time - self._next_beat) <= tolerance
+            ):
+                correction = (time - self._next_beat) * 0.15
+                self._next_beat += self._period + correction
+                self._missed = 0
+                self._off_grid = None
+                self._confidence = min(1.0, self._confidence + 0.08)
+                if time - self._last_point >= self._min_interval:
+                    is_point = True
+                    self._last_point = time
+            elif new_event and score >= max(0.35, threshold) and self._missed >= 1:
+                previous = self._off_grid
+                if previous is not None:
+                    new_period = time - previous
+                    if _MIN_PERIOD <= new_period <= _MAX_PERIOD:
+                        self._period = new_period
+                        self._next_beat = time + new_period
+                        self._confidence = max(0.55, self._confidence * 0.8)
+                        self._missed = 0
+                        if time - self._last_point >= self._min_interval:
+                            is_point = True
+                            self._last_point = time
+                self._off_grid = None if is_point else time
+            if self._confidence < 0.25:
+                self._period = 0.0
 
-                    attack = 0.24 + 0.20 * (1.0 - float(np.clip(smoothing, 0.0, 0.99)))
-                    self._intensity += (score - self._intensity) * attack
+        if (
+            not is_point
+            and candidate
+            and (self._period == 0.0 or self._confidence < 0.35)
+            and time - self._last_point >= max(self._min_interval, _MIN_PERIOD * 0.94)
+        ):
+            density = len(self._candidate_events)
+            crowding = 1.0
+            if density > 5:
+                crowding = 1.0 - min(0.86, 0.18 * (density - 5))
+            density_gate = 1.0 + min(2.5, max(0, density - 5) * 0.3)
+            required = threshold * density_gate
+            if time - self._last_point > _MAX_PERIOD + 0.1:
+                required = max(0.6, required)
+            if score * crowding >= required:
+                is_point = True
+                self._last_point = time
 
-                    if timestamp - self._last_point >= self._min_interval:
-                        density_gate = 1.0 + min(2.5, max(0, density - 5) * 0.3)
-                        effective_threshold = (
-                            max(0.01, threshold)
-                            * density_gate
-                            * (1.0 - 0.30 * rhythm_confidence)
-                        )
-                        is_point = score >= effective_threshold
-                        if is_point:
-                            self._last_point = timestamp
-                            self._peaks.append(peak)
-                            if self._accepted_points:
-                                interval = timestamp - self._accepted_points[-1][0]
-                                if interval >= self._min_interval:
-                                    self._accepted_points.append((timestamp, score))
-                            else:
-                                self._accepted_points.append((timestamp, score))
+        if is_point:
+            self._peaks.append(peak)
+        if self._period == 0.0:
+            self._off_grid = None
+
         self._noise_history.append(novelty)
         if self._intensity < 0.005:
             self._intensity = 0.0
-        return BeatFrame(timestamp, self._intensity, is_point)
-
-    def _rhythmSupport(self, timestamp: float) -> tuple[float, float]:
-        if timestamp - self._last_rhythm_update >= _RHYTHM_UPDATE_SECONDS:
-            period, confidence = self._estimateRhythm()
-            if period > 0.0:
-                if self._rhythm_period > 0.0:
-                    relative_change = (
-                        abs(period - self._rhythm_period) / self._rhythm_period
-                    )
-                    if (
-                        relative_change > 0.35
-                        and confidence < self._rhythm_confidence + 0.15
-                    ):
-                        period = self._rhythm_period
-                if self._rhythm_period > 0.0:
-                    self._rhythm_period = self._rhythm_period * 0.7 + period * 0.3
-                    self._rhythm_confidence = max(
-                        self._rhythm_confidence * 0.7, confidence
-                    )
-                else:
-                    self._rhythm_period = period
-                    self._rhythm_confidence = confidence
-            self._last_rhythm_update = timestamp
-
-        if self._rhythm_period > 0.0 and self._rhythm_confidence >= 0.3:
-            if not self._accepted_points:
-                return self._rhythm_confidence, 1.0
-            elapsed = timestamp - self._accepted_points[-1][0]
-            if elapsed < self._min_interval:
-                return self._rhythm_confidence, 0.22
-            period = self._rhythm_period
-            ratios: tuple[float, ...] = _RHYTHM_RATIOS
-            if self._rhythm_confidence >= 0.72:
-                ratios = _RHYTHM_RATIOS_WIDE
-            error = min(
-                abs(elapsed - period * ratio) / (period * ratio) for ratio in ratios
-            )
-            phase = float(np.clip(error / _RHYTHM_PHASE_SPAN, 0.0, 1.0))
-            factor = 1.0 - self._rhythm_confidence * 0.94 * phase
-            return self._rhythm_confidence, max(0.04, factor)
-
-        if len(self._accepted_points) < 3:
-            return self._rhythm_confidence, 1.0
-        intervals = np.diff(np.asarray([point[0] for point in self._accepted_points]))
-        intervals = intervals[(intervals >= self._min_interval) & (intervals <= 1.5)]
-        if len(intervals) < 2:
-            return 0.0, 1.0
-        period = float(np.median(intervals))
-        if period <= 0.0:
-            return 0.0, 1.0
-        deviation = float(np.median(np.abs(intervals - period))) / period
-        confidence = float(np.clip(1.0 - deviation / 0.30, 0.0, 1.0))
-        elapsed = timestamp - self._accepted_points[-1][0]
-        if elapsed < self._min_interval:
-            return confidence, 0.35
-
-        error = min(
-            abs(elapsed - period * ratio) / (period * ratio)
-            for ratio in _RHYTHM_FAST_RATIOS
+        return (
+            BeatFrame(time, self._intensity, is_point)
+            if len(self._novelties) == 3
+            else None
         )
-        phase = float(np.clip(error / _RHYTHM_FALLBACK_PHASE_SPAN, 0.0, 1.0))
-        factor = 1.0 - confidence * 0.62 * phase
-        return confidence, max(0.30, factor)
 
-    def _estimateRhythm(self) -> tuple[float, float]:
-        if len(self._pulses) < _RHYTHM_PULSES:
-            return 0.0, 0.0
-        signal = np.log1p(np.fromiter(self._pulses, dtype=np.float64))
-        signal -= median_filter(signal, size=_RHYTHM_TREND_FRAMES, mode='nearest')
-        signal = np.maximum(signal, 0.0)
-        if float(np.max(signal)) <= 1e-8:
-            return 0.0, 0.0
+    def _updateTempo(self, timestamp: float) -> None:
+        if timestamp - self._last_tempo_update < _TEMPO_UPDATE_SECONDS:
+            return
+        self._last_tempo_update = timestamp
+        stale_limit = max(1.2, self._period * 2.0)
+        if self._last_onset >= 0.0 and timestamp - self._last_onset > stale_limit:
+            self._period = 0.0
+            self._confidence = 0.0
+            self._missed = 0
+            self._events.clear()
+            self._tempo_history.clear()
+            self._meter_history.clear()
+            self._off_grid = None
+            return
+
+        period, phase, confidence = self._estimateTempo()
+        if confidence < 0.35:
+            self._confidence *= 0.94
+        elif (
+            self._period == 0.0
+            or self._confidence < 0.28
+            or (
+                abs(period - self._period) / self._period > 0.1
+                and self._missed >= 2
+                and confidence >= 0.5
+            )
+        ):
+            if confidence >= 0.45:
+                self._period = period
+                self._confidence = confidence
+                self._next_beat = (
+                    phase + ceil((timestamp - 0.05 - phase) / period) * period
+                )
+                self._missed = 0
+        elif abs(period - self._period) / self._period <= 0.1:
+            candidate_beat = phase + round((self._next_beat - phase) / period) * period
+            correction = float(np.clip(candidate_beat - self._next_beat, -0.04, 0.04))
+            self._next_beat += correction * 0.2
+            self._period = self._period * 0.85 + period * 0.15
+            self._confidence = self._confidence * 0.8 + confidence * 0.2
+        else:
+            self._confidence *= 0.96
+        if self._confidence < 0.25:
+            self._period = 0.0
+
+    def _estimateTempo(self) -> tuple[float, float, float]:
+        duration = self._hop / self._sample_rate
+        n = len(self._tempo_history)
+        if n * duration < 2.5 or len(self._events) < 4:
+            return 0.0, 0.0, 0.0
+        signal = np.asarray(self._tempo_history).copy()
         signal -= float(np.mean(signal))
-        norm = float(np.linalg.norm(signal))
-        if norm <= 1e-8:
-            return 0.0, 0.0
-        min_lag = max(24, round(0.24 / self._hop_seconds))
-        max_lag = min(len(signal) // 2, round(0.6 / self._hop_seconds))
-        if max_lag <= min_lag:
-            return 0.0, 0.0
-        scores = np.zeros(max_lag + 1, dtype=np.float64)
+        signal *= np.linspace(0.5, 1.0, n)
+        if float(np.dot(signal, signal)) < 0.05:
+            return 0.0, 0.0, 0.0
+
+        min_lag = max(1, round(_MIN_PERIOD / duration))
+        max_lag = min(round(_MAX_PERIOD / duration), n // 3)
+        if max_lag < min_lag:
+            return 0.0, 0.0, 0.0
+        correlations = np.zeros(max_lag + 2, dtype=np.float64)
         for lag in range(min_lag, max_lag + 1):
             left = signal[:-lag]
             right = signal[lag:]
-            denominator = float(np.linalg.norm(left) * np.linalg.norm(right))
+            denominator = sqrt(float(np.dot(left, left) * np.dot(right, right)))
             if denominator > 1e-8:
-                scores[lag] = float(np.dot(left, right) / denominator)
-        best = float(np.max(scores))
-        if best < 0.16:
-            return 0.0, 0.0
-        candidates = [
-            lag
-            for lag in range(min_lag, max_lag + 1)
-            if scores[lag] >= best * 0.9
-            and scores[lag] >= scores[max(min_lag, lag - 1)]
-            and scores[lag] >= scores[min(max_lag, lag + 1)]
-        ]
-        lag = min(candidates) if candidates else int(np.argmax(scores))
-        confidence = float(
-            np.clip((scores[lag] - 0.12) / _RHYTHM_CONFIDENCE_SCALE, 0.0, 1.0)
+                correlations[lag] = float(np.dot(left, right)) / denominator
+
+        event_times = np.fromiter(
+            (event[0] for event in self._events), dtype=np.float64
         )
-        return lag * self._hop_seconds, confidence
+        event_weights = np.fromiter(
+            (event[1] for event in self._events), dtype=np.float64
+        )
+        total_weight = float(np.sum(event_weights))
+        gaps = event_times[None, :] - event_times[:, None]
+        pair_weights = event_weights[None, :] * event_weights[:, None]
+        best_score = 0.0
+        best_lag = 0
+        best_period = 0.0
+        best_phase = 0.0
+        for lag in range(min_lag, max_lag + 1):
+            correlation = correlations[lag]
+            if (
+                correlation < 0.2
+                or correlation < correlations[lag - 1]
+                or correlation < correlations[lag + 1]
+            ):
+                continue
+            period = lag * duration
+            multiples = np.rint(gaps / period)
+            intervals = gaps / np.maximum(multiples, 1.0)
+            valid = (
+                (multiples >= 1.0)
+                & (multiples <= 3.0)
+                & (np.abs(intervals - period) <= period * 0.12)
+            )
+            if np.count_nonzero(valid) >= 3:
+                period = float(
+                    np.average(intervals[valid], weights=pair_weights[valid])
+                )
+            period = float(np.clip(period, _MIN_PERIOD, _MAX_PERIOD))
+            phasor = np.dot(event_weights, np.exp(2j * pi * event_times / period))
+            concentration = abs(phasor) / max(total_weight, 1e-8)
+            score = correlation * 0.77 + concentration * 0.23
+            if self._period > 0.0:
+                difference = abs(period - self._period) / self._period
+                if difference < 0.08:
+                    score += 0.04 * self._confidence
+            if score > best_score + 0.025 or (
+                score >= best_score - 0.025
+                and (best_period == 0.0 or period < best_period)
+            ):
+                best_score = score
+                best_lag = lag
+                best_period = period
+                best_phase = float(np.angle(phasor) % (2.0 * pi)) * period / (2.0 * pi)
+        if best_lag > 0 and best_lag * 2 <= max_lag:
+            meter = np.asarray(self._meter_history)
+            meter_total = float(np.sum(meter))
+            if meter_total > 0.1:
+                meter_signal = (meter - float(np.mean(meter))) * np.linspace(
+                    0.5, 1.0, n
+                )
+                meter_correlations = []
+                meter_phases = []
+                relative_times = np.arange(n) * duration
+                for lag in (best_lag, best_lag * 2):
+                    left = meter_signal[:-lag]
+                    right = meter_signal[lag:]
+                    denominator = sqrt(float(np.dot(left, left) * np.dot(right, right)))
+                    meter_correlations.append(
+                        float(np.dot(left, right)) / denominator
+                        if denominator > 1e-8
+                        else 0.0
+                    )
+                    period = lag * duration
+                    phasor = np.dot(meter, np.exp(2j * pi * relative_times / period))
+                    meter_phases.append(abs(phasor) / meter_total)
+                if (
+                    correlations[best_lag] < 0.78
+                    and meter_correlations[1] > meter_correlations[0] + 0.1
+                    and meter_phases[1] >= meter_phases[0] * 0.85
+                    and correlations[best_lag * 2] >= 0.25
+                ):
+                    best_period = min(best_period * 2.0, _MAX_PERIOD)
+                    start_time = (
+                        self._samples_seen + len(self._window) * 0.5
+                    ) / self._sample_rate - (n - 1) * duration
+                    phasor = np.dot(
+                        meter,
+                        np.exp(2j * pi * (start_time + relative_times) / best_period),
+                    )
+                    best_phase = (
+                        float(np.angle(phasor) % (2.0 * pi)) * best_period / (2.0 * pi)
+                    )
+                    best_score = max(
+                        best_score,
+                        correlations[best_lag * 2] * 0.77
+                        + meter_phases[1] * 0.23
+                        + 0.05,
+                    )
+        if best_score < 0.53:
+            return 0.0, 0.0, 0.0
+        confidence = float(np.clip((best_score - 0.32) / 0.5, 0.0, 1.0))
+        return best_period, best_phase, confidence

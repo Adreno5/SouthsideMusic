@@ -1354,6 +1354,16 @@ TRANSLATIONS: dict[str, list[str]] = {
     'quality_dialog.switch_title': ['Quality Switch', '音质切换'],
     'quality_dialog.switch_content': ['Switching to {quality}', '正在切换到 {quality}'],
     'quality_dialog.p_title': ['Qualities', '音质'],
+    'quality_dialog.failed': ['Switch Failed', '切换失败'],
+    'quality_dialog.failed_content': [
+        'Error switching to {quality}',
+        '切换到 {quality} 失败',
+    ],
+    'quality_dialog.success': ['Switched Successfully', '切换成功'],
+    'quality_dialog.success_content': [
+        'Switched to {quality}',
+        '成功切换到 {quality}',
+    ],
 }
 
 

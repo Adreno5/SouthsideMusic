@@ -10,6 +10,7 @@ dependencies = [
     "hpyt>=1.4.0",
     "mutagen>=1.48.1",
     "numpy>=2.5.3",
+    "onnxruntime==1.30.0",
     "pillow>=12.3.0",
     "pydub>=0.25.1",
     "psutil>=7.2.0",
@@ -33,6 +34,7 @@ dependencies = [
     "winrt-windows-media-interop>=3.2.1",
     "winrt-windows-foundation>=3.2.1",
     "winrt-windows-storage-streams>=3.2.1",
+    "scipy-stubs~=1.18.1",
 ]
 
 [dependency-groups]

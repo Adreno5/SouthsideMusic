@@ -547,6 +547,11 @@ if __name__ == '__main__':
 
     app.setStyleSheet(f'color: {"white" if themeModule.isDark() else "black"};')
     setTheme(Theme.LIGHT if themeModule.isLight() else Theme.DARK)
+    themeModule.syncSystemThemeColor()
+
+    theme_color_timer = _ims.QTimer(app)
+    theme_color_timer.timeout.connect(themeModule.syncSystemThemeColor)
+    theme_color_timer.start(1000)
 
     app.processEvents()
 

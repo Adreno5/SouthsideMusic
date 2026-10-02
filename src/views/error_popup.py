@@ -65,4 +65,6 @@ class ErrorPopupWindow(QDialog):
         self.setFixedSize(QApplication.primaryScreen().size() * 0.4)
 
         self.show()
+        self.activateWindow()
+        self.raise_()
         return super().exec()

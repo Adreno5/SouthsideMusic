@@ -1,3 +1,5 @@
+from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
+
 from PySide6.QtWidgets import (
     QAbstractButton,
     QAbstractGraphicsShapeItem,

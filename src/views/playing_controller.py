@@ -23,8 +23,8 @@ from imports import (
     LYRIC_LINE_CHANGED,
     PLAY_STATE_CHANGED,
     PLAY_START_PLAYLIST,
-    PLAYLAST,
-    PLAYNEXT,
+    PLAY_LAST,
+    PLAY_NEXT,
     POST_THEME_CHANGED,
     REFRESH_RATE_CHANGED,
     REPAINT,
@@ -303,8 +303,8 @@ class PlayingController(QWidget):
         self.play_pausebtn.clicked.connect(self.toggle)
         self.playlist_btn.clicked.connect(self.onTogglePlaylist)
 
-        self.next_btn.clicked.connect(lambda: event_bus.emit(PLAYNEXT))
-        self.last_btn.clicked.connect(lambda: event_bus.emit(PLAYLAST))
+        self.next_btn.clicked.connect(lambda: event_bus.emit(PLAY_NEXT))
+        self.last_btn.clicked.connect(lambda: event_bus.emit(PLAY_LAST))
 
         global_layout.addWidget(self.cover_label)
         global_layout.addWidget(self.middle_widget)

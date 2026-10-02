@@ -7,6 +7,8 @@ import traceback
 from pathlib import Path
 import atexit
 
+from services.events import event_bus, SECOND_TICK
+
 _SRC_DIR = os.path.abspath(os.path.dirname(__file__))
 if _SRC_DIR in sys.path:
     sys.path.remove(_SRC_DIR)
@@ -451,9 +453,9 @@ def _handle_ws_message(message: str) -> None:
                 return
             player_obj.setPosition(max(0.0, position))
         elif command == 'next':
-            _ims.event_bus.emit(_ims.PLAYNEXT)
+            _ims.event_bus.emit(_ims.PLAY_NEXT)
         elif command == 'previous':
-            _ims.event_bus.emit(_ims.PLAYLAST)
+            _ims.event_bus.emit(_ims.PLAY_LAST)
 
     _schedule_ws_task(_run)
 
@@ -549,9 +551,7 @@ if __name__ == '__main__':
     setTheme(Theme.LIGHT if themeModule.isLight() else Theme.DARK)
     themeModule.syncSystemThemeColor()
 
-    theme_color_timer = _ims.QTimer(app)
-    theme_color_timer.timeout.connect(themeModule.syncSystemThemeColor)
-    theme_color_timer.start(1000)
+    event_bus.subscribe(SECOND_TICK, themeModule.syncSystemThemeColor)
 
     app.processEvents()
 

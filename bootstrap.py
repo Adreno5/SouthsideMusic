@@ -126,9 +126,9 @@ _ARTIFACT_PROBES = (
     'https://pypi.org/packages/d1/d6/'
     '3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/'
     'colorama-0.4.6-py2.py3-none-any.whl',
-    'https://pypi.org/packages/f9/1c/'
-    '01bfd571a64e7f270e6bab5e3777debe0edc56759233ce84f27dec92d14/'
-    'tqdm-4.67.3-py3-none-any.whl',
+    'https://pypi.org/packages/a7/03/'
+    '921a3d3c75785aca9ebfbfcabfbc3a1be12e2ab5265deb026d55a5a3f83e/'
+    'tqdm-4.70.1-py3-none-any.whl',
 )
 _ARTIFACT_PROBED = [False]
 _WORKING_ARTIFACT_HOSTS: list[str] = []

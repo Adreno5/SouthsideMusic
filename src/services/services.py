@@ -2,6 +2,8 @@ import logging
 import os
 import threading
 import time
+
+from services.events import SECOND_TICK
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -60,6 +62,10 @@ class EventsServices(QObject):
             lambda: event_bus.emit(REFRESH_RATE_CHANGED)
         )
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
+
+        self.sec_timer = QTimer(self)
+        self.sec_timer.timeout.connect(lambda: event_bus.emit(SECOND_TICK))
+        self.sec_timer.start(1000)
 
         def _startListen():
             theme.getDarkdetect().listener(

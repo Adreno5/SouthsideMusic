@@ -13,8 +13,8 @@ from imports import QObject, QTimer
 from services.events.event_bus import event_bus
 from services.events.events import (
     PLAY_STATE_CHANGED,
-    PLAYLAST,
-    PLAYNEXT,
+    PLAY_LAST,
+    PLAY_NEXT,
     SONG_CHANGED,
 )
 from winrt.windows.media import (
@@ -266,9 +266,9 @@ class SmtcController(QObject):
         ):
             self._setPlaying(button == SystemMediaTransportControlsButton.PLAY)
         elif button == SystemMediaTransportControlsButton.NEXT:
-            event_bus.emit(PLAYNEXT)
+            event_bus.emit(PLAY_NEXT)
         elif button == SystemMediaTransportControlsButton.PREVIOUS:
-            event_bus.emit(PLAYLAST)
+            event_bus.emit(PLAY_LAST)
 
     def _onButtonPressed(
         self,

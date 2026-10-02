@@ -692,8 +692,8 @@ TRANSLATIONS: dict[str, list[str]] = {
     ],
     'setting_page.afk_secs': ['AFK Timeout (secs)', 'AFK 时长（秒）'],
     'setting_page.afk_secs_desc': [
-        'weaken animations after the specified number of seconds to save resources',
-        '在指定秒数后削弱动画效果，以节省资源',
+        'weaken animations after specified seconds of inactivity to save resources',
+        '在无操作指定秒数后削弱动画效果，以节省资源',
     ],
     'setting_page.enable_fft_driven_visual_effects': [
         'enable FFT-driven visual effects',

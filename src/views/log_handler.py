@@ -8,6 +8,7 @@ import shutil
 import re
 import sys
 import threading
+from services.events import SECOND_TICK
 from typing import TextIO, Optional
 import ctypes
 from ctypes import wintypes
@@ -72,9 +73,10 @@ class LogHandler(logging.Handler):
 
         self.terminal_width = shutil.get_terminal_size().columns
 
-        event_bus.subscribe(TERMINAL_SIZE_CHANGED, self._onTerminalSizeChanged)
+        event_bus.subscribe(TERMINAL_SIZE_CHANGED, self._refreshTerminalWidth)
+        event_bus.subscribe(SECOND_TICK, self._refreshTerminalWidth)
 
-    def _onTerminalSizeChanged(self):
+    def _refreshTerminalWidth(self):
         self.terminal_width = shutil.get_terminal_size().columns
 
     def emit(self, record: logging.LogRecord) -> None:

@@ -58,9 +58,9 @@ from services.events.events import (
     PLAYBACK_IMAGE_LOADED,
     PLAYBACK_LYRICS_UPDATED,
     PLAYBACK_SONG_LOADING,
-    PLAYLAST,
+    PLAY_LAST,
     PLAYLIST_CHANGED,
-    PLAYNEXT,
+    PLAY_NEXT,
     SONG_CHANGED,
     SONG_FINISH,
     START_CROSSFADE,
@@ -195,8 +195,8 @@ class PlayingManager:
     def _bindEvents(self) -> None:
         event_bus.subscribe(SONG_CHANGED, self._onSongChangedEvent)
         event_bus.subscribe(SONG_FINISH, self.onSongFinish)
-        event_bus.subscribe(PLAYNEXT, lambda: self.playNext(True))
-        event_bus.subscribe(PLAYLAST, self.playLast)
+        event_bus.subscribe(PLAY_NEXT, lambda: self.playNext(True))
+        event_bus.subscribe(PLAY_LAST, self.playLast)
         event_bus.subscribe(PLAY_STORABLE, self.playStorable)
         event_bus.subscribe(PLAY_PLAYLIST_STORABLE, self.playPlaylistStorable)
         event_bus.subscribe(PLAY_SONG_AT_INDEX, self.playSongAtIndex)

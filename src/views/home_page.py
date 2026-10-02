@@ -1,3 +1,9 @@
+import PySide6
+from PySide6.QtCore import QRect, QEvent
+from PySide6.QtGui import QColor
+from qfluentwidgets import FlowLayout
+from core import theme
+from services.events import SECOND_TICK
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -6,6 +12,8 @@ from core.backend import getBackend
 from core.models import CloudFolderInfo, SongStorable
 from core.qt_utils import removeWidgets
 from imports import (
+    QPainter,
+    QLinearGradient,
     PLAYLIST_CHANGED,
     PLAY_STORABLE,
     VIEW_FOLDER,
@@ -23,7 +31,7 @@ from imports import (
     SubtitleLabel,
     TitleLabel,
     bindText,
-    event_bus,
+    event_bus
 )
 from views.folder_card import CloudFolderCard
 from views.list_widget import SScrollArea
@@ -235,14 +243,10 @@ class HomePage(SScrollArea):
         contents_layout = QVBoxLayout()
         contents_widget.setLayout(contents_layout)
 
-        title_label = TitleLabel('')
-        bindText(title_label, 'home_page.title')
-        contents_layout.addWidget(title_label)
-
         welcome_layout = QHBoxLayout()
         welcome_layout.setSpacing(0)
         welcome_layout.addSpacerItem(
-            QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+            QSpacerItem(15, 0, QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         )
         welcome_label = SubtitleLabel('')
         bindText(welcome_label, 'home_page.welcome_back')
@@ -279,63 +283,15 @@ class HomePage(SScrollArea):
         mode_cards_layout.addWidget(self.similar_songs_card)
         contents_layout.addLayout(mode_cards_layout)
 
-        hbox = QHBoxLayout()
-        hbox.setSpacing(12)
-        title_label = SubtitleLabel('')
-        bindText(title_label, 'home_page.recommend_folders')
-        hbox.addWidget(title_label)
-        self.folders_counter = NumberViewer(
-            self.ctx.harmony_font_family, self.ctx, 15, 1.3
-        )
-        hbox.addWidget(self.folders_counter)
-        self.recommend_folders_layout = SFlowLayout()
-        self.recommend_folders_layout.setAnimation(1000)
-        contents_layout.addLayout(hbox)
-        contents_layout.addLayout(self.recommend_folders_layout)
-
-        contents_layout.addSpacerItem(
-            QSpacerItem(
-                0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-            )
-        )
-        contents_layout.addSpacerItem(
-            QSpacerItem(
-                0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-            )
-        )
-
         self.setWidgetResizable(True)
         self.setWidget(contents_widget)
 
-    def fetchDailyRecommend(self):
-        removeWidgets(self.recommend_folders_layout)
+        self.setAutoFillBackground(False)
 
-        self.folders_counter.setText('0')
-        self.folders_counter.y_map.clear()
+        self.viewport().setAutoFillBackground(False)
+        contents_widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
-        def _fetchFolders():
-            folders: list[CloudFolderInfo] = []
-            idx = -1
-
-            def add():
-                nonlocal folders, idx
-                idx += 1
-                if idx >= len(folders):
-                    return
-                inf = folders[idx]
-                card = CloudFolderCard(inf, self.width() / 4 - 2, self.ctx)
-                card.clicked.connect(lambda f=inf: event_bus.emit(VIEW_FOLDER, f))
-                self.recommend_folders_layout.addWidget(card)
-
-                QTimer.singleShot(100, add)
-
-            folders = getBackend().getDailyRecommendFolders()
-            self.ctx.addScheduledTask(
-                lambda: self.folders_counter.setText(str(len(folders)))
-            )
-            self.ctx.addScheduledTask(add)
-
-        asyncTask(_fetchFolders, (), self)
+        event_bus.subscribe(SECOND_TICK, self.update)
 
     def _playSong(self, song: SongStorable) -> None:
         event_bus.emit(PLAY_STORABLE, song)
@@ -345,3 +301,27 @@ class HomePage(SScrollArea):
         insert_index = self.ctx.playing_manager.current_index + 2
         playlist.insert(insert_index, song)
         event_bus.emit(PLAYLIST_CHANGED)
+
+    def viewportEvent(self, event):
+        ret = super().viewportEvent(event)
+
+        if event.type() == QEvent.Type.Paint:
+            vp = self.viewport()
+            h, w = vp.height(), vp.width()
+
+            painter = QPainter(vp)
+            gradient = QLinearGradient(w * 0.1, h * 0.8, w * 0.11, h)
+            if theme.isDark():
+                gradient.setColorAt(0, QColor(0, 0, 0, 0))
+            else:
+                gradient.setColorAt(0, QColor(255, 255, 255, 0))
+            s = theme.getSystemThemeColor()
+            s.setAlpha(12)
+            gradient.setColorAt(1, s)
+
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(gradient)
+            painter.drawRect(QRect(0, 0, w, h))
+            painter.end()
+
+        return ret

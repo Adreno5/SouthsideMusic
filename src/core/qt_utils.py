@@ -14,6 +14,8 @@ def removeWidgets(layout: QLayout) -> None:
         item = layout.takeAt(0)
         if not item:
             continue
+        if not hasattr(item, 'widget'):
+            continue
         widget = item.widget()
         if widget is not None:
             releaseWidget(widget)

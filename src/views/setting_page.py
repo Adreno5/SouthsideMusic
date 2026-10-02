@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import logging
+from services.events import (
+    LYRICS_SCROLLING_DURATION_CHANGED,
+    LIST_SCROLLING_DURATION_CHANGED,
+)
 
 from typing import TYPE_CHECKING, Callable, cast, override
 
@@ -325,6 +329,7 @@ class SettingPage(QWidget):
         self._refreshAnchorBox()
         if hasattr(self, 'target_lufs_label'):
             self.target_lufs_label.setText(tr('setting_page.target_lufs_value'))
+        self.reloadAllLayouts()
 
     def _initOptions(self) -> None:
         lw = self._launchwindow
@@ -745,29 +750,80 @@ class SettingPage(QWidget):
 
     def _addLyricsSection(self) -> None:
         self.addSection(
-            'setting_page.lyrics',
-            'setting_page.smoothing_controls_for_the_main_lyrics_animation',
+            'setting_page.animations',
+            'setting_page.animations_desc',
             advanced=True,
         )
 
-        self.addNumberSetting(
-            'setting_page.lyrics_smooth_factor',
-            'setting_page.larger_value_means_a_more_sudden_change',
-            0,
-            1,
-            0.002,
-            'lyrics_smooth_factor',
+        self.lyrics_physics_boxes = []
+
+        self.lyrics_type_box = self.addChoiceSetting(
+            'setting_page.lyrics_animation_type',
+            'setting_page.lyrics_animation_type_desc',
+            'lyrics_animation_type',
+            [('Physics', 'physics'), ('Scrolling', 'scrolling')],
+            onChanged=self._onLyricsAnimationTypeChanged,
             advanced=True,
         )
-        self.addNumberSetting(
-            'setting_page.acceleration_smooth_factor',
-            'setting_page.smaller_value_means_a_more_bounce_effect',
-            0,
-            1,
-            0.002,
-            'acceleration_smooth_factor',
-            advanced=True,
+        self.lyrics_physics_boxes.append(
+            self.addNumberSetting(
+                'setting_page.lyrics_smooth_factor',
+                'setting_page.larger_value_means_a_more_sudden_change',
+                0,
+                1,
+                0.002,
+                'lyrics_smooth_factor',
+                advanced=True,
+            )
         )
+        self.lyrics_physics_boxes.append(
+            self.addNumberSetting(
+                'setting_page.acceleration_smooth_factor',
+                'setting_page.smaller_value_means_a_more_bounce_effect',
+                0,
+                1,
+                0.002,
+                'acceleration_smooth_factor',
+                advanced=True,
+            )
+        )
+
+        self.lyrics_scrolling_boxes = []
+        self.lyrics_scrolling_boxes.append(
+            self.addNumberSetting(
+                'setting_page.lyrics_scroll_duration',
+                'setting_page.lyrics_scroll_duration_desc',
+                50,
+                10000,
+                50,
+                'lyrics_scrolling_duration',
+                lambda v: event_bus.emit(LYRICS_SCROLLING_DURATION_CHANGED, v),
+                True,
+            )
+        )
+
+        self.addSpliter()
+
+        self.addNumberSetting(
+            'setting_page.scroll_duration',
+            'setting_page.scroll_duration_desc',
+            50,
+            10000,
+            50,
+            'scroll_duration',
+            lambda v: event_bus.emit(LIST_SCROLLING_DURATION_CHANGED, v),
+            True,
+        )
+
+        self._onLyricsAnimationTypeChanged(self.lyrics_type_box.currentText().lower(), False)
+
+    def _onLyricsAnimationTypeChanged(self, selected: str, reload: bool = True):
+        for b in self.lyrics_physics_boxes:
+            b.setVisible(selected == 'physics')
+        for b in self.lyrics_scrolling_boxes:
+            b.setVisible(selected == 'scrolling')
+        if reload:
+            self.reloadAllLayouts()
 
     def _addFftSection(self) -> None:
         self.addSection(
@@ -1127,6 +1183,17 @@ class SettingPage(QWidget):
             section.refreshContentHeight()
         self.options_widget.adjustSize()
 
+    def reloadAllLayouts(self) -> None:
+        for section in self._sections:
+            section.content_layout.invalidate()
+            section.content_layout.activate()
+            section.refreshContentHeight()
+        self.options_layout.invalidate()
+        self.options_layout.activate()
+        self.options_widget.adjustSize()
+        self.options_widget.updateGeometry()
+        self.scroller.widget().updateGeometry()
+
     def addNumberSetting(
         self,
         title: str,
@@ -1137,7 +1204,7 @@ class SettingPage(QWidget):
         configurationName: str,
         onChanged: Callable[[float], None] | None = None,
         advanced: bool = False,
-    ) -> None:
+    ) -> CardWidget:
         box = SettableNumberViewer(self.ctx.harmony_font_family, self.ctx)
         box.setRange(min, max_v)
         box.setSingleStep(step)
@@ -1151,7 +1218,7 @@ class SettingPage(QWidget):
                 onChanged(value)
 
         box.valueChanged.connect(_valueChanged)
-        self.addSetting(title, description, box, advanced=advanced)
+        return self.addSetting(title, description, box, advanced=advanced)
 
     def addCheckSetting(
         self,
@@ -1247,7 +1314,7 @@ class SettingPage(QWidget):
         description: str,
         widget: QWidget,
         advanced: bool = False,
-    ) -> None:
+    ) -> CardWidget:
         card = self._createTransparentCard()
         card._llm_setting_name = name  # type: ignore
         card._llm_setting_description = description  # type: ignore
@@ -1274,6 +1341,7 @@ class SettingPage(QWidget):
         global_layout.addWidget(widget, 0, Qt.AlignmentFlag.AlignRight)
         card.setLayout(global_layout)
         self._addOptionWidget(card)
+        return card
 
     def addInfoBlock(
         self,

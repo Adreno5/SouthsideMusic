@@ -1,3 +1,4 @@
+from core import config
 from dataclasses import dataclass
 import logging
 import time
@@ -29,6 +30,8 @@ from imports import (
     event_bus,
 )
 from qfluentwidgets import ListWidget, ScrollBar, SmoothScrollArea, TextEdit
+from core.models import AnimatingObject
+from services.events import LIST_SCROLLING_DURATION_CHANGED
 
 
 def setTransparentBackground(widget: QWidget | None) -> None:
@@ -55,14 +58,6 @@ def _debugging_enabled(widget: QWidget) -> bool:
     return False
 
 
-@dataclass
-class AnimatingObject:
-    total: float
-    elapsed: float
-    duration: float
-    last_progress: float
-
-
 class SSmoothScrollBar(ScrollBar):
     def __init__(self, orientation: Qt.Orientation, parent: QAbstractScrollArea):
         super().__init__(orientation, parent)
@@ -78,6 +73,7 @@ class SSmoothScrollBar(ScrollBar):
         self.debug_total_force = 0.0
         self.debug_offset = 0.0
         self.debug_offset_target = 0.0
+        self.duration = config.cfg.scroll_duration
 
         self.anim_timer = QTimer(self)
         self.anim_timer.timeout.connect(self._tick)
@@ -87,6 +83,9 @@ class SSmoothScrollBar(ScrollBar):
         self.setValue = self._patched_setValue
 
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
+        event_bus.subscribe(
+            LIST_SCROLLING_DURATION_CHANGED, lambda v: setattr(self, 'duration', int(v))
+        )
 
     def _patched_setValue(self, value: int):
         self.scrollValue(value - self.value())
@@ -181,7 +180,7 @@ class SSmoothScrollBar(ScrollBar):
             AnimatingObject(
                 total=float(delta),
                 elapsed=0.0,
-                duration=250.0,
+                duration=self.duration,
                 last_progress=0.0,
             )
         )

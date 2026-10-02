@@ -113,8 +113,12 @@ class Config:
     background_ratio: float = 0.4
     volume: float = 1
 
+    lyrics_animation_type: Literal['physics', 'scrolling'] = 'physics'
     lyrics_smooth_factor: float = 0.028
     acceleration_smooth_factor: float = 0.068
+    lyrics_scrolling_duration: float = 500
+
+    scroll_duration: float = 250
 
     play_speed: float = 1
     play_pitch: float = 0

@@ -863,3 +863,11 @@ class MusicServiceBackend(ABC):
 
     @abstractmethod
     def getSongQualityPrivilege(self, song_id: str) -> QualityPrivilegeInfo: ...
+
+
+@dataclass
+class AnimatingObject:
+    total: float
+    elapsed: float
+    duration: float
+    last_progress: float

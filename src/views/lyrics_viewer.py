@@ -36,11 +36,13 @@ from core.qt_utils import toQtInt
 from core.time_format import float2time
 from core.color import mixColor
 from core import theme
-from core.smooth import EaseOutTimer
+from core.smooth import EaseOutTimer, SScrollTimer
 from core.lyrics import LyricInfo, YRCLyricInfo
+from services.events import LYRICS_SCROLLING_DURATION_CHANGED
 from services.events.events import (
     PLAY_STORABLE,
 )
+from views.list_widget import SSmoothScrollBar
 
 _HORIZONTAL_SCROLL_MARGIN = 12.0
 _X_SCROLL_SMOOTH_DURATION = 0.3
@@ -74,9 +76,12 @@ class LyricsViewer(QWidget):
 
         self.draw_offset: float = 0
         self.target_draw_offset: float = 0
+        self.last_target_draw_offset: float = 0
 
         self.acc: float = 0
         self.target_acc: float = 0
+
+        self.clip_w_timer = EaseOutTimer(0.2, 1)
 
         self.ft = QFont(ctx.harmony_font_family, ft_size or 14)
         self.font_height = QFontMetricsF(self.ft).height()
@@ -135,10 +140,16 @@ class LyricsViewer(QWidget):
 
         self.last_lyric: YRCLyricInfo | LyricInfo | None = None
 
+        self.scroller = SScrollTimer()
+
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(REPAINT, self._onRepaintTick)
         event_bus.subscribe(PLAY_STORABLE, lambda _: self.prewarmFontMetrics())
         event_bus.subscribe(BEAT_POINT, self._onBeatPoint)
+        event_bus.subscribe(
+            LYRICS_SCROLLING_DURATION_CHANGED,
+            lambda v: setattr(self.scroller, 'duration', int(v)),
+        )
 
     def _onBeatPoint(self):
         if not self.ctx.config.beat_detection_visual_lyrics:
@@ -199,6 +210,7 @@ class LyricsViewer(QWidget):
             self.selecting = False
 
         self.target_draw_offset = max(-total_height, min(0.0, self.target_draw_offset))
+        self.scroller.setValue(max(-total_height, min(0.0, self.scroller.getValue())))
         self._updateDrawOffset(multiple_factor)
         if not all(
             math.isfinite(value)
@@ -348,7 +360,11 @@ class LyricsViewer(QWidget):
         return bool(self._translationTextForLine(line, use_yrc))
 
     def _lineStep(self, has_translation: bool = False) -> float:
-        cur = self.translation_timer.current_value
+        cur = (
+            self.translation_timer.current_value
+            if self.ctx.config.lyrics_animation_type == 'physics'
+            else self.translation_timer.target_value
+        )
         if has_translation:
             return self.font_height * (1.85 - (0.1 * cur)) + (self.theight * cur)
         return self.font_height * 1.85
@@ -403,21 +419,36 @@ class LyricsViewer(QWidget):
         return self._currentLineBaseline(current_has_trans)
 
     def _updateDrawOffset(self, multiple_factor: float = 1.0) -> None:
-        self.target_acc = (
-            (self.target_draw_offset - self.draw_offset)
-            * self.delta
-            * (self._cfg.lyrics_smooth_factor * self.refresh_rate)
-            * multiple_factor
-        )
-        self.acc += (
-            (self.target_acc - self.acc)
-            * self.delta
-            * (self._cfg.acceleration_smooth_factor * self.refresh_rate)
-            * multiple_factor
-        )
+        if self.ctx.config.lyrics_animation_type == 'scrolling':
+            if (
+                not self.selecting
+                and self.last_target_draw_offset != self.target_draw_offset
+            ):
+                self.scroller.scrollTo(int(self.target_draw_offset))
+                self.last_target_draw_offset = self.target_draw_offset
+            if (
+                len(self.scroller.animating_objs) == 0
+                and self.scroller.getValue() != self.target_draw_offset
+                and not self.selecting
+            ):
+                self.scroller.scrollTo(int(self.target_draw_offset))
+            self.draw_offset = self.scroller.getValue()
+        else:
+            self.target_acc = (
+                (self.target_draw_offset - self.draw_offset)
+                * self.delta
+                * (self._cfg.lyrics_smooth_factor * self.refresh_rate)
+                * multiple_factor
+            )
+            self.acc += (
+                (self.target_acc - self.acc)
+                * self.delta
+                * (self._cfg.acceleration_smooth_factor * self.refresh_rate)
+                * multiple_factor
+            )
 
-        if self.draw_offset != self.target_draw_offset:
-            self.draw_offset += self.acc
+            if self.draw_offset != self.target_draw_offset:
+                self.draw_offset += self.acc
 
     def _xScrollClipWidth(self) -> float:
         return max(1.0, float(self.width()) - _HORIZONTAL_SCROLL_MARGIN)
@@ -781,7 +812,11 @@ class LyricsViewer(QWidget):
                 painter.setPen(base_color)
                 painter.drawText(toQtInt(text_x), toQtInt(y), content)
 
-                yrc_current_ratio, clip_w = self._yrcClipPayload(line, position)
+                yrc_current_ratio, clip_wt = self._yrcClipPayload(line, position)
+                self.clip_w_timer.target_value = clip_wt
+                if clip_wt < self.clip_w_timer.current_value:
+                    self.clip_w_timer.current_value = clip_wt
+                clip_w = self.clip_w_timer.current_value
                 self.current_index = i
                 self.yrc_current_ratio = yrc_current_ratio
                 if clip_w > 0:
@@ -914,7 +949,10 @@ class LyricsViewer(QWidget):
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         self.selecting = True
-        self.target_draw_offset += event.angleDelta().y()
+        if self.ctx.config.lyrics_animation_type == 'scrolling':
+            self.scroller.scrollValue(event.angleDelta().y())
+        else:
+            self.target_draw_offset += event.angleDelta().y()
         self.last_wheel = time.time()
         return super().wheelEvent(event)
 

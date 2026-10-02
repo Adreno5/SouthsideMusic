@@ -579,6 +579,22 @@ TRANSLATIONS: dict[str, list[str]] = {
         'Acceleration Smooth Factor',
         '加速度平滑系数',
     ],
+    'setting_page.lyrics_scroll_duration': [
+        'Lyrics scrolling animation duration (ms)',
+        '歌词滚动动画时间 (MS)',
+    ],
+    'setting_page.lyrics_scroll_duration_desc': [
+        "the duration of lyrics' scrolling",
+        '歌词滚动动画的时长',
+    ],
+    'setting_page.scroll_duration': [
+        'List scrolling animation duration (ms)',
+        '列表滚动动画时间 (MS)',
+    ],
+    'setting_page.scroll_duration_desc': [
+        "control the animation duration of list's scroll",
+        '列表滚动动画的时长',
+    ],
     'setting_page.adjust_the_right_channel_delay_of_stereo_haas_effect': [
         'adjust the right-channel delay of stereo Haas effect',
         '调整立体声 Haas 效果的右声道延迟',
@@ -784,7 +800,7 @@ TRANSLATIONS: dict[str, list[str]] = {
         '实时播放音量(db)',
     ],
     'setting_page.loudness': ['Loudness', '响度'],
-    'setting_page.lyrics': ['Lyrics', '歌词'],
+    'setting_page.animations': ['Animations', '动画'],
     'setting_page.lyrics_smooth_factor': ['Lyrics Smooth Factor', '歌词平滑系数'],
     'setting_page.move_the_desktop_lyrics_window_back_to_the_origin': [
         'move the desktop lyrics window back to the origin',
@@ -1036,9 +1052,14 @@ TRANSLATIONS: dict[str, list[str]] = {
     ],
     'setting_page.smart_skip': ['Smart Skip', '智能跳过'],
     'setting_page.smart_skip_easy': ['Skip Silence', '跳过空白'],
-    'setting_page.smoothing_controls_for_the_main_lyrics_animation': [
-        'Smoothing controls for the main lyrics animation.',
-        '主歌词动画的平滑控制。',
+    'setting_page.animations_desc': [
+        'Controls for the animations.',
+        '动画的控制。',
+    ],
+    'setting_page.lyrics_animation_type': ['Lyrics Animation Type', '歌词动画类型'],
+    'setting_page.lyrics_animation_type_desc': [
+        'decides motion of lyrics',
+        '决定歌词的运动',
     ],
     'setting_page.southside_client_side_fft_multiple_factor': [
         'SouthsideClient side FFT Multiple Factor',
@@ -1332,8 +1353,9 @@ TRANSLATIONS: dict[str, list[str]] = {
     'quality_display.6999000': ['Immersive Auto Vivid', '臻音全景声 Auto Vivid'],
     'quality_dialog.switch_title': ['Quality Switch', '音质切换'],
     'quality_dialog.switch_content': ['Switching to {quality}', '正在切换到 {quality}'],
-    'quality_dialog.p_title': ['Qualities', '音质']
+    'quality_dialog.p_title': ['Qualities', '音质'],
 }
+
 
 def language() -> Language:
     if cfg.language in LANGUAGES:

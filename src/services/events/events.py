@@ -70,3 +70,6 @@ FINISH_CROSSFADE = 'stop_crossfade'
 TERMINAL_SIZE_CHANGED = 'terminal_size_changed'
 
 REPAINT_EVENT_INTERVAL = 'repaint_event_interval'
+
+LYRICS_SCROLLING_DURATION_CHANGED = 'lyrics_scrolling_duration_changed'
+LIST_SCROLLING_DURATION_CHANGED = 'list_scrolling_duration_changed'

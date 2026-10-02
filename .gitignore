@@ -8,6 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+torch_venv/
 freethreaded_python/
 freethreaded_venv/
 
@@ -34,6 +35,7 @@ build_venv/
 config.pkl
 cache/
 data/
+samples/
 .agents/
 .mypy_cache/
 ffmpeg/

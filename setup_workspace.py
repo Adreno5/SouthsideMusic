@@ -31,6 +31,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PYTHON_ZIP = os.path.join(SCRIPT_DIR, 'python.zip')
 EMBED_DIR = os.path.join(SCRIPT_DIR, 'embed_python')
 BUILD_VENV = os.path.join(SCRIPT_DIR, 'build_venv')
+TORCH_VENV = os.path.join(SCRIPT_DIR, 'torch_venv')
 FREE_THREADED_PYTHON = os.path.join(SCRIPT_DIR, 'freethreaded_python')
 FREE_THREADED_VENV = os.path.join(SCRIPT_DIR, 'freethreaded_venv')
 GET_PIP = os.path.join(SCRIPT_DIR, 'get-pip.py')
@@ -122,7 +123,7 @@ def run(
     cmd: list[str],
     *,
     check: bool = True,
-    timeout: int = DEFAULT_TIMEOUT,
+    timeout: int | None = DEFAULT_TIMEOUT,
     **kwargs,
 ) -> subprocess.CompletedProcess[str]:
     """Wrapper around subprocess.run with consistent error reporting and timeout.
@@ -158,7 +159,6 @@ def pip_install(package: str, *, retries: int = 3) -> bool:
                 '-m',
                 'pip',
                 'install',
-                '--no-cache-dir',
                 package,
             ])
             return True
@@ -309,6 +309,24 @@ def main() -> None:
     print(f'  Python: {sys.version}')
     print(f'  Script dir: {SCRIPT_DIR}')
 
+    mirrors = (
+        ('PyPI', 'https://pypi.org/simple/'),
+        ('USTC', 'https://pypi.mirrors.ustc.edu.cn/simple/'),
+        ('Aliyun', 'https://mirrors.aliyun.com/pypi/simple/'),
+    )
+    print('\nPyPI mirror:')
+    for number, (name, _) in enumerate(mirrors, 1):
+        print(f'  {number}. {name}')
+    try:
+        choice = input('Select PyPI mirror [1-3, default 2]: ').strip() or '2'
+    except EOFError:
+        choice = '2'
+    if choice not in ('1', '2', '3'):
+        raise SetupError(f'Invalid PyPI mirror selection: {choice}')
+    mirror_name, mirror_url = mirrors[int(choice) - 1]
+    os.environ['PIP_INDEX_URL'] = mirror_url
+    print(f'  Using {mirror_name}: {mirror_url}')
+
     if innosetup_only:
         ensure_module('tqdm')
         ensure_module('requests')
@@ -369,6 +387,8 @@ def main() -> None:
     # 6. Sync uv project environment
     print('\n[1/6] Syncing uv environment...')
     _uv_sync_with_retry()
+
+    _setup_torch()
 
     # 7. Set up free-threaded worker environment
     _setup_free_threaded_worker_python()
@@ -445,6 +465,60 @@ def _uv_sync_with_retry(retries: int = 3) -> None:
                 time.sleep(wait)
             else:
                 raise SetupError(f'uv sync failed after {retries} attempts.')
+
+
+def _setup_torch() -> None:
+    variants = ('cu126', 'cu130', 'cu132', 'cpu')
+    print('\nTorch training environment:')
+    for number, variant in enumerate(variants, 1):
+        print(f'  {number}. {variant}')
+    try:
+        choice = input('Select Torch build [1-4, default 4]: ').strip() or '4'
+    except EOFError:
+        choice = '4'
+    if choice not in ('1', '2', '3', '4'):
+        raise SetupError(f'Invalid Torch build selection: {choice}')
+
+    variant = variants[int(choice) - 1]
+    project_python = os.path.join(SCRIPT_DIR, '.venv', 'Scripts', 'python.exe')
+    torch_python = os.path.join(TORCH_VENV, 'Scripts', 'python.exe')
+    if not os.path.isfile(torch_python):
+        run(['uv', 'venv', '--python', project_python, TORCH_VENV], cwd=SCRIPT_DIR)
+    run(
+        [
+            'uv',
+            'pip',
+            'install',
+            '--python',
+            torch_python,
+            '--index',
+            f'https://download.pytorch.org/whl/{variant}',
+            '--default-index',
+            os.environ['PIP_INDEX_URL'],
+            f'torch==2.14.1+{variant}',
+        ],
+        cwd=SCRIPT_DIR,
+        timeout=1800,
+    )
+    run(
+        [
+            'uv',
+            'pip',
+            'install',
+            '--python',
+            torch_python,
+            '--default-index',
+            os.environ['PIP_INDEX_URL'],
+            'numpy>=2.5.3',
+            'scipy>=1.18.1',
+            'matplotlib>=3.10',
+            'onnx',
+            'onnxruntime==1.30.0',
+        ],
+        cwd=SCRIPT_DIR,
+        timeout=1800,
+    )
+    print(f'  Train with {torch_python}')
 
 
 def _free_threaded_python_exe() -> str:
@@ -541,7 +615,6 @@ def _setup_free_threaded_worker_python() -> None:
             'pip',
             'install',
             '--no-input',
-            '--no-cache-dir',
             '--upgrade',
             *FREE_THREADED_WORKER_PACKAGES,
         ],
@@ -557,7 +630,6 @@ def _setup_free_threaded_worker_python() -> None:
                     'pip',
                     'install',
                     '--no-input',
-                    '--no-cache-dir',
                     '--upgrade',
                     package,
                 ],
@@ -724,7 +796,6 @@ def _setup_build_venv() -> None:
                     'pip',
                     'install',
                     '--no-input',
-                    '--no-cache-dir',
                     'nuitka',
                 ])
                 break
@@ -785,7 +856,6 @@ def _install_embed_requirements() -> None:
                 'pip',
                 'install',
                 '--no-input',
-                '--no-cache-dir',
                 'setuptools',
             ])
             break
@@ -810,16 +880,18 @@ def _install_embed_requirements() -> None:
 
     for attempt in range(1, 4):
         try:
-            run([
-                embed_exe,
-                '-m',
-                'pip',
-                'install',
-                '--no-input',
-                '--no-cache-dir',
-                '-r',
-                REQUIREMENTS,
-            ])
+            run(
+                [
+                    embed_exe,
+                    '-m',
+                    'pip',
+                    'install',
+                    '--no-input',
+                    '-r',
+                    REQUIREMENTS,
+                ],
+                timeout=None,
+            )
             _save_requirements_hash()
             return
         except subprocess.CalledProcessError:

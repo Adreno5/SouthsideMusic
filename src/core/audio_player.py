@@ -878,47 +878,9 @@ class AudioPlayer(QObject):
         origin: int,
         frames: int,
         gain: float,
-        prepared: PreparedAudioBuffer,
         transition_end: int,
     ) -> tuple[int, int]:
         with self._lock:
-            if prepared.sample_rate != self.sample_rate:
-                position = (self.current_index - origin) / self.sample_rate
-                following = self.convertBuffer(prepared, prepared.sample_rate)
-                samples = following.samples
-                fade_frames = min(
-                    round(
-                        (transition_end - origin)
-                        * following.sample_rate
-                        / self.sample_rate
-                    ),
-                    len(samples),
-                )
-                transition_start = max(origin, self.current_index)
-                if transition_end > transition_start:
-                    transition = self.convertBuffer(
-                        PreparedAudioBuffer(
-                            self._readSamples(transition_start, transition_end),
-                            self.sample_rate,
-                            self.channels,
-                        ),
-                        following.sample_rate,
-                    )
-                    offset = round(
-                        (transition_start - origin)
-                        * following.sample_rate
-                        / self.sample_rate
-                    )
-                    count = min(len(transition.samples), len(samples) - offset)
-                    samples = samples.copy()
-                    samples[offset : offset + count] = transition.samples[:count] / (
-                        gain if gain > 0 else 1.0
-                    )
-                self.loudness_gain = gain
-                self._reloadPreparedBuffer(
-                    PreparedAudioBuffer(samples, following.sample_rate, 2), position
-                )
-                return 0, fade_frames
             self._track_origin = origin
             self._track_frames = frames
             self._queued_restore = None

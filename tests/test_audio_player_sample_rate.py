@@ -127,30 +127,28 @@ def checkQueuedSwitch(
     assert previous is not None
     previous.start()
     player.is_playing = True
-    player._audio_queue.put(None)
-    new_boundary = player.beginQueuedTrack(origin, 44100 * 6, 0.5, following, end)
-    assert player.stream is not None and player.stream.samplerate == rate
+    new_boundary = player.beginQueuedTrack(origin, 44100 * 6, 0.5, end)
+    assert player.stream is previous and player.stream.samplerate == 44100
+    assert not previous.closed
     assert player.is_playing and player.stream.active
-    assert abs(player._getExactPosition() - offset / 44100) < 1 / rate
-    assert abs(player.getLength() - 6) < 1 / rate
-    if rate == 44100:
-        assert player.stream is previous and not previous.closed
-        assert player._timeline is not None
-        assert new_boundary == boundary
-    else:
-        assert previous.closed
-        assert player._timeline is None
-        assert player._audio_queue.empty()
-        assert player._producer_index == player.current_index
-        assert new_boundary == (0, rate * 3 if fade else 0)
-        np.testing.assert_array_equal(player.samples[rate * 3 :], samples[rate * 3 :])
-        if fade:
-            middle = min(player.current_index + rate // 10, rate * 3 - 100)
-            np.testing.assert_allclose(
-                player.samples[middle : middle + 100] * player.loudness_gain,
-                0.2,
-                atol=0.001,
-            )
+    assert abs(player._getExactPosition() - offset / 44100) < 1 / 44100
+    assert abs(player.getLength() - 6) < 1 / 44100
+    assert player._timeline is not None
+    assert new_boundary == boundary
+    assert player._track_origin == origin
+    if fade:
+        np.testing.assert_allclose(
+            player._timeline.read(player.current_index, player.current_index + 100),
+            0.2,
+            atol=0.001,
+        )
+    converted = AudioPlayer.convertBuffer(following, 44100)
+    fade_frames = end - origin
+    np.testing.assert_allclose(
+        player._timeline.read(end + 100, end + 200),
+        converted.samples[fade_frames + 100 : fade_frames + 200] * 0.5,
+        atol=0.001,
+    )
 
 
 def main() -> None:

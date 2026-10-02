@@ -7,6 +7,7 @@ import traceback
 from pathlib import Path
 import atexit
 
+from core.app_context import AppContext
 from services.events import event_bus, SECOND_TICK
 
 _SRC_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -58,7 +59,7 @@ import imports as _ims
 from qfluentwidgets import setTheme, Theme
 import shiboken6
 
-from core.config import loadConfig, saveConfig, Config
+from core.config import loadConfig, saveConfig, Config, cfg
 from core.cache_cleanup import DEFAULT_DATA_CLEANUP_INTERVAL_SECONDS, cleanupDataFolder
 from core.favorites import favorites_manager, saveFavorites
 from core.icons import refreshBoundIcons
@@ -126,6 +127,7 @@ def atExitListener():
     saveConfig()
     saveFavorites()
 
+    raise SystemExit()
 
 atexit.register(atExitListener)
 
@@ -460,6 +462,21 @@ def _handle_ws_message(message: str) -> None:
     _schedule_ws_task(_run)
 
 
+ctx = AppContext()
+ctx.app = app
+ctx.player = AudioPlayer()
+ctx.config = Config.instance()
+ctx.mgr = LRCLyricParser()
+ctx.transmgr = LRCLyricParser()
+ctx.ymgr = YRCLyricParser()
+ctx.ws_server = ws_server
+ctx.ws_handler = ws_handler
+ctx.lock = lock
+ctx.launch_window = launchwindow
+ctx.llm = LLM()
+ctx.playing_manager = PlayingManager(ctx)
+ctx.smtc = SmtcController(ctx)
+
 ws_handler.onMessage.connect(_handle_ws_message)
 ws_handler.onConnected.connect(_send_ws_playlist_state)
 _ims.event_bus.subscribe(_ims.PLAYLIST_CHANGED, lambda: _send_ws_playlist_state())
@@ -478,7 +495,7 @@ _ims.event_bus.subscribe(
 )
 
 
-if __name__ == '__main__':
+def southsideMusic():
     assert launchwindow is not None
     launchwindow.subtitle('Phase 1 (start core...)')
 
@@ -559,9 +576,20 @@ if __name__ == '__main__':
     launchwindow.subtitle('Loading config...')
 
     launchwindow.subtitle('Loading fonts...')
-    harmony_font_family = _ims.QFontDatabase.applicationFontFamilies(
-        _ims.QFontDatabase.addApplicationFont('fonts/HARMONYOS_SANS_SC_REGULAR.ttf')
-    )[0]
+    _font_path = os.path.join(
+        os.path.dirname(_SRC_DIR), 'fonts', 'HARMONYOS_SANS_SC_REGULAR.ttf'
+    )
+    _font_families = _ims.QFontDatabase.applicationFontFamilies(
+        _ims.QFontDatabase.addApplicationFont(_font_path)
+    )
+    if _font_families:
+        harmony_font_family = _font_families[0]
+    else:
+        _logger.warning(f'failed to load font {_font_path}, falling back to system font')
+        harmony_font_family = app.font().family()
+
+    ctx.harmony_font_family = harmony_font_family
+
 
     launchwindow.subtitle('Initializing services...')
 
@@ -592,22 +620,6 @@ if __name__ == '__main__':
     launchwindow.subtitle('Phase 2 (initialize components...)')
 
     from core.app_context import AppContext
-
-    ctx = AppContext()
-    ctx.app = app
-    ctx.player = AudioPlayer()
-    ctx.config = Config.instance()
-    ctx.mgr = LRCLyricParser()
-    ctx.transmgr = LRCLyricParser()
-    ctx.ymgr = YRCLyricParser()
-    ctx.ws_server = ws_server
-    ctx.ws_handler = ws_handler
-    ctx.harmony_font_family = harmony_font_family
-    ctx.lock = lock
-    ctx.launch_window = launchwindow
-    ctx.llm = LLM()
-    ctx.playing_manager = PlayingManager(ctx)
-    ctx.smtc = SmtcController(ctx)
 
     launchwindow.subtitle('Preparing (checking dependences...)')
     depwindow = DependencesWindow(ctx)
@@ -684,3 +696,6 @@ if __name__ == '__main__':
     )
 
     app.exec()
+
+if __name__ == '__main__':
+    southsideMusic() # 一切的起点....

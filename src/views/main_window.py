@@ -354,7 +354,6 @@ class MainWindow(FluentWindowBase):
 
     def _onHomeClicked(self):
         self.contents_widget.setCurrentWidget(self.ctx.home_page)
-        self.ctx.home_page.fetchDailyRecommend()
 
     def _onLibraryClicked(self):
         self.contents_widget.setCurrentWidget(self.ctx.library_page)
@@ -525,13 +524,15 @@ class MainWindow(FluentWindowBase):
                     self.ctx.addScheduledTask(_continue)
 
             self._launchwindow.subtitle('refreshing login information')
-            self.refreshLoginInformations()
+            asyncTask(self.refreshLoginInformations, (), self)
+
+            event_bus._lw = None
+            self._launchwindow.close()
+            self._launchwindow.deleteLater()
 
             def _show():
                 self.show()
                 self.raise_()
-
-                self.ctx.home_page.fetchDailyRecommend()
 
                 if self.llm_viewer_panel.expanded:
                     self.toggleLLMViewerExpand()
@@ -540,10 +541,6 @@ class MainWindow(FluentWindowBase):
                 if favorites_manager.folders:
                     self._fp.setDisplayFolder(favorites_manager.folders[0])
                 self.contents_widget.setCurrentWidget(self.ctx.home_page)
-
-                event_bus._lw = None
-                self._launchwindow.close()
-                self._launchwindow.deleteLater()
 
             self.ctx.addScheduledTask(_show)
 

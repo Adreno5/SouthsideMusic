@@ -13,7 +13,7 @@ with ncm.getCurrentSession():
     with open('res.json', 'w') as f:
         f.write(
             json.dumps(
-                ncm.apis.track.getTrackPrivilege(['405599119']),
+                ncm.apis.track.getTrackQuality('405599119'),
                 indent=4,
             )
         )

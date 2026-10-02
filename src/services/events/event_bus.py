@@ -31,6 +31,14 @@ def _resolveOwner(listener: Listener) -> Any:
     return owner
 
 
+def _listenerName(listener: Listener) -> str:
+    try:
+        name = getattr(listener, '__name__', None)
+    except RuntimeError:
+        return '<deleted>'
+    return name if isinstance(name, str) else type(listener).__name__
+
+
 class EventBus:
     def __init__(
         self, thread_safe: bool = True, launchwindow: LaunchWindow | None = None
@@ -49,7 +57,7 @@ class EventBus:
                 'subscribing %s to %s.%s',
                 event,
                 getattr(listener, '__module__', '?'),
-                getattr(listener, '__name__', repr(listener)),
+                _listenerName(listener),
             )
         entry = (listener, _resolveOwner(listener))
         if self._lock is not None:
@@ -65,7 +73,7 @@ class EventBus:
             self._logger.info(
                 'unsubscribing %s from %s',
                 event,
-                getattr(listener, '__name__', repr(listener)),
+                _listenerName(listener),
             )
         if self._lock is not None:
             with self._lock:
@@ -102,11 +110,32 @@ class EventBus:
             entries = self._snapshot(event)
         if not entries:
             return
+        dead: list[Listener] | None = None
         for listener, owner in entries:
             if owner is not None and not _isValid(owner):
-                self.unsubscribe(event, listener)
+                if dead is None:
+                    dead = []
+                dead.append(listener)
                 continue
             listener(*args, **kwargs)
+        if dead is not None:
+            self._prune(event, dead)
+
+    def _prune(self, event: str, dead: list[Listener]) -> None:
+        if self._lock is not None:
+            with self._lock:
+                self._pruneEntries(event, dead)
+        else:
+            self._pruneEntries(event, dead)
+
+    def _pruneEntries(self, event: str, dead: list[Listener]) -> None:
+        entries = self._listeners.get(event)
+        if not entries:
+            return
+        self._listeners[event] = [
+            entry for entry in entries if not any(entry[0] is d for d in dead)
+        ]
+        self._snapshots.pop(event, None)
 
 
 event_bus = EventBus()

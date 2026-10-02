@@ -365,8 +365,16 @@ class LyricsViewer(QWidget):
     ) -> tuple[list[LyricInfo | YRCLyricInfo], int, bool]:
         use_yrc = self._ymgr.hasYrcTiming()
         if use_yrc:
-            return self._ymgr.parsed, self._ymgr.getCurrentIndex(position), use_yrc  # type: ignore
-        return self._mgr.parsed, self._mgr.getCurrentIndex(position), use_yrc  # type: ignore
+            return (
+                list(self._ymgr.parsed),
+                self._ymgr.getCurrentIndex(position),
+                use_yrc,
+            )  # type: ignore
+        return (
+            list(self._mgr.parsed),
+            self._mgr.getCurrentIndex(position),
+            use_yrc,
+        )  # type: ignore
 
     def _lineOffsets(
         self,

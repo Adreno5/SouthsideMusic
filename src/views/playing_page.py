@@ -475,7 +475,6 @@ class PlayingPage(QWidget):
         self.bg_color = QColor(0, 0, 0) if isDark() else QColor(255, 255, 255)
 
         self.translation_button = PillToolButton(self)
-        self.translation_button.hide()
         self.translation_button.toggled.connect(self.translationToggled)
         self.translation_button.setChecked(cfg.show_translation)
         self.translation_button.setFixedSize(32, 32)
@@ -565,7 +564,7 @@ class PlayingPage(QWidget):
             if QRect(
                 0,
                 self.height() - self.img_label.height() - 10,
-                45,
+                50,
                 self.img_label.height() + 10,
             ).contains(self.mapFromGlobal(QCursor.pos()))
             else 0
@@ -578,9 +577,9 @@ class PlayingPage(QWidget):
         return super().resizeEvent(event)
 
     def updateButtonPositions(self):
-        button_x = int(50 * self.buttons_expand.current_value) - 35
+        button_x = int(51 * self.buttons_expand.current_value) - 35
         translation_y = self.height() - 15 - self.translation_button.height()
-        self.translation_button.move(button_x, translation_y)
+        self.translation_button.move(15, translation_y)
         self.lyric_video_export_button.move(
             button_x,
             translation_y - 7 - self.lyric_video_export_button.height(),
@@ -622,9 +621,11 @@ class PlayingPage(QWidget):
             self.cur = DummyCard(song)
             self.title_label.setText(song.name)
             self.artists_label.setText(_artists_text(song))
-        self.translation_button.setVisible(
+        self.translation_button.setCheckable(
             self.cur is not None and bool(self.cur.storable.translated_lyric)
         )
+        if not (self.cur is not None and bool(self.cur.storable.translated_lyric)):
+            self.translation_button.setChecked(False)
         self.lyric_video_export_button.setVisible(self.cur is not None)
         self.lyric_editor_button.setVisible(self.cur is not None)
 
@@ -963,7 +964,9 @@ class PlayingPage(QWidget):
     def _onPlaybackLyricsUpdated(self, song: SongStorable) -> None:
         if self.cur is not None and self.cur.storable.id != song.id:
             return
-        self.translation_button.setVisible(bool(song.translated_lyric))
+        self.translation_button.setCheckable(bool(song.translated_lyric))
+        if not bool(song.translated_lyric):
+            self.translation_button.setChecked(False)
         self.lyric_video_export_button.setVisible(True)
         self.lyric_editor_button.setVisible(True)
         self.viewer.prewarmFontMetrics()

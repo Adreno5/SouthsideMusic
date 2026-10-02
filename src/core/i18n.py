@@ -1330,8 +1330,10 @@ TRANSLATIONS: dict[str, list[str]] = {
     'quality_display.4999000': ['Master', '超清母带 Master'],
     'quality_display.5999000': ['Hi-Def Vivid', '高清臻音'],
     'quality_display.6999000': ['Immersive Auto Vivid', '臻音全景声 Auto Vivid'],
+    'quality_dialog.switch_title': ['Quality Switch', '音质切换'],
+    'quality_dialog.switch_content': ['Switching to {quality}', '正在切换到 {quality}'],
+    'quality_dialog.p_title': ['Qualities', '音质']
 }
-
 
 def language() -> Language:
     if cfg.language in LANGUAGES:

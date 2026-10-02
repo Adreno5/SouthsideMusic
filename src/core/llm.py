@@ -1,24 +1,24 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
 import json
 import logging
 import threading
 import urllib.error
 import urllib.request
+from collections.abc import Callable, Iterable, Iterator
+from typing import TYPE_CHECKING, Any, cast
 
-from typing import Any, cast
-
-from anthropic import Anthropic
-from openai import OpenAI
-from openai.types.chat import (
-    ChatCompletionAssistantMessageParam,
-    ChatCompletionChunk,
-    ChatCompletionMessageParam,
-    ChatCompletionSystemMessageParam,
-    ChatCompletionToolMessageParam,
-    ChatCompletionUserMessageParam,
-)
+if TYPE_CHECKING:
+    from anthropic import Anthropic
+    from openai import OpenAI
+    from openai.types.chat import (
+        ChatCompletionAssistantMessageParam,
+        ChatCompletionChunk,
+        ChatCompletionMessageParam,
+        ChatCompletionSystemMessageParam,
+        ChatCompletionToolMessageParam,
+        ChatCompletionUserMessageParam,
+    )
 
 from core.config import cfg, decryptSecret  # type: ignore[import-not-found]
 
@@ -931,7 +931,7 @@ class LLM:
             if tools:
                 stream_kwargs['tools'] = tools
             stream = self._client().chat.completions.create(**stream_kwargs)
-            chunks = cast(Iterable[ChatCompletionChunk], stream)
+            chunks = cast('Iterable[ChatCompletionChunk]', stream)
             content_parts: list[str] = []
             tool_call_parts: dict[int, dict[str, str]] = {}
             finish_reason = None
@@ -981,7 +981,7 @@ class LLM:
                 })
             messages.append(
                 cast(
-                    ChatCompletionMessageParam,
+                    'ChatCompletionMessageParam',
                     {
                         'role': 'assistant',
                         'content': ''.join(content_parts) or None,
@@ -1041,6 +1041,8 @@ class LLM:
         return messages
 
     def _client(self) -> OpenAI:
+        from openai import OpenAI
+
         base_url = self._openAIBaseUrl()
         api_key = self._apiKey() or 'unused'
         return OpenAI(
@@ -1290,6 +1292,8 @@ class LLM:
         return outputs
 
     def _anthropicClient(self) -> Anthropic:
+        from anthropic import Anthropic
+
         api_key = self._apiKey()
         if not api_key:
             raise ValueError('LLM Api Key is required')

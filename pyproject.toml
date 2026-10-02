@@ -3,7 +3,7 @@ name = "SouthsideMusic"
 version = "v45"
 description = "Advanced music player"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.15"
 dependencies = [
     "colorama>=0.4.6",
     "darkdetect>=0.8.0",
@@ -24,7 +24,7 @@ dependencies = [
     "tornado>=6.5.10",
     "tqdm>=4.70.1",
     "audioop-lts>=0.2.2",
-    "openai>=3.23.0",
+    "openai<=3.22.1",
     "pywin32>=312",
     "anthropic>=1.11.0",
     "markdown-it-py>=3.0.0",
@@ -37,6 +37,6 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "ruff>=0.16.10",
-    "mypy>=2.4.0",
+    "ruff<=0.16.9",
+    "mypy<=2.3.1",
 ]

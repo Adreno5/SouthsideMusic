@@ -698,7 +698,7 @@ class CommentInfo:
 
 @dataclass
 class QualityLevelInfo:
-    rate: int
+    br: int
     charge_type: bool
     display_text: str
 
@@ -862,4 +862,4 @@ class MusicServiceBackend(ABC):
     def addComment(self, song_id: str, content: str) -> None: ...
 
     @abstractmethod
-    def getSongPrivilege(self, song_id: str) -> QualityPrivilegeInfo: ...
+    def getSongQualityPrivilege(self, song_id: str) -> QualityPrivilegeInfo: ...

@@ -39,7 +39,7 @@ _logger = logging.getLogger(__name__)
 
 
 class NeteaseCloudMusicBackend(MusicServiceBackend):
-    def getSongPrivilege(self, song_id: str) -> QualityPrivilegeInfo:
+    def getSongQualityPrivilege(self, song_id: str) -> QualityPrivilegeInfo:
         data = apis.track.getTrackPrivilege([song_id])
         assert isinstance(data, dict), 'Invalid privilege response'
         result = data['data'][0]

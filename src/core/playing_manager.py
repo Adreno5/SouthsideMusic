@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from PySide6.QtCore import QObject
+
 import base64
 import logging
 import os
@@ -9,6 +11,7 @@ import subprocess
 import tempfile
 import threading
 from dataclasses import dataclass
+from services.events import REQUEST_BR_CHANGED
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict
 import time as timeLib
 
@@ -97,8 +100,9 @@ class PlaySelection:
     base_index: int
 
 
-class PlayingManager:
+class PlayingManager(QObject):
     def __init__(self, ctx: AppContext) -> None:
+        super().__init__()
         self.ctx = ctx
         self.playlist: list[SongStorable] = []
         self.heart_mode = False
@@ -459,6 +463,7 @@ class PlayingManager:
             position,
             pause_after_load,
         )
+        event_bus.emit(REQUEST_BR_CHANGED, br)
 
     def clearReservedNext(self) -> None:
         self._reserved_next = None
@@ -2449,6 +2454,12 @@ class PlayingManager:
         self.clearPreload()
         song_storable = self._selectStorableForPlayback(song_storable)
         self._logger.debug(f'{song_storable.target_lufs=} {cfg.target_lufs=}')
+
+        def _setMaxBr():
+            target_br = min(getBackend().getSongQualityPrivilege(song_storable.id).max_br, self.ctx.config.target_request_br)
+            self._logger.debug(f'max usable br: {target_br}')
+            self.setRequestBr(target_br)
+        asyncTask(_setMaxBr, (), self)
 
         player = self._player
         if player is None:

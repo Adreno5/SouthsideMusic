@@ -33,6 +33,20 @@ def syncSystemThemeColor() -> None:
         setThemeColor(color)
 
 
+def getSystemThemeColor() -> QColor:
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\DWM'
+        ) as key:
+            value, _ = winreg.QueryValueEx(key, 'AccentColor')
+    except OSError as e:
+        _logger.exception(e)
+        return
+
+    color = QColor(value & 0xFF, (value >> 8) & 0xFF, (value >> 16) & 0xFF)
+    return color
+
+
 def isDark() -> bool:
     return bool(_is_dark)
 

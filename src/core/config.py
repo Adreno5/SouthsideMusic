@@ -152,6 +152,9 @@ class Config:
     ws_lyrics_interval = 0.032
     ws_fft_interval = 0.032
 
+    # not in setting page
+    target_request_br = 999000
+
     def __init__(self) -> None:
         super().__init__()
         self.setting_section_expanded = {}

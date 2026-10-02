@@ -31,7 +31,7 @@ from imports import (
     SubtitleLabel,
     TitleLabel,
     bindText,
-    event_bus
+    event_bus,
 )
 from views.folder_card import CloudFolderCard
 from views.list_widget import SScrollArea

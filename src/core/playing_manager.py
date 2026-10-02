@@ -740,9 +740,7 @@ class PlayingManager(QObject):
         self.current_song = selection.song
         self.current_song_audio = audio
         self._play_seq += 1
-        boundary = player.beginQueuedTrack(
-            boundary[0], frames, gain, boundary[1]
-        )
+        boundary = player.beginQueuedTrack(boundary[0], frames, gain, boundary[1])
         self.total_length = player.getLength()
         self.crossfading = boundary[1] > player.current_index
         self._transition_end = boundary[1] if self.crossfading else None

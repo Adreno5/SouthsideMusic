@@ -367,6 +367,10 @@ class SettingPage(QWidget):
         self._addLoudnessSection()
 
         if lw:
+            lw.subtitle('Setting up animations options...')
+        self._addAnimationsSection()
+
+        if lw:
             lw.subtitle('Setting up lyrics options...')
         self._addLyricsSection()
 
@@ -748,7 +752,7 @@ class SettingPage(QWidget):
             advanced=True,
         )
 
-    def _addLyricsSection(self) -> None:
+    def _addAnimationsSection(self) -> None:
         self.addSection(
             'setting_page.animations',
             'setting_page.animations_desc',
@@ -817,6 +821,21 @@ class SettingPage(QWidget):
 
         self._onLyricsAnimationTypeChanged(
             self.lyrics_type_box.currentText().lower(), False
+        )
+
+    def _addLyricsSection(self):
+        self.addSection(
+            'setting_page.lyrics_title', 'setting_page.lyrics_title_desc', False
+        )
+
+        self.addNumberSetting(
+            'setting_page.lyrics_spacing',
+            'setting_page.lyrics_spacing_desc',
+            0.5,
+            10,
+            0.05,
+            'lyrics_line_spacing',
+            advanced=False,
         )
 
     def _onLyricsAnimationTypeChanged(self, selected: str, reload: bool = True):

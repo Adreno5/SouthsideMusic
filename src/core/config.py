@@ -118,6 +118,8 @@ class Config:
     acceleration_smooth_factor: float = 0.068
     lyrics_scrolling_duration: float = 500
 
+    lyrics_line_spacing: float = 1
+
     scroll_duration: float = 250
 
     play_speed: float = 1

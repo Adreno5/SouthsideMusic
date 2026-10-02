@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
 import gzip
 import hashlib
 import html
 import json
 import logging
 import os
-from pathlib import Path
 import platform
 import random
 import re
@@ -17,17 +14,24 @@ import subprocess
 import tempfile
 import threading
 import time
-from typing import Callable
-from urllib.parse import urljoin
-from urllib.request import Request, urlopen
 import zipfile
 import zlib
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from pathlib import Path
+from urllib.error import URLError
+from urllib.parse import urljoin
+from urllib.request import Request, urlopen
 
-from PySide6.QtCore import QLocale, QObject, QThread, QTimer, Qt, Signal
+from PySide6.QtCore import QLocale, QObject, Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
+    QHBoxLayout,
     QLabel,
     QProgressBar,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -134,6 +138,7 @@ _ARTIFACT_PROBED = [False]
 _WORKING_ARTIFACT_HOSTS: list[str] = []
 _DEAD_ARTIFACT_HOSTS: set[str] = set()
 _INDEX_HOST: list[str] = ['']
+_ARTIFACT_PROBE_LOCK = threading.Lock()
 
 
 def pickArtifactHost(timeout: float = 6.0) -> str:
@@ -143,13 +148,13 @@ def pickArtifactHost(timeout: float = 6.0) -> str:
     answer others with 403, which used to send every download down the slow
     fallback. Rank the hosts by how many sample wheels they return.
     """
-    if _WORKING_ARTIFACT_HOSTS:
-        return _WORKING_ARTIFACT_HOSTS[0]
-    paths = [probe[probe.index('/packages/') :] for probe in _ARTIFACT_PROBES]
-    scores: list[tuple[int, str]] = []
-    for host in _ARTIFACT_CANDIDATES:
-        served = 0
-        for path in paths:
+    with _ARTIFACT_PROBE_LOCK:
+        if _WORKING_ARTIFACT_HOSTS:
+            return _WORKING_ARTIFACT_HOSTS[0]
+        _ARTIFACT_PROBED[0] = True
+        paths = [probe[probe.index('/packages/') :] for probe in _ARTIFACT_PROBES]
+
+        def probe(host: str, path: str) -> bool:
             try:
                 request = Request(
                     host + path,
@@ -157,31 +162,46 @@ def pickArtifactHost(timeout: float = 6.0) -> str:
                 )
                 with urlopen(request, timeout=timeout) as response:
                     response.read(512)
-                served += 1
-            except Exception as e:
+                return True
+            except (OSError, URLError) as e:
                 _logger.debug('artifact host %s failed on a probe: %s', host, e)
-                break
-        if served:
-            scores.append((served, host))
-    scores.sort(reverse=True)
-    _WORKING_ARTIFACT_HOSTS.extend(host for _score, host in scores)
-    for host in _ARTIFACT_CANDIDATES:
-        if host not in _WORKING_ARTIFACT_HOSTS:
-            _DEAD_ARTIFACT_HOSTS.add(host)
-    if scores:
-        _logger.info(
-            'wheel downloads will use %s (%d sample wheels served)',
-            scores[0][1],
-            scores[0][0],
+                return False
+
+        host_by_future = {}
+        scores_by_host = {host: 0 for host in _ARTIFACT_CANDIDATES}
+        with ThreadPoolExecutor(
+            max_workers=min(24, len(_ARTIFACT_CANDIDATES) * len(paths))
+        ) as executor:
+            for host in _ARTIFACT_CANDIDATES:
+                for path in paths:
+                    host_by_future[executor.submit(probe, host, path)] = host
+            for future in as_completed(host_by_future):
+                if future.result():
+                    scores_by_host[host_by_future[future]] += 1
+
+        scores = sorted(
+            ((score, host) for host, score in scores_by_host.items() if score > 0),
+            reverse=True,
         )
-    return _WORKING_ARTIFACT_HOSTS[0] if _WORKING_ARTIFACT_HOSTS else ''
+        _WORKING_ARTIFACT_HOSTS.extend(host for _score, host in scores)
+        for host in _ARTIFACT_CANDIDATES:
+            if host not in _WORKING_ARTIFACT_HOSTS:
+                _DEAD_ARTIFACT_HOSTS.add(host)
+        if scores:
+            _logger.info(
+                'wheel downloads will use %s (%d sample wheels served)',
+                scores[0][1],
+                scores[0][0],
+            )
+        return _WORKING_ARTIFACT_HOSTS[0] if _WORKING_ARTIFACT_HOSTS else ''
 
 
 def warmArtifactHost() -> None:
     """Probe the mirrors once, in the background, before the first download."""
-    if _ARTIFACT_PROBED[0]:
-        return
-    _ARTIFACT_PROBED[0] = True
+    with _ARTIFACT_PROBE_LOCK:
+        if _ARTIFACT_PROBED[0]:
+            return
+        _ARTIFACT_PROBED[0] = True
     threading.Thread(
         target=pickArtifactHost,
         daemon=True,
@@ -288,9 +308,18 @@ MIRRORS: dict[str, str] = {
     'Huawei': 'https://repo.huaweicloud.com/repository/pypi/simple/',
 }
 
+MIRROR_LABELS_ZH: dict[str, str] = {
+    'PyPI': 'PyPI 官方源',
+    'Tsinghua': '清华大学',
+    'Aliyun': '阿里云',
+    'Tencent': '腾讯云',
+    'USTC': '中国科技大学',
+    'Huawei': '华为云',
+}
+
 
 def runMain() -> None:
-    bwindow.hide()
+    bwindow.task.emit(bwindow.hide)
 
     _logger.debug('spawning main: %s %s', PYTHON_EXE, MAIN_SCRIPT)
     proc = subprocess.Popen(
@@ -306,7 +335,7 @@ def runMain() -> None:
         universal_newlines=True,
     )
     if not proc.stdout:
-        app.quit()
+        bwindow.task.emit(app.quit)
         return
     for line in proc.stdout:
         print(line.strip())
@@ -315,7 +344,7 @@ def runMain() -> None:
         _logger.error('main.py exited with code %d', proc.returncode)
         bwindow.startupFailed.emit(proc.returncode)
         return
-    app.quit()
+    bwindow.task.emit(app.quit)
 
 
 class RequirementInfo:
@@ -329,7 +358,7 @@ class RequirementInfo:
     specifier: str
 
 
-def stagedWheelPath(wheel: 'WheelFile') -> Path:
+def stagedWheelPath(wheel: WheelFile) -> Path:
     """Where a wheel downloaded for its metadata is kept for reuse.
 
     Reading METADATA needs the wheel, and the download phase needs it too, so
@@ -350,6 +379,7 @@ class WheelFile:
     requires_python: str
     size: int = 0
     path: Path | None = None
+    staged_path: Path | None = None
     metadata_url: str = ''
     metadata_hash: str = ''
 
@@ -374,8 +404,15 @@ class WheelIndex:
         self._cache_lock = threading.Lock()
         self._metadata_cache: dict[str, bytes | None] = {}
         self._metadata_lock = threading.Lock()
+        self._metadata_locks: dict[str, threading.Lock] = {}
         self._resolve_cache: dict[tuple[str, str, str], WheelFile] = {}
         self._resolve_lock = threading.Lock()
+        self._session_files: dict[str, list[dict]] = {}
+        self._fetch_locks: dict[str, threading.Lock] = {}
+        self._tag_sets: tuple[frozenset[str], frozenset[str], frozenset[str]] | None = (
+            None
+        )
+        self._tag_sets_lock = threading.Lock()
         self._loadCache()
 
     def _loadCache(self) -> None:
@@ -460,6 +497,22 @@ class WheelIndex:
 
     def _fetchFiles(self, package: str) -> list[dict] | None:
         key = f'{_indexCacheKey(self.mirror_url)}:{package}'
+        with self._cache_lock:
+            if key in self._session_files:
+                return self._session_files[key]
+            fetch_lock = self._fetch_locks.setdefault(key, threading.Lock())
+
+        with fetch_lock:
+            with self._cache_lock:
+                if key in self._session_files:
+                    return self._session_files[key]
+            files = self._fetchFilesUncached(package, key)
+            if files is not None:
+                with self._cache_lock:
+                    self._session_files[key] = files
+            return files
+
+    def _fetchFilesUncached(self, package: str, key: str) -> list[dict] | None:
         payload = None
         candidates = [
             urljoin(self.mirror_url, f'{package}/'),
@@ -509,17 +562,18 @@ class WheelIndex:
                     entry['metadata'], entry['metadata_from'] = marker
         # Big projects publish megabytes of index; cache only the wheels this
         # interpreter could install so the file stays small and fast to read.
+        filtered = self._filterFiles(files)
         with self._cache_lock:
             cached = self._cachedFiles(key) or []
             merged = {entry['filename']: entry for entry in cached}
-            for entry in self._filterFiles(files):
+            for entry in filtered:
                 merged[entry['filename']] = entry
             self._entries[key] = {
                 'files': list(merged.values()),
                 'time': time.time(),
             }
             self._writeCacheEntries(self._entries)
-        return files
+        return filtered
 
     def _canonicalMetadata(self, package: str) -> dict[str, tuple[str, str]]:
         """PEP 658 markers from the canonical index, keyed by file name.
@@ -589,11 +643,8 @@ class WheelIndex:
         candidates = [
             entry
             for entry in files
-            if entry['filename'].endswith('.whl')
-            and self._matchesDistribution(entry['filename'], package)
+            if self._matchesDistribution(entry['filename'], package)
             and self._matchesVersion(entry['filename'], requirement.version)
-            and self.matchesTags(entry['filename'])
-            and self._matchesPython(entry.get('requires_python') or '')
         ]
         if not candidates:
             return None
@@ -632,13 +683,7 @@ class WheelIndex:
         versions: dict[str, str] = {}
         for entry in files:
             filename = entry.get('filename') or ''
-            if not filename.endswith('.whl'):
-                continue
             if not self._matchesDistribution(filename, package):
-                continue
-            if not self.matchesTags(filename):
-                continue
-            if not self._matchesPython(entry.get('requires_python') or ''):
                 continue
             versions.setdefault(_wheelVersion(filename), filename)
         return versions
@@ -673,10 +718,15 @@ class WheelIndex:
         with self._metadata_lock:
             if key in self._metadata_cache:
                 return self._metadata_cache[key]
-        metadata = self._fetchMetadata(wheel)
-        with self._metadata_lock:
-            self._metadata_cache[key] = metadata
-        return metadata
+            fetch_lock = self._metadata_locks.setdefault(key, threading.Lock())
+        with fetch_lock:
+            with self._metadata_lock:
+                if key in self._metadata_cache:
+                    return self._metadata_cache[key]
+            metadata = self._fetchMetadata(wheel)
+            with self._metadata_lock:
+                self._metadata_cache[key] = metadata
+            return metadata
 
     def _fetchMetadata(self, wheel: WheelFile) -> bytes | None:
         if wheel.metadata_url:
@@ -707,6 +757,8 @@ class WheelIndex:
         reuse = stagedWheelPath(wheel) if source is None else None
         try:
             if source is None:
+                if reuse is None:
+                    return None
                 if (
                     not reuse.exists()
                     or not looksLikeWheel(reuse)
@@ -718,8 +770,10 @@ class WheelIndex:
                         wheel.filename,
                         threading.Lock(),
                         {},
+                        wheel.sha256,
                     )
                 source = reuse
+                wheel.staged_path = reuse
             archive = zipfile.ZipFile(source)
             for entry in archive.namelist():
                 if entry.endswith('.dist-info/METADATA'):
@@ -743,7 +797,7 @@ class WheelIndex:
         return len(parts) > 1 and parts[1] == version
 
     def matchesTags(self, filename: str) -> bool:
-        stem = filename[:-4] if filename.endswith('.whl') else filename
+        stem = filename.removesuffix('.whl')
         parts = stem.split('-')
         if len(parts) < 5:
             return False
@@ -755,7 +809,7 @@ class WheelIndex:
         return self._platformFits(platform_tag)
 
     def _interpreterFits(self, tag: str) -> bool:
-        allowed = {want for want, _abi, _platform in self.compatibilityTags()}
+        allowed, _abi_tags, _platform_tags = self._tagSets()
         if tag in allowed:
             return True
         # Pip accepts older cp3xx tags as candidates; the ABI check below decides
@@ -784,19 +838,31 @@ class WheelIndex:
             return self._interpreter_tag.startswith('cp')
         # Match pip exactly here: a cp39 (or even cp313) wheel does not install
         # on cp314 unless its ABI tag is abi3.
-        return tag in {
-            want_abi for _want, want_abi, _platform in self.compatibilityTags()
-        }
+        _interpreter_tags, allowed, _platform_tags = self._tagSets()
+        return tag in allowed
 
     def _platformFits(self, tag: str) -> bool:
-        allowed = [want for _want, _abi, want in self.compatibilityTags()]
+        _interpreter_tags, _abi_tags, allowed = self._tagSets()
         for part in tag.split('.'):
             if part == 'any' or part in allowed:
                 return True
         return False
 
+    def _tagSets(
+        self,
+    ) -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
+        with self._tag_sets_lock:
+            if self._tag_sets is None:
+                tags = self.compatibilityTags()
+                self._tag_sets = (
+                    frozenset(want for want, _abi, _platform in tags),
+                    frozenset(abi for _want, abi, _platform in tags),
+                    frozenset(platform for _want, _abi, platform in tags),
+                )
+            return self._tag_sets
+
     def _tagScore(self, filename: str) -> int:
-        stem = filename[:-4] if filename.endswith('.whl') else filename
+        stem = filename.removesuffix('.whl')
         parts = stem.split('-')
         if len(parts) < 3:
             return 0
@@ -866,7 +932,7 @@ class WheelIndex:
 
 
 def _wheelVersion(filename: str) -> str:
-    stem = filename[:-4] if filename.endswith('.whl') else filename
+    stem = filename.removesuffix('.whl')
     parts = stem.split('-')
     return parts[1] if len(parts) > 1 else ''
 
@@ -920,13 +986,16 @@ def versionSpecifierAllows(specifier: str, version: str) -> bool:
         elif operator == '!=':
             if _sameRelease(left, right):
                 return False
-        elif operator == '>=' and left < right:
-            return False
-        elif operator == '<=' and left > right:
-            return False
-        elif operator == '>' and left <= right:
-            return False
-        elif operator == '<' and left >= right:
+        elif (
+            operator == '>='
+            and left < right
+            or operator == '<='
+            and left > right
+            or operator == '>'
+            and left <= right
+            or operator == '<'
+            and left >= right
+        ):
             return False
         elif operator == '~=':
             if left < right:
@@ -1299,7 +1368,9 @@ class ProgressManager(QObject):
         self.applyWindowHeight()
 
     def hideSlots(self) -> None:
-        """Clear every bar. Call on the GUI thread only."""
+        self._invoke(self._applyHideSlots)
+
+    def _applyHideSlots(self) -> None:
         self.slot_names.clear()
         for name in list(self.slot_labels):
             self._applyReleaseSlot(name)
@@ -1559,7 +1630,7 @@ def _parseSimpleHtml(payload: bytes) -> list[dict]:
     text = payload.decode('utf-8', 'replace')
     result: list[dict] = []
     # Fallback for mirrors that ignore the JSON accept header.
-    for match in re.finditer(r'<a\s+([^>]*)>(.*?)</a>', text, re.S):
+    for match in re.finditer(r'<a\s+([^>]*)>(.*?)</a>', text, re.DOTALL):
         attributes, label = match.group(1), match.group(2)
         href = re.search(r'href="([^"]+)"', attributes)
         if href is None:
@@ -1627,9 +1698,7 @@ def alternateWheelUrls(url: str) -> list[str]:
     if marker not in stripped:
         return []
     path = stripped[stripped.index(marker) :]
-    # A host proven to serve artifacts comes first, then the other mirrors, then
-    # the CDN. The URL the index advertised goes last: a mirror that 404s its
-    # own artifacts would otherwise waste the first attempt on every wheel.
+    # Start with proven hosts and the advertised source before unknown fallbacks.
     dead = _DEAD_ARTIFACT_HOSTS
     working = [host for host in _WORKING_ARTIFACT_HOSTS if host not in dead]
     others = [
@@ -1638,13 +1707,20 @@ def alternateWheelUrls(url: str) -> list[str]:
         if host not in working and host not in dead
     ]
     alternates: list[str] = []
-    for host in working + others:
+    for host in working:
         candidate = host + path
         if candidate not in alternates:
             alternates.append(candidate)
+    source_host = _hostOf(stripped)
     known_hosts = {_hostOf(item) for item in alternates}
-    if _hostOf(stripped) not in known_hosts:
+    if source_host not in known_hosts and source_host not in dead:
         alternates.append(stripped)
+    known_hosts = {_hostOf(item) for item in alternates}
+    for host in others:
+        candidate = host + path
+        if host not in known_hosts:
+            alternates.append(candidate)
+            known_hosts.add(host)
     return alternates
 
 
@@ -1685,6 +1761,7 @@ def downloadWheelTo(
     package_name: str,
     lock: threading.Lock,
     current: dict[str, int],
+    sha256: str = '',
 ) -> None:
     """Stream a wheel to disk, publishing the byte count as it arrives.
 
@@ -1694,31 +1771,36 @@ def downloadWheelTo(
     host = _hostOf(url)
     if host:
         _INDEX_HOST[0] = host
-    pickArtifactHost()
     candidates = alternateWheelUrls(url)
-    if url not in candidates:
-        candidates.append(url)
+    source_url = url.split('#', 1)[0]
+    if source_url not in candidates:
+        candidates.append(source_url)
     last_error: Exception | None = None
     attempted: list[str] = []
     for candidate in candidates:
         attempted.append(candidate)
         temporary = target.with_suffix(target.suffix + '.part')
         received = 0
+        digest = hashlib.sha256() if sha256 else None
         try:
             request = Request(
                 candidate,
                 headers={'User-Agent': 'SouthsideMusic'},
             )
-            with urlopen(request, timeout=pipTimeoutSeconds()) as response:
-                with temporary.open('wb') as handle:
-                    while True:
-                        block = response.read(256 * 1024)
-                        if not block:
-                            break
-                        handle.write(block)
-                        received += len(block)
-                        with lock:
-                            current[package_name] = received
+            with (
+                urlopen(request, timeout=pipTimeoutSeconds()) as response,
+                temporary.open('wb') as handle,
+            ):
+                while True:
+                    block = response.read(1024 * 1024)
+                    if not block:
+                        break
+                    handle.write(block)
+                    if digest is not None:
+                        digest.update(block)
+                    received += len(block)
+                    with lock:
+                        current[package_name] = received
             temporary.replace(target)
             candidate_host = _hostOf(candidate)
             if not looksLikeWheel(target):
@@ -1727,9 +1809,17 @@ def downloadWheelTo(
                 last_error = ValueError(
                     f'{candidate_host} returned a non-wheel payload'
                 )
-                if candidate_host and candidate_host != _hostOf(url):
+                if candidate_host:
                     _DEAD_ARTIFACT_HOSTS.add(candidate_host)
                 _logger.debug('non-wheel payload from %s', candidate)
+                continue
+            if digest is not None and digest.hexdigest().lower() != sha256.lower():
+                target.unlink(missing_ok=True)
+                last_error = ValueError(
+                    f'{candidate_host} returned a wheel with a bad hash'
+                )
+                if candidate_host:
+                    _DEAD_ARTIFACT_HOSTS.add(candidate_host)
                 continue
             if candidate_host and candidate_host not in _WORKING_ARTIFACT_HOSTS:
                 _WORKING_ARTIFACT_HOSTS.insert(0, candidate_host)
@@ -1746,7 +1836,7 @@ def downloadWheelTo(
             with lock:
                 current[package_name] = 0
             failed_host = _hostOf(candidate)
-            if failed_host and failed_host != _hostOf(url):
+            if failed_host:
                 _DEAD_ARTIFACT_HOSTS.add(failed_host)
             _logger.debug('wheel fetch failed from %s: %s', candidate, e)
     if last_error is not None:
@@ -1821,7 +1911,6 @@ def getInstalledPackages(
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
-        universal_newlines=True,
         env=getPipEnv(env),
     )
     if completed.returncode != 0:
@@ -1837,7 +1926,6 @@ def getInstalledPackages(
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
-            universal_newlines=True,
             env=getPipEnv(env),
         )
     if completed.returncode != 0:
@@ -2078,6 +2166,7 @@ def isFreeThreadedPython(python_exe: Path) -> bool:
 class BootstrapWindow(QWidget):
     latencyFinished = Signal(str, str, float)
     allDone = Signal()
+    mirrorChoiceRequested = Signal()
 
     task = Signal(object)
     progressChanged = Signal(int, str)
@@ -2113,6 +2202,9 @@ class BootstrapWindow(QWidget):
                     'Tips: Cache cleanup protects core data and prefers removing less-used files first.',
                 ],
                 'mirror': 'Using {mirror} mirror ({latency} ms). Installing dependencies...',
+                'mirror_auto': 'Automatic (lowest latency)',
+                'mirror_install': 'Install with this mirror',
+                'choosing_mirror': 'Pick a download mirror, then click the button.',
                 'checking_environment': 'Checking installed packages...',
                 'checking_runtime': 'Checking {runtime} package state...',
                 'checking_imports': 'Checking {runtime} imports...',
@@ -2168,6 +2260,9 @@ class BootstrapWindow(QWidget):
                     'Tips: 缓存清理会保护核心数据，并优先回收较少使用的文件。',
                 ],
                 'mirror': '正在使用 {mirror} 镜像（{latency} 毫秒），开始安装依赖…',
+                'mirror_auto': '自动选择（延迟最低）',
+                'mirror_install': '使用此镜像安装',
+                'choosing_mirror': '请选择下载镜像，然后点击右侧按钮继续。',
                 'checking_environment': '正在检查已经安装的库…',
                 'checking_runtime': '正在检查 {runtime} 的库状态…',
                 'checking_imports': '正在检查 {runtime} 导入状态…',
@@ -2222,7 +2317,21 @@ class BootstrapWindow(QWidget):
         self.tip_label.setStyleSheet('color: #888888; font-size: 9pt;')
         _IS_CHINESE[0] = self._language == 'zh'
         self.mwindow = ProgressManager(self, self._layout, self._invokeOnGui)
+        self.mirror_choice = QWidget()
+        mirror_row = QHBoxLayout(self.mirror_choice)
+        mirror_row.setContentsMargins(0, 0, 0, 0)
+        labels = MIRROR_LABELS_ZH if self._language == 'zh' else {}
+        self.mirror_box = QComboBox()
+        self.mirror_box.addItem(self._text('mirror_auto'), '')
+        for name in MIRRORS:
+            self.mirror_box.addItem(labels.get(name, name), name)
+        self.mirror_button = QPushButton(self._text('mirror_install'))
+        self.mirror_button.clicked.connect(self._onMirrorPicked)
+        mirror_row.addWidget(self.mirror_box)
+        mirror_row.addWidget(self.mirror_button)
+        self.mirror_choice.hide()
         self._layout.addWidget(self.status_label)
+        self._layout.addWidget(self.mirror_choice)
         self._layout.addWidget(self.elapsed_label)
         self._layout.addWidget(self.tip_label)
         self.setLayout(self._layout)
@@ -2260,6 +2369,7 @@ class BootstrapWindow(QWidget):
         self.elapsedChanged.connect(self.elapsed_label.setText)
         self.invokeRequested.connect(self._runInvoke)
         self.startupFailed.connect(self.reportStartupFailure)
+        self.mirrorChoiceRequested.connect(self.showMirrorChoice)
 
         self.task.connect(self.doTask)
 
@@ -2317,13 +2427,48 @@ class BootstrapWindow(QWidget):
             target=self.installRequirements, args=(mirror_name, mirror_url, latency)
         ).start()
 
+    def showMirrorChoice(self) -> None:
+        self.updateStatusText(self._text('choosing_mirror'))
+        self.mirror_choice.show()
+        self.mwindow.applyWindowHeight()
+
+    def _onMirrorPicked(self) -> None:
+        self.mirror_button.setEnabled(False)
+        self.mirror_choice.hide()
+        self.mwindow.applyWindowHeight()
+        mirror_name = self.mirror_box.currentData()
+        if not mirror_name:
+            self.startLatencyRace()
+            return
+        self.useMirror(str(mirror_name), MIRRORS[str(mirror_name)])
+
+    def useMirror(self, mirror_name: str, mirror_url: str) -> None:
+        warmArtifactHost()
+        self.progressChanged.emit(10, self._text('checking', mirror=mirror_name))
+        threading.Thread(
+            target=self.installRequirements, args=(mirror_name, mirror_url, 0.0)
+        ).start()
+
+    def startLatencyRace(self) -> None:
+        for mirror_name, mirror_url in MIRRORS.items():
+            thread = threading.Thread(
+                target=self.testLatency, args=(mirror_name, mirror_url)
+            )
+            thread.daemon = True
+            self.latency_test_threads.append(thread)
+        self.latency_testing = True
+        for thread in self.latency_test_threads:
+            thread.start()
+        threading.Thread(target=self.finishLatencyFallback, daemon=True).start()
+
     def installRequirements(
         self, mirror_name: str, mirror_url: str, latency: float
     ) -> None:
         self._active_mirror_url = mirror_url
-        self.updateStatusText(
-            self._text('mirror', mirror=mirror_name, latency=int(latency * 1000))
-        )
+        if latency > 0:
+            self.updateStatusText(
+                self._text('mirror', mirror=mirror_name, latency=int(latency * 1000))
+            )
         self.beginPhase('download')
         self.installRuntimeRequirements(
             'GIL Python',
@@ -2338,13 +2483,20 @@ class BootstrapWindow(QWidget):
         )
         self.installFreeThreadedRequirements(mirror_url)
         self.beginPhase('verify')
+        self.updateStatusText(self._text('checking_install'))
+        self.startElapsedTicker()
         missing = self.getMissingRuntimeRequirements()
         if missing:
             # A package can be installed at the right version yet unable to
             # import (an extension whose DLL never loads). Pip calls that
             # "already satisfied", so reinstall exactly those once.
+            self.stopElapsedTicker(self._text('checking_install'))
             self._repairMissing(missing)
+            self.beginPhase('verify')
+            self.updateStatusText(self._text('checking_install'))
+            self.startElapsedTicker()
             missing = self.getMissingRuntimeRequirements()
+        self.stopElapsedTicker(self._text('checking_install'))
         if missing:
             package_names = ', '.join(requirement.name for requirement in missing)
             _logger.error('dependency setup incomplete: %s', package_names)
@@ -2357,7 +2509,6 @@ class BootstrapWindow(QWidget):
             100,
             self._text('starting'),
         )
-        self.mwindow.mainBar().setValue(100)
         self.mwindow.hideSlots()
         self.allDone.emit()
 
@@ -2636,11 +2787,9 @@ class BootstrapWindow(QWidget):
     def beginPhase(self, name: str) -> None:
         """Start a phase: the overall slice and the stage bar switch to it."""
         self.mwindow.setPhase(name)
-        self.mwindow.mainBar().setValue(self.mwindow.overallPercent())
 
     def endPhase(self) -> None:
         self.mwindow.endPhase()
-        self.mwindow.mainBar().setValue(self.mwindow.overallPercent())
 
     def startElapsedTicker(self, start: int = 0, end: int = 100) -> None:
         """Advance the stage bar and the elapsed label for a phase.
@@ -3313,12 +3462,15 @@ class BootstrapWindow(QWidget):
         def fetch(requirement: RequirementInfo, wheel: WheelFile) -> bool:
             target = wheelhouse / wheel.filename
             try:
-                staged = self.metadataWheelPath(wheel)
+                staged = wheel.staged_path or self.metadataWheelPath(wheel)
                 with progress_lock:
                     size = staged.stat().st_size if staged.exists() else 0
                     current[requirement.name] = size
                     active[requirement.name] = True
-                if staged.exists() and verifyWheelHash(staged, wheel.sha256):
+                staged_is_verified = wheel.staged_path is not None and staged.exists()
+                if staged.exists() and (
+                    staged_is_verified or verifyWheelHash(staged, wheel.sha256)
+                ):
                     # Already fetched while reading its metadata; move it in
                     # instead of keeping two copies.
                     target.unlink(missing_ok=True)
@@ -3341,11 +3493,8 @@ class BootstrapWindow(QWidget):
                     requirement.name,
                     progress_lock,
                     current,
+                    wheel.sha256,
                 )
-                if not verifyWheelHash(target, wheel.sha256):
-                    errors[requirement.name] = 'checksum mismatch'
-                    target.unlink(missing_ok=True)
-                    return False
                 with progress_lock:
                     current[requirement.name] = target.stat().st_size
                     active[requirement.name] = False
@@ -3574,6 +3723,7 @@ class BootstrapWindow(QWidget):
         text_key = 'offline_install' if no_index else 'online_install'
         self.beginPhase('install')
         self.startElapsedTicker()
+        self.updateStatusText(self._text(text_key, count=len(args)))
         speed_stop, speed_thread = self.startDownloadWatch(
             self.updateDownloadSpeed,
             0.5,
@@ -4072,17 +4222,7 @@ class BootstrapWindow(QWidget):
         self._download_active.clear()
         self._download_speed.clear()
 
-        for mirror_name, mirror_url in MIRRORS.items():
-            thread = threading.Thread(
-                target=self.testLatency, args=(mirror_name, mirror_url)
-            )
-            thread.daemon = True
-            self.latency_test_threads.append(thread)
-
-        self.latency_testing = True
-        for thread in self.latency_test_threads:
-            thread.start()
-        threading.Thread(target=self.finishLatencyFallback, daemon=True).start()
+        self.mirrorChoiceRequested.emit()
 
 
 if __name__ == '__main__':

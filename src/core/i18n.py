@@ -595,6 +595,22 @@ TRANSLATIONS: dict[str, list[str]] = {
         "control the animation duration of list's scroll",
         '列表滚动动画的时长',
     ],
+    'setting_page.lyrics_title': [
+        'Lyrics',
+        '歌词',
+    ],
+    'setting_page.lyrics_title_desc': [
+        "lyrics' settings",
+        '关于歌词的设置项',
+    ],
+    'setting_page.lyrics_spacing': [
+        'Lyrics Line Spacing',
+        '歌词行间距',
+    ],
+    'setting_page.lyrics_spacing_desc': [
+        'the spacing between two lines of lyrics',
+        '两行歌词之间的间距',
+    ],
     'setting_page.adjust_the_right_channel_delay_of_stereo_haas_effect': [
         'adjust the right-channel delay of stereo Haas effect',
         '调整立体声 Haas 效果的右声道延迟',

@@ -129,6 +129,7 @@ def atExitListener():
 
     raise SystemExit()
 
+
 atexit.register(atExitListener)
 
 
@@ -585,11 +586,12 @@ def southsideMusic():
     if _font_families:
         harmony_font_family = _font_families[0]
     else:
-        _logger.warning(f'failed to load font {_font_path}, falling back to system font')
+        _logger.warning(
+            f'failed to load font {_font_path}, falling back to system font'
+        )
         harmony_font_family = app.font().family()
 
     ctx.harmony_font_family = harmony_font_family
-
 
     launchwindow.subtitle('Initializing services...')
 
@@ -697,5 +699,6 @@ def southsideMusic():
 
     app.exec()
 
+
 if __name__ == '__main__':
-    southsideMusic() # 一切的起点....
+    southsideMusic()  # 一切的起点....

@@ -402,7 +402,7 @@ class LyricsViewer(QWidget):
         for line in lines:
             y_offsets.append(y)
             has_trans = bool(self._translationTextForLine(line, use_yrc))
-            y += self._lineStep(has_trans)
+            y += self._lineStep(has_trans) * self.ctx.config.lyrics_line_spacing
         return y_offsets, y
 
     def _currentBaseline(

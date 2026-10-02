@@ -72,7 +72,7 @@ class QualityCard(CardWidget):
                 position=InfoBarPosition.TOP,
                 parent=self.ctx.main_window,
             )
-        else:
+        elif self.has_clicked and br == self.level.br:
             InfoBar.success(
                 tr('quality_dialog.success'),
                 tr(
@@ -87,7 +87,7 @@ class QualityCard(CardWidget):
 
     def _clickedOn(self):
         self.has_clicked = True
-        if self.level.br == self.cur_br:
+        if self.level.br == self.ctx.playing_manager.getCurrentRequestBr():
             return
         InfoBar.info(
             tr('quality_dialog.switch_title'),

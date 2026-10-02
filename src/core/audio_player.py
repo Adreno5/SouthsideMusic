@@ -869,6 +869,8 @@ class AudioPlayer(QObject):
             self._clearQueue()
             if self.is_playing or (self.stream is not None and self.stream.active):
                 self._startProducer()
+            if self._scrub_samples is not None:
+                self._scrub_handoff = True
             return True
 
     def beginQueuedTrack(
@@ -1337,6 +1339,8 @@ class AudioPlayer(QObject):
     def setPosition(self, seconds: float) -> None:
         self._last_seek_at = time.perf_counter()
         if self._timeline is not None:
+            if self._scrub_samples is not None:
+                self._scrub_handoff = False
             self.seekRequested.emit(seconds)
             return
         with self._lock:
@@ -1356,6 +1360,41 @@ class AudioPlayer(QObject):
             self._clearQueue()
             if self.is_playing:
                 self._startProducer()
+
+    def replacePreparedForSeek(
+        self, prepared: PreparedAudioBuffer, seconds: float, was_playing: bool
+    ) -> bool:
+        with self._lock:
+            if self.stream is not None and prepared.sample_rate != self.sample_rate:
+                return False
+            preview = self._scrub_samples
+            preview_scale = self._scrub_scale
+            preview_frame = self._scrub_frame
+            output_channels = self.output_channels
+            self._stopProducer()
+            self._applyPreparedBuffer(prepared)
+            if self.stream is not None:
+                self.output_channels = output_channels
+            self.current_index = min(
+                round(max(0.0, seconds) * self.sample_rate), len(self.samples)
+            )
+            self._playback_time = self.current_index / self.sample_rate
+            self._smooth_position_start = self._playback_time
+            self._smooth_position_end = self._playback_time
+            self._clearQueue()
+            self._producer_target_lead = self._producerDesiredLead()
+            self.is_playing = was_playing
+            self.is_paused = not was_playing
+            if was_playing:
+                if preview is not None:
+                    self._scrub_samples = preview
+                    self._scrub_scale = preview_scale
+                    self._scrub_frame = preview_frame
+                    self._scrub_handoff = True
+                self._startProducer()
+                if self.stream is None or not self.stream.active:
+                    self._startStream()
+            return True
 
     def beginScrub(
         self, seconds: float, audio: PatchedAudioSegment | None = None
@@ -1377,7 +1416,7 @@ class AudioPlayer(QObject):
                 scale = (
                     float(2**31)
                     if audio.sample_width == 4
-                    else float(np.iinfo(dtype).max)
+                    else float(2 ** (audio.sample_width * 8 - 1) - 1)
                 )
             else:
                 source = self.samples

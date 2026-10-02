@@ -738,7 +738,10 @@ class PlayingController(QWidget):
         progress_width = max(1, self.width() - progress_left)
         progress = (event.position().x() - progress_left) / progress_width
         progress = max(0.0, min(1.0, progress))
-        return progress * self._dp.total_length
+        loaded_time = self.ctx.playing_manager.getDisplayLoadedTime()
+        if loaded_time < self._dp.total_length:
+            loaded_time = max(0.0, loaded_time - 0.1)
+        return min(progress * self._dp.total_length, loaded_time)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if (

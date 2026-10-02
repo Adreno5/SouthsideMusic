@@ -518,17 +518,38 @@ class PlayingManager(QObject):
             self._preload_triggered = True
             self.preloadNextSong()
             return
-        prepared = AudioPlayer.prepareBuffer(audio)
-        player.loadPrepared(prepared)
-        player.setGain(gain)
-        position = max(0.0, min(seconds, player.getLength()))
-        if was_playing:
-            player.playFromPosition(position)
-        else:
-            player.setPosition(position)
-            player.is_paused = True
-        self._preload_triggered = True
-        self.preloadNextSong()
+        play_seq = self._play_seq
+        seek_at = player.getLastSeekTime()
+
+        def _prepareSeek() -> None:
+            try:
+                prepared = AudioPlayer.prepareBuffer(audio)
+            except Exception as e:
+                self._logger.exception(e)
+                return
+
+            def _applySeek() -> None:
+                if (
+                    self._play_seq != play_seq
+                    or self.current_song_audio is not audio
+                    or self._player is not player
+                    or player.getLastSeekTime() != seek_at
+                ):
+                    return
+                if not player.replacePreparedForSeek(prepared, position, was_playing):
+                    player.loadPrepared(prepared)
+                    player.setGain(gain)
+                    if was_playing:
+                        player.playFromPosition(position)
+                    else:
+                        player.setPosition(position)
+                        player.is_paused = True
+                self._preload_triggered = True
+                self.preloadNextSong()
+
+            self._schedule(_applySeek)
+
+        threading.Thread(target=_prepareSeek, daemon=True).start()
 
     def isSelectionCurrent(self, selection: PlaySelection | None) -> bool:
         if selection is None:

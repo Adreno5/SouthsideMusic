@@ -7,9 +7,6 @@ import traceback
 from pathlib import Path
 import atexit
 
-from core.app_context import AppContext
-from services.events import event_bus, SECOND_TICK
-
 _SRC_DIR = os.path.abspath(os.path.dirname(__file__))
 if _SRC_DIR in sys.path:
     sys.path.remove(_SRC_DIR)
@@ -19,6 +16,8 @@ sys.path.append(os.path.join(_SRC_DIR, 'views'))
 sys.path.append(os.path.join(_SRC_DIR, 'services'))
 
 from PySide6.QtCore import Qt
+from core.app_context import AppContext
+from services.events import event_bus, SECOND_TICK
 from PySide6.QtWidgets import QApplication
 from views.launch_window import LaunchWindow
 

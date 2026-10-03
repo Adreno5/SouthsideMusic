@@ -4,6 +4,7 @@ import logging
 
 import math
 import time
+from typing import override
 
 from core.app_context import AppContext
 
@@ -25,12 +26,11 @@ from imports import (
     QFont,
     QFontMetricsF,
     QMouseEvent,
+    QOpenGLWidget,
     QPainter,
-    QPaintEvent,
     QWheelEvent,
     BEAT_POINT,
 )
-from imports import QWidget
 
 from core.qt_utils import toQtInt
 from core.time_format import float2time
@@ -38,7 +38,7 @@ from core.color import mixColor
 from core import theme
 from core.smooth import EaseOutTimer, SScrollTimer
 from core.lyrics import LyricInfo, YRCLyricInfo
-from services.events import LYRICS_SCROLLING_DURATION_CHANGED
+from services.events import LYRICS_SCROLLING_DURATION_CHANGED, LYRICS_LINE_DURATION
 from services.events.events import (
     PLAY_STORABLE,
 )
@@ -50,7 +50,7 @@ _X_SCROLL_SMOOTH_POWER = 2
 _X_SCROLL_FLIP_RATIO = 0.95
 
 
-class LyricsViewer(QWidget):
+class LyricsViewer(QOpenGLWidget):
     _TRANSLATION_TIME_TOLERANCE = 0.02
 
     def __init__(
@@ -58,8 +58,14 @@ class LyricsViewer(QWidget):
         ctx: AppContext,
         ft_size: int | None = None,
         transft_size: int | None = None,
-    ):
+    ) -> None:
         super().__init__()
+        surface_format = self.format()
+        surface_format.setSwapInterval(0)
+        surface_format.setAlphaBufferSize(8)
+        surface_format.setSamples(4)
+        self.setAttribute(Qt.WA_OpaquePaintEvent, True)
+        self.setFormat(surface_format)
         self._logger = logging.getLogger(__name__)
         self.ctx = ctx
         self._app = ctx.app
@@ -111,11 +117,6 @@ class LyricsViewer(QWidget):
         self._translation_timing_shifted = False
         self._text_width_map: dict[str, float] = {}
 
-        self.refresh_rate = max(60, ctx.app.primaryScreen().refreshRate() / 2)
-        self._logger.info(f'{self.refresh_rate=}')
-
-        self.delta = 1 / self.refresh_rate
-
         self.hovering = False
 
         self.translation_timer = EaseOutTimer(0.4, 4)
@@ -142,7 +143,6 @@ class LyricsViewer(QWidget):
 
         self.scroller = SScrollTimer()
 
-        event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(REPAINT, self._onRepaintTick)
         event_bus.subscribe(PLAY_STORABLE, lambda _: self.prewarmFontMetrics())
         event_bus.subscribe(BEAT_POINT, self._onBeatPoint)
@@ -182,7 +182,15 @@ class LyricsViewer(QWidget):
         self.update()
 
     def _viewPosition(self) -> float:
-        return self.ctx.playing_manager.getDisplaySmoothPosition()
+        position = self.ctx.playing_manager.getDisplaySmoothPosition()
+        if self._usesHandoff():
+            return self.ctx.lyrics_manager.timelinePosition(position)
+        return position
+
+    def _usesHandoff(self) -> bool:
+        return self.ctx.config.enable_lyric_handoff and self is getattr(
+            self.ctx.playing_page, 'viewer', None
+        )
 
     def _updateViewLayout(self, multiple_factor: float = 1.0) -> None:
         position = self._viewPosition()
@@ -211,7 +219,7 @@ class LyricsViewer(QWidget):
 
         self.target_draw_offset = max(-total_height, min(0.0, self.target_draw_offset))
         self.scroller.setValue(max(-total_height, min(0.0, self.scroller.getValue())))
-        self._updateDrawOffset(multiple_factor)
+        self._updateDrawOffset(lines, current_index, multiple_factor)
         if not all(
             math.isfinite(value)
             for value in (self.draw_offset, self.target_draw_offset, self.acc)
@@ -238,12 +246,6 @@ class LyricsViewer(QWidget):
             if i not in self._shown_lines:
                 self._line_alphas.pop(i)
         self._updateXScroll(lines, current_index, position)
-
-    def _onRefreshRateChanged(self):
-        self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
-        self._logger.info(f'{self.refresh_rate=}')
-
-        self.delta = 1 / self.refresh_rate
 
     def _hasTranslation(self) -> bool:
         return (
@@ -334,6 +336,8 @@ class LyricsViewer(QWidget):
         line: LyricInfo | YRCLyricInfo,
         use_yrc: bool | None = None,
     ) -> str:
+        if self._usesHandoff():
+            return '' if line.isMetadata else line.translation
         if not line.content.strip() or line.isMetadata or not self._transmgr.parsed:
             return ''
         self._ensureTranslationLookup()
@@ -379,6 +383,9 @@ class LyricsViewer(QWidget):
     def _lyricsForPosition(
         self, position: float
     ) -> tuple[list[LyricInfo | YRCLyricInfo], int, bool]:
+        if self._usesHandoff():
+            manager = self.ctx.lyrics_manager
+            return manager.parsed, manager.getCurrentIndex(position), True
         use_yrc = self._ymgr.hasYrcTiming()
         if use_yrc:
             return (
@@ -418,32 +425,47 @@ class LyricsViewer(QWidget):
         )
         return self._currentLineBaseline(current_has_trans)
 
-    def _updateDrawOffset(self, multiple_factor: float = 1.0) -> None:
+    def _updateDrawOffset(
+        self,
+        lines: list[LyricInfo | YRCLyricInfo],
+        current_index: int,
+        multiple_factor: float = 1.0,
+    ) -> None:
         if self.ctx.config.lyrics_animation_type == 'scrolling':
+            duration = int(self._cfg.lyrics_scrolling_duration)
+            if 0 <= current_index < len(lines) - 1:
+                line_duration = max(
+                    1,
+                    int(
+                        (lines[current_index + 1].time - lines[current_index].time)
+                        * 1000
+                    ),
+                )
+                duration = min(duration, line_duration)
             if (
                 not self.selecting
                 and self.last_target_draw_offset != self.target_draw_offset
             ):
-                self.scroller.scrollTo(int(self.target_draw_offset))
+                event_bus.emit(LYRICS_LINE_DURATION, duration)
+                self.scroller.scrollTo(int(self.target_draw_offset), duration=duration)
                 self.last_target_draw_offset = self.target_draw_offset
             if (
                 len(self.scroller.animating_objs) == 0
                 and self.scroller.getValue() != self.target_draw_offset
                 and not self.selecting
             ):
-                self.scroller.scrollTo(int(self.target_draw_offset))
+                event_bus.emit(LYRICS_LINE_DURATION, duration)
+                self.scroller.scrollTo(int(self.target_draw_offset), duration=duration)
             self.draw_offset = self.scroller.getValue()
         else:
             self.target_acc = (
                 (self.target_draw_offset - self.draw_offset)
-                * self.delta
-                * (self._cfg.lyrics_smooth_factor * self.refresh_rate)
+                * self._cfg.lyrics_smooth_factor
                 * multiple_factor
             )
             self.acc += (
                 (self.target_acc - self.acc)
-                * self.delta
-                * (self._cfg.acceleration_smooth_factor * self.refresh_rate)
+                * self._cfg.acceleration_smooth_factor
                 * multiple_factor
             )
 
@@ -671,7 +693,9 @@ class LyricsViewer(QWidget):
             hover_time_text = ''
             hover_time_x = 0.0
             if is_hovered:
-                info = float2time(line.time)
+                info = float2time(
+                    line.song_time if self._usesHandoff() else line.time
+                )
                 hover_time_text = f'{info.minutes:02d}:{info.seconds:02d}'
                 hover_time_x = (
                     self.width() - self.metri.horizontalAdvance(hover_time_text) - 5
@@ -762,7 +786,26 @@ class LyricsViewer(QWidget):
         self.mouse_pos = event.position()
         return super().mouseMoveEvent(event)
 
-    def paintEvent(self, event: QPaintEvent) -> None:
+    @override
+    def paintGL(self) -> None:
+        painter = QPainter(self)
+        background = getattr(self.parentWidget(), 'bg_color', None)
+        if background is None:
+            mwindow = self.ctx.main_window
+            if mwindow:
+                window_color = QColor(mwindow.backgroundColor)
+                background = mixColor(
+                    mwindow.song_theme or window_color,
+                    window_color,
+                    self._cfg.background_ratio,
+                )
+            else:
+                background = self.palette().window().color()
+        painter.fillRect(self.rect(), background)
+        self._paintLyrics(painter)
+        painter.end()
+
+    def _paintLyrics(self, painter: QPainter) -> None:
         if not self.isVisible():
             return
 
@@ -775,7 +818,6 @@ class LyricsViewer(QWidget):
         y_offsets = self._view_y_offsets
         top_offset = self._view_top_offset
 
-        painter = QPainter(self)
         painter.setRenderHints(
             QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing
         )
@@ -806,7 +848,13 @@ class LyricsViewer(QWidget):
                 painter.setFont(self.ft)
 
             content = line.content.strip()
-            if is_current_line and use_yrc and not line.isMetadata and content:
+            if (
+                is_current_line
+                and use_yrc
+                and isinstance(line, YRCLyricInfo)
+                and not line.isMetadata
+                and content
+            ):
                 base_color = QColor(color)
                 base_color.setAlpha(90 + int(30 * self.beat_flash_timer.current_value))
                 painter.setPen(base_color)
@@ -923,7 +971,9 @@ class LyricsViewer(QWidget):
                         5,
                     )
                     painter.setPen(color)
-                    info = float2time(line.time)
+                    info = float2time(
+                        line.song_time if self._usesHandoff() else line.time
+                    )
                     timetxt = f'{info.minutes:02d}:{info.seconds:02d}'
                     hover_time_x = (
                         self.width() - self.metri.horizontalAdvance(timetxt) - 5
@@ -933,8 +983,6 @@ class LyricsViewer(QWidget):
                         toQtInt(y),
                         timetxt,
                     )
-
-        painter.end()
 
     def enterEvent(self, event: QEnterEvent) -> None:
         self.hovering = True
@@ -958,7 +1006,18 @@ class LyricsViewer(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if self.hovering_lyric and event.button() == Qt.MouseButton.LeftButton:
-            self._player.setPosition(self.hovering_lyric.time)
+            line = self.hovering_lyric
+            if self._usesHandoff():
+                manager = self.ctx.lyrics_manager
+                if line.track_index == manager.current_track:
+                    self._player.setPosition(line.song_time)
+                elif 0 <= line.track_index < len(manager.tracks):
+                    self.ctx.playing_manager.playStorable(
+                        manager.tracks[line.track_index].song,
+                        restore_position=line.song_time,
+                    )
+            else:
+                self._player.setPosition(line.time)
             self.selecting = False
             self.hovering_lyric = None
             self.mouse_pos = None

@@ -52,6 +52,7 @@ from imports import (
     QPainter,
     QRect,
     QResizeEvent,
+    QSignalBlocker,
     QSizePolicy,
     QSpinBox,
     QSpacerItem,
@@ -75,9 +76,10 @@ from qfluentwidgets import (
     PushButton,
     Slider,
     SubtitleLabel,
-    PillToolButton,
+    PillToolButton, TitleLabel,
 )
 from views.lyrics_viewer import LyricsViewer
+from views.image_label import SImageLabel
 from views.quality_dialog import QualityDialog
 from views.song_card import DummyCard
 
@@ -437,7 +439,7 @@ class PlayingPage(QWidget):
         topleft_layout = QVBoxLayout()
         topleft_widget = QWidget()
         topleft_widget.setLayout(topleft_layout)
-        self.img_label = QLabel()
+        self.img_label = SImageLabel()
         self.img_label.hide()
         self.img_label.setFixedSize(200, 200)
         self.ring = IndeterminateProgressRing()
@@ -445,14 +447,18 @@ class PlayingPage(QWidget):
         self.ring.hide()
         top_layout.addWidget(self.ring)
         top_layout.addWidget(self.img_label)
-        self.title_label = SubtitleLabel()
+        self.title_label = TitleLabel()
         self.artists_label = QLabel()
-        topleft_layout.addWidget(
-            self.title_label, alignment=ali.AlignLeft | ali.AlignTop
+        self.title_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
         )
-        topleft_layout.addWidget(
-            self.artists_label, alignment=ali.AlignLeft | ali.AlignTop
+        self.artists_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
         )
+        self.title_label.setAlignment(ali.AlignLeft | ali.AlignTop)
+        self.artists_label.setAlignment(ali.AlignLeft | ali.AlignTop)
+        topleft_layout.addWidget(self.title_label)
+        topleft_layout.addWidget(self.artists_label)
         topleft_layout.addSpacerItem(
             QSpacerItem(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         )
@@ -476,7 +482,7 @@ class PlayingPage(QWidget):
 
         self.translation_button = PillToolButton(self)
         self.translation_button.toggled.connect(self.translationToggled)
-        self.translation_button.setChecked(cfg.show_translation)
+        self._updateTranslationButton()
         self.translation_button.setFixedSize(32, 32)
         bindIcon(self.translation_button, 'translation')
 
@@ -555,8 +561,16 @@ class PlayingPage(QWidget):
     def _preload_triggered(self, value: bool) -> None:
         self.playing_manager._preload_triggered = value
 
-    def translationToggled(self, state: bool):
+    def translationToggled(self, state: bool) -> None:
         self.ctx.config.show_translation = state
+
+    def _updateTranslationButton(self) -> None:
+        has_translation = bool(self._transmgr.parsed)
+        with QSignalBlocker(self.translation_button):
+            self.translation_button.setCheckable(has_translation)
+            self.translation_button.setChecked(
+                has_translation and self.ctx.config.show_translation
+            )
 
     def _onRepaintTick(self, _):
         self.buttons_expand.target_value = (
@@ -621,11 +635,7 @@ class PlayingPage(QWidget):
             self.cur = DummyCard(song)
             self.title_label.setText(song.name)
             self.artists_label.setText(_artists_text(song))
-        self.translation_button.setCheckable(
-            self.cur is not None and bool(self.cur.storable.translated_lyric)
-        )
-        if not (self.cur is not None and bool(self.cur.storable.translated_lyric)):
-            self.translation_button.setChecked(False)
+        self._updateTranslationButton()
         self.lyric_video_export_button.setVisible(self.cur is not None)
         self.lyric_editor_button.setVisible(self.cur is not None)
 
@@ -915,12 +925,7 @@ class PlayingPage(QWidget):
         self.lyric_video_export_button.setVisible(True)
         self.lyric_editor_button.setVisible(True)
 
-        self._mgr.cur = ''
-        self._transmgr.cur = ''
-        self._ymgr.cur = ''
-        self._mgr.parse()
-        self._transmgr.parse()
-        self._ymgr.parse()
+        self._updateTranslationButton()
         self.viewer.prewarmFontMetrics()
 
         self.img_label.hide()
@@ -964,9 +969,7 @@ class PlayingPage(QWidget):
     def _onPlaybackLyricsUpdated(self, song: SongStorable) -> None:
         if self.cur is not None and self.cur.storable.id != song.id:
             return
-        self.translation_button.setCheckable(bool(song.translated_lyric))
-        if not bool(song.translated_lyric):
-            self.translation_button.setChecked(False)
+        self._updateTranslationButton()
         self.lyric_video_export_button.setVisible(True)
         self.lyric_editor_button.setVisible(True)
         self.viewer.prewarmFontMetrics()

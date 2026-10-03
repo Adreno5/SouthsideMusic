@@ -97,16 +97,16 @@ def main() -> None:
                 lambda: apis.playlist.getPlaylistAllTracks(pid, 0, 5),
             )
 
-    print('--- logout path (anonymous session only) ---')
-    ncm.setNewSession()
-    anon = ncm.getCurrentSession()
-    anon.deviceId = ncm.generateDeviceId()
-    try:
-        apis.login.loginViaAnonymousAccount()
-        print('  loginViaAnonymousAccount    logged_in=%s' % anon.logged_in)
-    except Exception as exc:
-        print('  loginViaAnonymousAccount    ERROR %s' % type(exc).__name__)
-    show('loginLogout(anon)', apis.login.loginLogout)
+    # print('--- logout path (anonymous session only) ---')
+    # ncm.setNewSession()
+    # anon = ncm.getCurrentSession()
+    # anon.deviceId = ncm.generateDeviceId()
+    # try:
+    #     apis.login.loginViaAnonymousAccount()
+    #     print('  loginViaAnonymousAccount    logged_in=%s' % anon.logged_in)
+    # except Exception as exc:
+    #     print('  loginViaAnonymousAccount    ERROR %s' % type(exc).__name__)
+    # show('loginLogout(anon)', apis.login.loginLogout)
 
 
 if __name__ == '__main__':

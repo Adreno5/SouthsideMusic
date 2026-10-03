@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import shiboken6
 
+from core.frame_profiler import frame_profiler
+
 
 if TYPE_CHECKING:
     from views.launch_window import LaunchWindow
@@ -111,13 +113,24 @@ class EventBus:
         if not entries:
             return
         dead: list[Listener] | None = None
+        recording = frame_profiler.enabled and frame_profiler.isRecording()
         for listener, owner in entries:
             if owner is not None and not _isValid(owner):
                 if dead is None:
                     dead = []
                 dead.append(listener)
                 continue
-            listener(*args, **kwargs)
+            if recording and frame_profiler.enabled:
+                frame_profiler.beginSection(
+                    f'{getattr(listener, "__module__", type(listener).__module__)}.'
+                    f'{getattr(listener, "__qualname__", type(listener).__qualname__)}'
+                )
+                try:
+                    listener(*args, **kwargs)
+                finally:
+                    frame_profiler.endSection()
+            else:
+                listener(*args, **kwargs)
         if dead is not None:
             self._prune(event, dead)
 

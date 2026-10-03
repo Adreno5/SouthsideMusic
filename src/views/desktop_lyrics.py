@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from typing import override
+
 from core.app_context import AppContext
 
-from core.smooth import EaseOutBackTimer
+from core.smooth import EaseOutTimer, SScrollTimer, EaseInOutTimer
 from imports import (
     QSize,
     Qt,
@@ -18,7 +20,6 @@ from imports import (
     QMoveEvent,
     QPainter,
     QPainterPath,
-    QPaintEvent,
     QWheelEvent,
     tr,
 )
@@ -28,6 +29,7 @@ from core.color import mixColor
 from core.config import cfg
 from core import theme
 from core.lyrics import LyricInfo, YRCLyricInfo
+from services.events import LYRICS_LINE_DURATION
 from services.events.events import (
     DESKTOP_LYRICS_ANCHOR_CHANGED,
     EMIT_DEBUG_INFO,
@@ -49,8 +51,8 @@ class DesktopLyricsViewer(LyricsViewer):
         self.indentation_y: float = 0
         self.indentation: bool = False
 
-        self.width_timer = EaseOutBackTimer(0.5, 3)
-        self.height_timer = EaseOutBackTimer(0.5, 3)
+        self.width_timer = EaseInOutTimer(0.5, 3)
+        self.height_timer = EaseOutTimer(0.5, 3)
 
         self.dragging: bool = False
         self.dragging_point: QPoint = QPoint(0, 0)
@@ -89,6 +91,12 @@ class DesktopLyricsViewer(LyricsViewer):
         event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
         event_bus.unsubscribe(REPAINT, self._onRepaintTick)
         event_bus.subscribe(REPAINT_ALWAYS, self._onRepaintTick)
+        event_bus.subscribe(LYRICS_LINE_DURATION, lambda d: self._lyricsLineDuration(d))
+
+        self.scroller = SScrollTimer(use_api='repaint_always')
+
+    def _lyricsLineDuration(self, d):
+        self.width_timer.anim_cycle = d / 1000
 
     def _checkMouse(self):
         self.indentation = QRect(
@@ -179,16 +187,6 @@ class DesktopLyricsViewer(LyricsViewer):
             return line
         return None
 
-    def _shouldDrawTranslationForLine(
-        self,
-        line: LyricInfo | YRCLyricInfo,
-        use_yrc: bool,
-        is_current_line: bool,
-    ) -> bool:
-        if is_current_line:
-            return True
-        return use_yrc and line is self.last_lyric
-
     def _hasCurrentLineTranslation(
         self,
         line: YRCLyricInfo | LyricInfo | None = None,
@@ -223,8 +221,7 @@ class DesktopLyricsViewer(LyricsViewer):
                 )
                 - self.indentation_y
             )
-            * (0.2 if playing else 0.05)
-            * multiple_factor
+            * min(1.0, max(0.0, (0.2 if playing else 0.05) * multiple_factor))
         )
 
         position = self.ctx.playing_manager.getDisplayPosition()
@@ -258,7 +255,7 @@ class DesktopLyricsViewer(LyricsViewer):
         tar_width += int(self.x_pad * 2)
 
         self.width_timer.target_value = tar_width
-        self.setFixedWidth(max(1, int(self.width_timer.current_value), tar_width))
+        self.setFixedWidth(max(1, int(self.width_timer.current_value)))
 
         if self._dp.total_length > 0:
             self._draw_progress_ratio = max(
@@ -323,14 +320,20 @@ class DesktopLyricsViewer(LyricsViewer):
                 )
         return super().moveEvent(event)
 
-    def paintEvent(self, event: QPaintEvent) -> None:
-        mwindow = self.ctx.main_window
-        if not mwindow:
-            return
-        song_theme = getattr(mwindow, 'song_theme', None) or QColor(0, 0, 0)
-
+    @override
+    def paintGL(self) -> None:
         painter = QPainter(self)
         try:
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            painter.fillRect(self.rect(), Qt.GlobalColor.transparent)
+            painter.setCompositionMode(
+                QPainter.CompositionMode.CompositionMode_SourceOver
+            )
+            mwindow = self.ctx.main_window
+            if not mwindow:
+                return
+            song_theme = getattr(mwindow, 'song_theme', None) or QColor(0, 0, 0)
+
             painter.setPen(Qt.PenStyle.NoPen)
 
             draw_rect = QRect(12, 0, self.width() - 24, self.height())
@@ -415,9 +418,9 @@ class DesktopLyricsViewer(LyricsViewer):
                         1,
                     )
                     painter.restore()
+            self._paintLyrics(painter)
         finally:
             painter.end()
-        return super().paintEvent(event)
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         event.ignore()

@@ -107,8 +107,10 @@ def main() -> None:
         apis.login.loginViaCookie(MUSIC_U=music_u)
         print('session = captured cookie | logged_in = %s' % s.logged_in)
     else:
-        apis.login.loginViaAnonymousAccount()
-        print('session = anonymous | logged_in = %s' % s.logged_in)
+        # apis.login.loginViaAnonymousAccount()
+        # print('session = anonymous | logged_in = %s' % s.logged_in)
+        print('anonymous login is expired')
+        exit(1)
 
     def run(name, fn):
         try:

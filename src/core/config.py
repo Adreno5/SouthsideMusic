@@ -102,6 +102,7 @@ class Config:
     reverb_intensity: int = 3
 
     enable_crossfade: bool = True
+    enable_lyric_handoff: bool = False
     crossfade_strength: float = 1
     crossfade_curve: str = 'smart'
     crossfade_max_duration: float = 24.0
@@ -110,12 +111,12 @@ class Config:
     crossfade_bpm_window: int = 15
     crossfade_agc: bool = True
 
-    background_ratio: float = 0.4
+    background_ratio: float = 0.25
     volume: float = 1
 
-    lyrics_animation_type: Literal['physics', 'scrolling'] = 'physics'
-    lyrics_smooth_factor: float = 0.028
-    acceleration_smooth_factor: float = 0.068
+    lyrics_animation_type: Literal['physics', 'scrolling'] = 'scrolling'
+    lyrics_smooth_factor: float = 0.008
+    acceleration_smooth_factor: float = 0.052
     lyrics_scrolling_duration: float = 500
 
     lyrics_line_spacing: float = 1

@@ -1,6 +1,5 @@
 IMAGE_ASSET_PERSISTED = 'image_asset_persisted'
 STORABLE_COUNT_CHANGED = 'storable_count_changed'
-
 SONG_CHANGED = 'song_changed'
 SONG_ENDED = 'song_ended'
 SONG_FINISH = 'song_finish'
@@ -20,29 +19,21 @@ PLAYBACK_IMAGE_LOADED = 'playback_image_loaded'
 PLAYBACK_LYRICS_UPDATED = 'playback_lyrics_updated'
 PLAYBACK_ERROR = 'playback_error'
 PLAYLIST_CHANGED = 'playlist_changed'
-
 PRE_THEME_CHANGED = 'pre_theme_changed'
 POST_THEME_CHANGED = 'post_theme_changed'
 LANGUAGE_CHANGED = 'language_changed'
 BACKGROUND_RATIO_CHANGED = 'background_ratio_changed'
 DESKTOP_LYRICS_ANCHOR_CHANGED = 'desktop_lyrics_anchor_changed'
-
 FAVORITES_CHANGED = 'favorites_changed'
-
 WEBSOCKET_CONNECTED = 'websocket_connected'
 WEBSOCKET_DISCONNECTED = 'websocket_disconnected'
-
 LUFS_TARGET_CHANGED = 'lufs_target_changed'
-
 LYRIC_LINE_CHANGED = 'lyric_line_changed'
-
 REFRESH_RATE_CHANGED = 'refresh_rate_changed'
 REPAINT = 'repaint'
 REPAINT_ALWAYS = 'repaint_always'
 SECOND_TICK = 'second_tick'
-
 UPDATE_COVER = 'update_cover'
-
 VIEW_FOLDER = 'view_folder'
 MWINDOW_REFRESH_FOLDERS = 'mwindow_refresh_folders'
 LOCAL_REMOVE_FOLDER = 'local_remove_folder'
@@ -51,25 +42,19 @@ LOCAL_ADD_TO_CLOUD = 'local_add_to_cloud'
 CLOUD_REMOVE_FOLDER = 'cloud_remove_folder'
 CLOUD_RENAME_FOLDER = 'cloud_rename_folder'
 CLOUD_ADD_TO_LOCAL = 'cloud_add_to_local'
-
 START_INTER_LOADING = 'start_inter_loading'
 START_PROGRESS_LOADING = 'start_progress_loading'
 STOP_INTER_LOADING = 'stop_inter_loading'
 STOP_PROGRESS_LOADING = 'stop_progress_loading'
 UPDATE_LOADING_PROGRESS = 'update_loading_progress'
-
 DB_CHANGED = 'db_changed'
-
 COLLECT_DEBUG_INFO = 'collect_debug_info'
 EMIT_DEBUG_INFO = 'emit_debug_info'
 BEAT_POINT = 'beat_point'
-
 START_CROSSFADE = 'start_crossfade'
 FINISH_CROSSFADE = 'stop_crossfade'
-
 TERMINAL_SIZE_CHANGED = 'terminal_size_changed'
-
 REPAINT_EVENT_INTERVAL = 'repaint_event_interval'
-
 LYRICS_SCROLLING_DURATION_CHANGED = 'lyrics_scrolling_duration_changed'
 LIST_SCROLLING_DURATION_CHANGED = 'list_scrolling_duration_changed'
+LYRICS_LINE_DURATION = 'lyrics_line_duration'

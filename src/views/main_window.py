@@ -5,6 +5,7 @@ import time
 
 from PySide6.QtGui import QMouseEvent
 
+from core import theme
 from core.app_context import AppContext
 
 from core.backend import getBackend
@@ -77,9 +78,10 @@ class MainWindow(FluentWindowBase):
     def __init__(
         self,
         ctx: AppContext,
-        parent=None,
-    ):
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
+        self.setMicaEffectEnabled(False)
         self._logger = logging.getLogger(__name__)
         self.ctx = ctx
         ctx.main_window = self  # type: ignore
@@ -152,12 +154,11 @@ class MainWindow(FluentWindowBase):
         if ctx.launch_window:
             ctx.launch_window.subtitle('  Wiring signal connections...')
 
-        self.controller.setParent(self)
-
         self.folders_list = SListWidget()
         self.folders_list.itemClicked.connect(self._onFolderItemClicked)
         self.folders_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
         self._folder_header_items: list[tuple[QListWidgetItem, str]] = []
+        self._folder_refresh_seq = 0
 
         left_layout = QVBoxLayout()
         left_layout.setContentsMargins(0, 48, 0, 52)
@@ -216,17 +217,13 @@ class MainWindow(FluentWindowBase):
 
         self.titleBar.raise_()
         self.search_input.raise_()
+        self.controller.setParent(self)
 
         self.connected = False
 
         self.setWindowTitle('Southside Music')
 
         QTimer.singleShot(1750, ctx.ws_server.start)
-
-        self.refresh_rate = max(60, ctx.app.primaryScreen().refreshRate() / 2)
-        self._logger.info(f'{self.refresh_rate=}')
-
-        self.delta = 1 / self.refresh_rate
 
         if self.ctx.dependences_available:
             self.show()
@@ -283,7 +280,6 @@ class MainWindow(FluentWindowBase):
 
         self.setMouseTracking(True)
 
-        event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(START_INTER_LOADING, self.onStartInterLoading)
         event_bus.subscribe(STOP_INTER_LOADING, self.onStopInterLoading)
         event_bus.subscribe(STOP_PROGRESS_LOADING, self.onStopProgressLoading)
@@ -473,12 +469,6 @@ class MainWindow(FluentWindowBase):
     def onUpdateLoadingProgress(self, progress: float):
         self.loading_progress = progress
 
-    def _onRefreshRateChanged(self):
-        self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
-        self._logger.info(f'{self.refresh_rate=}')
-
-        self.delta = 1 / self.refresh_rate
-
     def updateDatas(self) -> None:
         self.update()
 
@@ -542,11 +532,15 @@ class MainWindow(FluentWindowBase):
                     self._fp.setDisplayFolder(favorites_manager.folders[0])
                 self.contents_widget.setCurrentWidget(self.ctx.home_page)
 
+                self.controller.showLyrics()
+
             self.ctx.addScheduledTask(_show)
 
         asyncTask(_init, (), self, finished=_finish_init)
 
-    def refreshFolders(self):
+    def refreshFolders(self) -> None:
+        self._folder_refresh_seq += 1
+        refresh_seq = self._folder_refresh_seq
         self._fp.displayEmpty()
         open_folder = self._fp.curr_folder or self._fp.curr_cloud_folder
 
@@ -582,14 +576,14 @@ class MainWindow(FluentWindowBase):
         self.folders_list.addItem(item)
         self.folders_list.setItemWidget(item, widget)
 
-        def _cloud():
-            self.ctx.addScheduledTask(
-                lambda: self._addFolderHeader('main_window.cloud')
-            )
+        def _cloud() -> None:
             playlists = getBackend().getUserPlaylists()
 
-            def add():
+            def add() -> None:
                 nonlocal playlists
+                if refresh_seq != self._folder_refresh_seq:
+                    return
+                self._addFolderHeader('main_window.cloud')
                 for inf in playlists:
                     card = CloudFolderCard(inf, self.folders_list.width(), self.ctx)
                     card.clicked.connect(lambda f=inf: self._openFolder(f))
@@ -618,11 +612,13 @@ class MainWindow(FluentWindowBase):
 
             self.ctx.addScheduledTask(add)
 
-        def _dailyRecommend():
+        def _dailyRecommend() -> None:
             songs = getBackend().getDailyRecommendSongs()
 
-            def add():
+            def add() -> None:
                 nonlocal songs
+                if refresh_seq != self._folder_refresh_seq:
+                    return
                 inf = LocalFolderInfo(tr('main_window.daily_recommend'), songs)
                 card = LocalFolderCard(inf, self.folders_list.width())
                 card.clicked.connect(lambda f=inf: self._openFolder(f))
@@ -637,6 +633,8 @@ class MainWindow(FluentWindowBase):
         if getBackend().loggedIn():
             asyncTask(_cloud, (), self)
             asyncTask(_dailyRecommend, (), self)
+        else:
+            self.refresh_button.setEnabled(True)
 
         saveFavorites()
 
@@ -717,6 +715,8 @@ class MainWindow(FluentWindowBase):
         self.ctx.app.quit()
 
     def resizeEvent(self, e):
+        if not hasattr(self, 'llm_viewer_panel'):
+            return
         self.titleBar.move(20, 0)
         self.titleBar.resize(self.width() - 20, self.titleBar.height())
 
@@ -808,9 +808,9 @@ class MainWindow(FluentWindowBase):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setFont(self.loading_ft)
         painter.setBrush(
-            mixColor(
+            mixColor(QColor(0, 0, 0) if theme.isDark() else QColor(255, 255, 255), mixColor(
                 self.song_theme, QColor(self.backgroundColor), cfg.background_ratio
-            )
+            ), 0.4)
         )
         painter.drawRect(self.rect())
         painter.end()

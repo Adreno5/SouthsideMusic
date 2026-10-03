@@ -2,9 +2,10 @@ import time
 from PySide6.QtCore import QObject
 from time import perf_counter_ns
 
-from services.events import event_bus, REFRESH_RATE_CHANGED
+from services.events import event_bus, REFRESH_RATE_CHANGED, REPAINT
 from imports import QApplication, QTimer
 from core.models import AnimatingObject
+from typing import Literal
 import logging
 
 _NANOSECONDS_PER_SECOND = 1_000_000_000
@@ -134,7 +135,7 @@ class EaseInOutTimer(_BaseSmoothTimer):
 
 
 class SScrollTimer(QObject):
-    def __init__(self, duration: int = 250):
+    def __init__(self, duration: int = 250, use_api: Literal['repaint', 'repaint_always'] = 'repaint'):
         super().__init__()
         self._logger = logging.getLogger(__name__)
         self.animating_objs: list[AnimatingObject] = []
@@ -149,13 +150,9 @@ class SScrollTimer(QObject):
         self.debug_offset_target = 0.0
         self.duration = duration
 
-        self.anim_timer = QTimer(self)
-        self.anim_timer.timeout.connect(self._tick)
-        self.anim_timer.start(max(1, int(1000 / self.refresh_rate)))
-
         self._value = 0
 
-        event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
+        event_bus.subscribe(use_api, self._tick)
 
     def getValue(self):
         return self._value
@@ -163,21 +160,12 @@ class SScrollTimer(QObject):
     def setValue(self, v):
         self._value = v
 
-    def _onRefreshRateChanged(self):
-        screen = QApplication.primaryScreen()
-        if screen is None:
-            return
-        self.refresh_rate = max(60, screen.refreshRate() / 2)
-        self._logger.info(f'{self.refresh_rate=}')
-        self.delta = 1 / self.refresh_rate
-        self.anim_timer.setInterval(max(1, int(1000 / self.refresh_rate)))
-
     @staticmethod
     def _smoothstep(t: float) -> float:
         t = max(0.0, min(1.0, t))
         return t * t * (3.0 - 2.0 * t)
 
-    def _tick(self):
+    def _tick(self, _):
         now = time.perf_counter_ns()
         elapsed = min((now - self.last_draw) / 1_000_000_000, 0.1)
         self.last_draw = now
@@ -202,22 +190,22 @@ class SScrollTimer(QObject):
             self._scroll_remainder = next_value - final_value
             self._value = final_value
 
-    def scrollValue(self, delta: int):
+    def scrollValue(self, delta: int, duration: int | None = None):
         self.animating_objs.append(
             AnimatingObject(
                 total=float(delta),
                 elapsed=0.0,
-                duration=self.duration,
+                duration=duration if duration else self.duration,
                 last_progress=0.0,
             )
         )
 
-    def scrollTo(self, target: int):
+    def scrollTo(self, target: int, duration: int | None = None):
         self.animating_objs.append(
             AnimatingObject(
                 total=target - self._value,
                 elapsed=0.0,
-                duration=self.duration,
+                duration=duration if duration else self.duration,
                 last_progress=0.0,
             )
         )

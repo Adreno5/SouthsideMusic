@@ -2,6 +2,7 @@ from core import config
 from dataclasses import dataclass
 import logging
 import time
+from typing import cast, override
 
 from core.smooth import EaseOutTimer
 from imports import (
@@ -14,6 +15,8 @@ from imports import (
     QFont,
     QLinearGradient,
     QListView,
+    QListWidgetItem,
+    QModelIndex,
     QMouseEvent,
     QObject,
     QPaintEvent,
@@ -21,7 +24,10 @@ from imports import (
     QPalette,
     QPen,
     QPropertyAnimation,
+    QPoint,
     QResizeEvent,
+    QSize,
+    QStyleOptionViewItem,
     QTimer,
     QWidget,
     Qt,
@@ -30,8 +36,9 @@ from imports import (
     event_bus,
 )
 from qfluentwidgets import ListWidget, ScrollBar, SmoothScrollArea, TextEdit
+from qfluentwidgets.components.widgets.list_view import ListItemDelegate
 from core.models import AnimatingObject
-from services.events import LIST_SCROLLING_DURATION_CHANGED
+from services.events import LIST_SCROLLING_DURATION_CHANGED, REPAINT
 
 
 def setTransparentBackground(widget: QWidget | None) -> None:
@@ -75,10 +82,6 @@ class SSmoothScrollBar(ScrollBar):
         self.debug_offset_target = 0.0
         self.duration = config.cfg.scroll_duration
 
-        self.anim_timer = QTimer(self)
-        self.anim_timer.timeout.connect(self._tick)
-        self.anim_timer.start(max(1, int(1000 / self.refresh_rate)))
-
         self.origin_setValue = self.setValue
         self.setValue = self._patched_setValue
 
@@ -86,6 +89,7 @@ class SSmoothScrollBar(ScrollBar):
         event_bus.subscribe(
             LIST_SCROLLING_DURATION_CHANGED, lambda v: setattr(self, 'duration', int(v))
         )
+        event_bus.subscribe(REPAINT, self._tick)
 
     def _patched_setValue(self, value: int):
         self.scrollValue(value - self.value())
@@ -138,7 +142,7 @@ class SSmoothScrollBar(ScrollBar):
         t = max(0.0, min(1.0, t))
         return t * t * (3.0 - 2.0 * t)
 
-    def _tick(self):
+    def _tick(self, _):
         now = time.perf_counter_ns()
         elapsed = min((now - self.last_draw) / 1_000_000_000, 0.1)
         self.last_draw = now
@@ -206,23 +210,26 @@ class SSmoothDelegate(QObject):
         parent.setVerticalScrollBarPolicy = self.setVerticalScrollBarPolicy
         parent.setHorizontalScrollBarPolicy = self.setHorizontalScrollBarPolicy
 
-    def eventFilter(self, obj, e: QEvent):
+    def eventFilter(self, obj: QObject, e: QEvent) -> bool:
         if isinstance(e, QWheelEvent):
+            delta = e.angleDelta()
+            if e.modifiers() & Qt.KeyboardModifier.AltModifier and not delta.x():
+                delta = QPoint(delta.y(), 0)
             vdlimited = (
-                e.angleDelta().y() < 0
+                delta.y() < 0
                 and self.vScrollBar.value() == self.vScrollBar.maximum()
             )
             vulimited = (
-                e.angleDelta().y() > 0
+                delta.y() > 0
                 and self.vScrollBar.value() == self.vScrollBar.minimum()
             )
 
             hdlimited = (
-                e.angleDelta().x() < 0
+                delta.x() < 0
                 and self.hScrollBar.value() == self.hScrollBar.maximum()
             )
             hulimited = (
-                e.angleDelta().x() > 0
+                delta.x() > 0
                 and self.hScrollBar.value() == self.hScrollBar.minimum()
             )
 
@@ -237,12 +244,13 @@ class SSmoothDelegate(QObject):
                     self.par._trigger_limit_anim(self.par._left_anim)
                 if hdlimited:
                     self.par._trigger_limit_anim(self.par._right_anim)
-                return False
+                e.setAccepted(True)
+                return True
 
-            if e.angleDelta().y() != 0:
-                self.vScrollBar.scrollValue(-e.angleDelta().y())
+            if delta.y() != 0:
+                self.vScrollBar.scrollValue(-delta.y())
             else:
-                self.hScrollBar.scrollValue(-e.angleDelta().x())
+                self.hScrollBar.scrollValue(-delta.x())
 
             e.setAccepted(True)
             return True
@@ -385,9 +393,32 @@ class LimitOverlay(QWidget):
         painter.drawText(offset_left, center + 15, 'Offset')
 
 
+class SListItemDelegate(ListItemDelegate):
+    @override
+    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
+        lst = cast('SListWidget', self.parent())
+        item = lst.itemFromIndex(index)
+        if item is None or item.sizeHint().isValid():
+            return super().sizeHint(option, index)
+        widget = lst.itemWidget(item)
+        if widget is None or not widget.hasHeightForWidth():
+            return super().sizeHint(option, index)
+        margins = lst.contentsMargins()
+        width = max(
+            1,
+            lst.viewport().width()
+            - margins.left()
+            - margins.right()
+            - 2 * lst.spacing(),
+        )
+        return QSize(0, max(widget.minimumHeight(), widget.heightForWidth(width)))
+
+
 class SListWidget(ListWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setItemDelegate(SListItemDelegate(self))
+        self.setResizeMode(QListView.ResizeMode.Adjust)
         setTransparentBackground(self)
         setTransparentBackground(self.viewport())
 
@@ -419,6 +450,17 @@ class SListWidget(ListWidget):
         self.ltimer = QTimer(self)
         self.ltimer.timeout.connect(self._tick)
         self.ltimer.start(16)
+
+    @override
+    def setItemWidget(self, item: QListWidgetItem, widget: QWidget) -> None:
+        super().setItemWidget(item, widget)
+        widget.installEventFilter(self)
+        self.scheduleDelayedItemsLayout()
+
+    @override
+    def doItemsLayout(self) -> None:
+        super().doItemsLayout()
+        self.updateEditorGeometries()
 
     def _create_guide_anim(self, prop: bytes) -> QPropertyAnimation:
         anim = QPropertyAnimation(self, prop)
@@ -468,9 +510,12 @@ class SListWidget(ListWidget):
         self._right_limit = value
         self.rlmtimer.target_value = value
 
-    def eventFilter(self, obj, e: QEvent) -> bool:
+    def eventFilter(self, obj: QObject, e: QEvent) -> bool:
         if obj is self.viewport() and isinstance(e, QResizeEvent):
             self._sync_overlay()
+            self.scheduleDelayedItemsLayout()
+        elif e.type() == QEvent.Type.LayoutRequest:
+            self.scheduleDelayedItemsLayout()
         return super().eventFilter(obj, e)
 
     def _sync_overlay(self) -> None:

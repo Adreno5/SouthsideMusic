@@ -612,6 +612,7 @@ class LyricEditorPage(QWidget):
                 else None
             ),
         )
+        self.ctx.lyrics_manager.syncParsed()
 
     def _activeTranslationLyric(
         self,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import math
 import subprocess
 import sys
 import os
@@ -20,13 +21,15 @@ from core.app_context import AppContext
 from services.events import event_bus, SECOND_TICK
 from PySide6.QtWidgets import QApplication
 from views.launch_window import LaunchWindow
+from core.profiled_application import ProfiledApplication
 
 QApplication.setHighDpiScaleFactorRoundingPolicy(
     Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
 )
 QApplication.setAttribute(Qt.ApplicationAttribute.AA_CompressHighFrequencyEvents)
 
-app = QApplication(sys.argv)
+app = ProfiledApplication(sys.argv)
+QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseOpenGLES)
 
 from core.smtc import SmtcController, initAppIdentity
 
@@ -40,7 +43,7 @@ from views.home_page import HomePage
 from views.library_page import LibraryPage
 from views.comments_page import CommentsPage
 
-from core.lyrics import LRCLyricParser, YRCLyricParser
+from core.lyrics import LyricManager
 from views.dependences_window import DependencesWindow
 import logging
 
@@ -55,7 +58,7 @@ import glob
 from services.services import EventsServices
 
 import imports as _ims
-from qfluentwidgets import setTheme, Theme
+from qfluentwidgets import setTheme, Theme, InfoBar
 import shiboken6
 
 from core.config import loadConfig, saveConfig, Config, cfg
@@ -90,12 +93,12 @@ _logger = logging.getLogger('main')
 _exit_cleanup_done = False
 
 
-def atExitListener():
+def atExitListener() -> None:
     global _exit_cleanup_done
     if _exit_cleanup_done:
         return
     _exit_cleanup_done = True
-    logging.info('exiting by listener')
+    _logger.info('exiting by listener')
 
     terminal_thread.join(0)
 
@@ -111,25 +114,27 @@ def atExitListener():
         playing_manager.shutdownWorkers()
     context.ws_server.stop(shutdown_json_sender=True)
 
-    cfg.last_playlist = context.playing_manager.playlist.copy()
-    cfg.last_playing_index = context.playing_manager.current_index
+    if playing_manager is not None:
+        cfg.last_playlist = playing_manager.playlist.copy()
+        cfg.last_playing_index = playing_manager.current_index
 
-    cfg.window_x = context.main_window.x()
-    cfg.window_y = context.main_window.y()
-    cfg.window_width = context.main_window.width() - (
-        LLM_WINDOW_WIDTH_DELTA if context.main_window.llm_viewer_panel.expanded else 0
-    )
-    cfg.window_height = context.main_window.height()
-    cfg.window_maximized = context.main_window.isMaximized()
-    cfg.llm_viewer_expanded = context.main_window.llm_viewer_panel.expanded
+    main_window = context.main_window
+    if main_window is not None and shiboken6.isValid(main_window):
+        cfg.window_x = main_window.x()
+        cfg.window_y = main_window.y()
+        cfg.window_width = main_window.width() - (
+            LLM_WINDOW_WIDTH_DELTA if main_window.llm_viewer_panel.expanded else 0
+        )
+        cfg.window_height = main_window.height()
+        cfg.window_maximized = main_window.isMaximized()
+        cfg.llm_viewer_expanded = main_window.llm_viewer_panel.expanded
 
     saveConfig()
     saveFavorites()
 
-    raise SystemExit()
-
 
 atexit.register(atExitListener)
+app.aboutToQuit.connect(atExitListener)
 
 
 def patchedExceptHook(
@@ -436,9 +441,7 @@ def _handle_ws_message(message: str) -> None:
             if mwindow and getattr(mwindow, 'controller', None):
                 mwindow.controller.toggle()
             else:
-                player_obj = globals().get('player')
-                if player_obj is None:
-                    return
+                player_obj = ctx.player
                 if player_obj.isPlaying():
                     player_obj.pause()
                     _ims.event_bus.emit(_ims.PLAY_STATE_CHANGED, False)
@@ -446,14 +449,17 @@ def _handle_ws_message(message: str) -> None:
                     player_obj.resume()
                     _ims.event_bus.emit(_ims.PLAY_STATE_CHANGED, True)
         elif command == 'seek':
-            player_obj = globals().get('player')
-            if player_obj is None:
-                return
+            player_obj = ctx.player
             try:
-                position = float(payload.get('position', 0.0))
-            except (TypeError, ValueError):
+                position = float(payload['position'])
+            except (KeyError, TypeError, ValueError):
                 return
-            player_obj.setPosition(max(0.0, position))
+            if not math.isfinite(position):
+                return
+            duration = ctx.playing_manager.getDisplayLength()
+            if duration <= 0.0:
+                return
+            player_obj.setPosition(max(0.0, min(position, duration)))
         elif command == 'next':
             _ims.event_bus.emit(_ims.PLAY_NEXT)
         elif command == 'previous':
@@ -466,9 +472,10 @@ ctx = AppContext()
 ctx.app = app
 ctx.player = AudioPlayer()
 ctx.config = Config.instance()
-ctx.mgr = LRCLyricParser()
-ctx.transmgr = LRCLyricParser()
-ctx.ymgr = YRCLyricParser()
+ctx.lyrics_manager = LyricManager()
+ctx.mgr = ctx.lyrics_manager.lrc
+ctx.transmgr = ctx.lyrics_manager.translation
+ctx.ymgr = ctx.lyrics_manager.yrc
 ctx.ws_server = ws_server
 ctx.ws_handler = ws_handler
 ctx.lock = lock
@@ -598,12 +605,7 @@ def southsideMusic():
     favorites_manager.load()
 
     launchwindow.subtitle('Logging in...')
-    if cfg.session is None:
-        snapshot = backend.loginViaAnonymousAccount()
-        cfg.session = snapshot.session
-        cfg.login_status = snapshot.login_status
-        _logger.info('logged into generated anonymous account')
-    else:
+    if cfg.session:
         backend.loadSession(cfg.session)
         _logger.info('loaded session from config')
 
@@ -679,7 +681,6 @@ def southsideMusic():
         launchwindow.subtitle('Initializing main window...')
         mwindow = MainWindow(ctx)
         ctx.main_window = mwindow
-        app.aboutToQuit.connect(atExitListener)
 
         mwindow.init()
         ctx.smtc.setEnabled(ctx.config.smtc_enabled)

@@ -95,10 +95,6 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
     def dumpSession(self) -> str:
         return ncm.dumpSessionAsString(ncm.getCurrentSession())
 
-    def loginViaAnonymousAccount(self) -> BackendSessionSnapshot:
-        apis.login.loginViaAnonymousAccount()
-        return self._sessionSnapshot()
-
     def setRandomDeviceId(self) -> None:
         session = ncm.getCurrentSession()
         session.deviceId = ncm.generateDeviceId()

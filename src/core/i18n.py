@@ -736,15 +736,25 @@ TRANSLATIONS: dict[str, list[str]] = {
         '启用频谱图形',
     ],
     'setting_page.enable_crossfade': ['Enable Crossfade', '启用交叉淡化'],
-    'setting_page.crossfade': ['Crossfade', '交叉淡化'],
-    'setting_page.crossfade_easy': ['Seamless Transition', '无缝过渡'],
+    'setting_page.crossfade': ['Handoff', '交接'],
+    'setting_page.crossfade_easy': ['Handoff', '交接'],
+    'setting_page.lyric_handoff': ['Lyric Handoff', '歌词交接'],
+    'setting_page.lyric_handoff_easy': ['Seamless Lyrics', '无缝歌词'],
+    'setting_page.lyric_handoff_description': [
+        'Keep lyrics between songs and preview the next song for continuous scrolling.',
+        '保留上一首歌词并追加下一首歌词，让歌词连续滚动交接。',
+    ],
+    'setting_page.lyric_handoff_description_easy': [
+        'Continue scrolling into the next song and preview its lyrics.',
+        '歌词顺着滚动到下一首，还能提前查看下一首歌词。',
+    ],
     'setting_page.crossfade_settings_description': [
-        'Automatic tempo, key and gain matching between adjacent songs.',
-        '自动匹配相邻歌曲的速度、调性和增益。',
+        'Audio and lyric handoff between adjacent songs.',
+        '设置相邻歌曲之间的音频和歌词交接。',
     ],
     'setting_page.crossfade_settings_description_easy': [
-        'Blend the end of one song smoothly into the next.',
-        '让上一首歌平滑地衔接到下一首。',
+        'Smooth transitions for music and lyrics.',
+        '让歌曲和歌词平滑地衔接到下一首。',
     ],
     'setting_page.enable_crossfade_easy': [
         'Enable Seamless Transition',
@@ -1040,9 +1050,9 @@ TRANSLATIONS: dict[str, list[str]] = {
         'Restart the application to apply the new LUFS',
         '重启应用以应用新的 LUFS',
     ],
-    'setting_page.restart_to_apply_loudness_changes': [
-        'restart to apply loudness changes',
-        '重启后应用响度变化',
+    'setting_page.apply_loudness_desc': [
+        'apply new loudness immediately',
+        '立即应用新的响度',
     ],
     'setting_page.reverb_intensity': ['Reverb Intensity', '混响强度'],
     'setting_page.show_lyrics_in_a_floating_always_on_top_window': [

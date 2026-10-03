@@ -7,6 +7,7 @@ import shiboken6
 from core.app_context import AppContext
 from core.cache_cleanup import touchCacheFile
 from core.downloader import asyncTask
+from core.favorites import favorites_manager
 from core.icons import SouthsideIcon
 from core.models import (
     CloudFolderInfo,
@@ -44,8 +45,9 @@ from qfluentwidgets import SubtitleLabel
 
 class LocalFolderCard(QWidget):
     clicked = Signal()
+    imagePersisted = Signal(object)
 
-    def __init__(self, folder: LocalFolderInfo, width):
+    def __init__(self, folder: LocalFolderInfo, width: int) -> None:
         super().__init__()
         self.setFixedSize(width, 52)
         self.folder = folder
@@ -69,22 +71,30 @@ class LocalFolderCard(QWidget):
         title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         layout.addWidget(title_label)
 
-        self._loadFirstSongImage()
+        self.imagePersisted.connect(self._loadFirstSongImage)
         event_bus.subscribe(IMAGE_ASSET_PERSISTED, self._onImageAssetPersisted)
+        self._loadFirstSongImage()
+        favorites_manager.ensureFolderFirstImage(folder)
 
-    def _onImageAssetPersisted(self, storable: SongStorable):
+    def _onImageAssetPersisted(self, storable: SongStorable) -> None:
         songs = self.folder.songs
         if not songs:
             return
-        if storable is not songs[0]:
+        if storable.id != songs[0].id:
             return
-        self._loadFirstSongImage()
+        self.imagePersisted.emit(storable)
 
-    def _loadFirstSongImage(self):
+    def _loadFirstSongImage(self, storable: SongStorable | None = None) -> None:
+        if not shiboken6.isValid(self.img_label):
+            return
         songs = self.folder.songs
         if not songs:
             return
         first = songs[0]
+        if storable is not None:
+            if storable.id != first.id:
+                return
+            first.image_cache_hash = storable.image_cache_hash
         try:
             image_bytes = first.getImageBytes()
             pixmap = QPixmap()
@@ -96,7 +106,7 @@ class LocalFolderCard(QWidget):
                     Qt.TransformationMode.SmoothTransformation,
                 )
                 self.img_label.setPixmap(scaled)
-        except FileNotFoundError:
+        except (FileNotFoundError, PermissionError):
             pass
 
     def mousePressEvent(self, event: QMouseEvent) -> None:

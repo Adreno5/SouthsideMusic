@@ -184,11 +184,10 @@ class SearchPage(QWidget):
     def addSongs(self, result: list[SearchSongInfo]) -> None:
         for i, song in enumerate(result):
             item = QListWidgetItem()
-            item.setSizeHint(QSize(0, 150))
-            self.lst.addItem(item)
             content_widget = SearchSongCard(
                 song, lambda c: self._mwindow.play(c), self.ctx
             )
+            self.lst.addItem(item)
             self.lst.setItemWidget(item, content_widget)
             self.cards.append(content_widget)
             content_widget.load = False

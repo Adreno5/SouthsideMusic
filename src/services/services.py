@@ -36,6 +36,7 @@ from imports import (
 )
 from core import theme
 from core.favorites import favorites_manager
+from core.frame_profiler import frame_profiler
 
 from views.folder_card import CloudFolderCard, LocalFolderCard
 
@@ -48,7 +49,7 @@ class EventsServices(QObject):
 
         self._start_session_refresher()
 
-        self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
+        self.refresh_rate = self._app.primaryScreen().refreshRate()
         self.last_repaint = time.perf_counter_ns()
         self.last_always_repaint = time.perf_counter_ns()
         self.repaint_timer = QTimer(self)
@@ -246,7 +247,7 @@ class EventsServices(QObject):
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)
 
     def _onRefreshRateChanged(self):
-        self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
+        self.refresh_rate = self._app.primaryScreen().refreshRate()
 
         self.repaint_timer.setInterval(int(1000 / self.refresh_rate))
 
@@ -258,6 +259,8 @@ class EventsServices(QObject):
         event_bus.emit(REPAINT, multiple_factor)
 
     def _emitAlwaysRepaint(self) -> None:
+        if frame_profiler.enabled:
+            frame_profiler.beginFrame()
         now = time.perf_counter_ns()
         elapsed = min((now - self.last_always_repaint) / 1_000_000_000, 0.1)
         self.last_always_repaint = now

@@ -20,7 +20,6 @@ from imports import (
     QPaintEvent,
     QPainter,
     QPen,
-    QSize,
     Qt,
     QTimer,
     event_bus,
@@ -39,7 +38,7 @@ from views.list_widget import SListWidget
 from qfluentwidgets import InfoBar, TransparentPushButton
 from core.models import SongStorable
 from core.icons import bindIcon
-from views.song_card import DummyCard, PlaylistSongCard, SONG_CARD_HEIGHT
+from views.song_card import DummyCard, PlaylistSongCard
 
 if TYPE_CHECKING:
     from core.ws_server import QObjectHandler, WebSocketServer
@@ -53,7 +52,7 @@ class PlaylistPage(QWidget):
     def __init__(
         self,
         ctx: AppContext,
-    ):
+    ) -> None:
         super().__init__()
         self._logger = logging.getLogger(__name__)
         self.ctx = ctx
@@ -75,7 +74,6 @@ class PlaylistPage(QWidget):
         self.lst_interface = QWidget()
         self.lst_layout = QVBoxLayout()
         self.lst = SListWidget()
-        self.lst.setFixedWidth(500)
         self.lst.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.lst_layout.addWidget(self.lst)
 
@@ -182,7 +180,6 @@ class PlaylistPage(QWidget):
     def addSongCardToList(self, song: SongStorable) -> QListWidgetItem:
         item = QListWidgetItem()
         item.setData(Qt.ItemDataRole.UserRole, song)
-        item.setSizeHint(QSize(0, SONG_CARD_HEIGHT))
         card = PlaylistSongCard(
             song,
             self._dp,

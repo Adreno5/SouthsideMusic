@@ -727,9 +727,6 @@ class MusicServiceBackend(ABC):
     def dumpSession(self) -> str: ...
 
     @abstractmethod
-    def loginViaAnonymousAccount(self) -> BackendSessionSnapshot: ...
-
-    @abstractmethod
     def setRandomDeviceId(self) -> None: ...
 
     @abstractmethod

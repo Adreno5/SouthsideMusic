@@ -38,6 +38,7 @@ from imports import QColor
 from imports import (
     QFormLayout,
     QHBoxLayout,
+    QLayout,
     QLabel,
     QSlider,
     QVBoxLayout,
@@ -106,7 +107,9 @@ class SectionSeparator(QWidget):
 class SectionContainer(QWidget):
     expandedChanged = Signal(str, bool)
 
-    def __init__(self, title: str, description: str, parent=None) -> None:
+    def __init__(
+        self, title: str, description: str, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self._title = title
         self._expanded = True
@@ -115,6 +118,8 @@ class SectionContainer(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
 
         self.header = QWidget()
         self.header.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -146,8 +151,8 @@ class SectionContainer(QWidget):
         self.overlay.hide()
 
         self.anim = QPropertyAnimation(self, b'contentHeight')
-        self.anim.setDuration(800)
-        self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.anim.setDuration(375)
+        self.anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self.anim.finished.connect(self._onAnimFinished)
 
         layout.addWidget(self.header)
@@ -218,6 +223,7 @@ class SectionContainer(QWidget):
         self._syncContentGeometry()
 
     def _syncContentGeometry(self) -> None:
+        self.header.setFixedHeight(self.header.heightForWidth(self.width()))
         height = self._contentHeightHint()
         y = 0 if self._expanded else self.content_view.height() - height
         self.content_widget.setGeometry(0, y, self.content_view.width(), height)
@@ -240,6 +246,14 @@ class SectionContainer(QWidget):
     def setContentHeight(self, value: int) -> None:
         self.content_view.setFixedHeight(max(0, value))
         self._syncContentGeometry()
+        layout = self.layout()
+        if layout is not None:
+            layout.activate()
+        parent = self.parentWidget()
+        if parent is not None:
+            layout = parent.layout()
+            if layout is not None:
+                layout.activate()
 
     contentHeight = Property(int, getContentHeight, setContentHeight)
 
@@ -269,6 +283,9 @@ class SettingPage(QWidget):
         self.options_layout = QVBoxLayout()
         self.options_layout.setContentsMargins(24, 24, 24, 24)
         self.options_layout.setSpacing(10)
+        self.options_layout.setVerticalSizeConstraint(
+            QLayout.SizeConstraint.SetFixedSize
+        )
         self._section_count = 0
         self._current_section: SectionContainer | None = None
         self._sections: list[SectionContainer] = []
@@ -588,6 +605,13 @@ class SettingPage(QWidget):
             'crossfade_agc',
             advanced=True,
         )
+        self.addSpliter()
+        self.addCheckSetting(
+            'setting_page.lyric_handoff',
+            'setting_page.lyric_handoff_description',
+            'enable_lyric_handoff',
+            self.ctx.playing_manager.updateLyricHandoff,
+        )
 
     def _addEffectsSection(self) -> None:
         self.addSection(
@@ -719,16 +743,21 @@ class SettingPage(QWidget):
         self.target_lufs = Slider(Qt.Orientation.Horizontal)
         self.target_lufs.valueChanged.connect(self.onTargetLUFSChanged)
         self.target_lufs.wheelEvent = lambda e: e.ignore()
-        self.target_lufs.sliderReleased.connect(self.onSliderReleased)
+        self.target_lufs.sliderReleased.connect(self.onLoudnessSet)
         self.target_lufs.setRange(-60, 0)
         self.target_lufs.setSingleStep(1)
         self.target_lufs.setValue(cfg.target_lufs)
+        self.target_lufs.setMinimumWidth(240)
+        self.target_lufs.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding
+        )
         self.target_lufs_label = SubtitleLabel(tr('setting_page.target_lufs_value'))
         self.addSetting(
             'setting_page.target_lufs',
-            'setting_page.restart_to_apply_loudness_changes',
+            'setting_page.apply_loudness_desc',
             self.target_lufs,
             advanced=True,
+            expand=True,
         )
 
         middle_widget = QWidget()
@@ -857,8 +886,13 @@ class SettingPage(QWidget):
             'setting_page.frequency_graphics',
             'setting_page.enable_fft_driven_visual_effects',
             'enable_fft',
+            self._sendFFTState,
             advanced=True,
         )
+        self._ws_handler.onHandlerReceived.connect(
+            lambda _handler: self._sendFFTState()
+        )
+        self._sendFFTState()
 
         self.addSpliter()
 
@@ -1153,18 +1187,19 @@ class SettingPage(QWidget):
         except Exception:
             pass
 
-    def onSliderReleased(self):
-        InfoBar.info(
-            tr('setting_page.need_restart'),
-            tr('setting_page.restart_the_application_to_apply_the_new_lufs'),
-            duration=7000,
-            parent=self._mwindow,
-        )
+    def onLoudnessSet(self) -> None:
+        self.ctx.playing_manager.refreshLoudnessGain()
 
     def _onAdvancedSettingsChanged(self, *args: object) -> None:
         cfg.show_advanced_settings = self.advanced_settings_box.isChecked()
         saveConfig()
         self._applyAdvancedSettingsVisibility()
+
+    def _sendFFTState(self) -> None:
+        self._ws_handler.sendJson(
+            {'option': 'enable_fft' if cfg.enable_fft else 'disable_fft'},
+            coalesce_key='fft_state',
+        )
 
     def fftSizeChanged(self, size: float | int) -> None:
         fft_size = int(size)
@@ -1246,17 +1281,18 @@ class SettingPage(QWidget):
         title: str,
         description: str,
         configurationName: str,
-        onChanged: Callable[[], None] | None = None,
+        onChanged: Callable[[bool], None] | None = None,
         advanced: bool = False,
     ) -> CheckBox:
         box = CheckBox()
         self._bindSettingText(box, title, not advanced)
         self._easy_text_widgets.append(box)
 
-        def __valueChanged():
+        def __valueChanged(state: Qt.CheckState):
             setattr(cfg, configurationName, box.checkState() == Qt.CheckState.Checked)
             if onChanged:
-                onChanged()
+                try: onChanged(state == Qt.CheckState.Checked)
+                except TypeError: onChanged()
 
         box.stateChanged.connect(__valueChanged)
         box.setChecked(getattr(cfg, configurationName))
@@ -1335,6 +1371,7 @@ class SettingPage(QWidget):
         description: str,
         widget: QWidget,
         advanced: bool = False,
+        expand: bool = False,
     ) -> CardWidget:
         card = self._createTransparentCard()
         card._llm_setting_name = name  # type: ignore
@@ -1359,7 +1396,10 @@ class SettingPage(QWidget):
         text_layout.addWidget(name_l)
         text_layout.addWidget(desc_l)
         global_layout.addLayout(text_layout, 1)
-        global_layout.addWidget(widget, 0, Qt.AlignmentFlag.AlignRight)
+        if expand:
+            global_layout.addWidget(widget, 1)
+        else:
+            global_layout.addWidget(widget, 0, Qt.AlignmentFlag.AlignRight)
         card.setLayout(global_layout)
         self._addOptionWidget(card)
         return card
@@ -1539,6 +1579,7 @@ class SettingPage(QWidget):
         mode = self.play_method_box.currentData()
         if mode in ('Repeat one', 'Repeat list', 'Shuffle', 'Play in order'):
             cfg.play_method = mode
+            self.ctx.playing_manager.playlistChanged()
 
     def _refreshAnchorBox(self) -> None:
         if not hasattr(self, 'anchor_box'):

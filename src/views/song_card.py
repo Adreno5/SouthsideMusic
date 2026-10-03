@@ -18,6 +18,7 @@ from imports import (
     MWINDOW_REFRESH_FOLDERS,
     PLAYLIST_CHANGED,
     PLAY_SONG_AT_INDEX,
+    POST_THEME_CHANGED,
     STORABLE_COUNT_CHANGED,
     QSizePolicy,
     QSpacerItem,
@@ -72,12 +73,13 @@ import requests
 from core.favorites import favorites_manager
 from core.backend import getBackend
 from core.app_context import AppContext
+from core import theme
 from views.list_widget import SListWidget
+from views.image_label import SImageLabel
 from views.folder_card import CloudFolderCard, LocalFolderCard
 
 
 _image_download_locks: dict[str, threading.Lock] = {}
-SONG_CARD_HEIGHT = 70
 
 
 def _artist_names_text(storable: SongStorable) -> str:
@@ -226,7 +228,7 @@ class SearchSongCard(QWidget):
         global_layout = QVBoxLayout()
         top_layout = QHBoxLayout()
 
-        self.img_label = QLabel()
+        self.img_label = SImageLabel()
         self.img_label.setFixedSize(100, 100)
         top_layout.addWidget(self.img_label)
         self.img_label.hide()
@@ -235,6 +237,10 @@ class SearchSongCard(QWidget):
         top_layout.addWidget(self.ring)
         artists_text = '、'.join(a.name for a in info.artists)
         title_label = SubtitleLabel(info.name)
+        title_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
+        title_label.setWordWrap(True)
 
         topright_layout = QVBoxLayout()
         topright_layout.addSpacerItem(
@@ -244,6 +250,9 @@ class SearchSongCard(QWidget):
         )
         topright_layout.addWidget(title_label)
         artists_label = QLabel(artists_text)
+        artists_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
         artists_label.setWordWrap(True)
         topright_layout.addWidget(artists_label)
         topright_layout.addSpacerItem(
@@ -445,10 +454,10 @@ class _SongCardItem(QWidget):
         dp: PlayingPage | None = None,
         mwindow: MainWindow | None = None,
         plp: PlaylistPage | None = None,
-        parent=None,
+        parent: QWidget | None = None,
         lazy: bool = False,
         sortable: bool = True,
-    ):
+    ) -> None:
         super().__init__(parent)
         self._logger = logging.getLogger(__name__)
         self.storable = storable
@@ -461,9 +470,9 @@ class _SongCardItem(QWidget):
         self._image_event_subscribed = False
         self._storable_event_subscribed = False
         self._load_image_seq = 0
+        self._sortable = sortable
 
         self.setWindowOpacity(0)
-        self.setMinimumHeight(SONG_CARD_HEIGHT)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
@@ -480,8 +489,7 @@ class _SongCardItem(QWidget):
             order_layout.setSpacing(0)
             self.move_up_btn = TransparentToolButton()
             self.move_down_btn = TransparentToolButton()
-            bindIcon(self.move_up_btn, 'drop_up')
-            bindIcon(self.move_down_btn, 'drop_down')
+            self._refreshMoveIcons()
             self.move_up_btn.setFixedSize(24, 24)
             self.move_down_btn.setFixedSize(24, 24)
             self.move_up_btn.clicked.connect(lambda: self.moveRequested(-1))
@@ -490,7 +498,7 @@ class _SongCardItem(QWidget):
             order_layout.addWidget(self.move_down_btn)
             layout.addLayout(order_layout)
 
-        self.img_label = QLabel()
+        self.img_label = SImageLabel()
         self.img_label.setFixedSize(50, 50)
         self.img_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         layout.addWidget(self.img_label)
@@ -502,10 +510,16 @@ class _SongCardItem(QWidget):
             QSpacerItem(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         )
         title_label = SubtitleLabel(storable.name)
+        title_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
         title_label.setWordWrap(True)
         text_layout.addWidget(title_label)
         artists_label = QLabel(
             '、'.join(obj.name for obj in storable.artists if obj.name)
+        )
+        artists_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
         )
         artists_label.setWordWrap(True)
         text_layout.addWidget(artists_label)
@@ -536,6 +550,13 @@ class _SongCardItem(QWidget):
                 ).start()
 
         self._subscribeStorableCount()
+        if self._sortable:
+            event_bus.subscribe(POST_THEME_CHANGED, self._refreshMoveIcons)
+
+    def _refreshMoveIcons(self) -> None:
+        icon_theme: Literal['dark', 'light'] = 'dark' if theme.isDark() else 'light'
+        self.move_up_btn.setIcon(getQIcon('drop_up', icon_theme))
+        self.move_down_btn.setIcon(getQIcon('drop_down', icon_theme))
 
     def _subscribeImageAsset(self) -> None:
         if self._image_event_subscribed:
@@ -555,6 +576,8 @@ class _SongCardItem(QWidget):
         self._released = True
         self.load = False
         self._load_image_seq += 1
+        if self._sortable:
+            event_bus.unsubscribe(POST_THEME_CHANGED, self._refreshMoveIcons)
         if self._image_event_subscribed:
             event_bus.unsubscribe(IMAGE_ASSET_PERSISTED, self._on_image_asset_persisted)
             self._image_event_subscribed = False
@@ -596,7 +619,7 @@ class _SongCardItem(QWidget):
             ).start()
 
     def _on_image_asset_persisted(self, storable: SongStorable) -> None:
-        if self._released:
+        if self._released or not self.load:
             return
         if storable is self.storable:
             self.loadImage()
@@ -620,7 +643,7 @@ class _SongCardItem(QWidget):
         self.selectionChanged.emit(self.storable, self.select_box.isChecked())
 
     def _auto_download_missing_image(self) -> None:
-        if self._released:
+        if self._released or not self.load:
             return
         storable = self.storable
         if storable.imageCached():
@@ -660,7 +683,7 @@ class _SongCardItem(QWidget):
     def loadImage(self) -> None:
         if self._mwindow is None:
             return
-        if self._released:
+        if self._released or not self.load:
             return
 
         self._load_image_seq += 1
@@ -668,51 +691,36 @@ class _SongCardItem(QWidget):
         card_ref = weakref.ref(self)
         storable = self.storable
         mwindow = self._mwindow
-        result: dict[str, bytes] = {}
+        image_size = self.img_label.size()
+        result: dict[str, QImage] = {}
 
-        def _decode():
+        def _decode() -> None:
             try:
                 image_bytes = storable.getImageBytes()
-            except FileNotFoundError:
+            except (FileNotFoundError, PermissionError):
                 return
-            result['image_bytes'] = image_bytes
+            image = QImage.fromData(image_bytes)
+            if image.isNull():
+                return
+            result['image'] = image.scaled(
+                image_size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
 
-        def _finish():
+        def _finish() -> None:
             card = card_ref()
             if card is None or card._released:
                 return
             if card._load_image_seq != load_image_seq:
                 return
-            image_bytes = result.get('image_bytes')
-            if image_bytes is None:
+            image = result.get('image')
+            if image is None or not card.load:
                 return
-
-            def _apply_pixmap():
-                card = card_ref()
-                if card is None or card._released:
-                    return
-                if card._load_image_seq != load_image_seq:
-                    return
-                if not card.load:
-                    return
-                try:
-                    card.img_label.objectName()
-                except RuntimeError:
-                    return
-                image = QImage()
-                image.loadFromData(image_bytes)
-                if image.isNull():
-                    return
-                pixmap = QPixmap.fromImage(image)
-                if not pixmap.isNull():
-                    scaled = pixmap.scaled(
-                        card.img_label.size(),
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                    card.img_label.setPixmap(scaled)
-
-            mwindow.ctx.addScheduledTask(_apply_pixmap)
+            try:
+                card.img_label.setPixmap(QPixmap.fromImage(image))
+            except RuntimeError:
+                return
 
         try:
             asyncTask(_decode, (), mwindow, _finish)

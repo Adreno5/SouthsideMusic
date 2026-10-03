@@ -1,3 +1,5 @@
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import QEvent
 from PySide6.QtGui import QEnterEvent
 
@@ -11,6 +13,7 @@ from imports import (
     POST_THEME_CHANGED,
     REPAINT,
     QColor,
+    QCursor,
     QFocusEvent,
     QFont,
     QIcon,
@@ -23,6 +26,9 @@ from imports import (
     event_bus,
 )
 
+if TYPE_CHECKING:
+    from views.main_window import MainWindow
+
 
 class SearchLineEdit(QLineEdit):
     class IconHandler:
@@ -32,7 +38,12 @@ class SearchLineEdit(QLineEdit):
         def setIcon(self, icon: SouthsideIcon):
             self.icon = icon.icon()
 
-    def __init__(self, mwindow, font_family: str, point_size: int | None = None):
+    def __init__(
+        self,
+        mwindow: 'MainWindow | None',
+        font_family: str,
+        point_size: int | None = None,
+    ) -> None:
         super().__init__()
         self._mwindow = mwindow
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -50,8 +61,7 @@ class SearchLineEdit(QLineEdit):
 
         self._hovering = False
 
-        self.iconx_timer = EaseOutTimer(0.3, 3)
-        self.bgwidth_timer = EaseOutTimer(0.3, 3)
+        self.expand_timer = EaseOutTimer(0.3, 3)
 
         self.ft = QFont(font_family, point_size or 14)
         self.setFont(self.ft)
@@ -71,7 +81,10 @@ class SearchLineEdit(QLineEdit):
         return super().enterEvent(event)
 
     def leaveEvent(self, event: QEvent) -> None:
-        self._hovering = False
+        if not self.rect().contains(self.mapFromGlobal(QCursor.pos())):
+            self._hovering = False
+            self.clearFocus()
+            self.update()
         return super().leaveEvent(event)
 
     def _onThemeChanged(self, song=None):
@@ -94,26 +107,21 @@ class SearchLineEdit(QLineEdit):
             f'QLineEdit {{ color: {color}; background: transparent; border: none; padding: 0px; }}'
         )
 
-    def _updateIconLayout(self):
+    def _updateIconLayout(self) -> None:
         icon_size = max(1, self.height() - self._icon_padding * 2)
         if self.handler.icon:
             self.draw_pixmap = self.handler.icon.pixmap(icon_size, icon_size)
         else:
             self.draw_pixmap = None
 
-        right_margin = self._text_padding
-        if self.draw_pixmap and not self.draw_pixmap.isNull():
-            right_margin += icon_size + self._icon_gap
-
-        self.setTextMargins(self._text_padding, 0, right_margin, 0)
         self.update()
 
-    def _repaintTick(self, _multiple_factor: float = 1.0):
-        if self.iconx_timer.is_animating or self.bgwidth_timer.is_animating:
+    def _repaintTick(self, _multiple_factor: float = 1.0) -> None:
+        if self.expand_timer.is_animating:
             self.update()
 
     def shouldExpand(self) -> bool:
-        return bool(self.text().strip()) or (self.hasFocus() and self._hovering)
+        return bool(self.text().strip()) or self.hasFocus()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         self.setFocus(Qt.FocusReason.MouseFocusReason)
@@ -143,23 +151,32 @@ class SearchLineEdit(QLineEdit):
         if hasattr(self, 'draw_pixmap') and self.draw_pixmap:
             icon_size = self.draw_pixmap.width()
             radius = int(min(self.width() / 2, self.height() * 0.5))
-            if should:
-                self.bgwidth_timer.target_value = self.width()
-            else:
-                self.bgwidth_timer.target_value = self.height() * 1.32
+            self.expand_timer.target_value = 1.0 if should else 0.0
+            expansion = self.expand_timer.current_value
+            collapsed_width = self.height() * 1.32
             draw_rect = self.rect()
-            draw_width = int(self.bgwidth_timer.current_value)
+            draw_width = int(
+                collapsed_width + (self.width() - collapsed_width) * expansion
+            )
             draw_rect.setX(int((self.width() - draw_width) * 0.5))
             draw_rect.setWidth(draw_width)
+            self.setTextMargins(
+                draw_rect.x() + self._text_padding,
+                0,
+                self.width()
+                - draw_rect.x()
+                - draw_width
+                + self._text_padding
+                + icon_size
+                + self._icon_gap,
+                0,
+            )
             painter.drawRoundedRect(draw_rect, radius, radius)
 
-            if should:
-                self.iconx_timer.target_value = self.width() - icon_size
-            else:
-                self.iconx_timer.target_value = (self.width() - icon_size) * 0.5
+            icon_x = (self.width() - icon_size) * (0.5 + expansion * 0.5)
             painter.drawPixmap(
                 QPoint(
-                    int(self.iconx_timer.current_value) + self._icon_gap,
+                    int(icon_x) + self._icon_gap,
                     3,
                 ),
                 self.draw_pixmap,
@@ -167,4 +184,6 @@ class SearchLineEdit(QLineEdit):
 
         painter.end()
 
-        super().paintEvent(event)
+        margins = self.textMargins()
+        if self.width() > margins.left() + margins.right():
+            super().paintEvent(event)

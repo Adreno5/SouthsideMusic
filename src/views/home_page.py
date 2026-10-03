@@ -268,9 +268,6 @@ class HomePage(SScrollArea):
             QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         )
 
-        if getBackend().loggedIn():
-            contents_layout.addLayout(welcome_layout)
-
         mode_cards_layout = QHBoxLayout()
         mode_cards_layout.setSpacing(12)
         self.heart_mode_card = HeartModeCard(self.ctx)
@@ -281,7 +278,10 @@ class HomePage(SScrollArea):
         mode_cards_layout.addWidget(self.private_roam_card)
         mode_cards_layout.addWidget(self.private_radar_card)
         mode_cards_layout.addWidget(self.similar_songs_card)
-        contents_layout.addLayout(mode_cards_layout)
+
+        if getBackend().loggedIn():
+            contents_layout.addLayout(welcome_layout)
+            contents_layout.addLayout(mode_cards_layout)
 
         self.setWidgetResizable(True)
         self.setWidget(contents_widget)

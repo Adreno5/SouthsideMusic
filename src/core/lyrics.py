@@ -1,8 +1,15 @@
-from dataclasses import dataclass, field
-from functools import lru_cache
+from __future__ import annotations
+
 import json
 import logging
 import re
+from bisect import bisect_right
+from dataclasses import dataclass, field, replace
+from functools import lru_cache
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.models import SongStorable
 
 
 @dataclass
@@ -10,6 +17,9 @@ class LyricInfo:
     time: float
     content: str
     isMetadata: bool = False
+    track_index: int = -1
+    song_time: float = 0.0
+    translation: str = ''
 
 
 @dataclass
@@ -26,6 +36,9 @@ class YRCLyricInfo:
     content: str
     chars: list[YRCCharInfo] = field(default_factory=list)
     isMetadata: bool = False
+    track_index: int = -1
+    song_time: float = 0.0
+    translation: str = ''
 
 
 _LRC_TIME_RE = re.compile(r'^\[(\d+):(\d+)[.:](\d+)\]')
@@ -352,3 +365,206 @@ class LRCLyricParser:
 
         self.parsed.sort(key=lambda x: x.time)
         self._logger.info(f'parsed {len(self.parsed)} lines')
+
+
+@dataclass
+class LyricTrack:
+    song: SongStorable
+    duration: float
+    lines: list[LyricInfo | YRCLyricInfo] = field(default_factory=list)
+    offset: float = 0.0
+    start_index: int = 0
+    end_index: int = 0
+
+
+class LyricManager:
+    def __init__(self) -> None:
+        self.lrc = LRCLyricParser()
+        self.yrc = YRCLyricParser()
+        self.translation = LRCLyricParser()
+        self.tracks: list[LyricTrack] = []
+        self.current_track = -1
+        self.parsed: list[LyricInfo | YRCLyricInfo] = []
+        self._times: list[float] = []
+
+    def startSong(
+        self,
+        song: SongStorable,
+        duration: float,
+        continuous: bool,
+        restart: bool = False,
+    ) -> None:
+        if not continuous:
+            self.tracks.clear()
+            self.current_track = -1
+        if (
+            restart
+            and self.current_track >= 0
+            and self.tracks[self.current_track].song.id == song.id
+        ):
+            self.tracks[self.current_track].duration = duration
+        elif (
+            self.current_track + 1 < len(self.tracks)
+            and self.tracks[self.current_track + 1].song.id == song.id
+        ):
+            self.current_track += 1
+            self.tracks[self.current_track].song = song
+            self.tracks[self.current_track].duration = duration
+        else:
+            del self.tracks[self.current_track + 1 :]
+            self.tracks.append(LyricTrack(song, duration))
+            self.current_track = len(self.tracks) - 1
+        self._rebuild()
+
+    def applyLyrics(
+        self, lyric: str, yrc_lyric: str, translated_lyric: str, duration: float
+    ) -> None:
+        self.lrc.cur = lyric or yrc_lyric
+        self.yrc.cur = yrc_lyric
+        self.translation.cur = translated_lyric
+        self.lrc.parse()
+        self.yrc.parse()
+        self.translation.parse()
+        if self.current_track < 0:
+            return
+        track = self.tracks[self.current_track]
+        track.duration = duration
+        track.lines = self._mixedLines(self.lrc, self.yrc, self.translation)
+        self._rebuild()
+
+    def syncParsed(self) -> None:
+        if self.current_track < 0:
+            return
+        self.tracks[self.current_track].lines = self._mixedLines(
+            self.lrc, self.yrc, self.translation
+        )
+        self._rebuild()
+
+    def setPreview(
+        self, song: SongStorable | None, duration: float, lyrics: dict[str, str]
+    ) -> None:
+        del self.tracks[self.current_track + 1 :]
+        if song is not None and self.current_track >= 0:
+            lrc = LRCLyricParser()
+            yrc = YRCLyricParser()
+            translation = LRCLyricParser()
+            lrc.cur = lyrics['lyric'] or lyrics['yrc_lyric']
+            yrc.cur = lyrics['yrc_lyric']
+            translation.cur = lyrics['translated_lyric']
+            lrc.parse()
+            yrc.parse()
+            translation.parse()
+            self.tracks.append(
+                LyricTrack(song, duration, self._mixedLines(lrc, yrc, translation))
+            )
+        self._rebuild()
+
+    def timelinePosition(self, position: float) -> float:
+        if self.current_track < 0:
+            return position
+        return self.tracks[self.current_track].offset + position
+
+    def getCurrentIndex(self, position: float) -> int:
+        if self.current_track < 0:
+            return -1
+        track = self.tracks[self.current_track]
+        return max(
+            track.start_index,
+            bisect_right(self._times, position, track.start_index, track.end_index) - 1,
+        )
+
+    def _mixedLines(
+        self, lrc: LRCLyricParser, yrc: YRCLyricParser, translation: LRCLyricParser
+    ) -> list[LyricInfo | YRCLyricInfo]:
+        lines: list[LyricInfo | YRCLyricInfo] = (
+            list(yrc.parsed) if yrc.hasYrcTiming() else list(lrc.parsed)
+        )
+        for text in (lrc.cur, yrc.cur):
+            for raw_line in text.splitlines():
+                metadata = _try_parse_json_metadata_line(raw_line.strip())
+                if metadata is not None and not any(
+                    line.isMetadata
+                    and line.time == metadata.time
+                    and line.content == metadata.content
+                    for line in lines
+                ):
+                    lines.append(metadata)
+        original_lines = [line for line in lrc.parsed if not line.isMetadata]
+        translated_lines = [line for line in translation.parsed if not line.isMetadata]
+        missing = len(original_lines) - len(translated_lines)
+        shifted = (
+            bool(translated_lines)
+            and missing > 0
+            and all(
+                any(abs(empty - line.time) <= 0.02 for empty in translation.empty_times)
+                for line in original_lines[:missing]
+            )
+            and all(
+                abs(original.time - translated.time) <= 0.02
+                for original, translated in zip(
+                    original_lines[missing:], translated_lines
+                )
+            )
+        )
+        translated = (
+            {
+                round(original.time * 1000): translated.content
+                for original, translated in zip(original_lines, translated_lines)
+            }
+            if shifted
+            else {round(line.time * 1000): line.content for line in translated_lines}
+        )
+        for i, line in enumerate(lines):
+            text = translated.get(round(line.time * 1000), '')
+            if not text and not shifted:
+                text = next(
+                    (
+                        translated.content
+                        for translated in translated_lines
+                        if abs(translated.time - line.time) <= 0.02
+                    ),
+                    '',
+                )
+            if not text and isinstance(line, YRCLyricInfo):
+                original = lrc.getCurrentLyric(line.time)
+                text = translated.get(round(original.time * 1000), '')
+            lines[i] = replace(line, translation='' if line.isMetadata else text)
+        return sorted(lines, key=lambda line: line.time)
+
+    def _rebuild(self) -> None:
+        self.parsed = []
+        offset = 0.0
+        for index, track in enumerate(self.tracks):
+            track.offset = offset
+            track.start_index = len(self.parsed)
+            artists = '、'.join(artist.name for artist in track.song.artists)
+            title = f'{track.song.name} - {artists}' if artists else track.song.name
+            self.parsed.append(
+                LyricInfo(offset, title, isMetadata=True, track_index=index)
+            )
+            for line in track.lines:
+                shifted = replace(
+                    line,
+                    time=line.time + offset,
+                    song_time=line.time,
+                    track_index=index,
+                )
+                if isinstance(shifted, YRCLyricInfo):
+                    shifted.chars = [
+                        replace(char, start=char.start + offset)
+                        for char in shifted.chars
+                    ]
+                self.parsed.append(shifted)
+            track.end_index = len(self.parsed)
+            offset += max(
+                track.duration,
+                max(
+                    (
+                        line.time + getattr(line, 'duration', 0.0)
+                        for line in track.lines
+                    ),
+                    default=0.0,
+                ),
+                0.001,
+            )
+        self._times = [line.time for line in self.parsed]

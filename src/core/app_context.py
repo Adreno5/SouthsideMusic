@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from core.config import Config
     from core.debugging import Debugging
     from core.llm import LLM
-    from core.lyrics import LRCLyricParser, YRCLyricParser
+    from core.lyrics import LRCLyricParser, LyricManager, YRCLyricParser
     from core.models import (
         CloudFolderInfo,
         LocalFolderInfo,
@@ -73,6 +73,7 @@ class AppContext:
         self.app: QApplication = cast('QApplication', cast(object, None))
         self.player: AudioPlayer = cast('AudioPlayer', cast(object, None))
         self.config: Config = cast('Config', cast(object, None))
+        self.lyrics_manager: LyricManager = cast('LyricManager', cast(object, None))
         self.mgr: LRCLyricParser = cast('LRCLyricParser', cast(object, None))
         self.transmgr: LRCLyricParser = cast('LRCLyricParser', cast(object, None))
         self.ymgr: YRCLyricParser = cast('YRCLyricParser', cast(object, None))

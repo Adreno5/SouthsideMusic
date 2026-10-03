@@ -211,7 +211,6 @@ PARAMS   : {"expNames": "PH-PC-VIP-songPlay,PH-PC-optimizeComment,...（200+ 实
 | `getPlaylistInfoEapi` / `getPlaylistAllTracks` | 200 | items=5 |
 | `setWeblog` | 200 | |
 | `loginLogout`（匿名会话上执行） | 200 | 未在用户会话上执行，避免打断已登录客户端 |
-| `loginViaAnonymousAccount` | 200 | 匿名会话建立成功（`logged_in=True`） |
 
 `getIntelligenceList` 曾出现 400：原因是参数里多发了 `songIds`（客户端只发
 `playlistId/songId/type/startMusicId/count`，已删除该字段）；用不存在的 `playlistId` 探测也会 400。

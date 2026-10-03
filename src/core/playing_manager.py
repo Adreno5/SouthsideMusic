@@ -137,6 +137,8 @@ class PlayingManager(QObject):
         self._play_seq = 0
         self._preload_download_seq = 0
         self._preload_download_song_id: str | None = None
+        self._lyric_preview_seq = 0
+        self._lyric_preview_selection: PlaySelection | None = None
         self._pending_play_selection: PlaySelection | None = None
         self._pending_crossfade_selection: PlaySelection | None = None
         self._crossfade_debounce_timer = QTimer()
@@ -246,10 +248,121 @@ class PlayingManager(QObject):
             else ['crossfade_info=None'],
         )
 
-    def playlistChanged(self):
+    def playlistChanged(self) -> None:
         self.refreshRandom()
         self.clearReservedNext()
         self.clearPreload()
+        self.refreshLyricPreview()
+
+    def updateLyricHandoff(self) -> None:
+        self._lyric_preview_seq += 1
+        self._lyric_preview_selection = None
+        song = self.current_song
+        if song is None:
+            return
+        self.ctx.lyrics_manager.startSong(song, self.total_length, False)
+        lyrics = song.getLyrics()
+        self.ctx.lyrics_manager.applyLyrics(
+            lyrics['lyric'],
+            lyrics['yrc_lyric'],
+            lyrics['translated_lyric'],
+            self.total_length,
+        )
+        self.refreshLyricPreview()
+
+    def _startLyricSong(self, song: SongStorable, restart: bool = False) -> None:
+        self._lyric_preview_seq += 1
+        self._lyric_preview_selection = None
+        self.ctx.lyrics_manager.startSong(
+            song, self.total_length, cfg.enable_lyric_handoff, restart
+        )
+        lyrics = song.getLyrics()
+        self.ctx.lyrics_manager.applyLyrics(
+            lyrics['lyric'],
+            lyrics['yrc_lyric'],
+            lyrics['translated_lyric'],
+            self.total_length,
+        )
+
+    def refreshLyricPreview(self) -> None:
+        if not cfg.enable_lyric_handoff or self.current_song is None:
+            self._lyric_preview_seq += 1
+            self._lyric_preview_selection = None
+            self.ctx.lyrics_manager.setPreview(None, 0, {})
+            return
+        selection = self.getNextSelection(self.play_mode, reserve=True)
+        if selection is not None and selection == self._lyric_preview_selection:
+            return
+        self._lyric_preview_seq += 1
+        self._lyric_preview_selection = selection
+        if selection is None:
+            self.ctx.lyrics_manager.setPreview(None, 0, {})
+            return
+        song = selection.song
+        lyrics = song.getLyrics()
+        self.ctx.lyrics_manager.setPreview(song, self._storableDuration(song), lyrics)
+        if lyrics['yrc_lyric'].strip() and lyrics['translated_lyric'].strip():
+            return
+        play_seq = self._play_seq
+        preview_seq = self._lyric_preview_seq
+
+        def _download() -> None:
+            try:
+                for candidate in iterLyricUpdates(
+                    song.name,
+                    [artist.name for artist in song.artists],
+                    song.id,
+                    song.duration,
+                    cached=lyrics,
+                ):
+                    if (
+                        not cfg.enable_lyric_handoff
+                        or play_seq != self._play_seq
+                        or preview_seq != self._lyric_preview_seq
+                    ):
+                        return
+                    self._schedule(
+                        self._applyPreviewLyrics,
+                        selection,
+                        play_seq,
+                        preview_seq,
+                        candidate,
+                    )
+            except Exception:
+                self._logger.exception('failed to load next-song lyrics')
+
+        asyncTask(_download, (), self._mwindow_obj)
+
+    def _applyPreviewLyrics(
+        self,
+        selection: PlaySelection,
+        play_seq: int,
+        preview_seq: int,
+        candidate: LyricCandidate,
+    ) -> None:
+        if (
+            not cfg.enable_lyric_handoff
+            or play_seq != self._play_seq
+            or preview_seq != self._lyric_preview_seq
+            or selection != self._lyric_preview_selection
+            or selection.mode != self.play_mode
+            or not self.isSelectionCurrent(selection)
+        ):
+            return
+        song = selection.song
+        song.writeLyrics(
+            candidate.lyric, candidate.translated_lyric, candidate.yrc_lyric
+        )
+        saveFavorites()
+        self.ctx.lyrics_manager.setPreview(
+            song,
+            self._storableDuration(song),
+            {
+                'lyric': candidate.lyric,
+                'yrc_lyric': candidate.yrc_lyric,
+                'translated_lyric': candidate.translated_lyric,
+            },
+        )
 
     def _emitError(self, title: str, message: str) -> None:
         event_bus.emit(PLAYBACK_ERROR, title, message)
@@ -454,6 +567,7 @@ class PlayingManager(QObject):
         song.loaded_loudness_gain = False
         player.setVolume(1.0)
         self.total_length = self._storableDuration(song)
+        self._startLyricSong(song, True)
         event_bus.emit(STOP_PROGRESS_LOADING)
         event_bus.emit(PLAYBACK_SONG_LOADING, song)
         if song.imageCached():
@@ -742,6 +856,7 @@ class PlayingManager(QObject):
         self._play_seq += 1
         boundary = player.beginQueuedTrack(boundary[0], frames, gain, boundary[1])
         self.total_length = player.getLength()
+        self._startLyricSong(selection.song)
         self.crossfading = boundary[1] > player.current_index
         self._transition_end = boundary[1] if self.crossfading else None
         if self.crossfading:
@@ -1018,6 +1133,7 @@ class PlayingManager(QObject):
         self._logger.info('queued next PCM -> start=%s end=%s', *boundary)
 
     def _onSongChangedEvent(self, _song_storable: SongStorable) -> None:
+        self.refreshLyricPreview()
         if self.personal_fm and self.current_index >= len(self.playlist) - 3:
             self._appendPersonalFMSongsAsync()
         player = self._player
@@ -1084,6 +1200,42 @@ class PlayingManager(QObject):
             else 1.0
         )
         player.setGain(gain)
+
+    def refreshLoudnessGain(self) -> None:
+        player = self._player
+        song = self.current_song
+        audio = self.current_song_audio
+        if player is None or song is None or not isinstance(audio, AudioSegment_):
+            return
+
+        was_playing = player.isPlaying()
+        player.pause()
+        self.clearPreload()
+        play_seq = self._play_seq
+        target_lufs = cfg.target_lufs
+
+        def _compute() -> None:
+            gain = self._computeLoudnessGain(target_lufs, audio)
+
+            def _apply() -> None:
+                if (
+                    self._play_seq != play_seq
+                    or self.current_song is not song
+                    or self.current_song_audio is not audio
+                ):
+                    return
+                if target_lufs == cfg.target_lufs:
+                    self._setStorableLoudness(song, target_lufs, gain)
+                    player.setGain(gain)
+                if was_playing and not player.isPlaying():
+                    player.play()
+                if target_lufs == cfg.target_lufs:
+                    self._preload_triggered = True
+                    self.preloadNextSong()
+
+            self._schedule(_apply)
+
+        threading.Thread(target=_compute, daemon=True).start()
 
     def preloadNextSong(self) -> None:
         if len(self.playlist) <= 1:
@@ -2546,6 +2698,7 @@ class PlayingManager(QObject):
         def _is_current_playback() -> bool:
             return play_seq == self._play_seq and self.current_song is song_storable
 
+        self._startLyricSong(song_storable, restore_position is not None)
         event_bus.emit(STOP_PROGRESS_LOADING)
         event_bus.emit(PLAYBACK_SONG_LOADING, song_storable)
         app = self._app
@@ -2634,12 +2787,10 @@ class PlayingManager(QObject):
         if not self.ctx:
             return
         lyrics = song_storable.getLyrics()
-        self.ctx.mgr.cur = lyrics['lyric'] or '[00:00.000]'
-        self.ctx.transmgr.cur = ''
-        self.ctx.ymgr.cur = ''
-        self.ctx.mgr.parse()
-        self.ctx.transmgr.parse()
-        self.ctx.ymgr.parse()
+        self.ctx.lyrics_manager.applyLyrics(
+            lyrics['lyric'], lyrics['yrc_lyric'],
+            lyrics['translated_lyric'], self.total_length,
+        )
         event_bus.emit(PLAYBACK_LYRICS_UPDATED, song_storable)
 
     def _compute_gain_async(
@@ -2684,15 +2835,9 @@ class PlayingManager(QObject):
         if self.current_song is not song:
             return False
 
-        mgr = self.ctx.mgr
-        ymgr = self.ctx.ymgr
-        transmgr = self.ctx.transmgr
-        mgr.cur = lyric or yrc_lyric or '[00:00.000]'
-        ymgr.cur = yrc_lyric
-        transmgr.cur = translated_lyric or '[00:00.000]'
-        mgr.parse()
-        ymgr.parse()
-        transmgr.parse()
+        self.ctx.lyrics_manager.applyLyrics(
+            lyric, yrc_lyric, translated_lyric, self.total_length
+        )
         self._logger.info('applied %s lyrics for %s', source, song.name)
         return True
 

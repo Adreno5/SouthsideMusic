@@ -2448,7 +2448,7 @@ class WheelPipeline:
                 return
             self._seen.add(package)
         self.window.ensurePipelinePackage(requirement.name)
-        self.window.updatePackageStage(requirement.name, 'resolve', 'Resolving')
+        self.window.updatePackageStage(requirement.name, 'queue', 'Waiting to resolve')
         self._submit(
             self.resolve_pool,
             self._resolveOne,
@@ -2458,6 +2458,7 @@ class WheelPipeline:
         )
 
     def _resolveOne(self, requirement: RequirementInfo) -> WheelFile | None:
+        self.window.updatePackageStage(requirement.name, 'resolve', 'Resolving')
         cached = findCachedWheel(requirement, self.wheelhouse)
         if cached is not None and self.index.matchesTags(cached.name):
             return WheelFile(
@@ -2537,7 +2538,7 @@ class WheelPipeline:
                 self._submitResolve(requirement)
 
     def _submitDownload(self, requirement: RequirementInfo, wheel: WheelFile) -> None:
-        self.window.updatePackageStage(requirement.name, 'download', 'Downloading')
+        self.window.updatePackageStage(requirement.name, 'queue', 'Waiting to download')
         self._submit(
             self.download_pool,
             self._downloadOne,
@@ -2548,6 +2549,7 @@ class WheelPipeline:
         )
 
     def _downloadOne(self, requirement: RequirementInfo, wheel: WheelFile) -> Path:
+        self.window.updatePackageStage(requirement.name, 'download', 'Downloading')
         target = self.wheelhouse / wheel.filename
         with self._wheelLock(wheel):
             staged = wheel.staged_path
@@ -2597,7 +2599,7 @@ class WheelPipeline:
         self._submitInstall(requirement, path)
 
     def _submitInstall(self, requirement: RequirementInfo, path: Path) -> None:
-        self.window.updatePackageStage(requirement.name, 'install', 'Installing')
+        self.window.updatePackageStage(requirement.name, 'queue', 'Waiting to install')
         self._submit(
             self.install_pool,
             self._installOne,
@@ -2608,6 +2610,7 @@ class WheelPipeline:
         )
 
     def _installOne(self, requirement: RequirementInfo, path: Path) -> None:
+        self.window.updatePackageStage(requirement.name, 'install', 'Installing')
         installWheelArchive(path, self.python_exe)
 
     def _installed(self, future: Future[object], payload: object | None) -> None:

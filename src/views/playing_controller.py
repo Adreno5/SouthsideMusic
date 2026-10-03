@@ -1,73 +1,76 @@
 from __future__ import annotations
 
-from collections import deque
 import logging
 import math
-import numpy as np
 import time
-from typing import TYPE_CHECKING, cast as _cast, override
+from collections import deque
+from typing import TYPE_CHECKING, override
+from typing import cast as _cast
 
+import numpy as np
+from qfluentwidgets import (
+    TransparentToolButton,
+)
+
+from core import theme
 from core.app_context import AppContext
+from core.audio_player import AudioPlayer
+from core.color import mixColor
+from core.config import cfg
+from core.free_threaded_worker import jsonFloatArray
 from core.i18n import tr
+from core.icons import bindIcon
+from core.lyrics import LRCLyricParser, LyricInfo, YRCLyricInfo, YRCLyricParser
 from core.models import SongStorable
 from core.qt_utils import toQtInt
-from core.smooth import EaseOutTimer, EaseInOutTimer
-from views.setting_page import SettingPage
-
-from core.color import mixColor
+from core.smooth import EaseInOutTimer, EaseOutTimer
+from core.ws_server import QObjectHandler
 from imports import (
     BACKGROUND_RATIO_CHANGED,
     BEAT_POINT,
     COLLECT_DEBUG_INFO,
     EMIT_DEBUG_INFO,
+    FINISH_CROSSFADE,
     LYRIC_LINE_CHANGED,
-    PLAY_STATE_CHANGED,
-    PLAY_START_PLAYLIST,
     PLAY_LAST,
     PLAY_NEXT,
+    PLAY_START_PLAYLIST,
+    PLAY_STATE_CHANGED,
     POST_THEME_CHANGED,
     REFRESH_RATE_CHANGED,
     REPAINT,
     SONG_CHANGED,
     START_CROSSFADE,
-    FINISH_CROSSFADE,
+    QColor,
+    QEvent,
     QFont,
     QFontMetricsF,
+    QHBoxLayout,
     QImage,
-    QPixmap,
-    QPointF,
-    QRectF,
-    QSizePolicy,
-    QSpacerItem,
-    Qt,
-    QSize,
-    QTimer,
-    event_bus,
-)
-from imports import (
-    QColor,
+    QLabel,
     QLinearGradient,
     QMouseEvent,
+    QObject,
     QOpenGLWidget,
     QPainter,
     QPainterPath,
     QPaintEvent,
     QPen,
+    QPixmap,
+    QPointF,
+    QRectF,
+    QSize,
+    QSizePolicy,
+    QSpacerItem,
+    Qt,
+    QTimer,
+    QVBoxLayout,
+    QWidget,
+    event_bus,
 )
-from imports import QHBoxLayout, QLabel, QVBoxLayout, QWidget
-from qfluentwidgets import (
-    TransparentToolButton,
-)
-
-from core.icons import bindIcon
-from core import theme
-from core.lyrics import LyricInfo, LRCLyricParser, YRCLyricInfo, YRCLyricParser
-from core.audio_player import AudioPlayer
-from core.free_threaded_worker import jsonFloatArray
-from core.ws_server import QObjectHandler
-from core.config import cfg
-from views.translation_handler import TranslationHandler
 from views.image_label import SImageLabel
+from views.setting_page import SettingPage
+from views.translation_handler import TranslationHandler
 
 if TYPE_CHECKING:
     from views.main_window import MainWindow
@@ -100,6 +103,8 @@ class PlayingControllerLyricsViewer(QWidget):
         self._prewarm_version = 0
         self._current_line: LyricInfo | YRCLyricInfo | None = None
         self._draw_position = 0.0
+        self._width_key: tuple[object, ...] = ()
+        self._last_paint_state: tuple[object, ...] = ()
 
         self.refresh_rate = max(60, ctx.app.primaryScreen().refreshRate() / 2)
         self._logger.info(f'{self.refresh_rate=}')
@@ -135,7 +140,10 @@ class PlayingControllerLyricsViewer(QWidget):
         self.update()
 
     def _onRepaintTick(self, _multiple_factor: float = 1.0) -> None:
+        if not self.isVisible():
+            return
         position = self.ctx.playing_manager.getDisplaySmoothPosition()
+        current: LyricInfo | YRCLyricInfo | None
         if self._ymgr.hasYrcTiming():
             current = self._ymgr.getCurrentLyric(position)
         elif self._mgr.parsed:
@@ -143,16 +151,25 @@ class PlayingControllerLyricsViewer(QWidget):
         else:
             current = None
 
-        target = 0
-        if current:
-            text = current.content.strip()
-            if text:
-                target = int(math.ceil(self.metri.horizontalAdvance(text))) + 20
-
-        self.setFixedWidth(max(1, int(target)))
+        text = current.content.strip() if current else ''
+        width_key = (text, self.ft.toString())
+        if width_key != self._width_key:
+            self._width_key = width_key
+            target = math.ceil(self.metri.horizontalAdvance(text)) + 20 if text else 1
+            if self.width() != target:
+                self.setFixedWidth(target)
         self._current_line = current
         self._draw_position = position
-        self.update()
+        state = (
+            id(current),
+            position,
+            self.size(),
+            theme.isDark(),
+            self._cfg.background_ratio,
+        )
+        if state != self._last_paint_state:
+            self.update()
+        self._last_paint_state = state
 
     def _lineColor(self, line: LyricInfo | YRCLyricInfo) -> QColor:
         if line.isMetadata:
@@ -168,8 +185,8 @@ class PlayingControllerLyricsViewer(QWidget):
             else tar_color
         )
 
-    def _onRefreshRateChanged(self):
-        self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
+    def _onRefreshRateChanged(self) -> None:
+        self.refresh_rate = max(60, self.window().screen().refreshRate() / 2)
         self._logger.info(f'{self.refresh_rate=}')
         self.delta = 1 / self.refresh_rate
 
@@ -275,7 +292,7 @@ class PlayingController(QOpenGLWidget):
         self.cur_magnitudes: np.ndarray | None = None
         self.final_magnitudes: np.ndarray = np.zeros(2049, dtype=np.float32)
         self.smoothed_magnitudes: np.ndarray = np.zeros(2049, dtype=np.float32)
-        self.draw_magnitudes: np.ndarray = np.zeros(2049, dtype=np.float32)
+        self.draw_magnitudes: np.ndarray = np.zeros(2049, dtype=np.float64)
         self.fft_display_magnitudes: np.ndarray = np.zeros(768, dtype=np.float32)
         self._fft_path = QPainterPath()
         self._draw_progress_left = 52
@@ -287,6 +304,17 @@ class PlayingController(QOpenGLWidget):
         self._prepared_draw_end_x = 0
         self._overlay_alpha = 0
         self._draw_fft = False
+        self._fft_kernel_size = 0
+        self._fft_kernel = np.empty(0)
+        self._fft_weights = np.empty(0)
+        self._fft_centers_key: tuple[object, ...] = ()
+        self._fft_centers = np.empty(0)
+        self._fft_active = False
+        self._fft_path_state: tuple[object, ...] = ()
+        self._layout_dirty = True
+        self._layout_width = -1
+        self._layout_text_width = 0
+        self._last_paint_state: tuple[object, ...] = ()
 
         self.cover_label = SImageLabel()
         self.cover_label.setFixedWidth(52)
@@ -348,6 +376,17 @@ class PlayingController(QOpenGLWidget):
         self.bg_color = QColor(0, 0, 0)
 
         self.setLayout(global_layout)
+        for widget in (
+            self.middle_container,
+            self.middle_widget,
+            self.song_title_label,
+            self.lyrics_viewer,
+            self.last_btn,
+            self.play_pausebtn,
+            self.next_btn,
+            self.playlist_btn,
+        ):
+            widget.installEventFilter(self)
 
         event_bus.subscribe(REPAINT, self._onRepaintTick)
 
@@ -359,8 +398,8 @@ class PlayingController(QOpenGLWidget):
         self.bar_alpha_timer.target_value = 1
         self.tip_handler = TranslationHandler()
 
-        self.draw_x_acc = 0
-        self.last_play_time_acc = 0
+        self.draw_x_acc = 0.0
+        self.last_play_time_acc = 0.0
         self.draw_x_acc_timer = EaseOutTimer(0.1, 2)
 
         event_bus.subscribe(PLAY_STATE_CHANGED, self._onPlayStateChanged)
@@ -398,8 +437,8 @@ class PlayingController(QOpenGLWidget):
         info.extend(self.norm_timer.getDebugInfo())
         event_bus.emit(EMIT_DEBUG_INFO, 'PlayingController', info)
 
-    def _onRefreshRateChanged(self):
-        self.refresh_rate = max(60, self._app.primaryScreen().refreshRate() / 2)
+    def _onRefreshRateChanged(self) -> None:
+        self.refresh_rate = max(60, self.window().screen().refreshRate() / 2)
         self.delta = 1 / self.refresh_rate
         self.setFFTBufferSeconds(self.ctx.config.fft_buffer_seconds)
 
@@ -454,40 +493,58 @@ class PlayingController(QOpenGLWidget):
 
         self.update()
 
+    @override
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        if event.type() in (
+            QEvent.Type.LayoutRequest,
+            QEvent.Type.FontChange,
+            QEvent.Type.StyleChange,
+        ):
+            self._layout_dirty = True
+        return super().eventFilter(obj, event)
+
     def _onRepaintTick(self, multiple_factor: float = 1) -> None:
         self._updateXAcc()
         progress_left = self._progressLeft()
         factor = progress_left / 52
-        margins = self.middle_layout.contentsMargins()
-        available_width = (
-            self.width()
-            - 52
-            - margins.left()
-            - margins.right()
-            - _cast(QHBoxLayout, self.layout()).spacing() * 5
-            - sum(
-                button.sizeHint().width()
-                for button in (
-                    self.last_btn,
-                    self.play_pausebtn,
-                    self.next_btn,
-                    self.playlist_btn,
+        if self._layout_dirty or self.width() != self._layout_width:
+            self._layout_dirty = False
+            self._layout_width = self.width()
+            margins = self.middle_layout.contentsMargins()
+            available_width = (
+                self.width()
+                - 52
+                - margins.left()
+                - margins.right()
+                - _cast(QHBoxLayout, self.layout()).spacing() * 5
+                - sum(
+                    button.sizeHint().width()
+                    for button in (
+                        self.last_btn,
+                        self.play_pausebtn,
+                        self.next_btn,
+                        self.playlist_btn,
+                    )
                 )
             )
-        )
-        text_width = min(
-            self.middle_layoutin.sizeHint().width(), max(0, available_width)
-        )
-        self.cover_label.setFixedWidth(progress_left)
-        self.middle_container.setFixedWidth(int(text_width * factor))
+            self._layout_text_width = min(
+                self.middle_layoutin.sizeHint().width(), max(0, available_width)
+            )
+        if self.cover_label.width() != progress_left:
+            self.cover_label.setFixedWidth(progress_left)
+        text_width = int(self._layout_text_width * factor)
+        if self.middle_container.width() != text_width:
+            self.middle_container.setFixedWidth(text_width)
         visible = self.is_expended or self.progress_left_timer.is_animating
-        self.cover_label.setVisible(visible)
-        self.middle_widget.setVisible(visible)
+        if self.cover_label.isHidden() == visible:
+            self.cover_label.setVisible(visible)
+        if self.middle_widget.isHidden() == visible:
+            self.middle_widget.setVisible(visible)
         self._updateFFTAndRepaint(multiple_factor)
         self._updateLyric(multiple_factor)
         self.draw_x_acc = self.draw_x_acc_timer.current_value
 
-    def _updateXAcc(self):
+    def _updateXAcc(self) -> None:
         play_time = self.ctx.player.getPosition()
         if self.seeking:
             if self.last_play_time_acc > play_time:
@@ -502,7 +559,7 @@ class PlayingController(QOpenGLWidget):
         if len(magnitudes) != len(self.smoothed_magnitudes):
             self.final_magnitudes = np.zeros_like(magnitudes, dtype=np.float32)
             self.smoothed_magnitudes = np.zeros_like(magnitudes, dtype=np.float32)
-            self.draw_magnitudes = np.zeros_like(magnitudes, dtype=np.float32)
+            self.draw_magnitudes = np.zeros_like(magnitudes, dtype=np.float64)
         self.cur_freqs = freqs
         self.cur_magnitudes = magnitudes
 
@@ -520,16 +577,21 @@ class PlayingController(QOpenGLWidget):
         if max_frequency <= min_frequency:
             return np.zeros(0, dtype=np.float32)
 
-        mel_min = np.log1p(min_frequency / 700)
-        mel_max = np.log1p(max_frequency / 700)
-        centers = 700 * np.expm1(np.linspace(mel_min, mel_max, 768))
-        display = np.interp(centers, freqs, magnitudes).astype(
+        key = (size, float(freqs[1]), float(freqs[-1]), min_frequency, max_frequency)
+        if key != self._fft_centers_key:
+            self._fft_centers_key = key
+            mel_min = np.log1p(min_frequency / 700)
+            mel_max = np.log1p(max_frequency / 700)
+            self._fft_centers = 700 * np.expm1(np.linspace(mel_min, mel_max, 768))
+        display = np.interp(self._fft_centers, freqs, magnitudes).astype(
             np.float32,
             copy=False,
         )
         peak = float(np.max(display))
         if peak > 0:
-            display = peak * np.power(display / peak, 1.6)
+            np.divide(display, peak, out=display)
+            np.power(display, 1.6, out=display)
+            np.multiply(display, peak, out=display)
         return display.astype(np.float32, copy=False)
 
     def _updateFFTAndRepaint(self, multiple_factor: float = 1.0) -> None:
@@ -540,30 +602,43 @@ class PlayingController(QOpenGLWidget):
             and self.cur_freqs is not None
             and self.cur_magnitudes is not None
         )
-        if self._stp.enableFFT_box.isChecked() and self.cur_magnitudes is not None:
-            if not self._player.isPlaying():
+        playing = self._player.isPlaying()
+        self._fft_active = self._draw_fft and (
+            playing
+            or bool(np.any(self.smoothed_magnitudes > 0.0001))
+            or bool(np.any(self.draw_magnitudes > 0.001))
+        )
+        needs_fft = self._draw_fft and (self.isVisible() or self._ws_handler.is_open)
+        if needs_fft and self._fft_active:
+            if (
+                not playing
+                and self.cur_magnitudes is not None
+                and np.any(self.cur_magnitudes)
+            ):
                 self.cur_magnitudes = np.zeros_like(
-                    self.cur_magnitudes,
-                    dtype=np.float32,
+                    self.cur_magnitudes, dtype=np.float32
                 )
             window_size = int(cfg.fft_filtering_windowsize)
+            if self._fft_kernel_size != window_size:
+                self._fft_kernel_size = window_size
+                self._fft_kernel = np.ones(window_size) / window_size
 
             self.smoothed_magnitudes += (
                 self.cur_magnitudes - self.smoothed_magnitudes
             ) * (1 - pow(1 - cfg.fft_factor, multiple_factor))
             self.final_magnitudes = np.convolve(
                 self.smoothed_magnitudes,
-                np.ones(window_size) / window_size,
+                self._fft_kernel,
                 mode='same',
             )
             n = len(self.final_magnitudes)
-            offset = int(n * 0.015)
-            factor = np.arange(n, dtype=self.final_magnitudes.dtype)
-            factor -= offset
-            np.abs(factor, out=factor)
-            factor += 1.0
-            factor *= 1.05
-            self.final_magnitudes *= factor
+            if len(self._fft_weights) != n:
+                self._fft_weights = np.arange(n, dtype=self.final_magnitudes.dtype)
+                self._fft_weights -= int(n * 0.015)
+                np.abs(self._fft_weights, out=self._fft_weights)
+                self._fft_weights += 1.0
+                self._fft_weights *= 1.05
+            self.final_magnitudes *= self._fft_weights
             if isinstance(self._dp.cur, DummyCard):
                 self.final_magnitudes *= (
                     2 / self._dp.cur.storable.loudness_gain
@@ -576,46 +651,53 @@ class PlayingController(QOpenGLWidget):
                     self.final_magnitudes /= self.norm_timer.current_value
                     self.final_magnitudes *= self.height() - 10
 
-            self.draw_magnitudes = np.maximum(
-                self.final_magnitudes, self.draw_magnitudes
+            np.maximum(
+                self.final_magnitudes, self.draw_magnitudes, out=self.draw_magnitudes
             )
             self.draw_magnitudes *= pow(0.93, multiple_factor)
-            self.draw_magnitudes = np.maximum(self.draw_magnitudes, 0)
+            np.maximum(self.draw_magnitudes, 0, out=self.draw_magnitudes)
             self.fft_display_magnitudes = self._displayFFTMagnitudes()
+        elif needs_fft:
+            self.smoothed_magnitudes.fill(0)
+            self.draw_magnitudes.fill(0)
+            self.fft_display_magnitudes.fill(0)
 
-            if self._ws_handler.is_open:
-                now = time.perf_counter()
-                if now - self._last_ws_fft_send >= self.ctx.config.ws_fft_interval:
-                    self._last_ws_fft_send = now
-                    magnitudes = np.ascontiguousarray(
-                        self.fft_display_magnitudes,
-                        dtype=np.float32,
-                    )
-                    multiple = float(cfg.sfft_multiple)
-                    self._ws_handler.sendJsonFactory(
-                        lambda magnitudes=magnitudes, multiple=multiple: {
-                            'option': 'update_fft',
-                            'magnitudes': jsonFloatArray(
-                                magnitudes.tobytes(),
-                                str(magnitudes.dtype),
-                                int(magnitudes.size),
-                                multiple,
-                            ),
-                        },
-                        coalesce_key='update_fft',
-                    )
+        if needs_fft and self._ws_handler.is_open:
+            now = time.perf_counter()
+            if now - self._last_ws_fft_send >= self.ctx.config.ws_fft_interval:
+                self._last_ws_fft_send = now
+                magnitudes = np.ascontiguousarray(
+                    self.fft_display_magnitudes,
+                    dtype=np.float32,
+                )
+                multiple = float(cfg.sfft_multiple)
+                self._ws_handler.sendJsonFactory(
+                    lambda magnitudes=magnitudes, multiple=multiple: {
+                        'option': 'update_fft',
+                        'magnitudes': jsonFloatArray(
+                            magnitudes.tobytes(),
+                            str(magnitudes.dtype),
+                            int(magnitudes.size),
+                            multiple,
+                        ),
+                    },
+                    coalesce_key='update_fft',
+                )
 
         progress_left = self._progressLeft()
         self._draw_progress_left = progress_left
-        self._fft_path = QPainterPath(QPointF(progress_left, 0))
-        if self._draw_fft:
+        path_state = (progress_left, self.width(), self._draw_fft, self._fft_active)
+        rebuild_path = playing or self._fft_active or path_state != self._fft_path_state
+        if self.isVisible() and rebuild_path:
+            self._fft_path = QPainterPath(QPointF(progress_left, 0))
+        if self._draw_fft and self.isVisible() and rebuild_path:
             total = len(self.fft_display_magnitudes)
             for i, magnitude in enumerate(self.fft_display_magnitudes):
                 x = progress_left + (i + 1) / total * (self.width() - progress_left)
-                self._fft_path.lineTo(
-                    QPointF(x, magnitude * cfg.cfft_multiple + 3.5)
-                )
+                self._fft_path.lineTo(QPointF(x, magnitude * cfg.cfft_multiple + 3.5))
             self._fft_path.lineTo(QPointF(self.width(), 0))
+        if self.isVisible():
+            self._fft_path_state = path_state
         progress_width = self.width() - progress_left
         self._draw_current_x = progress_left
         self._prepared_draw_end_x = progress_left
@@ -654,8 +736,25 @@ class PlayingController(QOpenGLWidget):
                 )
             self._sendDrawPosition(draw_ratio)
 
-        if self._mwindow and self._mwindow.isVisible():
+        state = (
+            self._draw_current_x,
+            self._prepared_draw_end_x,
+            self._overlay_alpha,
+            self._prepared_lead_width,
+            progress_left,
+            self._draw_fft,
+            self._fft_active,
+            round(self.bar_alpha_timer.current_value, 3),
+            round(self.beat_flash_timer.current_value, 3),
+            self.bg_color.rgba(),
+            self.size(),
+            self.ctx.playing_manager.crossfading,
+        )
+        if self.isVisible() and (
+            playing or self._fft_active or state != self._last_paint_state
+        ):
             self.update()
+        self._last_paint_state = state
 
     def _sendDrawPosition(self, draw_ratio: float) -> None:
         if not self._ws_handler.is_open:

@@ -1,13 +1,53 @@
-from functools import lru_cache
 from enum import Enum
-from typing import Any, Literal, cast
+from functools import lru_cache
+from os import makedirs
+from typing import Any, Literal, cast, override
+
+from qfluentwidgets import FluentIconBase, Theme
+from qfluentwidgets.common.icon import writeSvg
 
 from core import theme as themeModule
-from qfluentwidgets import FluentIconBase, Theme
-from os import makedirs
+from imports import QPainter, QRect, QRectF, QSvgRenderer
 
 makedirs('data', exist_ok=True)
 makedirs('data/icons', exist_ok=True)
+
+
+@lru_cache(maxsize=256)
+def getSvgRenderer(
+    path: str,
+    indexes: tuple[int, ...] | None = None,
+    attributes: tuple[tuple[str, str], ...] = (),
+) -> QSvgRenderer:
+    if attributes:
+        return QSvgRenderer(writeSvg(path, indexes, **dict(attributes)).encode())
+    return QSvgRenderer(path)
+
+
+class CachedFluentIcon(FluentIconBase):
+    def __init__(self, icon: FluentIconBase) -> None:
+        self._icon = icon
+
+    @override
+    def path(self, theme: Theme = Theme.AUTO) -> str:
+        return self._icon.path(theme)
+
+    @override
+    def render(
+        self,
+        painter: QPainter,
+        rect: QRect | QRectF,
+        theme: Theme = Theme.AUTO,
+        indexes: list[int] | None = None,
+        **attributes: str,
+    ) -> None:
+        actual_theme = Theme.DARK if themeModule.isDark() else Theme.LIGHT
+        path = self.path(actual_theme if theme == Theme.AUTO else theme)
+        getSvgRenderer(
+            path,
+            tuple(indexes) if indexes is not None else None,
+            tuple(sorted(attributes.items())),
+        ).render(painter, QRectF(rect))
 
 
 class SouthsideIcon(FluentIconBase, Enum):
@@ -45,8 +85,14 @@ class SouthsideIcon(FluentIconBase, Enum):
     COMMENT = 'comment'
     QUALITY = 'quality'
 
-    @lru_cache
-    def path(self, theme=Theme.AUTO) -> str:
+    @override
+    def path(self, theme: Theme = Theme.AUTO) -> str:
+        if theme == Theme.AUTO:
+            theme = Theme.DARK if themeModule.isDark() else Theme.LIGHT
+        return self._path(theme)
+
+    @lru_cache(maxsize=128)
+    def _path(self, theme: Theme) -> str:
         with open(f'icons/{self.value}.svg', 'r', encoding='utf-8') as f:
             svg = f.read()
         target = '#ffffff' if themeModule.isDark() else '#000000'
@@ -61,6 +107,21 @@ class SouthsideIcon(FluentIconBase, Enum):
         with open(save_path, 'w', encoding='utf-8') as f:
             f.write(svg)
         return save_path
+
+    @override
+    def render(
+        self,
+        painter: QPainter,
+        rect: QRect | QRectF,
+        theme: Theme = Theme.AUTO,
+        indexes: list[int] | None = None,
+        **attributes: str,
+    ) -> None:
+        getSvgRenderer(
+            self.path(theme),
+            tuple(indexes) if indexes is not None else None,
+            tuple(sorted(attributes.items())),
+        ).render(painter, QRectF(rect))
 
 
 _icon_map = {icon.value: icon for icon in SouthsideIcon}

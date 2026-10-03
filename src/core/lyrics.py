@@ -213,10 +213,12 @@ class YRCLyricParser:
         self._getCurrentLyric.cache_clear()
         self._getCurrentLyricIndex.cache_clear()
 
-        self.parsed.clear()
-        self._has_yrc_timing = False
+        parsed: list[YRCLyricInfo] = []
+        has_yrc_timing = False
 
         if not self.cur:
+            self.parsed = parsed
+            self._has_yrc_timing = has_yrc_timing
             return
 
         for line in self.cur.splitlines():
@@ -229,7 +231,7 @@ class YRCLyricParser:
 
             metadata = _try_parse_json_metadata_line(stripped)
             if metadata is not None:
-                self.parsed.append(
+                parsed.append(
                     YRCLyricInfo(
                         time=metadata.time,
                         duration=0,
@@ -242,12 +244,14 @@ class YRCLyricParser:
 
             info = _try_parse_yrc_line(stripped)
             if info is not None:
-                self.parsed.append(info)
+                parsed.append(info)
                 if info.chars:
-                    self._has_yrc_timing = True
+                    has_yrc_timing = True
 
-        self.parsed.sort(key=lambda x: x.time)
-        self._logger.info(f'parsed {len(self.parsed)} YRC lines')
+        parsed.sort(key=lambda x: x.time)
+        self.parsed = parsed
+        self._has_yrc_timing = has_yrc_timing
+        self._logger.info(f'parsed {len(parsed)} YRC lines')
 
 
 class LRCLyricParser:
@@ -332,11 +336,13 @@ class LRCLyricParser:
         self._getCurrentLyric.cache_clear()
         self._getCurrentLyricIndex.cache_clear()
 
-        self.parsed.clear()
-        self.empty_times.clear()
+        parsed: list[LyricInfo] = []
+        empty_times: list[float] = []
         self.version += 1
 
         if not self.cur:
+            self.parsed = parsed
+            self.empty_times = empty_times
             return
 
         for line in self.cur.splitlines():
@@ -356,15 +362,17 @@ class LRCLyricParser:
                 seconds = int(m.group(2))
                 ms_raw = m.group(3).ljust(3, '0')[:3]
                 ms = int(ms_raw)
-                self.empty_times.append(minutes * 60 + seconds + ms / 1000)
+                empty_times.append(minutes * 60 + seconds + ms / 1000)
                 continue
 
             info = _try_parse_lrc_line(stripped)
             if info is not None:
-                self.parsed.append(info)
+                parsed.append(info)
 
-        self.parsed.sort(key=lambda x: x.time)
-        self._logger.info(f'parsed {len(self.parsed)} lines')
+        parsed.sort(key=lambda x: x.time)
+        self.parsed = parsed
+        self.empty_times = empty_times
+        self._logger.info(f'parsed {len(parsed)} lines')
 
 
 @dataclass

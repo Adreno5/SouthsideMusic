@@ -1,12 +1,11 @@
-import time
-from PySide6.QtCore import QObject
-from time import perf_counter_ns
-
-from services.events import event_bus, REFRESH_RATE_CHANGED, REPAINT
-from imports import QApplication, QTimer
-from core.models import AnimatingObject
-from typing import Literal
 import logging
+import time
+from time import perf_counter_ns
+from typing import Literal
+
+from core.models import AnimatingObject
+from imports import QApplication, QObject
+from services.events import event_bus
 
 _NANOSECONDS_PER_SECOND = 1_000_000_000
 
@@ -135,7 +134,11 @@ class EaseInOutTimer(_BaseSmoothTimer):
 
 
 class SScrollTimer(QObject):
-    def __init__(self, duration: int = 250, use_api: Literal['repaint', 'repaint_always'] = 'repaint'):
+    def __init__(
+        self,
+        duration: int = 250,
+        use_api: Literal['repaint', 'repaint_always'] = 'repaint',
+    ):
         super().__init__()
         self._logger = logging.getLogger(__name__)
         self.animating_objs: list[AnimatingObject] = []
@@ -165,8 +168,11 @@ class SScrollTimer(QObject):
         t = max(0.0, min(1.0, t))
         return t * t * (3.0 - 2.0 * t)
 
-    def _tick(self, _):
+    def _tick(self, _: float) -> None:
         now = time.perf_counter_ns()
+        if not self.animating_objs:
+            self.last_draw = now
+            return
         elapsed = min((now - self.last_draw) / 1_000_000_000, 0.1)
         self.last_draw = now
         multiple_factor = elapsed * self.refresh_rate

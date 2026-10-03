@@ -1,48 +1,43 @@
 from __future__ import annotations
 
 import logging
-
 import math
 import time
-from typing import override
+from bisect import bisect_left, bisect_right
+from typing import cast, override
 
+import numpy as np
+
+from core import theme
 from core.app_context import AppContext
-
+from core.color import mixColor
 from core.downloader import asyncTask
+from core.lyrics import LyricInfo, YRCLyricInfo
+from core.qt_utils import toQtInt
+from core.smooth import EaseOutTimer, SScrollTimer
+from core.time_format import float2time
 from imports import (
-    REFRESH_RATE_CHANGED,
+    BEAT_POINT,
     REPAINT,
+    QColor,
     QEnterEvent,
     QEvent,
-    QPen,
-    QPointF,
-    QRectF,
-    Qt,
-    event_bus,
-)
-
-from imports import (
-    QColor,
     QFont,
     QFontMetricsF,
     QMouseEvent,
     QOpenGLWidget,
     QPainter,
+    QPen,
+    QPointF,
+    QRectF,
+    Qt,
     QWheelEvent,
-    BEAT_POINT,
+    event_bus,
 )
-
-from core.qt_utils import toQtInt
-from core.time_format import float2time
-from core.color import mixColor
-from core import theme
-from core.smooth import EaseOutTimer, SScrollTimer
-from core.lyrics import LyricInfo, YRCLyricInfo
-from services.events import LYRICS_SCROLLING_DURATION_CHANGED, LYRICS_LINE_DURATION
+from services.events import LYRICS_LINE_DURATION, LYRICS_SCROLLING_DURATION_CHANGED
 from services.events.events import (
     PLAY_STORABLE,
 )
-from views.list_widget import SSmoothScrollBar
 
 _HORIZONTAL_SCROLL_MARGIN = 12.0
 _X_SCROLL_SMOOTH_DURATION = 0.3
@@ -135,6 +130,14 @@ class LyricsViewer(QOpenGLWidget):
         self._view_total_height = 0.0
         self._shown_lines: list[int] = []
         self._line_alphas: dict[int, EaseOutTimer] = {}
+        self._layout_key: tuple[object, ...] = ()
+        self._line_base_offsets = np.empty(0)
+        self._line_translation_offsets = np.empty(0)
+        self._layout_translation_factor = -1.0
+        self._cached_offsets: list[float] = []
+        self._cached_total_height = 0.0
+        self._last_layout_ns = time.perf_counter_ns()
+        self._last_paint_state: tuple[object, ...] = ()
 
         self.beat_flash_timer = EaseOutTimer(0.6, 2)
         self.beat_flash_timer.target_value = 0
@@ -175,11 +178,36 @@ class LyricsViewer(QOpenGLWidget):
             self._text_width_map[text] = self.metri.horizontalAdvance(text)
 
     def _onRepaintTick(self, multiple_factor: float = 1.0) -> None:
+        if not self.isVisible():
+            return
         self.updateDatas(multiple_factor)
 
     def updateDatas(self, multiple_factor: float = 1.0) -> None:
         self._updateViewLayout(multiple_factor)
-        self.update()
+        state = (
+            self._layout_key,
+            self._view_current_index,
+            round(self.draw_offset, 3),
+            round(self.draw_x_offset, 3),
+            round(self.translation_timer.current_value, 3),
+            round(self.clip_w_timer.current_value, 3),
+            round(self.beat_flash_timer.current_value, 3),
+            tuple(
+                (i, int(timer.current_value)) for i, timer in self._line_alphas.items()
+            ),
+            self.size(),
+            self.mouse_pos,
+            self.selecting,
+            self.ctx.debugging,
+            theme.isDark(),
+            self.ctx.config.background_ratio,
+            self.ctx.main_window.song_theme.rgba()
+            if self.ctx.main_window and self.ctx.main_window.song_theme
+            else 0,
+        )
+        if self.ctx.player.isPlaying() or state != self._last_paint_state:
+            self.update()
+        self._last_paint_state = state
 
     def _viewPosition(self) -> float:
         position = self.ctx.playing_manager.getDisplaySmoothPosition()
@@ -193,6 +221,7 @@ class LyricsViewer(QOpenGLWidget):
         )
 
     def _updateViewLayout(self, multiple_factor: float = 1.0) -> None:
+        self._last_layout_ns = time.perf_counter_ns()
         position = self._viewPosition()
         lines, current_index, use_yrc = self._lyricsForPosition(position)
         if not lines:
@@ -389,12 +418,12 @@ class LyricsViewer(QOpenGLWidget):
         use_yrc = self._ymgr.hasYrcTiming()
         if use_yrc:
             return (
-                list(self._ymgr.parsed),
+                cast(list[LyricInfo | YRCLyricInfo], self._ymgr.parsed),
                 self._ymgr.getCurrentIndex(position),
                 use_yrc,
             )  # type: ignore
         return (
-            list(self._mgr.parsed),
+            cast(list[LyricInfo | YRCLyricInfo], self._mgr.parsed),
             self._mgr.getCurrentIndex(position),
             use_yrc,
         )  # type: ignore
@@ -404,13 +433,48 @@ class LyricsViewer(QOpenGLWidget):
         lines: list[LyricInfo | YRCLyricInfo],
         use_yrc: bool,
     ) -> tuple[list[float], float]:
-        y_offsets: list[float] = []
-        y = 0.0
-        for line in lines:
-            y_offsets.append(y)
-            has_trans = bool(self._translationTextForLine(line, use_yrc))
-            y += self._lineStep(has_trans) * self.ctx.config.lyrics_line_spacing
-        return y_offsets, y
+        key = (
+            id(lines),
+            len(lines),
+            use_yrc,
+            getattr(self._ymgr, 'cur', ''),
+            id(lines[0]) if lines else 0,
+            id(lines[-1]) if lines else 0,
+            self._translationLookupKey(),
+            self.ft.toString(),
+            self.tft.toString(),
+            self.font_height,
+            self.theight,
+            self.ctx.config.lyrics_line_spacing,
+            self.ctx.config.lyrics_animation_type,
+        )
+        if key != self._layout_key:
+            self._layout_key = key
+            spacing = self.ctx.config.lyrics_line_spacing
+            steps = np.full(len(lines), self.font_height * 1.85 * spacing)
+            translated = np.array(
+                [bool(self._translationTextForLine(line, use_yrc)) for line in lines],
+                dtype=np.float64,
+            )
+            self._line_base_offsets = np.concatenate(([0.0], np.cumsum(steps)))
+            self._line_translation_offsets = np.concatenate((
+                [0.0],
+                np.cumsum(
+                    translated * (self.theight - self.font_height * 0.1) * spacing
+                ),
+            ))
+            self._layout_translation_factor = -1.0
+        factor = (
+            self.translation_timer.current_value
+            if self.ctx.config.lyrics_animation_type == 'physics'
+            else self.translation_timer.target_value
+        )
+        if factor != self._layout_translation_factor:
+            offsets = self._line_base_offsets + self._line_translation_offsets * factor
+            self._cached_offsets = offsets[:-1].tolist()
+            self._cached_total_height = float(offsets[-1])
+            self._layout_translation_factor = factor
+        return self._cached_offsets, self._cached_total_height
 
     def _currentBaseline(
         self,
@@ -451,7 +515,7 @@ class LyricsViewer(QOpenGLWidget):
                 self.last_target_draw_offset = self.target_draw_offset
             if (
                 len(self.scroller.animating_objs) == 0
-                and self.scroller.getValue() != self.target_draw_offset
+                and self.scroller.getValue() != int(self.target_draw_offset)
                 and not self.selecting
             ):
                 event_bus.emit(LYRICS_LINE_DURATION, duration)
@@ -543,13 +607,9 @@ class LyricsViewer(QOpenGLWidget):
         y_offsets: list[float],
         top_offset: float,
     ) -> list[int]:
-        shown: list[int] = []
-        for i in range(len(lines)):
-            y_pos = top_offset + y_offsets[i]
-            line_bottom = y_pos + self.font_height
-            if line_bottom >= 0 and y_pos - self.font_height <= self.height():
-                shown.append(i)
-        return shown
+        start = bisect_left(y_offsets, -top_offset - self.font_height)
+        end = bisect_right(y_offsets, self.height() - top_offset + self.font_height)
+        return list(range(start, min(end, len(lines))))
 
     def _colorPayload(self, color: QColor) -> dict[str, int]:
         return {
@@ -638,6 +698,11 @@ class LyricsViewer(QOpenGLWidget):
     def lyricLayoutPayload(
         self,
     ) -> dict[str, object]:
+        if not self.isVisible():
+            now = time.perf_counter_ns()
+            screen = self.window().screen()
+            elapsed = min((now - self._last_layout_ns) / 1_000_000_000, 0.1)
+            self._updateViewLayout(elapsed * screen.refreshRate())
         position = self._view_position
         lines = self._view_lines
         current_index = self._view_current_index
@@ -693,9 +758,7 @@ class LyricsViewer(QOpenGLWidget):
             hover_time_text = ''
             hover_time_x = 0.0
             if is_hovered:
-                info = float2time(
-                    line.song_time if self._usesHandoff() else line.time
-                )
+                info = float2time(line.song_time if self._usesHandoff() else line.time)
                 hover_time_text = f'{info.minutes:02d}:{info.seconds:02d}'
                 hover_time_x = (
                     self.width() - self.metri.horizontalAdvance(hover_time_text) - 5

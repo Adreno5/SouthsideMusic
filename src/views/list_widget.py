@@ -1,12 +1,17 @@
-from core import config
-from dataclasses import dataclass
 import logging
 import time
 from typing import cast, override
 
+from qfluentwidgets import ListWidget, ScrollBar, SmoothScrollArea, TextEdit
+from qfluentwidgets.components.widgets.list_view import ListItemDelegate
+
+from core import config
+from core.icons import CachedFluentIcon
+from core.models import AnimatingObject
 from core.smooth import EaseOutTimer
 from imports import (
     REFRESH_RATE_CHANGED,
+    Property,
     QAbstractItemView,
     QAbstractScrollArea,
     QColor,
@@ -19,25 +24,21 @@ from imports import (
     QModelIndex,
     QMouseEvent,
     QObject,
-    QPaintEvent,
     QPainter,
+    QPaintEvent,
     QPalette,
     QPen,
-    QPropertyAnimation,
     QPoint,
+    QPropertyAnimation,
     QResizeEvent,
     QSize,
     QStyleOptionViewItem,
-    QTimer,
-    QWidget,
     Qt,
+    QTimer,
     QWheelEvent,
-    Property,
+    QWidget,
     event_bus,
 )
-from qfluentwidgets import ListWidget, ScrollBar, SmoothScrollArea, TextEdit
-from qfluentwidgets.components.widgets.list_view import ListItemDelegate
-from core.models import AnimatingObject
 from services.events import LIST_SCROLLING_DURATION_CHANGED, REPAINT
 
 
@@ -68,6 +69,8 @@ def _debugging_enabled(widget: QWidget) -> bool:
 class SSmoothScrollBar(ScrollBar):
     def __init__(self, orientation: Qt.Orientation, parent: QAbstractScrollArea):
         super().__init__(orientation, parent)
+        for button in (self.groove.upButton, self.groove.downButton):
+            button._icon = CachedFluentIcon(button._icon)
         self._logger = logging.getLogger(__name__)
         self._area = parent
         self.animating_objs: list[AnimatingObject] = []
@@ -128,22 +131,24 @@ class SSmoothScrollBar(ScrollBar):
         self._pressedPos = e.pos()
         self.sliderMoved.emit()
 
-    def _onRefreshRateChanged(self):
+    def _onRefreshRateChanged(self) -> None:
         screen = self.window().screen()
         if screen is None:
             return
         self.refresh_rate = max(60, screen.refreshRate() / 2)
         self._logger.info(f'{self.refresh_rate=}')
         self.delta = 1 / self.refresh_rate
-        self.anim_timer.setInterval(max(1, int(1000 / self.refresh_rate)))
 
     @staticmethod
     def _smoothstep(t: float) -> float:
         t = max(0.0, min(1.0, t))
         return t * t * (3.0 - 2.0 * t)
 
-    def _tick(self, _):
+    def _tick(self, _: float) -> None:
         now = time.perf_counter_ns()
+        if not self.animating_objs and not self.debug_forces:
+            self.last_draw = now
+            return
         elapsed = min((now - self.last_draw) / 1_000_000_000, 0.1)
         self.last_draw = now
         multiple_factor = elapsed * self.refresh_rate
@@ -179,7 +184,11 @@ class SSmoothScrollBar(ScrollBar):
             if overlay is not None:
                 overlay.update()
 
-    def scrollValue(self, delta: int):
+    def scrollValue(self, delta: int) -> None:
+        if delta == 0:
+            return
+        if not self.animating_objs:
+            self.last_draw = time.perf_counter_ns()
         self.animating_objs.append(
             AnimatingObject(
                 total=float(delta),

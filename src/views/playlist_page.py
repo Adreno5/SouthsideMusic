@@ -198,6 +198,8 @@ class PlaylistPage(QWidget):
         event_bus.emit(PLAY_PLAYLIST_STORABLE, storable)
 
     def _checkVisibleCards(self):
+        if not self.isVisible():
+            return
         for idx, card in enumerate(list(self._song_cards)):
             try:
                 card.objectName()

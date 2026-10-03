@@ -1,9 +1,12 @@
+import json
 import logging
 import os
 import time
 from collections import deque
+from dataclasses import asdict
 from typing import override
 
+import numpy as np
 import psutil
 
 from core import theme
@@ -381,7 +384,7 @@ class DebugOverlay(QOpenGLWidget):
             frames = frame_profiler.finishCapture()
             if frames:
                 path = self._savePerformanceReport(frames)
-                self.export_button.setText('PNG saved - Export 10s')
+                self.export_button.setText('PNG + JSON saved - Export 10s')
                 self.export_button.setToolTip(path)
                 _logger.info('performance report saved to %s', path)
                 self.show()
@@ -403,15 +406,37 @@ class DebugOverlay(QOpenGLWidget):
                 self.update()
 
     def _savePerformanceReport(self, frames: tuple[FrameProfile, ...]) -> str:
+        all_frames = frames
+        frames = tuple(frame for frame in frames if frame.complete)
         totals: dict[str, int] = {}
+        counts: dict[str, int] = {}
         for frame in frames:
             for name, duration in frame.sections:
                 totals[name] = totals.get(name, 0) + duration
+            for name, count in frame.section_counts:
+                counts[name] = counts.get(name, 0) + count
         duration_ns = sum(frame.duration_ns for frame in frames)
         wall_ns = sum(frame.wall_duration_ns or frame.duration_ns for frame in frames)
         frame_count = sum(frame.frame_count for frame in frames)
         if duration_ns <= 0 or frame_count <= 0:
             raise ValueError('No performance samples were recorded')
+        refresh_rate = self.ctx.events_service.refresh_rate
+        budget_ns = 1_000_000_000 / refresh_rate
+        interval_ns = np.array([frame.wall_duration_ns for frame in frames])
+        work_ns = np.array([frame.work_duration_ns for frame in frames])
+        statistics = {
+            'interval_percentiles_ms': (
+                np.percentile(interval_ns, [50, 95, 99]) / 1_000_000
+            ).tolist(),
+            'work_percentiles_ms': (
+                np.percentile(work_ns, [50, 95, 99]) / 1_000_000
+            ).tolist(),
+            'interval_over_budget_ratio': float(np.mean(interval_ns > budget_ns)),
+            'work_over_budget_ratio': float(np.mean(work_ns > budget_ns)),
+            'interval_over_two_budgets_ratio': float(
+                np.mean(interval_ns > 2 * budget_ns)
+            ),
+        }
         idle_name = 'Idle / uninstrumented'
         top = sorted(
             (
@@ -425,9 +450,9 @@ class DebugOverlay(QOpenGLWidget):
         other_ns = duration_ns - totals.get(idle_name, 0) - sum(v for _, v in top)
         slices = [*top, ('Other modules', max(0, other_ns))]
         slices.append((idle_name, totals.get(idle_name, 0)))
-        series = ['Frame (incl. idle)', *(name for name, _ in top)]
+        series = ['Refresh interval (wall time)', *(name for name, _ in top)]
         width = 1680
-        height = 1160 + ((len(series) + 1) // 2) * 30
+        height = 1260 + ((len(series) + 1) // 2) * 30
         image = QImage(width, height, QImage.Format.Format_ARGB32)
         image.fill(QColor('#171a20'))
         painter = QPainter(image)
@@ -440,14 +465,15 @@ class DebugOverlay(QOpenGLWidget):
             painter.drawText(
                 40,
                 82,
-                f'{wall_ns / 1_000_000_000:.3f}s | {frame_count} UI frames | '
-                f'{frame_count * 1_000_000_000 / max(1, wall_ns):.1f} FPS | '
-                f'Average frame: {duration_ns / frame_count / 1_000_000:.3f} ms | '
+                f'{wall_ns / 1_000_000_000:.3f}s | {frame_count} refresh cycles | '
+                f'{frame_count * 1_000_000_000 / max(1, wall_ns):.1f} Hz | '
+                f'Screen: {refresh_rate:.1f} Hz | '
+                f'Average interval: {wall_ns / frame_count / 1_000_000:.3f} ms | '
                 'Debug overlay excluded',
             )
             painter.setFont(QFont(self.ctx.harmony_font_family, 16, QFont.Weight.Bold))
             painter.drawText(40, 126, 'Average time distribution')
-            painter.drawText(410, 126, 'Top 10 modules - average over all frames')
+            painter.drawText(410, 126, 'Top 10 modules - average over complete cycles')
             pie_rect = QRect(40, 154, 310, 310)
             angle = 0
             elapsed_ns = 0
@@ -473,9 +499,10 @@ class DebugOverlay(QOpenGLWidget):
                 painter.drawText(
                     432,
                     row_y + 22,
-                    f'{duration / frame_count / 1_000_000:.4f} ms/frame | '
+                    f'{duration / frame_count / 1_000_000:.4f} ms/cycle | '
                     f'{duration / duration_ns * 100:.2f}% | '
-                    f'{duration / 1_000_000:.3f} ms total',
+                    f'{counts.get(name, 0)} calls | '
+                    f'{duration / max(1, counts.get(name, 0)) / 1_000_000:.4f} ms/call',
                 )
             for i, (name, duration) in enumerate(slices[-2:]):
                 row_y = 500 + i * 35
@@ -489,11 +516,11 @@ class DebugOverlay(QOpenGLWidget):
             painter.setPen(QColor('#edf0f5'))
             painter.setFont(QFont(self.ctx.harmony_font_family, 16, QFont.Weight.Bold))
             painter.drawText(
-                40, 708, 'Per-frame time (ms) - frame duration and top 10 modules'
+                40, 708, 'Per-cycle time (ms) - refresh interval and top 10 modules'
             )
             plot = QRect(85, 746, width - 130, 340)
             painter.setFont(QFont(self.ctx.harmony_font_family, 11))
-            max_ms = max(frame.duration_ns / 1_000_000 for frame in frames) * 1.1
+            max_ms = max(frame.wall_duration_ns / 1_000_000 for frame in frames) * 1.1
             max_ms = max(1.0, max_ms)
             for tick in range(6):
                 grid_y = plot.bottom() - round(plot.height() * tick / 5)
@@ -515,7 +542,7 @@ class DebugOverlay(QOpenGLWidget):
                 for index, frame in enumerate(frames):
                     elapsed += frame.wall_duration_ns or frame.duration_ns
                     value_ns = (
-                        frame.duration_ns
+                        frame.wall_duration_ns
                         if series_index == 0
                         else samples[index].get(name, 0)
                     )
@@ -546,6 +573,26 @@ class DebugOverlay(QOpenGLWidget):
                         name, Qt.TextElideMode.ElideRight, 760
                     ),
                 )
+            interval_text = ' / '.join(
+                f'{v:.3f}' for v in statistics['interval_percentiles_ms']
+            )
+            work_text = ' / '.join(
+                f'{v:.3f}' for v in statistics['work_percentiles_ms']
+            )
+            painter.drawText(
+                40, height - 70, f'Interval P50 / P95 / P99: {interval_text} ms'
+            )
+            painter.drawText(
+                40, height - 45, f'Instrumented work P50 / P95 / P99: {work_text} ms'
+            )
+            painter.drawText(
+                40,
+                height - 20,
+                f'Budget: {budget_ns / 1_000_000:.3f} ms | '
+                f'Interval over budget: {statistics["interval_over_budget_ratio"]:.1%} | '
+                f'Work over budget: {statistics["work_over_budget_ratio"]:.1%} | '
+                f'Interval over 2x budget: {statistics["interval_over_two_budgets_ratio"]:.1%}',
+            )
         finally:
             painter.end()
         directory = os.path.join(DATA_DIR, 'debug', 'performance')
@@ -554,6 +601,30 @@ class DebugOverlay(QOpenGLWidget):
         file_path = os.path.join(directory, filename)
         if not image.save(file_path):
             raise OSError(f'Could not save performance report: {file_path}')
+        with open(
+            os.path.splitext(file_path)[0] + '.json', 'w', encoding='utf-8'
+        ) as file:
+            json.dump(
+                {
+                    'refresh_rate_hz': refresh_rate,
+                    'window_size': [
+                        self.ctx.main_window.width(),
+                        self.ctx.main_window.height(),
+                    ],
+                    'device_pixel_ratio': self.ctx.main_window.devicePixelRatioF(),
+                    'window_visible': self.ctx.main_window.isVisible(),
+                    'window_minimized': self.ctx.main_window.isMinimized(),
+                    'window_exposed': bool(
+                        (handle := self.ctx.main_window.windowHandle()) is not None
+                        and handle.isExposed()
+                    ),
+                    'budget_ns': budget_ns,
+                    'statistics': statistics,
+                    'frames': [asdict(frame) for frame in all_frames],
+                },
+                file,
+                ensure_ascii=False,
+            )
         return file_path
 
     def _drawText(self, painter: QPainter, x: int, y: int, text: str) -> bool:
@@ -679,8 +750,7 @@ class DebugOverlay(QOpenGLWidget):
                     (path.moveTo if i == 0 else path.lineTo)(x, y_)
                 painter.drawPath(path)
                 self._drawText(
-                    painter, 10, y - 455,
-                    f'Beat intensity - {self.beat_datas[-1]:.2f}'
+                    painter, 10, y - 455, f'Beat intensity - {self.beat_datas[-1]:.2f}'
                 )
             painter.setPen(QPen(QColor(210, 105, 105, 180), 1))
             for i, point in enumerate(self.beat_points):
@@ -699,15 +769,24 @@ class DebugOverlay(QOpenGLWidget):
                 section_totals: dict[str, tuple[float, int]] = {}
                 for profile in self._profile_history:
                     for name, duration_ns in profile.sections:
-                        percentage_sum, duration_sum = section_totals.get(name, (0.0, 0))
+                        percentage_sum, duration_sum = section_totals.get(
+                            name, (0.0, 0)
+                        )
                         section_totals[name] = (
                             percentage_sum + duration_ns / profile.duration_ns * 100,
                             duration_sum + duration_ns,
                         )
                 sections = sorted(
                     (
-                        (name, percentage_sum / sample_count, duration_sum / sample_count)
-                        for name, (percentage_sum, duration_sum) in section_totals.items()
+                        (
+                            name,
+                            percentage_sum / sample_count,
+                            duration_sum / sample_count,
+                        )
+                        for name, (
+                            percentage_sum,
+                            duration_sum,
+                        ) in section_totals.items()
                     ),
                     key=lambda item: item[1],
                     reverse=True,
@@ -724,7 +803,9 @@ class DebugOverlay(QOpenGLWidget):
                 row_height = self.content_height + 4
                 legend_y = pie_rect.bottom() + 15 + row_height
                 self._drawText(
-                    painter, profile_x, legend_y,
+                    painter,
+                    profile_x,
+                    legend_y,
                     f'Frame: {frame_duration_ns / 1_000_000:.3f} ms',
                 )
                 legend_y += row_height
@@ -751,8 +832,10 @@ class DebugOverlay(QOpenGLWidget):
                     )
                     self._drawText(painter, profile_x + 15, legend_y, name_text)
                     self._drawText(
-                        painter, int(profile_x + profile_width - value_width),
-                        legend_y, value_text,
+                        painter,
+                        int(profile_x + profile_width - value_width),
+                        legend_y,
+                        value_text,
                     )
                     color_rect = QRect(
                         profile_x, legend_y - self.content_height + 3, 10, 10

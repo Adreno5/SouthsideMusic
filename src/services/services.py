@@ -1,43 +1,48 @@
 import logging
+import math
 import os
 import threading
 import time
+from typing import TYPE_CHECKING
+
+from shiboken6 import isValid
 
 from services.events import SECOND_TICK
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from core.app_context import AppContext
+from core import theme
 from core.backend import getBackend
 from core.config import cfg, saveConfig
 from core.dialogs import getTextLineedit
 from core.downloader import asyncTask
+from core.favorites import favorites_manager
+from core.frame_profiler import frame_profiler
 from imports import (
     BACKGROUND_RATIO_CHANGED,
     CLOUD_ADD_TO_LOCAL,
     CLOUD_REMOVE_FOLDER,
     CLOUD_RENAME_FOLDER,
     LOCAL_ADD_TO_CLOUD,
+    LOCAL_REMOVE_FOLDER,
+    LOCAL_RENAME_FOLDER,
     MWINDOW_REFRESH_FOLDERS,
     PRE_THEME_CHANGED,
     REFRESH_RATE_CHANGED,
-    LOCAL_REMOVE_FOLDER,
-    LOCAL_RENAME_FOLDER,
     REPAINT,
-    SONG_CHANGED,
-    REPAINT_EVENT_INTERVAL,
     REPAINT_ALWAYS,
+    REPAINT_EVENT_INTERVAL,
+    SONG_CHANGED,
     InfoBar,
     MessageBox,
     QObject,
+    QScreen,
+    Qt,
     QTimer,
+    QWindow,
     event_bus,
     tr,
 )
-from core import theme
-from core.favorites import favorites_manager
-from core.frame_profiler import frame_profiler
-
 from views.folder_card import CloudFolderCard, LocalFolderCard
 
 
@@ -49,19 +54,22 @@ class EventsServices(QObject):
 
         self._start_session_refresher()
 
-        self.refresh_rate = self._app.primaryScreen().refreshRate()
+        self._screen = self._app.primaryScreen()
+        self._window_handle: QWindow | None = None
+        self.refresh_rate = self._screen.refreshRate()
+        self._period_ns = round(1_000_000_000 / self.refresh_rate)
         self.last_repaint = time.perf_counter_ns()
-        self.last_always_repaint = time.perf_counter_ns()
+        self.last_always_repaint = self.last_repaint
+        self._deadline_ns = self.last_repaint + self._period_ns
+        self._repaint_interval_ns = self._period_ns
+        self._repaint_deadline_ns = self._deadline_ns
+        self.last_interval = 0.0
         self.repaint_timer = QTimer(self)
-        self.repaint_timer.timeout.connect(self._emitRepaint)
-        self.repaint_timer.start(int(1000 / self.refresh_rate))
-
-        self.repaint_always_timer = QTimer(self)
-        self.repaint_always_timer.timeout.connect(self._emitAlwaysRepaint)
-        self.repaint_always_timer.start(int(1000 / self.refresh_rate))
-        self._app.primaryScreen().refreshRateChanged.connect(
-            lambda: event_bus.emit(REFRESH_RATE_CHANGED)
-        )
+        self.repaint_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self.repaint_timer.setSingleShot(True)
+        self.repaint_timer.timeout.connect(self._tickRepaint)
+        self.repaint_timer.start(math.ceil(self._period_ns / 1_000_000))
+        self._screen.refreshRateChanged.connect(self._screenRefreshRateChanged)
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
 
         self.sec_timer = QTimer(self)
@@ -79,8 +87,6 @@ class EventsServices(QObject):
         self.pids_collect_timer.timeout.connect(self.collectPids)
         self.pids_collect_timer.start(1000)
 
-        self.last_interval = 0
-
         event_bus.subscribe(
             SONG_CHANGED, lambda s: event_bus.emit(BACKGROUND_RATIO_CHANGED)
         )
@@ -92,11 +98,12 @@ class EventsServices(QObject):
         event_bus.subscribe(CLOUD_ADD_TO_LOCAL, self.cloudAddToLocal)
         event_bus.subscribe(REPAINT_EVENT_INTERVAL, self._setRepaintInterval)
 
-    def _setRepaintInterval(self, interval):
-        if int(interval) == self.last_interval:
+    def _setRepaintInterval(self, interval: float) -> None:
+        if interval == self.last_interval:
             return
         self.last_interval = interval
-        self.repaint_timer.setInterval(int(interval))
+        self._repaint_interval_ns = max(1, round(interval * 1_000_000))
+        self._repaint_deadline_ns = self.last_repaint + self._repaint_interval_ns
 
     def updateMemoryUsage(self):
         if not self.ctx.debugging:
@@ -246,10 +253,58 @@ class EventsServices(QObject):
             favorites_manager.renameFolder(card.folder.folder_name, new)
             event_bus.emit(MWINDOW_REFRESH_FOLDERS)
 
-    def _onRefreshRateChanged(self):
-        self.refresh_rate = self._app.primaryScreen().refreshRate()
+    def _screenRefreshRateChanged(self, _: float) -> None:
+        event_bus.emit(REFRESH_RATE_CHANGED)
 
-        self.repaint_timer.setInterval(int(1000 / self.refresh_rate))
+    def _onScreenChanged(self, screen: QScreen | None) -> None:
+        if screen is None or screen is self._screen:
+            return
+        if isValid(self._screen):
+            self._screen.refreshRateChanged.disconnect(self._screenRefreshRateChanged)
+        self._screen = screen
+        self._screen.refreshRateChanged.connect(self._screenRefreshRateChanged)
+        event_bus.emit(REFRESH_RATE_CHANGED)
+
+    def _onRefreshRateChanged(self) -> None:
+        normal_interval = self._repaint_interval_ns == self._period_ns
+        self.refresh_rate = max(1.0, self._screen.refreshRate())
+        self._period_ns = round(1_000_000_000 / self.refresh_rate)
+        now = time.perf_counter_ns()
+        self._deadline_ns = now + self._period_ns
+        if normal_interval:
+            self.last_interval = 0.0
+            self._repaint_interval_ns = self._period_ns
+            self._repaint_deadline_ns = now + self._period_ns
+
+    def _tickRepaint(self) -> None:
+        window = self.ctx.main_window
+        if (
+            window is not None
+            and (handle := window.windowHandle()) is not None
+            and handle is not self._window_handle
+        ):
+            self._window_handle = handle
+            handle.screenChanged.connect(self._onScreenChanged)
+            self._onScreenChanged(handle.screen())
+        now = time.perf_counter_ns()
+        if now >= self._deadline_ns:
+            if frame_profiler.enabled:
+                frame_profiler.beginFrame()
+            if now >= self._repaint_deadline_ns:
+                self._repaint_deadline_ns += (
+                    (now - self._repaint_deadline_ns) // self._repaint_interval_ns + 1
+                ) * self._repaint_interval_ns
+                self._emitRepaint()
+            self._emitAlwaysRepaint()
+            self._deadline_ns += self._period_ns
+        now = time.perf_counter_ns()
+        if self._deadline_ns <= now:
+            self._deadline_ns += (
+                (now - self._deadline_ns) // self._period_ns + 1
+            ) * self._period_ns
+        self.repaint_timer.start(
+            max(1, math.ceil((self._deadline_ns - now) / 1_000_000))
+        )
 
     def _emitRepaint(self) -> None:
         now = time.perf_counter_ns()
@@ -259,8 +314,6 @@ class EventsServices(QObject):
         event_bus.emit(REPAINT, multiple_factor)
 
     def _emitAlwaysRepaint(self) -> None:
-        if frame_profiler.enabled:
-            frame_profiler.beginFrame()
         now = time.perf_counter_ns()
         elapsed = min((now - self.last_always_repaint) / 1_000_000_000, 0.1)
         self.last_always_repaint = now

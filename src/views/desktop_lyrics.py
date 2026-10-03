@@ -1,46 +1,49 @@
 from __future__ import annotations
 
+import ctypes
+from ctypes import wintypes
 from typing import override
 
-from core.app_context import AppContext
+from qfluentwidgets import CheckBox, FlowLayout, FluentIcon, PushButton, TitleLabel
 
-from core.smooth import EaseOutTimer, SScrollTimer, EaseInOutTimer
+from core import theme
+from core.app_context import AppContext
+from core.color import mixColor
+from core.config import cfg
+from core.lyrics import LyricInfo, YRCLyricInfo
+from core.smooth import EaseInOutTimer, EaseOutTimer, SScrollTimer
 from imports import (
-    QSize,
-    Qt,
-    QTimer,
-    QPoint,
-    QRect,
-    event_bus,
-)
-from imports import (
-    bindText,
     QColor,
+    QCursor,
     QMouseEvent,
     QMoveEvent,
     QPainter,
     QPainterPath,
+    QPoint,
+    QRect,
+    QSize,
+    Qt,
+    QTimer,
+    QVBoxLayout,
     QWheelEvent,
+    QWidget,
+    bindText,
+    event_bus,
     tr,
 )
-from imports import QVBoxLayout, QWidget, QCursor
-from qfluentwidgets import CheckBox, FlowLayout, PushButton, FluentIcon, TitleLabel
-from core.color import mixColor
-from core.config import cfg
-from core import theme
-from core.lyrics import LyricInfo, YRCLyricInfo
 from services.events import LYRICS_LINE_DURATION
 from services.events.events import (
+    COLLECT_DEBUG_INFO,
     DESKTOP_LYRICS_ANCHOR_CHANGED,
     EMIT_DEBUG_INFO,
-    COLLECT_DEBUG_INFO,
     REPAINT,
     REPAINT_ALWAYS,
 )
 from views.lyrics_viewer import LyricsViewer
 from views.playing_page import _artists_text
-import ctypes
-from ctypes import wintypes
+
+_GWL_EXSTYLE = -20
+_WS_EX_TOPMOST = 0x00000008
 
 
 class DesktopLyricsViewer(LyricsViewer):
@@ -70,19 +73,11 @@ class DesktopLyricsViewer(LyricsViewer):
             | Qt.WindowType.BypassWindowManagerHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._keepOnTop()
 
-        hwnd = int(self.winId())
-
-        user32 = ctypes.windll.user32
-        user32.SetWindowPos(
-            wintypes.HWND(hwnd),
-            wintypes.HWND(-1) if ctypes.sizeof(wintypes.HWND) == 8 else -1,
-            0,
-            0,
-            0,
-            0,
-            0x0002 | 0x0001,
-        )
+        self.keep_top_timer = QTimer(self)
+        self.keep_top_timer.timeout.connect(self._keepOnTop)
+        self.keep_top_timer.start(1000)
 
         self.check_mouse_timer = QTimer(self)
         self.check_mouse_timer.timeout.connect(self._checkMouse)
@@ -97,6 +92,21 @@ class DesktopLyricsViewer(LyricsViewer):
 
     def _lyricsLineDuration(self, d):
         self.width_timer.anim_cycle = d / 1000
+
+    def _keepOnTop(self) -> None:
+        hwnd = int(self.winId())
+        user32 = ctypes.windll.user32
+        if user32.GetWindowLongW(wintypes.HWND(hwnd), _GWL_EXSTYLE) & _WS_EX_TOPMOST:
+            return
+        user32.SetWindowPos(
+            wintypes.HWND(hwnd),
+            wintypes.HWND(-1) if ctypes.sizeof(wintypes.HWND) == 8 else -1,
+            0,
+            0,
+            0,
+            0,
+            0x0002 | 0x0001 | 0x0010,
+        )
 
     def _checkMouse(self):
         self.indentation = QRect(
@@ -214,15 +224,12 @@ class DesktopLyricsViewer(LyricsViewer):
         playing = self.ctx.player.isPlaying()
         self.indentation_y += (
             (
-                (
-                    (-self.height() + 8 if self.indentation else 0)
-                    if playing
-                    else -self.height()
-                )
-                - self.indentation_y
+                (-self.height() + 8 if self.indentation else 0)
+                if playing
+                else -self.height()
             )
-            * min(1.0, max(0.0, (0.2 if playing else 0.05) * multiple_factor))
-        )
+            - self.indentation_y
+        ) * min(1.0, max(0.0, (0.2 if playing else 0.05) * multiple_factor))
 
         position = self.ctx.playing_manager.getDisplayPosition()
         cur_line = self._currentLyricLine(position)
@@ -238,14 +245,16 @@ class DesktopLyricsViewer(LyricsViewer):
             if meta:
                 tar_height = self.font_height + 10
             self.height_timer.target_value = tar_height
-        self.setFixedHeight(max(1, int(self.height_timer.current_value)))
+        height = max(1, int(self.height_timer.current_value))
+        if height != self.height():
+            self.setFixedHeight(height)
         self.x_pad = self.height() / 2
 
         tar_width = 10
         if cur_line:
             tar_width = max(
                 10,
-                int(self.metri.horizontalAdvance(cur_line.content)),
+                int(self._textWidth(cur_line.content)),
             )
         if self.ctx.config.show_translation and cur_line:
             translation = self._translationTextForLine(
@@ -255,7 +264,9 @@ class DesktopLyricsViewer(LyricsViewer):
         tar_width += int(self.x_pad * 2)
 
         self.width_timer.target_value = tar_width
-        self.setFixedWidth(max(1, int(self.width_timer.current_value)))
+        width = max(1, int(self.width_timer.current_value))
+        if width != self.width():
+            self.setFixedWidth(width)
 
         if self._dp.total_length > 0:
             self._draw_progress_ratio = max(
@@ -285,11 +296,10 @@ class DesktopLyricsViewer(LyricsViewer):
                 cfg.desktop_lyrics_x = self.scr_size.width() - self.width() // 2
         if not self.dragging and cfg.desktop_lyrics_anchor == 'top-center':
             target_point += QPoint(0, int(self.indentation_y))
-        if not self.dragging:
+        if not self.dragging and target_point != self.pos():
             self.move(target_point)
 
-        self._updateViewLayout(multiple_factor)
-        self.update()
+        super().updateDatas(multiple_factor)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         self.dragging = True

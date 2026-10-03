@@ -1,5 +1,5 @@
 #define AppName "Southside Music"
-#define AppVersion "v46"
+#define AppVersion "v47"
 #define AppPublisher "Adreno9135"
 #define AppURL "https://github.com/Adreno5/SouthsideMusic"
 #define AppExeName "Launch.exe"

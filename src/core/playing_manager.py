@@ -2734,7 +2734,7 @@ class PlayingManager(QObject):
             try:
                 for candidate in iterLyricUpdates(
                     song_storable.name,
-                    artists[0] if artists else '',
+                    artists,
                     song_storable.id,
                     song_storable.duration,
                     cached=lyrics,

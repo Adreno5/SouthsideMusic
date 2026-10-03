@@ -794,7 +794,7 @@ class LLMToolRunner:
         def _download() -> None:
             for candidate in iterLyricUpdates(
                 song.name,
-                artists[0] if artists else '',
+                artists,
                 str(song.id),
                 song.duration,
                 cached=stored,

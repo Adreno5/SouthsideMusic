@@ -14,24 +14,44 @@ import subprocess
 import tempfile
 import threading
 import time
+import winreg
 import zipfile
 import zlib
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import override
 from urllib.error import URLError
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
-from PySide6.QtCore import QLocale, QObject, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QLocale,
+    QPoint,
+    QPropertyAnimation,
+    QRect,
+    QSize,
+    Qt,
+    QThread,
+    QTimer,
+    Signal,
+)
+from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QFrame,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
+    QLayout,
+    QLayoutItem,
     QProgressBar,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -1178,262 +1198,369 @@ SLOT_POOL_SIZE = 8
 PHASES_WITH_REAL_PROGRESS = frozenset({'resolve', 'download', 'install'})
 
 
-class ProgressManager(QObject):
-    """Owns the overall bar, the per-phase bar and the parallel slot bars.
+class FlowLayout(QLayout):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._items: list[QLayoutItem] = []
+        self.setSpacing(5)
 
-    Workers call these from download and resolve threads, so every call that
-    touches a widget is marshalled onto the GUI thread. The plain attributes
-    (phase, phase_value) are kept in sync locally so ``overallPercent`` stays
-    readable from any thread.
-    """
+    def addItem(self, item: QLayoutItem) -> None:
+        self._items.append(item)
+        self.invalidate()
 
-    resize_requested = Signal()
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int) -> QLayoutItem | None:
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index: int) -> QLayoutItem | None:
+        if 0 <= index < len(self._items):
+            item = self._items.pop(index)
+            self.invalidate()
+            return item
+        return None
+
+    def expandingDirections(self) -> Qt.Orientations:
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, width: int) -> int:
+        return self._doLayout(QRect(0, 0, width, 0), True)
+
+    def setGeometry(self, rect: QRect) -> None:
+        super().setGeometry(rect)
+        self._doLayout(rect, False)
+
+    def sizeHint(self) -> QSize:
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:
+        size = QSize(0, 0)
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        size += QSize(
+            margins.left() + margins.right(), margins.top() + margins.bottom()
+        )
+        return size
+
+    def removeWidget(self, widget: QWidget) -> bool:
+        for index, item in enumerate(self._items):
+            if item.widget() is widget:
+                self.takeAt(index)
+                widget.setParent(None)
+                return True
+        return False
+
+    def _doLayout(self, rect: QRect, test_only: bool) -> int:
+        margins = self.contentsMargins()
+        effective = rect.adjusted(
+            margins.left(), margins.top(), -margins.right(), -margins.bottom()
+        )
+        x = effective.x()
+        y = effective.y()
+        line_height = 0
+        spacing = self.spacing()
+        for item in self._items:
+            widget = item.widget()
+            if widget is None:
+                continue
+            next_x = x + item.sizeHint().width() + spacing
+            if next_x - spacing > effective.right() and line_height > 0:
+                x = effective.x()
+                y += line_height + spacing
+                next_x = x + item.sizeHint().width() + spacing
+                line_height = 0
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), item.sizeHint()))
+            x = next_x
+            line_height = max(line_height, item.sizeHint().height())
+        return y + line_height - rect.y() + margins.bottom()
+
+
+class StagePool(QFrame):
+    def __init__(self, title: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName('pipelineStage')
+        self.setMinimumWidth(136)
+        self.setFixedHeight(164)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.title = QLabel(title)
+        self.title.setObjectName('stageTitle')
+        self.count = QLabel('0')
+        self.count.setObjectName('stageCount')
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.addWidget(self.title)
+        header.addStretch(1)
+        header.addWidget(self.count)
+        self.flow_widget = QWidget()
+        self.flow_widget.setObjectName('pipelineFlow')
+        self.flow = FlowLayout(self.flow_widget)
+        self.flow.setContentsMargins(0, 0, 0, 0)
+        self.scroll = QScrollArea(self)
+        self.scroll.setObjectName('pipelineScroll')
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll.setWidget(self.flow_widget)
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(8, 8, 8, 6)
+        self.layout.setSpacing(6)
+        self.layout.addLayout(header)
+        self.layout.addWidget(self.scroll, 1)
+        self.chips: dict[str, QLabel] = {}
+
+    def addChip(self, name: str, chip: QLabel) -> None:
+        existing = self.chips.get(name)
+        if existing is chip:
+            self._updateCount()
+            return
+        if existing is not None:
+            self.flow.removeWidget(existing)
+        self.chips[name] = chip
+        self.flow.addWidget(chip)
+        self._updateCount()
+        self._updateFlowHeight()
+
+    def removeChip(self, name: str) -> QLabel | None:
+        chip = self.chips.pop(name, None)
+        if chip is not None:
+            self.flow.removeWidget(chip)
+            self._updateCount()
+            self._updateFlowHeight()
+        return chip
+
+    def _updateCount(self) -> None:
+        self.count.setText(str(len(self.chips)))
+
+    def _updateFlowHeight(self) -> None:
+        width = max(1, self.scroll.viewport().width())
+        self.flow_widget.setMinimumHeight(self.flow.heightForWidth(width))
+
+    @override
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self._updateFlowHeight)
+
+
+class PipelineBoard(QWidget):
+    STAGES = ('queue', 'resolve', 'download', 'install', 'done')
 
     def __init__(
-        self,
-        window: QWidget,
-        layout: QVBoxLayout,
-        invoke: Callable[..., None],
+        self, invoke: Callable[..., None], parent: QWidget | None = None
     ) -> None:
-        super().__init__(window)
-        self.window = window
-        self.layout = layout
+        super().__init__(parent)
         self._invoke = invoke
         self.phase = ''
-        self.phase_start = 0.0
-        self.phase_end = 0.0
-        self.phase_value = 0.0
-        self.phase_visible = False
-        self.slots: list[QLabel | QProgressBar] = []
-        self.slot_labels: dict[str, QLabel] = {}
-        # Mirrors the GUI thread's copy so acquireSlot can decide without it.
-        self.slot_names: list[str] = []
+        self._chips: dict[str, QLabel] = {}
+        self._pools: dict[str, StagePool] = {}
+        self._animations: dict[str, tuple[QPropertyAnimation, QLabel]] = {}
+        self._chip_stages: dict[str, str] = {}
+        self._resize_pending = False
+        self._height_resize_enabled = True
+        if _IS_CHINESE[0]:
+            titles = {
+                'queue': '排队',
+                'resolve': '解析',
+                'download': '下载 wheel',
+                'install': '安装 wheel',
+                'done': '完成',
+            }
+        else:
+            titles = {
+                'queue': 'Queue',
+                'resolve': 'Resolve',
+                'download': 'Download',
+                'install': 'Install',
+                'done': 'Done',
+            }
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(4)
+        for index, stage in enumerate(self.STAGES):
+            pool = StagePool(titles[stage], self)
+            self._pools[stage] = pool
+            row.addWidget(pool, 1)
+            if index != len(self.STAGES) - 1:
+                arrow = QLabel('➜')
+                arrow.setObjectName('pipelineArrow')
+                arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                row.addWidget(arrow)
 
-        self.main_bar = QProgressBar()
-        self.main_bar.setRange(0, 100)
-        self.main_bar.setValue(0)
-        self.main_bar.setTextVisible(True)
-        self.main_bar.setFixedHeight(18)
-        self.main_bar.setStyleSheet(_PROGRESS_STYLE)
+    def reset(self, packages: list[str]) -> None:
+        self._invoke(self._applyReset, list(dict.fromkeys(packages)))
 
-        self.stage_label = QLabel('')
-        self.stage_label.setStyleSheet('color: #444444; font-size: 9pt;')
-        self.stage_label.setWordWrap(True)
-        self.stage_label.hide()
+    def _applyReset(self, packages: list[str]) -> None:
+        for animation, ghost in self._animations.values():
+            animation.stop()
+            animation.deleteLater()
+            ghost.deleteLater()
+        self._animations.clear()
+        self._chip_stages.clear()
+        for stage in self._pools.values():
+            for name in list(stage.chips):
+                chip = stage.removeChip(name)
+                if chip is not None:
+                    chip.deleteLater()
+        self._chips.clear()
+        for name in packages:
+            self._applyMove(name, 'queue', '')
 
-        self.stage_bar = QProgressBar()
-        self.stage_bar.setRange(0, 100)
-        self.stage_bar.setValue(0)
-        self.stage_bar.setTextVisible(True)
-        self.stage_bar.setFixedHeight(13)
-        self.stage_bar.setStyleSheet(_PROGRESS_STYLE)
-        self.stage_bar.hide()
+    def ensurePackage(self, name: str) -> None:
+        self._invoke(self._applyEnsure, name)
 
-        self.slot_box = QWidget()
-        self.slot_layout = QVBoxLayout(self.slot_box)
-        self.slot_layout.setContentsMargins(0, 0, 0, 0)
-        self.slot_layout.setSpacing(1)
-        self.slot_box.hide()
+    def _applyEnsure(self, name: str) -> None:
+        if name not in self._chips:
+            self._applyMove(name, 'queue', '')
 
-        # Resizing straight from a paint or layout pass can recurse, so batch
-        # the height updates and let the event loop run them when it is idle.
-        self.resize_requested.connect(
-            self._resizeNow,
-            Qt.ConnectionType.QueuedConnection,
+    def movePackage(self, name: str, stage: str, detail: str = '') -> None:
+        if stage not in self.STAGES:
+            stage = 'done'
+        self._invoke(self._applyMove, name, stage, detail)
+
+    def _applyMove(self, name: str, stage: str, detail: str) -> None:
+        target = self._pools[stage]
+        chip = self._chips.get(name)
+        new_chip = chip is None
+        previous_stage = self._chip_stages.get(name)
+        stage_changed = previous_stage is not None and previous_stage != stage
+        old_global: QPoint | None = None
+        if chip is None:
+            chip = QLabel(name)
+            chip.setObjectName('packageChip')
+            chip.setMinimumHeight(22)
+            chip.setMaximumWidth(124)
+            chip.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            self._chips[name] = chip
+        elif stage_changed:
+            previous_animation = self._animations.pop(name, None)
+            if previous_animation is not None:
+                animation, ghost = previous_animation
+                old_global = ghost.mapToGlobal(QPoint(0, 0))
+                animation.stop()
+                animation.deleteLater()
+                ghost.deleteLater()
+            elif chip.isVisible():
+                old_global = chip.mapToGlobal(QPoint(0, 0))
+                if previous_stage is not None:
+                    source_view = self._pools[previous_stage].scroll.viewport()
+                    source_rect = QRect(
+                        source_view.mapToGlobal(QPoint(0, 0)), source_view.size()
+                    )
+                    if not source_rect.contains(old_global):
+                        old_global = source_view.mapToGlobal(QPoint(4, 4))
+        for pool in self._pools.values():
+            if name in pool.chips and pool is not target:
+                pool.removeChip(name)
+        chip.setToolTip(f'{name}\n{detail}' if detail else name)
+        style_key = (
+            'error'
+            if stage == 'done'
+            and detail
+            and detail.lower() not in {'complete', 'cached'}
+            else 'normal'
         )
+        if new_chip or chip.property('pipelineStyle') != style_key:
+            chip.setProperty('pipelineStyle', style_key)
+            chip.style().unpolish(chip)
+            chip.style().polish(chip)
+        target.addChip(name, chip)
+        chip.show()
+        self._chip_stages[name] = stage
+        if new_chip or stage_changed:
+            target.flow.activate()
+        if old_global is not None:
+            ghost = QLabel(chip.text(), self)
+            ghost.setObjectName('packageChip')
+            ghost.setProperty('pipelineStyle', style_key)
+            ghost.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            ghost.setGeometry(
+                QRect(self.mapFromGlobal(old_global), chip.geometry().size())
+            )
+            ghost.show()
+            ghost.raise_()
+            effect = chip.graphicsEffect()
+            if not isinstance(effect, QGraphicsOpacityEffect):
+                effect = QGraphicsOpacityEffect(chip)
+                chip.setGraphicsEffect(effect)
+            effect.setOpacity(0.0)
+            animation = QPropertyAnimation(ghost, b'pos', self)
+            animation.setDuration(260)
+            animation.setStartValue(ghost.pos())
+            end_global = chip.mapToGlobal(QPoint(0, 0))
+            target_view = target.scroll.viewport()
+            target_rect = QRect(
+                target_view.mapToGlobal(QPoint(0, 0)), target_view.size()
+            )
+            if not target_rect.contains(end_global):
+                end_global = target_view.mapToGlobal(QPoint(4, 4))
+            animation.setEndValue(self.mapFromGlobal(end_global))
+            animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+            self._animations[name] = (animation, ghost)
+            animation.finished.connect(
+                lambda n=name, current=animation: self._animationFinished(n, current)
+            )
+            animation.start()
 
-        self.layout.addWidget(self.main_bar)
-        self.layout.addWidget(self.stage_label)
-        self.layout.addWidget(self.stage_bar)
-        self.layout.addWidget(self.slot_box)
-        self.hideSlots()
-
-    def mainBar(self) -> QProgressBar:
-        return self.main_bar
+    def _animationFinished(self, name: str, animation: QPropertyAnimation) -> None:
+        active = self._animations.get(name)
+        if active is None or active[0] is not animation:
+            return
+        self._animations.pop(name, None)
+        active[1].deleteLater()
+        animation.deleteLater()
+        chip = self._chips.get(name)
+        if chip is not None:
+            chip.setGraphicsEffect(None)
 
     def setPhase(self, name: str) -> None:
-        layout = PHASE_LAYOUT.get(name)
-        if layout is None:
-            return
         self.phase = name
-        self.phase_start, self.phase_end = layout[0], layout[1]
-        self.phase_value = 0.0
-        self._invoke(self._applyPhase, name)
-
-    def _applyPhase(self, name: str) -> None:
-        layout = PHASE_LAYOUT.get(name)
-        if layout is None:
-            return
-        self.stage_label.setText(layout[2] if _IS_CHINESE[0] else layout[3])
-        if not self.phase_visible:
-            self.stage_label.show()
-            self.stage_bar.show()
-            self.phase_visible = True
-        self.stage_bar.setValue(0)
-        self.main_bar.setValue(self.overallPercent())
-        self.applyWindowHeight()
 
     def endPhase(self) -> None:
-        """Phase finished: fill its slice so the overall bar never stalls."""
-        if self.phase_visible and self.phase:
-            self.setPhaseProgress(self.phase, 100.0)
-
-    def setPhaseProgress(self, name: str, percent: float) -> None:
-        if name != self.phase:
-            return
-        self.phase_value = max(0.0, min(100.0, percent))
-        self._invoke(self._applyPhaseProgress, int(self.phase_value))
-
-    def _applyPhaseProgress(self, value: int) -> None:
-        self.stage_bar.setValue(value)
-        self.main_bar.setValue(self.overallPercent())
-
-    def overallPercent(self) -> int:
-        span = self.phase_end - self.phase_start
-        return int(self.phase_start + span * self.phase_value / 100.0)
+        return
 
     def reportParallel(self, done: int, total: int) -> None:
-        """Report a parallel stage where finished items count as progress."""
-        if total <= 0:
-            return
-        self.setPhaseProgress(self.phase, done * 100.0 / total)
+        return
 
     def acquireSlot(self, name: str) -> int | None:
-        if name in self.slot_labels or name in self.slot_names:
-            return None
-        # Recycle the oldest bar when the pool is full so the window height
-        # stays bounded while every active download still gets a bar.
-        if len(self.slot_names) >= SLOT_POOL_SIZE:
-            self.slot_names.pop(0)
-        self.slot_names.append(name)
-        self._invoke(self._applyAcquireSlot, name)
-        return len(self.slot_names)
-
-    def _applyAcquireSlot(self, name: str) -> None:
-        if name in self.slot_labels:
-            return
-        while len(self.slot_labels) >= SLOT_POOL_SIZE:
-            self.releaseSlot(next(iter(self.slot_labels)))
-        label = QLabel('')
-        label.setStyleSheet(
-            'color: #666666; font-size: 8pt; font-family: Consolas, monospace;'
-        )
-        bar = QProgressBar()
-        bar.setRange(0, 100)
-        bar.setValue(0)
-        bar.setTextVisible(False)
-        bar.setFixedHeight(7)
-        bar.setStyleSheet(_PROGRESS_STYLE)
-        self.slots.extend([label, bar])
-        self.slot_layout.addWidget(label)
-        self.slot_layout.addWidget(bar)
-        self.slot_labels[name] = label
-        self.slot_box.show()
-        self.applyWindowHeight()
+        self.movePackage(name, 'download', 'Downloading')
+        return 1
 
     def updateSlot(self, name: str, percent: float, text: str = '') -> None:
-        self._invoke(self._applyUpdateSlot, name, percent, text)
-
-    def _applyUpdateSlot(self, name: str, percent: float, text: str) -> None:
-        index = self._slotIndex(name)
-        if index is None:
-            return
-        bar = self.slots[index + 1]
-        if not isinstance(bar, QProgressBar):
-            return
-        bar.setValue(int(max(0.0, min(100.0, percent))))
-        if text:
-            label = self.slot_labels[name]
-            if label.text() != text:
-                label.setText(text)
+        self.movePackage(name, 'download', text or 'Downloading')
 
     def releaseSlot(self, name: str) -> None:
-        if name in self.slot_names:
-            self.slot_names.remove(name)
-        self._invoke(self._applyReleaseSlot, name)
-
-    def _applyReleaseSlot(self, name: str) -> None:
-        label = self.slot_labels.pop(name, None)
-        if label is None:
-            return
-        index = self.slots.index(label)
-        bar = self.slots[index + 1]
-        for widget in (label, bar):
-            self.slot_layout.removeWidget(widget)
-            widget.setParent(None)
-            widget.deleteLater()
-        del self.slots[index : index + 2]
-        if not self.slots:
-            self.slot_box.hide()
-        self.applyWindowHeight()
+        self.movePackage(name, 'done', 'Complete')
 
     def hideSlots(self) -> None:
-        self._invoke(self._applyHideSlots)
-
-    def _applyHideSlots(self) -> None:
-        self.slot_names.clear()
-        for name in list(self.slot_labels):
-            self._applyReleaseSlot(name)
-
-    def _slotIndex(self, name: str) -> int | None:
-        label = self.slot_labels.get(name)
-        if label is None:
-            return None
-        try:
-            return self.slots.index(label)
-        except ValueError:
-            return None
+        return
 
     def applyWindowHeight(self) -> None:
-        """Queue a height update; it runs once the event loop is idle."""
-        self.resize_requested.emit()
+        if not self._height_resize_enabled or self._resize_pending:
+            return
+        self._resize_pending = True
+        QTimer.singleShot(0, self._resizeWindow)
 
-    def _resizeNow(self) -> None:
-        """Fit the window to the rows the layout currently shows.
+    def requestWindowResize(self) -> None:
+        self._height_resize_enabled = True
+        self.applyWindowHeight()
 
-        Summing the rows by hand counted the spacing twice and padded the
-        result, and Qt handed the leftover pixels to the word-wrapped labels,
-        which pushed the rows apart. Hidden rows are skipped, and a wrapped
-        label is measured with ``heightForWidth``: that is the height Qt lays
-        it out at, while its size hint asks for one line more and leaves the
-        difference as slack.
-        """
-        layout = self.layout
-        margins = layout.contentsMargins()
-        spacing = layout.spacing()
-        width = max(1, self.window.width() - margins.left() - margins.right())
-        rows = 0
-        target = margins.top() + margins.bottom()
-        for index in range(layout.count()):
-            item = layout.itemAt(index)
-            widget = item.widget()
-            if widget is not None and widget.isHidden():
-                continue
-            height = item.sizeHint().height()
-            if widget is not None and widget.hasHeightForWidth():
-                height = widget.heightForWidth(width)
-            target += height
-            rows += 1
-        if rows > 1:
-            target += spacing * (rows - 1)
-        if abs(target - self.window.height()) > 3:
-            self.window.setFixedHeight(target)
+    def _resizeWindow(self) -> None:
+        self._resize_pending = False
+        self._height_resize_enabled = False
+        window = self.window()
+        if window is None:
+            return
+        target_height = window.sizeHint().height()
+        if abs(window.height() - target_height) > 2:
+            window.resize(window.width(), target_height)
 
-
-_PROGRESS_STYLE = """
-QProgressBar {
-    border: 1px solid #c8c8c8;
-    border-radius: 3px;
-    background: #f2f2f2;
-    color: #333333;
-    font-size: 8pt;
-    text-align: center;
-}
-QProgressBar::chunk {
-    border-radius: 2px;
-    background: #4a9eff;
-}
-"""
 
 _IS_CHINESE: list[bool] = [True]
 
@@ -2163,6 +2290,346 @@ def isFreeThreadedPython(python_exe: Path) -> bool:
     return values[:2] == ['1', '1']
 
 
+PIPELINE_RESOLVE_WORKERS = 16
+PIPELINE_DOWNLOAD_WORKERS = 16
+PIPELINE_INSTALL_WORKERS = 4
+
+
+def _wheelInstallRoot(python_exe: Path) -> Path:
+    return python_exe.parent / 'Lib' / 'site-packages'
+
+
+def _wheelTarget(root: Path, relative: str) -> Path:
+    relative_path = Path(relative)
+    if (
+        relative_path.is_absolute()
+        or bool(relative_path.drive)
+        or '..' in relative_path.parts
+    ):
+        raise ValueError(f'wheel path escapes install root: {relative}')
+    return root / relative_path
+
+
+def installWheelArchive(wheel_path: Path, python_exe: Path) -> None:
+    root = _wheelInstallRoot(python_exe)
+    root.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(wheel_path) as archive:
+        for info in archive.infolist():
+            name = info.filename.replace('\\', '/')
+            if not name or name.endswith('/'):
+                continue
+            parts = tuple(part for part in name.split('/') if part)
+            data_index = next(
+                (index for index, part in enumerate(parts) if part.endswith('.data')),
+                -1,
+            )
+            install_root = root
+            relative_parts = parts
+            if data_index >= 0 and data_index + 1 < len(parts):
+                category = parts[data_index + 1]
+                install_root = {
+                    'purelib': root,
+                    'platlib': root,
+                    'scripts': python_exe.parent / 'Scripts',
+                    'data': python_exe.parent,
+                    'headers': python_exe.parent / 'Include',
+                }.get(category, root)
+                relative_parts = parts[data_index + 2 :]
+            if not relative_parts:
+                continue
+            relative = '/'.join(relative_parts)
+            target = _wheelTarget(install_root, relative)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temporary = target.with_name(f'.{target.name}.{threading.get_ident()}.part')
+            with archive.open(info) as source, temporary.open('wb') as destination:
+                shutil.copyfileobj(source, destination, 1024 * 1024)
+            os.replace(temporary, target)
+
+
+@dataclass(frozen=True)
+class _PipelineTask:
+    callback: Callable[[Future[object], object | None], None]
+    payload: object | None = None
+
+
+class WheelPipeline:
+    def __init__(
+        self,
+        window: BootstrapWindow,
+        python_exe: Path,
+        mirror_url: str,
+        requirements: list[RequirementInfo],
+        wheelhouse: Path,
+        env: dict[str, str] | None,
+        reset_pipeline: bool = True,
+    ) -> None:
+        self.window = window
+        self.python_exe = python_exe
+        self.index = WheelIndex(mirror_url, python_exe, env=env)
+        self.requirements = requirements
+        self.wheelhouse = wheelhouse
+        self.env = env
+        self.reset_pipeline = reset_pipeline
+        self.resolve_pool = ThreadPoolExecutor(
+            max_workers=PIPELINE_RESOLVE_WORKERS,
+            thread_name_prefix='southside-resolve',
+        )
+        self.download_pool = ThreadPoolExecutor(
+            max_workers=PIPELINE_DOWNLOAD_WORKERS,
+            thread_name_prefix='southside-download',
+        )
+        self.install_pool = ThreadPoolExecutor(
+            max_workers=PIPELINE_INSTALL_WORKERS,
+            thread_name_prefix='southside-install',
+        )
+        self._lock = threading.Lock()
+        self._wheel_locks: dict[str, threading.Lock] = {}
+        self._seen: set[str] = set()
+        self._failed: dict[str, RequirementInfo] = {}
+        self._tasks = 0
+        self._done = threading.Event()
+
+    def run(self) -> list[RequirementInfo]:
+        self.wheelhouse.mkdir(parents=True, exist_ok=True)
+        if self.reset_pipeline:
+            self.window.resetPipeline([
+                requirement.name for requirement in self.requirements
+            ])
+        else:
+            for requirement in self.requirements:
+                self.window.ensurePipelinePackage(requirement.name)
+        for requirement in self.requirements:
+            self._submitResolve(requirement)
+        self._done.wait()
+        self.resolve_pool.shutdown(wait=True)
+        self.download_pool.shutdown(wait=True)
+        self.install_pool.shutdown(wait=True)
+        return list(self._failed.values())
+
+    def _submit(
+        self,
+        executor: ThreadPoolExecutor,
+        operation: Callable[..., object],
+        *args: object,
+        callback: Callable[[Future[object], object | None], None],
+        payload: object | None = None,
+    ) -> None:
+        with self._lock:
+            self._tasks += 1
+            self._done.clear()
+        task = _PipelineTask(callback, payload)
+        try:
+            future: Future[object] = executor.submit(operation, *args)
+        except Exception:
+            with self._lock:
+                self._tasks -= 1
+                if self._tasks == 0:
+                    self._done.set()
+            raise
+        future.add_done_callback(
+            lambda completed, task=task: self._taskFinished(completed, task)
+        )
+
+    def _taskFinished(self, future: Future[object], task: _PipelineTask) -> None:
+        try:
+            task.callback(future, task.payload)
+        except Exception:
+            _logger.exception('pipeline task failed')
+        finally:
+            with self._lock:
+                self._tasks -= 1
+                if self._tasks == 0:
+                    self._done.set()
+
+    def _submitResolve(self, requirement: RequirementInfo) -> None:
+        package = normalizePackageName(requirement.name)
+        with self._lock:
+            if package in self._seen:
+                return
+            self._seen.add(package)
+        self.window.ensurePipelinePackage(requirement.name)
+        self.window.updatePackageStage(requirement.name, 'resolve', 'Resolving')
+        self._submit(
+            self.resolve_pool,
+            self._resolveOne,
+            requirement,
+            callback=self._resolved,
+            payload=requirement,
+        )
+
+    def _resolveOne(self, requirement: RequirementInfo) -> WheelFile | None:
+        cached = findCachedWheel(requirement, self.wheelhouse)
+        if cached is not None and self.index.matchesTags(cached.name):
+            return WheelFile(
+                filename=cached.name,
+                url='',
+                sha256='',
+                version=_wheelVersion(cached.name),
+                requires_python='',
+                size=cached.stat().st_size,
+                path=cached,
+            )
+        if requirement.version:
+            return self.index.resolve(requirement)
+        return self.index.resolveBest(requirement)
+
+    def _resolved(self, future: Future[object], payload: object | None) -> None:
+        requirement = payload
+        if not isinstance(requirement, RequirementInfo):
+            return
+        try:
+            wheel = future.result()
+        except Exception as error:
+            self._fail(requirement, f'Resolve failed: {error}')
+            return
+        if not isinstance(wheel, WheelFile):
+            self._fail(requirement, 'Wheel not found')
+            return
+        self._submit(
+            self.resolve_pool,
+            self._expandDependencies,
+            requirement,
+            wheel,
+            callback=self._dependenciesReady,
+            payload=requirement,
+        )
+        if wheel.path is not None:
+            self._submitInstall(requirement, wheel.path)
+        else:
+            self._submitDownload(requirement, wheel)
+
+    def _expandDependencies(
+        self,
+        requirement: RequirementInfo,
+        wheel: WheelFile,
+    ) -> list[RequirementInfo]:
+        with self._wheelLock(wheel):
+            metadata = self.index.wheelMetadata(wheel)
+        if metadata is None:
+            return []
+        dependencies: list[RequirementInfo] = []
+        for raw in parseWheelRequirements(metadata):
+            if not appliesToThisEnvironment(raw):
+                continue
+            name = requirementNames(raw)
+            package = normalizePackageName(name) if name else ''
+            if not package or package in _STDLIB_NAMES:
+                continue
+            dependencies.append(RequirementInfo(name, '', requirementSpecifier(raw)))
+        return dependencies
+
+    def _dependenciesReady(
+        self, future: Future[object], payload: object | None
+    ) -> None:
+        requirement = payload
+        if not isinstance(requirement, RequirementInfo):
+            return
+        try:
+            dependencies = future.result()
+        except Exception as error:
+            self._fail(requirement, f'Dependency parsing failed: {error}')
+            return
+        if not isinstance(dependencies, list):
+            self._fail(requirement, 'Dependency parsing returned invalid data')
+            return
+        for requirement in dependencies:
+            if isinstance(requirement, RequirementInfo):
+                self._submitResolve(requirement)
+
+    def _submitDownload(self, requirement: RequirementInfo, wheel: WheelFile) -> None:
+        self.window.updatePackageStage(requirement.name, 'download', 'Downloading')
+        self._submit(
+            self.download_pool,
+            self._downloadOne,
+            requirement,
+            wheel,
+            callback=self._downloaded,
+            payload=(requirement, wheel),
+        )
+
+    def _downloadOne(self, requirement: RequirementInfo, wheel: WheelFile) -> Path:
+        target = self.wheelhouse / wheel.filename
+        with self._wheelLock(wheel):
+            staged = wheel.staged_path
+            if staged is not None and staged.exists():
+                target.unlink(missing_ok=True)
+                shutil.move(str(staged), str(target))
+            elif (
+                target.exists()
+                and looksLikeWheel(target)
+                and (not wheel.sha256 or verifyWheelHash(target, wheel.sha256))
+            ):
+                pass
+            else:
+                target.unlink(missing_ok=True)
+                downloadWheelTo(
+                    wheel.url,
+                    target,
+                    requirement.name,
+                    threading.Lock(),
+                    {},
+                    wheel.sha256,
+                )
+        wheel.path = target
+        return target
+
+    def _wheelLock(self, wheel: WheelFile) -> threading.Lock:
+        key = wheel.url or str(wheel.path or wheel.filename)
+        with self._lock:
+            return self._wheel_locks.setdefault(key, threading.Lock())
+
+    def _downloaded(self, future: Future[object], payload: object | None) -> None:
+        if not isinstance(payload, tuple) or len(payload) != 2:
+            return
+        requirement, wheel = payload
+        if not isinstance(requirement, RequirementInfo) or not isinstance(
+            wheel, WheelFile
+        ):
+            return
+        try:
+            path = future.result()
+        except Exception as error:
+            self._fail(requirement, f'Download failed: {error}')
+            return
+        if not isinstance(path, Path):
+            self._fail(requirement, 'Download returned an invalid path')
+            return
+        self._submitInstall(requirement, path)
+
+    def _submitInstall(self, requirement: RequirementInfo, path: Path) -> None:
+        self.window.updatePackageStage(requirement.name, 'install', 'Installing')
+        self._submit(
+            self.install_pool,
+            self._installOne,
+            requirement,
+            path,
+            callback=self._installed,
+            payload=(requirement, path),
+        )
+
+    def _installOne(self, requirement: RequirementInfo, path: Path) -> None:
+        installWheelArchive(path, self.python_exe)
+
+    def _installed(self, future: Future[object], payload: object | None) -> None:
+        if not isinstance(payload, tuple) or len(payload) != 2:
+            return
+        requirement, _path = payload
+        if not isinstance(requirement, RequirementInfo):
+            return
+        try:
+            future.result()
+        except Exception as error:
+            self._fail(requirement, f'Install failed: {error}')
+            return
+        self.window.updatePackageStage(requirement.name, 'done', 'Complete')
+
+    def _fail(self, requirement: RequirementInfo, detail: str) -> None:
+        with self._lock:
+            self._failed[normalizePackageName(requirement.name)] = requirement
+        self.window.updatePackageStage(requirement.name, 'done', detail)
+        _logger.warning('%s: %s', requirement.name, detail)
+
+
 class BootstrapWindow(QWidget):
     latencyFinished = Signal(str, str, float)
     allDone = Signal()
@@ -2176,6 +2643,7 @@ class BootstrapWindow(QWidget):
 
     def __init__(self):
         super().__init__()
+        self.setObjectName('bootstrapWindow')
         self.setWindowFlags(
             Qt.WindowType.Dialog | Qt.WindowType.NoTitleBarBackgroundHint
         )
@@ -2299,24 +2767,32 @@ class BootstrapWindow(QWidget):
         self._tip_timer.timeout.connect(self._animateTip)
 
         self.setWindowTitle(self._text('title'))
-        self.setFixedWidth(int(app.primaryScreen().size().width() * 0.3))
+        self.setMinimumWidth(420)
 
         self._layout = QVBoxLayout()
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setTextVisible(True)
-        self.progress_bar.hide()  # replaced by mwindow.progress manager
+        self._layout.setContentsMargins(16, 14, 16, 12)
+        self._layout.setSpacing(9)
         self.status_label = QLabel(self._text('initial_status'))
+        self.status_label.setObjectName('statusLabel')
         self.status_label.setWordWrap(True)
+        self.status_label.setMinimumHeight(
+            self.status_label.fontMetrics().lineSpacing() * 2
+        )
+        self.busy_bar = QProgressBar()
+        self.busy_bar.setObjectName('bootstrapBusy')
+        self.busy_bar.setRange(0, 0)
+        self.busy_bar.setTextVisible(False)
+        self.busy_bar.setFixedHeight(4)
         self.elapsed_label = QLabel()
-        self.elapsed_label.setStyleSheet('color: #888888; font-size: 9pt;')
+        self.elapsed_label.setObjectName('secondaryLabel')
         self.elapsed_label.hide()
         self.tip_label = QLabel(self._text('initial_tip'))
+        self.tip_label.setObjectName('secondaryLabel')
         self.tip_label.setWordWrap(True)
-        self.tip_label.setStyleSheet('color: #888888; font-size: 9pt;')
+        self.tip_label.setMinimumHeight(self.tip_label.fontMetrics().lineSpacing() * 2)
         _IS_CHINESE[0] = self._language == 'zh'
-        self.mwindow = ProgressManager(self, self._layout, self._invokeOnGui)
+        self.mwindow = PipelineBoard(self._invokeOnGui, self)
+        self.mwindow.hide()
         self.mirror_choice = QWidget()
         mirror_row = QHBoxLayout(self.mirror_choice)
         mirror_row.setContentsMargins(0, 0, 0, 0)
@@ -2331,10 +2807,19 @@ class BootstrapWindow(QWidget):
         mirror_row.addWidget(self.mirror_button)
         self.mirror_choice.hide()
         self._layout.addWidget(self.status_label)
+        self._layout.addWidget(self.busy_bar)
+        self._layout.addWidget(self.mwindow)
         self._layout.addWidget(self.mirror_choice)
         self._layout.addWidget(self.elapsed_label)
         self._layout.addWidget(self.tip_label)
         self.setLayout(self._layout)
+        self.resize(420, self.sizeHint().height())
+        self._theme_dark: bool | None = None
+        self._theme_timer = QTimer(self)
+        self._theme_timer.setInterval(2000)
+        self._theme_timer.timeout.connect(self._refreshTheme)
+        self._refreshTheme()
+        self._theme_timer.start()
         self._scheduleTipHold()
 
         self._download_total = 0
@@ -2379,6 +2864,81 @@ class BootstrapWindow(QWidget):
     def _text(self, key: str, **kwargs: object) -> str:
         return self._text_map[self._language][key].format(**kwargs)  # type: ignore
 
+    def _refreshTheme(self) -> None:
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize',
+            ) as key:
+                light_theme, _ = winreg.QueryValueEx(key, 'AppsUseLightTheme')
+            dark = light_theme == 0
+        except OSError:
+            dark = QApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
+        if self._theme_dark == dark:
+            return
+        self._theme_dark = dark
+        if dark:
+            background = '#202020'
+            surface = '#292929'
+            border = '#383838'
+            chip = '#353535'
+            text_color = '#e5e5e5'
+            muted = '#a0a0a0'
+            track = '#393939'
+            indicator = '#a0a0a0'
+            input_color = '#2d2d2d'
+            hover = '#383838'
+            error_background = '#3c2d2d'
+            error_color = '#e2adad'
+        else:
+            background = '#fbfbfb'
+            surface = '#f5f5f5'
+            border = '#e5e5e5'
+            chip = '#eaeaea'
+            text_color = '#292929'
+            muted = '#777777'
+            track = '#e9e9e9'
+            indicator = '#999999'
+            input_color = '#ffffff'
+            hover = '#eeeeee'
+            error_background = '#f8e8e8'
+            error_color = '#975050'
+        self.setStyleSheet(
+            f'QWidget#bootstrapWindow {{ background: {background}; '
+            f'color: {text_color}; }}'
+            f'QLabel#statusLabel {{ color: {text_color}; font-size: 9pt; }}'
+            f'QLabel#secondaryLabel {{ color: {muted}; font-size: 8pt; }}'
+            f'QFrame#pipelineStage {{ background: {surface}; '
+            f'border: 1px solid {border}; border-radius: 6px; }}'
+            f'QLabel#stageTitle {{ color: {text_color}; font-size: 8pt; '
+            'font-weight: 600; }'
+            f'QLabel#stageCount {{ color: {muted}; font-size: 8pt; }}'
+            f'QLabel#pipelineArrow {{ color: {muted}; font-size: 13pt; }}'
+            f'QLabel#packageChip {{ background: {chip}; color: {text_color}; '
+            'border: none; border-radius: 4px; padding: 2px 5px; '
+            'font-size: 7.5pt; }'
+            'QLabel#packageChip[pipelineStyle="error"] { '
+            f'background: {error_background}; color: {error_color}; }}'
+            'QScrollArea#pipelineScroll, QWidget#pipelineFlow { '
+            'background: transparent; border: none; }'
+            f'QScrollBar:vertical {{ background: {surface}; width: 5px; margin: 0; }}'
+            f'QScrollBar::handle:vertical {{ background: {border}; '
+            'border-radius: 2px; min-height: 20px; }'
+            'QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { '
+            'height: 0; }'
+            f'QProgressBar#bootstrapBusy {{ background: {track}; border: none; '
+            'border-radius: 2px; }'
+            f'QProgressBar#bootstrapBusy::chunk {{ background: {indicator}; '
+            'border-radius: 2px; }'
+            f'QComboBox, QPushButton {{ background: {input_color}; '
+            f'color: {text_color}; border: 1px solid {border}; '
+            'border-radius: 4px; min-height: 26px; padding: 0 8px; }'
+            f'QPushButton:hover, QComboBox:hover {{ background: {hover}; }}'
+            f'QComboBox QAbstractItemView {{ background: {input_color}; '
+            f'color: {text_color}; selection-background-color: {hover}; '
+            f'border: 1px solid {border}; }}'
+        )
+
     def _scheduleTipHold(self) -> None:
         self._tip_phase = 'hold'
         self._tip_timer.setSingleShot(True)
@@ -2413,6 +2973,29 @@ class BootstrapWindow(QWidget):
         if isinstance(content, Callable):
             content()
 
+    def resetPipeline(self, packages: list[str]) -> None:
+        self._invokeOnGui(self._showPipeline, packages)
+
+    def _showPipeline(self, packages: list[str]) -> None:
+        self.mwindow.reset(packages)
+        self.busy_bar.hide()
+        self.mwindow.show()
+        screen = QApplication.primaryScreen()
+        available_width = screen.availableGeometry().width() if screen else 980
+        width = max(800, min(940, available_width - 40))
+        self.setMinimumWidth(min(800, width))
+        self.resize(width, self.height())
+        for pool in self.mwindow._pools.values():
+            pool._updateFlowHeight()
+        self.mwindow.requestWindowResize()
+
+    def ensurePipelinePackage(self, package: str) -> None:
+        self.mwindow.ensurePackage(package)
+
+    def updatePackageStage(self, package: str, stage: str, detail: str = '') -> None:
+        self.mwindow.movePackage(package, stage, detail)
+        self.updateStatusText(f'{package}: {detail}' if detail else package)
+
     def latencyTestFinished(self, mirror_name: str, mirror_url: str, latency: float):
         _logger.info(f'latency test finished: {mirror_name} {mirror_url} {latency}s')
 
@@ -2428,14 +3011,22 @@ class BootstrapWindow(QWidget):
         ).start()
 
     def showMirrorChoice(self) -> None:
+        packages = [requirement.name for requirement in self._gil_unsatisfied or []]
+        if self._gil_pyside_incomplete:
+            packages.extend(
+                requirement.name
+                for requirement in getPySideRequirements(getRequirements())
+            )
+        packages.extend(requirement.name for requirement in self._ft_unsatisfied or [])
+        self._showPipeline(list(dict.fromkeys(packages)))
         self.updateStatusText(self._text('choosing_mirror'))
         self.mirror_choice.show()
-        self.mwindow.applyWindowHeight()
+        self.mwindow.requestWindowResize()
 
     def _onMirrorPicked(self) -> None:
         self.mirror_button.setEnabled(False)
         self.mirror_choice.hide()
-        self.mwindow.applyWindowHeight()
+        self.mwindow.requestWindowResize()
         mirror_name = self.mirror_box.currentData()
         if not mirror_name:
             self.startLatencyRace()
@@ -2470,18 +3061,38 @@ class BootstrapWindow(QWidget):
                 self._text('mirror', mirror=mirror_name, latency=int(latency * 1000))
             )
         self.beginPhase('download')
-        self.installRuntimeRequirements(
-            'GIL Python',
-            PYTHON_EXE,
-            getRequirements(),
-            mirror_url,
-            site_packages=SITE_PACKAGES,
-            reinstall_pyside=True,
-            installed=self._gil_installed,
-            unsatisfied=self._gil_unsatisfied,
-            pyside_incomplete=self._gil_pyside_incomplete,
-        )
-        self.installFreeThreadedRequirements(mirror_url)
+        gil_requirements = getRequirements()
+        runtime_results: list[bool] = []
+        with ThreadPoolExecutor(
+            max_workers=2,
+            thread_name_prefix='southside-runtime',
+        ) as executor:
+            gil_future = executor.submit(
+                self.installRuntimeRequirements,
+                'GIL Python',
+                PYTHON_EXE,
+                gil_requirements,
+                mirror_url,
+                site_packages=SITE_PACKAGES,
+                reinstall_pyside=True,
+                installed=self._gil_installed,
+                unsatisfied=self._gil_unsatisfied,
+                pyside_incomplete=self._gil_pyside_incomplete,
+                pipeline_reset=False,
+            )
+            ft_future = executor.submit(
+                self.installFreeThreadedRequirements,
+                mirror_url,
+                pipeline_reset=False,
+            )
+            for future in (gil_future, ft_future):
+                try:
+                    runtime_results.append(bool(future.result()))
+                except Exception:
+                    _logger.exception('runtime dependency pipeline failed')
+                    runtime_results.append(False)
+        if not all(runtime_results):
+            _logger.warning('one or more runtime dependency pipelines reported failure')
         self.beginPhase('verify')
         self.updateStatusText(self._text('checking_install'))
         self.startElapsedTicker()
@@ -2512,7 +3123,9 @@ class BootstrapWindow(QWidget):
         self.mwindow.hideSlots()
         self.allDone.emit()
 
-    def installFreeThreadedRequirements(self, mirror_url: str) -> bool:
+    def installFreeThreadedRequirements(
+        self, mirror_url: str, *, pipeline_reset: bool = True
+    ) -> bool:
         if self._ft_runtime_ok is False:
             return True
         if self._ft_runtime_ok is None and not FREE_THREADED_PYTHON_EXE.exists():
@@ -2538,6 +3151,7 @@ class BootstrapWindow(QWidget):
             import_checks=FREE_THREADED_IMPORT_CHECKS,
             installed=self._ft_installed,
             unsatisfied=self._ft_unsatisfied,
+            pipeline_reset=pipeline_reset,
         )
 
     def installRuntimeRequirements(
@@ -2555,6 +3169,7 @@ class BootstrapWindow(QWidget):
         installed: list[RequirementInfo] | None = None,
         unsatisfied: list[RequirementInfo] | None = None,
         pyside_incomplete: bool | None = None,
+        pipeline_reset: bool = True,
     ) -> bool:
         self.updateStatusText(self._text('runtime_install', runtime=runtime_name))
         prechecked_unsatisfied = unsatisfied is not None
@@ -2610,6 +3225,7 @@ class BootstrapWindow(QWidget):
                 if install_args is not None
                 else [getRequirementSpec(requirement) for requirement in unsatisfied],
                 env=env,
+                reset_pipeline=pipeline_reset,
             )
             if returncode == 0:
                 for requirement in required:
@@ -2637,6 +3253,7 @@ class BootstrapWindow(QWidget):
                     for requirement in pyside_requirements
                 ],
                 env=env,
+                reset_pipeline=pipeline_reset and not unsatisfied,
             )
             if returncode == 0:
                 for requirement in pyside_requirements:
@@ -2863,7 +3480,7 @@ class BootstrapWindow(QWidget):
         self._stopGuiHeartbeat()
         self.elapsed_label.clear()
         self.elapsed_label.hide()
-        self.mwindow.applyWindowHeight()
+        self.mwindow.requestWindowResize()
 
     def _invokeOnGui(self, callback: object, *args: object) -> None:
         if QThread.currentThread() is self.thread():
@@ -2883,7 +3500,7 @@ class BootstrapWindow(QWidget):
     ) -> None:
         self._stopGuiHeartbeat()
         self.elapsed_label.show()
-        self.mwindow.applyWindowHeight()
+        self.mwindow.requestWindowResize()
         self._gui_heartbeat = QTimer(self)
         self._gui_heartbeat.setTimerType(Qt.TimerType.PreciseTimer)
         self._gui_heartbeat.setInterval(HEARTBEAT_TICK_MS)
@@ -2935,12 +3552,12 @@ class BootstrapWindow(QWidget):
     def reportStartupFailure(self, returncode: int) -> None:
         _logger.error('main.py exited with code %d', returncode)
         self._stopGuiHeartbeat()
-        self.mwindow.mainBar().setValue(0)
         self.mwindow.hideSlots()
+        self.busy_bar.hide()
         self.status_label.setText(self._text('startup_failed', code=returncode))
         self.elapsed_label.hide()
         self.show()
-        self.mwindow.applyWindowHeight()
+        self.mwindow.requestWindowResize()
 
     def runFastPipInstall(
         self,
@@ -2949,6 +3566,7 @@ class BootstrapWindow(QWidget):
         download_requirements: list[RequirementInfo],
         install_args: list[str],
         env: dict[str, str] | None = None,
+        reset_pipeline: bool = True,
     ) -> int:
         ensurePipCacheDirs()
         if not download_requirements:
@@ -2956,25 +3574,21 @@ class BootstrapWindow(QWidget):
 
         wheelhouse = getRuntimeWheelhouse(python_exe)
         wheelhouse.mkdir(parents=True, exist_ok=True)
-        failed = self.downloadRequirementWheels(
-            python_exe, mirror_url, download_requirements, wheelhouse, env=env
-        )
-        has_wheels = any(wheelhouse.glob('*.whl'))
-        if failed:
-            _logger.warning(
-                'wheel predownload failed for: %s',
-                ', '.join(getRequirementSpec(requirement) for requirement in failed),
-            )
-        returncode = self.runPipInstall(
+        pipeline = WheelPipeline(
+            self,
             python_exe,
             mirror_url,
-            install_args,
-            wheelhouse=wheelhouse if has_wheels else None,
-            no_index=has_wheels and not failed,
-            env=env,
+            download_requirements,
+            wheelhouse,
+            env,
+            reset_pipeline=reset_pipeline,
         )
-        if returncode != 0 and has_wheels and not failed:
-            _logger.warning('offline wheel install failed, retrying with index')
+        failed = pipeline.run()
+        if failed:
+            _logger.warning(
+                'streaming wheel pipeline failed for: %s',
+                ', '.join(getRequirementSpec(requirement) for requirement in failed),
+            )
             return self.runPipInstall(
                 python_exe,
                 mirror_url,
@@ -2983,7 +3597,9 @@ class BootstrapWindow(QWidget):
                 no_index=False,
                 env=env,
             )
-        return returncode
+        self.beginPhase('install')
+        self.updateStatusText(self._text('installing'))
+        return 0
 
     def downloadRequirementWheels(
         self,
@@ -3868,17 +4484,8 @@ class BootstrapWindow(QWidget):
         self.task.emit(apply)
 
     def updateProgressUi(self, value: int, text: str) -> None:
-        """Apply a phase percentage to the overall and stage bars.
-
-        The overall bar is derived from the phase slices, so it can never move
-        backwards no matter how the phases report their own progress.
-        """
-        value = max(0, min(100, value))
-        manager = self.mwindow
-        manager.setPhaseProgress(manager.phase, float(value))
-        manager.mainBar().setValue(manager.overallPercent())
         self.status_label.setText(text)
-        manager.applyWindowHeight()
+        self.mwindow.applyWindowHeight()
 
     def reportDownloadProgress(
         self,

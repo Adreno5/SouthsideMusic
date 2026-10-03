@@ -1926,7 +1926,14 @@ class PlayingManager(QObject):
                         and self.current_song is song_storable
                     ):
                         self._logger.debug(f'max usable br: {target_br}')
-                        self.setRequestBr(target_br)
+                        if self.crossfading:
+                            if target_br != self._request_br:
+                                self._request_br = target_br
+                                event_bus.emit(REQUEST_BR_CHANGED, target_br)
+                                self.clearPreload()
+                                self._onSongChangedEvent(song_storable)
+                        else:
+                            self.setRequestBr(target_br)
 
                 self._schedule(_applyMaxBr)
 

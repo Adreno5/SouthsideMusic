@@ -53,7 +53,12 @@ if errorlevel 1 (
 )
 
 echo Building - Remove unneeded files
-for /d /r "build.result\raw" %%d in (__pycache__) do @if exist "%%d" RD /S /Q "%%d" >nul
+rem Tool caches travel with src\ into build.result\raw\; drop them before Inno
+rem Setup compresses the tree, and drop stray bytecode the same way.
+for %%n in (__pycache__ .mypy_cache .ruff_cache .pytest_cache .git) do (
+    for /d /r "build.result\raw" %%d in (%%n) do @if exist "%%d" RD /S /Q "%%d" >nul 2>nul
+)
+del /S /Q "build.result\raw\src\*.pyc" >nul 2>nul
 RD /S /Q "build.result\raw\python\Lib\site-packages\__pycache__" >nul
 RD /S /Q "build.result\raw\python\Lib\site-packages\*.dist-info" >nul
 RD /S /Q "build.result\raw\python\Lib\site-packages\*.egg-info" >nul

@@ -398,7 +398,7 @@ class PlayingController(QOpenGLWidget):
         self.tip_handler = TranslationHandler()
 
         self.draw_x_acc = 0.0
-        self.last_play_time_acc = 0.0
+        self.last_x_acc = 0.0
         self.draw_x_acc_timer = EaseOutTimer(0.1, 2)
 
         event_bus.subscribe(PLAY_STATE_CHANGED, self._onPlayStateChanged)
@@ -544,15 +544,15 @@ class PlayingController(QOpenGLWidget):
         self.draw_x_acc = self.draw_x_acc_timer.current_value
 
     def _updateXAcc(self) -> None:
-        play_time = self.ctx.player.getPosition()
+        draw_x = self._draw_current_x
         if self.seeking:
-            if self.last_play_time_acc > play_time:
+            if self.last_x_acc > draw_x:
                 self.draw_x_acc_timer.target_value = 1
-            elif self.last_play_time_acc < play_time:
+            elif self.last_x_acc < draw_x:
                 self.draw_x_acc_timer.target_value = -1
         else:
             self.draw_x_acc_timer.target_value = -0.11
-        self.last_play_time_acc = play_time
+        self.last_x_acc = draw_x
 
     def updateFFTData(self, freqs: np.ndarray, magnitudes: np.ndarray) -> None:
         if len(magnitudes) != len(self.smoothed_magnitudes):

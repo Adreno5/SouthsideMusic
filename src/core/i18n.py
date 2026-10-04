@@ -486,6 +486,8 @@ TRANSLATIONS: dict[str, list[str]] = {
     'main_window.home': ['Home', '首页'],
     'main_window.library': ['Library', '库'],
     'home_page.title': ['Home', '首页'],
+    'home_page.not_logged_in': ["You're currently not logged in!", '你现在还没有登录!'],
+    'home_page.login': ['Login', '登录'],
     'home_page.recommend_folders': ['Recommend Folders', '推荐歌单'],
     'home_page.welcome_back': ['Welcome back,', '欢迎回来，'],
     'home_page.heart_mode': ['HeartBeat Mode', '心动模式'],

@@ -1,7 +1,7 @@
 import PySide6
 from PySide6.QtCore import QRect, QEvent
 from PySide6.QtGui import QColor
-from qfluentwidgets import FlowLayout
+from qfluentwidgets import FlowLayout, PrimaryPushButton
 from core import theme
 from services.events import SECOND_TICK
 from typing import TYPE_CHECKING
@@ -230,14 +230,42 @@ class SimilarSongsCard(CardWidget):
         self.inde_bar.hide()
 
 
+class WelcomeWidget(QWidget):
+    def __init__(self, accounter: AccountWidget):
+        super().__init__()
+        layout = QVBoxLayout()
+
+        layout.addSpacerItem(
+            QSpacerItem(
+                0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
+        )
+
+        self.wel_label = SubtitleLabel()
+        bindText(self.wel_label, 'home_page.not_logged_in')
+        layout.addWidget(self.wel_label, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self.login_btn = PrimaryPushButton()
+        self.login_btn.clicked.connect(lambda: accounter.login())
+        bindText(self.login_btn, 'home_page.login')
+        layout.addWidget(self.login_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        layout.addSpacerItem(
+            QSpacerItem(
+                0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
+        )
+
+        self.setLayout(layout)
+
+
 class HomePage(SScrollArea):
     def __init__(self, ctx: 'AppContext'):
         super().__init__()
         self.ctx = ctx
 
-        contents_widget = QWidget()
+        self._contents_widget = QWidget()
         contents_layout = QVBoxLayout()
-        contents_widget.setLayout(contents_layout)
+        self._contents_widget.setLayout(contents_layout)
 
         welcome_layout = QHBoxLayout()
         welcome_layout.setSpacing(0)
@@ -275,17 +303,21 @@ class HomePage(SScrollArea):
         mode_cards_layout.addWidget(self.private_radar_card)
         mode_cards_layout.addWidget(self.similar_songs_card)
 
-        if getBackend().loggedIn():
-            contents_layout.addLayout(welcome_layout)
-            contents_layout.addLayout(mode_cards_layout)
+        contents_layout.addLayout(welcome_layout)
+        contents_layout.addLayout(mode_cards_layout)
 
         self.setWidgetResizable(True)
-        self.setWidget(contents_widget)
+        if getBackend().loggedIn():
+            self.setWidget(self._contents_widget)
+        else:
+            self.setWidget(WelcomeWidget(self.accounter))
 
         self.setAutoFillBackground(False)
 
         self.viewport().setAutoFillBackground(False)
-        contents_widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._contents_widget.setAttribute(
+            Qt.WidgetAttribute.WA_TranslucentBackground, True
+        )
 
         event_bus.subscribe(SECOND_TICK, self.update)
 

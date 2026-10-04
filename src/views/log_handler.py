@@ -12,7 +12,7 @@ from services.events import SECOND_TICK
 from typing import TextIO, Optional
 import ctypes
 from ctypes import wintypes
-from imports import event_bus, TERMINAL_SIZE_CHANGED
+from services.events import TERMINAL_SIZE_CHANGED, event_bus
 
 kernel32 = ctypes.windll.kernel32
 STD_INPUT_HANDLE = -10

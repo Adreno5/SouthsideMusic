@@ -1,7 +1,7 @@
 from functools import lru_cache
 import threading
 
-from imports import QLayout, QListWidget, QWidget
+from PySide6.QtWidgets import QLayout, QListWidget, QWidget
 
 _lock = threading.Lock()
 

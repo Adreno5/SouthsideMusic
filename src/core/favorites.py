@@ -18,10 +18,10 @@ from core.models import (
     MUSIC_DATA_DIR,
     SongStorable,
 )
-from imports import IMAGE_ASSET_PERSISTED, event_bus
+from services.events import IMAGE_ASSET_PERSISTED, event_bus
 from qfluentwidgets import MessageBoxBase, SubtitleLabel
 from views.list_widget import SListWidget
-from imports import QHBoxLayout, QLabel, QListWidget, QVBoxLayout
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QVBoxLayout
 
 _logger = logging.getLogger(__name__)
 

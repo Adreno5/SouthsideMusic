@@ -10,7 +10,7 @@ import tornado.websocket
 import tornado.httpserver
 import tornado.ioloop
 import tornado.web
-from imports import QObject, Signal
+from PySide6.QtCore import QObject, Signal
 from services.events import event_bus, COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 
 

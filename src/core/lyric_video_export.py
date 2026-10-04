@@ -30,34 +30,30 @@ try:
     from core.audio_player import PatchedAudioSegment as AudioSegment_
     from core.color import mixColor
     from core.lyrics import LRCLyricParser, LyricInfo, YRCLyricInfo, YRCLyricParser
-    from imports import (
-        QApplication,
-        QBuffer,
+    from PySide6.QtCore import QBuffer, QIODevice, QRect
+    from PySide6.QtGui import (
         QColor,
         QFont,
         QFontDatabase,
         QFontMetricsF,
-        QIODevice,
         QImage,
         QPainter,
-        QRect,
     )
+    from PySide6.QtWidgets import QApplication
 except ImportError:
     from audio_player import PatchedAudioSegment as AudioSegment_
     from color import mixColor
     from lyrics import LRCLyricParser, LyricInfo, YRCLyricInfo, YRCLyricParser
-    from imports import (
-        QApplication,
-        QBuffer,
+    from PySide6.QtCore import QBuffer, QIODevice, QRect
+    from PySide6.QtGui import (
         QColor,
         QFont,
         QFontDatabase,
         QFontMetricsF,
-        QIODevice,
         QImage,
         QPainter,
-        QRect,
     )
+    from PySide6.QtWidgets import QApplication
 
 
 Alignment = Literal['left', 'center', 'right']

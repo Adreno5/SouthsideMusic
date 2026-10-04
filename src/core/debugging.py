@@ -3,7 +3,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from core.app_context import AppContext
 from services.events import event_bus
-from imports import _20MS_TICK, QObject, QLabel
+from PySide6.QtCore import QObject
+from PySide6.QtWidgets import QLabel
+from services.events.events import _20MS_TICK
 from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from core.frame_profiler import frame_profiler
 import logging

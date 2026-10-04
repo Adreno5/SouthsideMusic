@@ -5,27 +5,23 @@ from core.qt_utils import removeWidgets
 from views.animated_layout import SFlowLayout
 from views.list_widget import SScrollArea
 from views.number_viewer import NumberViewer
-from imports import (
-    _50MS_TICK,
+from PySide6.QtCore import QPoint, QRect, QTimer
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QSizePolicy,
+    QSpacerItem,
+    QVBoxLayout,
+    QWidget,
+)
+from qfluentwidgets import ComboBox, SubtitleLabel, TitleLabel, TransparentToolButton
+from core.i18n import bindText, tr
+from services.events import (
     PLAYLIST_CHANGED,
     PLAY_STORABLE,
     POST_PLAY_STORABLE,
-    ComboBox,
-    QHBoxLayout,
-    QPoint,
-    QRect,
-    QSizePolicy,
-    QSpacerItem,
-    QTimer,
-    QWidget,
-    QVBoxLayout,
-    SubtitleLabel,
-    TitleLabel,
-    TransparentToolButton,
-    bindText,
     event_bus,
-    tr,
 )
+from services.events.events import _50MS_TICK
 from qfluentwidgets import LineEdit, FluentIcon
 from views.song_card import FavoriteSongCard
 import logging

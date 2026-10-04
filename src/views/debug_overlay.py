@@ -8,6 +8,23 @@ from typing import override
 
 import numpy as np
 import psutil
+from PySide6.QtCore import QPoint, QPointF, QRect, QTimer
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetricsF,
+    QHideEvent,
+    QImage,
+    QMouseEvent,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QShowEvent,
+    Qt,
+    QWheelEvent,
+)
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
+from PySide6.QtWidgets import QPushButton, QWidget
 
 from core import theme
 from core.app_context import AppContext
@@ -18,31 +35,8 @@ from core.lyric_video_export import (
 )
 from core.models import DATA_DIR
 from core.smooth import EaseOutTimer
-from imports import (
-    _50MS_TICK,
-    SECOND_TICK,
-    QColor,
-    QFont,
-    QFontMetricsF,
-    QHideEvent,
-    QImage,
-    QMouseEvent,
-    QOpenGLWidget,
-    QPainter,
-    QPainterPath,
-    QPen,
-    QPoint,
-    QPointF,
-    QPushButton,
-    QRect,
-    QShowEvent,
-    Qt,
-    QTimer,
-    QWheelEvent,
-    QWidget,
-    event_bus,
-)
-from services.events import REPAINT_ALWAYS
+from services.events import REPAINT_ALWAYS, SECOND_TICK, event_bus
+from services.events.events import _50MS_TICK
 
 _logger = logging.getLogger(__name__)
 

@@ -238,7 +238,7 @@ class SongStorable:
             self.count = obj[key]
             _save_count(obj)
 
-        from imports import STORABLE_COUNT_CHANGED, event_bus
+        from services.events import STORABLE_COUNT_CHANGED, event_bus
 
         event_bus.emit(STORABLE_COUNT_CHANGED, self)
 

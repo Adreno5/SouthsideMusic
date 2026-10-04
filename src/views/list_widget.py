@@ -2,6 +2,37 @@ import logging
 import time
 from typing import cast, override
 
+from PySide6.QtCore import (
+    Property,
+    QEasingCurve,
+    QEvent,
+    QModelIndex,
+    QObject,
+    QPoint,
+    QPropertyAnimation,
+    QSize,
+)
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QLinearGradient,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    QPalette,
+    QPen,
+    QResizeEvent,
+    Qt,
+    QWheelEvent,
+)
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QAbstractScrollArea,
+    QListView,
+    QListWidgetItem,
+    QStyleOptionViewItem,
+    QWidget,
+)
 from qfluentwidgets import ListWidget, ScrollBar, SmoothScrollArea, TextEdit
 from qfluentwidgets.components.widgets.list_view import ListItemDelegate
 
@@ -9,37 +40,13 @@ from core import config
 from core.icons import CachedFluentIcon
 from core.models import AnimatingObject
 from core.smooth import EaseOutTimer
-from imports import (
-    _16MS_TICK,
+from services.events import (
+    LIST_SCROLLING_DURATION_CHANGED,
     REFRESH_RATE_CHANGED,
-    Property,
-    QAbstractItemView,
-    QAbstractScrollArea,
-    QColor,
-    QEasingCurve,
-    QEvent,
-    QFont,
-    QLinearGradient,
-    QListView,
-    QListWidgetItem,
-    QModelIndex,
-    QMouseEvent,
-    QObject,
-    QPainter,
-    QPaintEvent,
-    QPalette,
-    QPen,
-    QPoint,
-    QPropertyAnimation,
-    QResizeEvent,
-    QSize,
-    QStyleOptionViewItem,
-    Qt,
-    QWheelEvent,
-    QWidget,
+    REPAINT,
     event_bus,
 )
-from services.events import LIST_SCROLLING_DURATION_CHANGED, REPAINT
+from services.events.events import _16MS_TICK
 
 
 def setTransparentBackground(widget: QWidget | None) -> None:

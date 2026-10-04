@@ -4,7 +4,7 @@ import logging
 import threading
 from typing import TYPE_CHECKING, Any, Callable, cast
 
-from imports import QObject, Signal
+from PySide6.QtCore import QObject, Signal
 from views.comments_page import CommentsPage
 
 if TYPE_CHECKING:

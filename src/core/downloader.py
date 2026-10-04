@@ -7,14 +7,13 @@ import threading
 from typing import Callable, Dict, Optional
 from core.config import cfg
 
-from imports import (
+from PySide6.QtCore import QObject, Signal
+from services.events import (
     START_INTER_LOADING,
     START_PROGRESS_LOADING,
     STOP_INTER_LOADING,
     STOP_PROGRESS_LOADING,
     UPDATE_LOADING_PROGRESS,
-    QObject,
-    Signal,
     event_bus,
 )
 import requests

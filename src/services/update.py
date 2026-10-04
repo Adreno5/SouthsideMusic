@@ -14,13 +14,13 @@ from typing import TYPE_CHECKING
 from urllib.parse import quote as _url_quote
 
 import requests
-from imports import (
-    MessageBox,
-    event_bus,
+from qfluentwidgets import MessageBox
+from core.i18n import tr
+from services.events import (
     START_PROGRESS_LOADING,
     STOP_PROGRESS_LOADING,
     UPDATE_LOADING_PROGRESS,
-    tr,
+    event_bus,
 )
 
 if TYPE_CHECKING:

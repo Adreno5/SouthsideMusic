@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from imports import QColor
+from PySide6.QtGui import QColor
 
 
 class HashableQColor(QColor):

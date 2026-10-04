@@ -71,7 +71,8 @@ from services.events.events import (
     STOP_PROGRESS_LOADING,
     UPDATE_LOADING_PROGRESS,
 )
-from imports import QTimer, tr
+from PySide6.QtCore import QTimer
+from core.i18n import tr
 
 if TYPE_CHECKING:
     from core.app_context import AppContext

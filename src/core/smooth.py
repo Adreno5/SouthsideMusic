@@ -3,8 +3,10 @@ import time
 from time import perf_counter_ns
 from typing import Literal
 
+from PySide6.QtCore import QObject
+from PySide6.QtWidgets import QApplication
+
 from core.models import AnimatingObject
-from imports import QApplication, QObject
 from services.events import event_bus
 
 _NANOSECONDS_PER_SECOND = 1_000_000_000

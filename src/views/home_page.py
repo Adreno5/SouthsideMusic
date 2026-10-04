@@ -11,28 +11,24 @@ if TYPE_CHECKING:
 from core.backend import getBackend
 from core.models import CloudFolderInfo, SongStorable
 from core.qt_utils import removeWidgets
-from imports import (
-    QPainter,
-    QLinearGradient,
-    PLAYLIST_CHANGED,
-    PLAY_STORABLE,
-    VIEW_FOLDER,
-    CardWidget,
-    IndeterminateProgressBar,
-    QLabel,
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QLinearGradient, QMouseEvent, QPainter, Qt
+from PySide6.QtWidgets import (
     QHBoxLayout,
-    QMouseEvent,
+    QLabel,
     QSizePolicy,
     QSpacerItem,
-    QTimer,
-    Qt,
     QVBoxLayout,
     QWidget,
+)
+from qfluentwidgets import (
+    CardWidget,
+    IndeterminateProgressBar,
     SubtitleLabel,
     TitleLabel,
-    bindText,
-    event_bus,
 )
+from core.i18n import bindText
+from services.events import PLAYLIST_CHANGED, PLAY_STORABLE, VIEW_FOLDER, event_bus
 from views.folder_card import CloudFolderCard
 from views.list_widget import SScrollArea
 from views.account_widget import AccountWidget

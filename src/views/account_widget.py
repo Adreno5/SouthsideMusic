@@ -15,22 +15,17 @@ from core.dialogs import (
     getValueBylist,
 )
 from core.i18n import tr
-from imports import (
+from PySide6.QtCore import Signal
+from PySide6.QtGui import QMouseEvent, QPixmap, Qt
+from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QSpacerItem, QWidget
+from qfluentwidgets import (
     Action,
     AvatarWidget,
     BodyLabel,
     FluentIcon,
     MenuAnimationType,
     Path,
-    QHBoxLayout,
-    QMouseEvent,
-    QPixmap,
-    QSizePolicy,
-    QSpacerItem,
-    Qt,
     RoundMenu,
-    Signal,
-    QWidget,
 )
 from qfluentwidgets import InfoBar
 

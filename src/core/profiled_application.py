@@ -1,7 +1,9 @@
 from typing import override
 
+from PySide6.QtCore import QEvent, QObject, QTimer
+from PySide6.QtWidgets import QApplication
+
 from core.frame_profiler import frame_profiler
-from imports import QApplication, QEvent, QObject, QTimer
 
 
 class ProfiledApplication(QApplication):

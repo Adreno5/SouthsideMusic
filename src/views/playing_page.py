@@ -24,46 +24,40 @@ from core.models import MUSIC_DATA_DIR
 from core.models import SongStorable
 from core.theme import isDark
 from core.playing_manager import PlayMode
-from imports import (
+from PySide6.QtCore import QBuffer, QIODevice, QRect, QSignalBlocker
+from PySide6.QtGui import QCursor, QMouseEvent, QPaintEvent, QPainter, QResizeEvent, Qt
+from PySide6.QtWidgets import (
+    QColorDialog,
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QSpacerItem,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
+from core.i18n import tr
+from services.events import (
     BACKGROUND_RATIO_CHANGED,
-    PLAY_STATE_CHANGED,
-    PLAY_START_PLAYLIST,
     PLAYBACK_ERROR,
     PLAYBACK_IMAGE_LOADED,
     PLAYBACK_LYRICS_UPDATED,
     PLAYBACK_SONG_LOADING,
+    PLAY_START_PLAYLIST,
+    PLAY_STATE_CHANGED,
     POST_PLAY_STORABLE,
     POST_THEME_CHANGED,
+    REPAINT,
     SONG_CHANGED,
     START_PROGRESS_LOADING,
     STOP_PROGRESS_LOADING,
     UPDATE_COVER,
     UPDATE_LOADING_PROGRESS,
-    REPAINT,
-    QColorDialog,
-    QBuffer,
-    QFileDialog,
-    QFormLayout,
-    QHBoxLayout,
-    QIODevice,
-    QLabel,
-    QMouseEvent,
-    QPaintEvent,
-    QPainter,
-    QRect,
-    QResizeEvent,
-    QSignalBlocker,
-    QSizePolicy,
-    QSpinBox,
-    QSpacerItem,
-    Qt,
-    QVBoxLayout,
-    QWidget,
-    QCursor,
     event_bus,
-    tr,
 )
-from imports import QColor, QImage, QPixmap
+from PySide6.QtGui import QColor, QImage, QPixmap
 from qfluentwidgets import (
     CaptionLabel,
     CardWidget,

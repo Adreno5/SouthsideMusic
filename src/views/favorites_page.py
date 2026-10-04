@@ -8,36 +8,30 @@ import shiboken6
 
 from core.app_context import AppContext
 from core.qt_utils import clearListWidget
-from imports import (
-    _50MS_TICK,
+from PySide6.QtCore import QPoint, QTimer
+from PySide6.QtGui import QPixmap, Qt
+from PySide6.QtWidgets import QLabel
+from qfluentwidgets import FluentIcon, PrimaryPushButton, PushButton
+from core.i18n import bindText, tr
+from services.events import (
     FAVORITES_CHANGED,
     MWINDOW_REFRESH_FOLDERS,
     PLAYLIST_CHANGED,
     PLAY_PLAYLIST_STORABLE,
+    PLAY_SONG_AT_INDEX,
     START_INTER_LOADING,
     STOP_INTER_LOADING,
-    PLAY_SONG_AT_INDEX,
-    FluentIcon,
-    PrimaryPushButton,
-    PushButton,
-    QLabel,
-    QPixmap,
-    QPoint,
-    Qt,
-    QTimer,
     event_bus,
-    bindText,
-    tr,
 )
-from imports import (
+from services.events.events import _50MS_TICK
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation
+from PySide6.QtWidgets import (
+    QGraphicsOpacityEffect,
+    QHBoxLayout,
     QListWidget,
     QListWidgetItem,
-    QHBoxLayout,
     QVBoxLayout,
     QWidget,
-    QGraphicsOpacityEffect,
-    QPropertyAnimation,
-    QEasingCurve,
 )
 from qfluentwidgets import (
     FlowLayout,

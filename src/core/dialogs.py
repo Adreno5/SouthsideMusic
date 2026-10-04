@@ -1,8 +1,9 @@
 import io
 
 from core.backend import getBackend
-from imports import QLabel, QListWidget, QWidget, bindText, tr
-from imports import QImage, QPixmap
+from PySide6.QtWidgets import QLabel, QListWidget, QWidget
+from core.i18n import bindText, tr
+from PySide6.QtGui import QImage, QPixmap
 import qrcode
 from qfluentwidgets import (
     LineEdit,

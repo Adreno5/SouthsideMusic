@@ -5,7 +5,7 @@ from darkdetect import isDark as isDarkDarkdetect
 import darkdetect
 from qfluentwidgets import ThemeColor, qconfig, setThemeColor
 
-from imports import QColor
+from PySide6.QtGui import QColor
 
 _logger = logging.getLogger(__name__)
 _is_dark = isDarkDarkdetect()

@@ -9,25 +9,20 @@ import time
 from core.app_context import AppContext
 from core.lyrics import LyricInfo, YRCCharInfo, YRCLyricInfo
 from core.models import SongStorable
-from imports import (
-    _200MS_TICK,
-    _50MS_TICK,
-    PLAY_STATE_CHANGED,
-    PLAYBACK_LYRICS_UPDATED,
-    QEvent,
+from PySide6.QtCore import QEvent, QObject
+from PySide6.QtGui import QKeyEvent, Qt
+from PySide6.QtWidgets import (
     QHBoxLayout,
-    QKeyEvent,
     QPlainTextEdit,
     QSizePolicy,
     QSpacerItem,
     QStackedLayout,
-    Qt,
     QVBoxLayout,
     QWidget,
-    QObject,
-    event_bus,
-    tr,
 )
+from core.i18n import tr
+from services.events import PLAYBACK_LYRICS_UPDATED, PLAY_STATE_CHANGED, event_bus
+from services.events.events import _200MS_TICK, _50MS_TICK
 from qfluentwidgets import CaptionLabel, InfoBar, PrimaryPushButton, PushButton
 from views.lyrics_viewer import LyricsViewer
 

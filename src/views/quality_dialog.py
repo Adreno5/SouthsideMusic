@@ -21,7 +21,7 @@ from core.models import QualityLevelInfo
 from core import theme as themeModule
 from services.events import event_bus, REQUEST_BR_CHANGED
 from views.list_widget import SListWidget, SScrollArea
-from imports import QVBoxLayout, QHBoxLayout, QSpacerItem, QSizePolicy
+from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QSpacerItem, QVBoxLayout
 
 
 class QualityCard(CardWidget):

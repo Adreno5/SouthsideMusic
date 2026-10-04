@@ -16,6 +16,15 @@ import numpy as np
 import psutil
 import sounddevice as sd
 from pydub.exceptions import CouldntDecodeError
+from PySide6.QtCore import (
+    Property,
+    QEasingCurve,
+    QObject,
+    QPropertyAnimation,
+    QTimer,
+    Signal,
+    Slot,
+)
 from qfluentwidgets import MessageBox
 from scipy.signal import resample_poly
 
@@ -32,19 +41,13 @@ from core.audio_processing import AudioProcessingSettings, AudioProcessor
 from core.beat import BeatDetector, BeatFrame
 from core.config import cfg
 from core.pcm_timeline import PcmTimeline
-from imports import (
+from services.events import DB_CHANGED, event_bus
+from services.events.events import (
     _100MS_TICK,
-    DB_CHANGED,
-    Property,
-    QEasingCurve,
-    QObject,
-    QPropertyAnimation,
-    QTimer,
-    Signal,
-    Slot,
-    event_bus,
+    BEAT_POINT,
+    COLLECT_DEBUG_INFO,
+    EMIT_DEBUG_INFO,
 )
-from services.events.events import BEAT_POINT, COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 
 __all__ = [
     'AudioPlayer',

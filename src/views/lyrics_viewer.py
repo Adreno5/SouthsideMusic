@@ -7,6 +7,19 @@ from bisect import bisect_left, bisect_right
 from typing import cast, override
 
 import numpy as np
+from PySide6.QtCore import QEvent, QPointF, QRectF
+from PySide6.QtGui import (
+    QColor,
+    QEnterEvent,
+    QFont,
+    QFontMetricsF,
+    QMouseEvent,
+    QPainter,
+    QPen,
+    Qt,
+    QWheelEvent,
+)
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from core import theme
 from core.app_context import AppContext
@@ -16,25 +29,13 @@ from core.lyrics import LyricInfo, YRCLyricInfo
 from core.qt_utils import toQtInt
 from core.smooth import EaseOutTimer, SScrollTimer
 from core.time_format import float2time
-from imports import (
+from services.events import (
     BEAT_POINT,
+    LYRICS_LINE_DURATION,
+    LYRICS_SCROLLING_DURATION_CHANGED,
     REPAINT,
-    QColor,
-    QEnterEvent,
-    QEvent,
-    QFont,
-    QFontMetricsF,
-    QMouseEvent,
-    QOpenGLWidget,
-    QPainter,
-    QPen,
-    QPointF,
-    QRectF,
-    Qt,
-    QWheelEvent,
     event_bus,
 )
-from services.events import LYRICS_LINE_DURATION, LYRICS_SCROLLING_DURATION_CHANGED
 from services.events.events import (
     PLAY_STORABLE,
 )

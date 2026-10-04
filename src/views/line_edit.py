@@ -8,21 +8,23 @@ from core.color import mixColor
 from core.config import cfg
 from core.icons import SouthsideIcon, bindIcon
 from core.smooth import EaseOutTimer
-from imports import (
-    BACKGROUND_RATIO_CHANGED,
-    POST_THEME_CHANGED,
-    REPAINT,
+from PySide6.QtCore import QPoint
+from PySide6.QtGui import (
     QColor,
     QCursor,
     QFocusEvent,
     QFont,
     QIcon,
-    QLineEdit,
     QMouseEvent,
     QPaintEvent,
     QPainter,
-    QPoint,
     Qt,
+)
+from PySide6.QtWidgets import QLineEdit
+from services.events import (
+    BACKGROUND_RATIO_CHANGED,
+    POST_THEME_CHANGED,
+    REPAINT,
     event_bus,
 )
 

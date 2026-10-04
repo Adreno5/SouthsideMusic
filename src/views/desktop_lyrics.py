@@ -4,35 +4,30 @@ import ctypes
 from ctypes import wintypes
 from typing import override
 
-from qfluentwidgets import CheckBox, FlowLayout, FluentIcon, PushButton, TitleLabel
-
-from core import theme
-from core.app_context import AppContext
-from core.color import mixColor
-from core.config import cfg
-from core.lyrics import LyricInfo, YRCLyricInfo
-from core.smooth import EaseInOutTimer, EaseOutTimer, SScrollTimer
-from imports import (
-    _200MS_TICK,
+from PySide6.QtCore import QPoint, QRect, QSize
+from PySide6.QtGui import (
     QColor,
     QCursor,
     QMouseEvent,
     QMoveEvent,
     QPainter,
     QPainterPath,
-    QPoint,
-    QRect,
-    QSize,
     Qt,
-    QVBoxLayout,
     QWheelEvent,
-    QWidget,
-    bindText,
-    event_bus,
-    tr,
 )
-from services.events import LYRICS_LINE_DURATION
+from PySide6.QtWidgets import QVBoxLayout, QWidget
+from qfluentwidgets import CheckBox, FlowLayout, FluentIcon, PushButton, TitleLabel
+
+from core import theme
+from core.app_context import AppContext
+from core.color import mixColor
+from core.config import cfg
+from core.i18n import bindText, tr
+from core.lyrics import LyricInfo, YRCLyricInfo
+from core.smooth import EaseInOutTimer, EaseOutTimer, SScrollTimer
+from services.events import LYRICS_LINE_DURATION, event_bus
 from services.events.events import (
+    _200MS_TICK,
     COLLECT_DEBUG_INFO,
     DESKTOP_LYRICS_ANCHOR_CHANGED,
     EMIT_DEBUG_INFO,

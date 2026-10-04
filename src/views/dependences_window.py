@@ -13,19 +13,11 @@ import requests
 from core.audio_player import getAudioDevices
 from core.downloader import asyncDownload
 from core import theme
-from imports import (
-    ProgressBar,
-    QSizePolicy,
-    QSpacerItem,
-    QTimer,
-    Qt,
-    QVBoxLayout,
-    QWidget,
-    Signal,
-    SubtitleLabel,
-    bindText,
-    tr,
-)
+from PySide6.QtCore import QTimer, Signal
+from PySide6.QtGui import Qt
+from PySide6.QtWidgets import QSizePolicy, QSpacerItem, QVBoxLayout, QWidget
+from qfluentwidgets import ProgressBar, SubtitleLabel
+from core.i18n import bindText, tr
 
 if TYPE_CHECKING:
     from core.app_context import AppContext

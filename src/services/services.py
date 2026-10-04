@@ -11,6 +11,10 @@ from services.events import SECOND_TICK
 
 if TYPE_CHECKING:
     from core.app_context import AppContext
+from PySide6.QtCore import QObject, QTimer
+from PySide6.QtGui import QScreen, Qt, QWindow
+from qfluentwidgets import InfoBar, MessageBox
+
 from core import theme
 from core.backend import getBackend
 from core.config import cfg, saveConfig
@@ -18,12 +22,8 @@ from core.dialogs import getTextLineedit
 from core.downloader import asyncTask
 from core.favorites import favorites_manager
 from core.frame_profiler import frame_profiler
-from imports import (
-    _16MS_TICK,
-    _20MS_TICK,
-    _50MS_TICK,
-    _100MS_TICK,
-    _200MS_TICK,
+from core.i18n import tr
+from services.events import (
     BACKGROUND_RATIO_CHANGED,
     CLOUD_ADD_TO_LOCAL,
     CLOUD_REMOVE_FOLDER,
@@ -38,15 +38,14 @@ from imports import (
     REPAINT_ALWAYS,
     REPAINT_EVENT_INTERVAL,
     SONG_CHANGED,
-    InfoBar,
-    MessageBox,
-    QObject,
-    QScreen,
-    Qt,
-    QTimer,
-    QWindow,
     event_bus,
-    tr,
+)
+from services.events.events import (
+    _16MS_TICK,
+    _20MS_TICK,
+    _50MS_TICK,
+    _100MS_TICK,
+    _200MS_TICK,
 )
 from views.folder_card import CloudFolderCard, LocalFolderCard
 

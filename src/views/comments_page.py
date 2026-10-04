@@ -6,29 +6,30 @@ import requests
 import shiboken6
 
 from core.backend import getBackend
-from imports import (
-    _50MS_TICK,
-    AvatarWidget,
-    CaptionLabel,
-    FluentIcon,
-    InfoBar,
-    Path,
-    PrimaryToolButton,
+from PySide6.QtGui import QPixmap, Qt
+from PySide6.QtWidgets import (
     QHBoxLayout,
-    QPixmap,
     QSizePolicy,
     QSpacerItem,
     QVBoxLayout,
     QWidget,
-    Qt,
+)
+from qfluentwidgets import (
+    AvatarWidget,
+    BodyLabel,
+    CaptionLabel,
+    CardWidget,
+    FluentIcon,
+    InfoBar,
+    Path,
+    PrimaryToolButton,
+    SubtitleLabel,
     TextEdit,
     TitleLabel,
-    bindText,
-    BodyLabel,
-    SubtitleLabel,
-    CardWidget,
-    event_bus,
 )
+from core.i18n import bindText
+from services.events import event_bus
+from services.events.events import _50MS_TICK
 from views.list_widget import SScrollArea
 from views.translation_handler import TranslationHandler
 from core.i18n import tr

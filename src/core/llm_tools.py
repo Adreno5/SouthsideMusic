@@ -23,7 +23,10 @@ from core.models import (
     SongInfo,
     SongStorable,
 )
-from imports import QApplication, QCheckBox, QComboBox, QThread, QWidget, event_bus, tr
+from PySide6.QtCore import QThread
+from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QWidget
+from core.i18n import tr
+from services.events import event_bus
 from services.events.events import (
     FAVORITES_CHANGED,
     MWINDOW_REFRESH_FOLDERS,

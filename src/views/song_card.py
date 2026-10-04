@@ -12,7 +12,11 @@ if TYPE_CHECKING:
     from views.playlist_page import PlaylistPage
     from views.playing_page import PlayingPage
 
-from imports import (
+from PySide6.QtCore import Signal
+from PySide6.QtGui import Qt
+from PySide6.QtWidgets import QSizePolicy, QSpacerItem
+from core.i18n import bindText, tr
+from services.events import (
     FAVORITES_CHANGED,
     IMAGE_ASSET_PERSISTED,
     MWINDOW_REFRESH_FOLDERS,
@@ -20,16 +24,10 @@ from imports import (
     PLAY_SONG_AT_INDEX,
     POST_THEME_CHANGED,
     STORABLE_COUNT_CHANGED,
-    QSizePolicy,
-    QSpacerItem,
-    Qt,
-    Signal,
     event_bus,
-    bindText,
-    tr,
 )
-from imports import QImage, QMouseEvent, QPixmap
-from imports import (
+from PySide6.QtGui import QImage, QMouseEvent, QPixmap
+from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,

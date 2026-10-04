@@ -3,11 +3,13 @@ from functools import lru_cache
 from os import makedirs
 from typing import Any, Literal, cast, override
 
+from PySide6.QtCore import QRect, QRectF
+from PySide6.QtGui import QPainter
+from PySide6.QtSvg import QSvgRenderer
 from qfluentwidgets import FluentIconBase, Theme
 from qfluentwidgets.common.icon import writeSvg
 
 from core import theme as themeModule
-from imports import QPainter, QRect, QRectF, QSvgRenderer
 
 makedirs('data', exist_ok=True)
 makedirs('data/icons', exist_ok=True)

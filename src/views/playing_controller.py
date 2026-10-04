@@ -8,6 +8,30 @@ from typing import TYPE_CHECKING, override
 from typing import cast as _cast
 
 import numpy as np
+from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSize, QTimer
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetricsF,
+    QImage,
+    QLinearGradient,
+    QMouseEvent,
+    QPainter,
+    QPainterPath,
+    QPaintEvent,
+    QPen,
+    QPixmap,
+    Qt,
+)
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QSpacerItem,
+    QVBoxLayout,
+    QWidget,
+)
 from qfluentwidgets import (
     TransparentToolButton,
 )
@@ -25,7 +49,7 @@ from core.models import SongStorable
 from core.qt_utils import toQtInt
 from core.smooth import EaseInOutTimer, EaseOutTimer
 from core.ws_server import QObjectHandler
-from imports import (
+from services.events import (
     BACKGROUND_RATIO_CHANGED,
     BEAT_POINT,
     COLLECT_DEBUG_INFO,
@@ -41,31 +65,6 @@ from imports import (
     REPAINT,
     SONG_CHANGED,
     START_CROSSFADE,
-    QColor,
-    QEvent,
-    QFont,
-    QFontMetricsF,
-    QHBoxLayout,
-    QImage,
-    QLabel,
-    QLinearGradient,
-    QMouseEvent,
-    QObject,
-    QOpenGLWidget,
-    QPainter,
-    QPainterPath,
-    QPaintEvent,
-    QPen,
-    QPixmap,
-    QPointF,
-    QRectF,
-    QSize,
-    QSizePolicy,
-    QSpacerItem,
-    Qt,
-    QTimer,
-    QVBoxLayout,
-    QWidget,
     event_bus,
 )
 from views.image_label import SImageLabel

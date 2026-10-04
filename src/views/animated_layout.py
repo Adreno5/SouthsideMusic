@@ -11,15 +11,15 @@ from PySide6.QtWidgets import (
     QWidget,
     QWidgetItem,
 )
-from imports import (
+from PySide6.QtCore import (
     QAbstractAnimation,
     QEasingCurve,
     QPoint,
     QPropertyAnimation,
     QRect,
     QTimer,
-    QVBoxLayout,
 )
+from PySide6.QtWidgets import QVBoxLayout
 
 
 def _slideWidgetIn(

@@ -10,7 +10,29 @@ from core.app_context import AppContext
 
 from core.backend import getBackend
 from core.dialogs import getTextLineedit
-from imports import (
+from PySide6.QtCore import (
+    QAbstractAnimation,
+    QEasingCurve,
+    QPropertyAnimation,
+    QRect,
+    QSize,
+    QTimer,
+)
+from PySide6.QtGui import QFont, QIcon, Qt
+from PySide6.QtWidgets import (
+    QListWidget,
+    QListWidgetItem,
+    QSizePolicy,
+    QSpacerItem,
+    QStackedWidget,
+)
+from qfluentwidgets import (
+    FluentIcon,
+    Path,
+    TransparentPushButton,
+    TransparentToolButton,
+)
+from services.events import (
     BACKGROUND_RATIO_CHANGED,
     ENDING_NO_SOUND,
     LANGUAGE_CHANGED,
@@ -18,6 +40,8 @@ from imports import (
     PLAY_CONTINUE_LAST_SONG,
     PLAY_STORABLE,
     REFRESH_RATE_CHANGED,
+    REPAINT,
+    REPAINT_EVENT_INTERVAL,
     SONG_FINISH,
     START_INTER_LOADING,
     START_PROGRESS_LOADING,
@@ -27,32 +51,12 @@ from imports import (
     VIEW_FOLDER,
     WEBSOCKET_CONNECTED,
     WEBSOCKET_DISCONNECTED,
-    REPAINT_EVENT_INTERVAL,
-    REPAINT,
-    FluentIcon,
-    Path,
-    QAbstractAnimation,
-    QEasingCurve,
-    QFont,
-    QIcon,
-    QListWidget,
-    QListWidgetItem,
-    QPropertyAnimation,
-    QRect,
-    QSize,
-    QStackedWidget,
-    Qt,
-    QTimer,
-    TransparentPushButton,
-    TransparentToolButton,
     event_bus,
-    QSizePolicy,
-    QSpacerItem,
 )
-from imports import QCloseEvent, QColor, QKeyEvent, QPainter
+from PySide6.QtGui import QCloseEvent, QColor, QKeyEvent, QPainter
 from services.events.events import POST_THEME_CHANGED
 from views.list_widget import SListWidget, setTransparentBackground
-from imports import QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import InfoBar
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 

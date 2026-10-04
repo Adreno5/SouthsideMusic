@@ -9,17 +9,9 @@ from html import escape
 
 from typing import Any, Sequence, override
 
-from imports import (
-    QResizeEvent,
-    QSizePolicy,
-    QTextCursor,
-    QTextOption,
-    QTimer,
-    Qt,
-    QVBoxLayout,
-    Signal,
-    QWidget,
-)
+from PySide6.QtCore import QTimer, Signal
+from PySide6.QtGui import QResizeEvent, QTextCursor, QTextOption, Qt
+from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 from qfluentwidgets import TextBrowser
 from markdown_it import MarkdownIt
 from markdown_it.token import Token

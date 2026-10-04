@@ -9,7 +9,7 @@ import winreg
 from typing import TYPE_CHECKING
 
 from core.models import IMAGE_DATA_DIR, SongStorable, TrackDetailInfo
-from imports import QObject
+from PySide6.QtCore import QObject
 from services.events.event_bus import event_bus
 from services.events.events import (
     PLAY_STATE_CHANGED,

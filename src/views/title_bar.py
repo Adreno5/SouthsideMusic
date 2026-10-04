@@ -1,8 +1,9 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
-from imports import QPaintEvent, Qt
-from imports import QHBoxLayout, QVBoxLayout, event_bus
+from PySide6.QtGui import QPaintEvent, Qt
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout
+from services.events import event_bus
 from qfluentwidgets import CaptionLabel, FluentStyleSheet
 from qframelesswindow import TitleBar
 

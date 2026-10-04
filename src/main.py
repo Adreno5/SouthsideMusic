@@ -57,7 +57,17 @@ import glob
 
 from services.services import EventsServices
 
-import imports as _ims
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QFontDatabase
+from services.events import (
+    PLAYLIST_CHANGED,
+    PLAY_LAST,
+    PLAY_NEXT,
+    PLAY_STATE_CHANGED,
+    POST_THEME_CHANGED,
+    PRE_THEME_CHANGED,
+    SONG_CHANGED,
+)
 from qfluentwidgets import setTheme, Theme, InfoBar
 import shiboken6
 
@@ -248,7 +258,7 @@ subprocess.call = patched_call  # type: ignore
 mwindow: MainWindow | None = None
 lock: threading.Lock = threading.Lock()
 
-_ims.event_bus._lw = launchwindow
+event_bus._lw = launchwindow
 
 
 def _on_ws_connected():
@@ -269,7 +279,7 @@ def _schedule_ws_task(fn) -> None:
     if mwindow and getattr(mwindow, 'ctx', None):
         mwindow.ctx.addScheduledTask(fn)
     else:
-        _ims.QTimer.singleShot(0, fn)
+        QTimer.singleShot(0, fn)
 
 
 def _playlist_artists_text(song) -> str:
@@ -375,7 +385,7 @@ def _handle_ws_playlist_control(payload: dict) -> None:
             playing_manager.current_index -= 1
         elif playing_manager.current_index >= len(playlist):
             playing_manager.current_index = len(playlist) - 1
-        _ims.event_bus.emit(_ims.PLAYLIST_CHANGED)
+        event_bus.emit(PLAYLIST_CHANGED)
         if removing_current and 0 <= playing_manager.current_index < len(playlist):
             playing_manager.playSongAtIndex(playing_manager.current_index)
         return
@@ -401,7 +411,7 @@ def _handle_ws_playlist_control(payload: dict) -> None:
                 playing_manager.current_index = playlist.index(current_song)
             except ValueError:
                 playing_manager.current_index = -1
-        _ims.event_bus.emit(_ims.PLAYLIST_CHANGED)
+        event_bus.emit(PLAYLIST_CHANGED)
         return
 
     if action == 'clear':
@@ -414,7 +424,7 @@ def _handle_ws_playlist_control(payload: dict) -> None:
             playing_manager.current_index = 0
         else:
             playing_manager.current_index = -1
-        _ims.event_bus.emit(_ims.PLAYLIST_CHANGED)
+        event_bus.emit(PLAYLIST_CHANGED)
 
 
 def _handle_ws_message(message: str) -> None:
@@ -444,10 +454,10 @@ def _handle_ws_message(message: str) -> None:
                 player_obj = ctx.player
                 if player_obj.isPlaying():
                     player_obj.pause()
-                    _ims.event_bus.emit(_ims.PLAY_STATE_CHANGED, False)
+                    event_bus.emit(PLAY_STATE_CHANGED, False)
                 else:
                     player_obj.resume()
-                    _ims.event_bus.emit(_ims.PLAY_STATE_CHANGED, True)
+                    event_bus.emit(PLAY_STATE_CHANGED, True)
         elif command == 'seek':
             player_obj = ctx.player
             try:
@@ -461,9 +471,9 @@ def _handle_ws_message(message: str) -> None:
                 return
             player_obj.setPosition(max(0.0, min(position, duration)))
         elif command == 'next':
-            _ims.event_bus.emit(_ims.PLAY_NEXT)
+            event_bus.emit(PLAY_NEXT)
         elif command == 'previous':
-            _ims.event_bus.emit(_ims.PLAY_LAST)
+            event_bus.emit(PLAY_LAST)
 
     _schedule_ws_task(_run)
 
@@ -486,10 +496,10 @@ ctx.smtc = SmtcController(ctx)
 
 ws_handler.onMessage.connect(_handle_ws_message)
 ws_handler.onConnected.connect(_send_ws_playlist_state)
-_ims.event_bus.subscribe(_ims.PLAYLIST_CHANGED, lambda: _send_ws_playlist_state())
-_ims.event_bus.subscribe(_ims.SONG_CHANGED, lambda _song: _send_ws_playlist_state())
-_ims.event_bus.subscribe(
-    _ims.PLAY_STATE_CHANGED,
+event_bus.subscribe(PLAYLIST_CHANGED, lambda: _send_ws_playlist_state())
+event_bus.subscribe(SONG_CHANGED, lambda _song: _send_ws_playlist_state())
+event_bus.subscribe(
+    PLAY_STATE_CHANGED,
     lambda is_playing: ws_handler.sendJson(
         {
             'option': 'play_state',
@@ -523,12 +533,12 @@ def southsideMusic():
             setTheme(Theme.LIGHT if theme == 'Light' else Theme.DARK)
             app.setStyleSheet(f'color: {"white" if themeModule.isDark() else "black"};')
             refreshBoundIcons()
-            _ims.event_bus.emit(_ims.POST_THEME_CHANGED)
+            event_bus.emit(POST_THEME_CHANGED)
 
         if mwindow:
             mwindow.ctx.addScheduledTask(_updateTheme)
 
-    _ims.event_bus.subscribe(_ims.PRE_THEME_CHANGED, _themeChanged)
+    event_bus.subscribe(PRE_THEME_CHANGED, _themeChanged)
 
     def _cleanCaches():
         last_data_cleanup = 0.0
@@ -586,8 +596,8 @@ def southsideMusic():
     _font_path = os.path.join(
         os.path.dirname(_SRC_DIR), 'fonts', 'HARMONYOS_SANS_SC_REGULAR.ttf'
     )
-    _font_families = _ims.QFontDatabase.applicationFontFamilies(
-        _ims.QFontDatabase.addApplicationFont(_font_path)
+    _font_families = QFontDatabase.applicationFontFamilies(
+        QFontDatabase.addApplicationFont(_font_path)
     )
     if _font_families:
         harmony_font_family = _font_families[0]
@@ -689,13 +699,11 @@ def southsideMusic():
 
         print(backend.getSessionBindings())
 
-        _ims.QTimer.singleShot(2000, lambda: startUpdateCheck(mwindow))  # type: ignore
+        QTimer.singleShot(2000, lambda: startUpdateCheck(mwindow))  # type: ignore
 
         _logger.debug(f'{sys.path=}')
 
-    depwindow.destroyed.connect(
-        lambda _obj=None: _ims.QTimer.singleShot(0, _postStageInit)
-    )
+    depwindow.destroyed.connect(lambda _obj=None: QTimer.singleShot(0, _postStageInit))
 
     app.exec()
 

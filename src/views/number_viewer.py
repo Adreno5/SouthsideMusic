@@ -3,7 +3,9 @@ from PySide6.QtGui import QHideEvent, QPaintEvent, QShowEvent, QWheelEvent
 
 from core.app_context import AppContext
 from core.smooth import EaseOutTimer
-from imports import QWidget, QFont, QPainter, QFontMetricsF, Signal
+from PySide6.QtCore import Signal
+from PySide6.QtGui import QFont, QFontMetricsF, QPainter
+from PySide6.QtWidgets import QWidget
 from services.events import event_bus
 from services.events.events import REPAINT
 

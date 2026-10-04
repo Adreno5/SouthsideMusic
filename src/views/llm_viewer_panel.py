@@ -12,33 +12,29 @@ from core.config import cfg, saveConfig
 from core.i18n import bindText, tr
 from core.icons import bindIcon
 from core.llm_tools import LLMToolRunner, llmToolSchemas
-from imports import (
-    _200MS_TICK,
+from PySide6.QtCore import QAbstractAnimation, QEasingCurve, QPropertyAnimation, QRect
+from PySide6.QtGui import QKeyEvent, QMouseEvent, QTextCursor, Qt
+from PySide6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QSpacerItem,
+    QVBoxLayout,
+    QWidget,
+)
+from qfluentwidgets import (
     CardWidget,
     ComboBox,
     FluentIcon,
-    QAbstractAnimation,
-    QApplication,
-    QEasingCurve,
-    QFrame,
-    QHBoxLayout,
-    QKeyEvent,
-    QLabel,
-    QMouseEvent,
-    QPropertyAnimation,
-    QRect,
-    QSizePolicy,
-    QSpacerItem,
-    QTextCursor,
-    QVBoxLayout,
-    QWidget,
-    Qt,
     TextBrowser,
     TextEdit,
     TransparentPushButton,
     TransparentToolButton,
-    event_bus,
 )
+from services.events import event_bus
+from services.events.events import _200MS_TICK
 from views.animated_layout import SFlowLayout
 from views.chatting_viewer import ChattingViewer
 from views.list_widget import SScrollArea, SSmoothDelegate

@@ -1,16 +1,8 @@
-from imports import (
-    MessageBox,
-    QDesktopServices,
-    QDialog,
-    QLabel,
-    QUrl,
-    QVBoxLayout,
-    TextEdit,
-    TransparentPushButton,
-    QApplication,
-    bindText,
-    tr,
-)
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import QApplication, QDialog, QLabel, QVBoxLayout
+from qfluentwidgets import MessageBox, TextEdit, TransparentPushButton
+from core.i18n import bindText, tr
 from core.dialogs import SubtitleLabel
 
 

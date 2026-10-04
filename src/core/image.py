@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from imports import QPixmap, QImage
+from PySide6.QtGui import QImage, QPixmap
 import numpy as np
 
 

@@ -10,8 +10,11 @@ from typing import TYPE_CHECKING, Callable, cast, override
 
 from core.app_context import AppContext
 
-from imports import (
-    _200MS_TICK,
+from PySide6.QtCore import Property, QEasingCurve, QPropertyAnimation, Signal
+from PySide6.QtGui import QPaintEvent, QPainter, Qt
+from qfluentwidgets import InfoBar
+from core.i18n import bindText, hasTranslation, refreshBoundTexts, setBoundText, tr
+from services.events import (
     BACKGROUND_RATIO_CHANGED,
     DB_CHANGED,
     DESKTOP_LYRICS_ANCHOR_CHANGED,
@@ -20,33 +23,21 @@ from imports import (
     POST_THEME_CHANGED,
     WEBSOCKET_CONNECTED,
     WEBSOCKET_DISCONNECTED,
-    InfoBar,
-    QEasingCurve,
-    QPaintEvent,
-    QPainter,
-    QPropertyAnimation,
-    Property,
-    Qt,
-    Signal,
     event_bus,
-    bindText,
-    hasTranslation,
-    refreshBoundTexts,
-    setBoundText,
-    tr,
 )
-from imports import QColor
-from imports import (
+from services.events.events import _200MS_TICK
+from PySide6.QtGui import QColor
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
-    QLayout,
     QLabel,
+    QLayout,
+    QSizePolicy,
     QSlider,
+    QSpacerItem,
     QVBoxLayout,
     QWidget,
-    QSizePolicy,
-    QSpacerItem,
-    QTimer,
 )
 from qfluentwidgets import (
     CardWidget,

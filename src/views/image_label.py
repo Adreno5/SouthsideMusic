@@ -2,22 +2,10 @@ from __future__ import annotations
 
 from typing import override
 
-from imports import (
-    QFrame,
-    QIcon,
-    QLabel,
-    QOpenGLWidget,
-    QPainter,
-    QPaintEvent,
-    QPoint,
-    QRect,
-    QRegion,
-    QStyle,
-    QStyleOption,
-    Qt,
-    QTimer,
-    QWidget,
-)
+from PySide6.QtCore import QPoint, QRect, QTimer
+from PySide6.QtGui import QIcon, QPainter, QPaintEvent, QRegion, Qt
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
+from PySide6.QtWidgets import QFrame, QLabel, QStyle, QStyleOption, QWidget
 
 
 class _ImageCanvas(QOpenGLWidget):

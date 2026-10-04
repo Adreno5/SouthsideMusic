@@ -3,16 +3,20 @@ from __future__ import annotations
 import logging
 
 from core.app_context import AppContext
-from imports import _50MS_TICK, LANGUAGE_CHANGED, ComboBox, QSize, Signal, tr
-from imports import QPixmap
-from imports import (
+from PySide6.QtCore import QSize, Signal
+from qfluentwidgets import ComboBox
+from core.i18n import tr
+from services.events import LANGUAGE_CHANGED
+from services.events.events import _50MS_TICK
+from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import (
     QAbstractItemView,
     QListWidget,
     QListWidgetItem,
     QVBoxLayout,
     QWidget,
-    event_bus,
 )
+from services.events import event_bus
 from views.folder_card import SearchCloudFolderCard
 from views.list_widget import SListWidget
 

@@ -426,6 +426,167 @@ def test_musixmatch_uses_reference_search_parameters_and_validated_lyrics() -> N
     assert call.call_args_list[0].args[1]['q_duration'] == 100
 
 
+def test_pick_translation_prefers_source_in_use_over_closer_count() -> None:
+    lyric = '[00:01.000]a\n[00:02.000]b\n[00:03.000]c'
+    original = sources._Raw('kugou', lyric, '', False, [])
+    paired = sources._Raw('kugou', lyric, '', False, ['甲', '乙'])
+    closer = sources._Raw('qq', lyric, '', False, ['甲', '乙', '丙'])
+    assert sources._pickTranslation(original, [closer, paired]) is paired
+
+
+def test_pick_translation_falls_back_to_closest_line_count() -> None:
+    original = sources._Raw(
+        'musixmatch', '[00:01.000]a\n[00:02.000]b\n[00:03.000]c', '', False, []
+    )
+    far = sources._Raw('qq', 'x', '', False, ['甲'])
+    near = sources._Raw('kugou', 'x', '', False, ['甲', '乙', '丙'])
+    assert sources._pickTranslation(original, [far, near]) is near
+
+
+def test_pick_translation_ignores_placeholder_and_credit_lines() -> None:
+    original = sources._Raw('lrclib', '[00:01.000]a', '', False, [])
+    hollow = sources._Raw(
+        'netease-public',
+        'x',
+        '',
+        False,
+        ['', '', 'QQ音乐享有本翻译作品的著作权'],
+    )
+    assert sources._translationLines(hollow) == []
+    assert sources._pickTranslation(original, [hollow]) is None
+
+
+def test_iter_lyric_updates_keeps_in_use_source_translation() -> None:
+    netease_release = threading.Event()
+    qq_raw = sources._Raw('qq', '[00:01.000]a\n[00:02.000]b', '', False, ['甲', '乙'])
+    netease_raw = sources._Raw(
+        'netease-ncm',
+        '[00:01.000]a\n[00:02.000]b',
+        '[1000,500](1000,500,0)a\n[2000,500](2000,500,0)b',
+        True,
+        ['甲', '乙'],
+    )
+
+    def fetch_qq(track: Any, cancel: Any) -> sources._Raw:
+        return qq_raw
+
+    def fetch_netease(netease_id: Any, cancel: Any) -> sources._Raw:
+        netease_release.wait(2)
+        return netease_raw
+
+    tasks = [
+        ('qq', fetch_qq, (None,)),
+        ('netease-ncm', fetch_netease, (None,)),
+    ]
+    with patch.object(sources, '_tasks', return_value=tasks):
+        updates = sources.iterLyricUpdates('Song', 'Singer', '42', 100000)
+        first = next(updates)
+        netease_release.set()
+        second = next(updates)
+        rest = list(updates)
+    assert first.source == 'qq' and first.translation_source == 'qq'
+    assert second.source == 'netease-ncm'
+    assert second.translation_source == 'netease-ncm'
+    assert rest == []
+
+
+def test_iter_lyric_updates_switches_to_closest_translation_source() -> None:
+    release = {'qq': threading.Event(), 'kugou': threading.Event()}
+    lrclib_raw = sources._Raw(
+        'lrclib', '[00:01.000]a\n[00:02.000]b\n[00:03.000]c', '', False, []
+    )
+    qq_raw = sources._Raw('qq', 'x', '', False, ['甲'])
+    kugou_raw = sources._Raw('kugou', 'x', '', False, ['甲', '乙', '丙'])
+
+    def fetch_lrclib(track: Any, cancel: Any) -> sources._Raw:
+        return lrclib_raw
+
+    def fetch_qq(track: Any, cancel: Any) -> sources._Raw:
+        release['qq'].wait(2)
+        return qq_raw
+
+    def fetch_kugou(track: Any, cancel: Any) -> sources._Raw:
+        release['kugou'].wait(2)
+        return kugou_raw
+
+    tasks = [
+        ('lrclib', fetch_lrclib, (None,)),
+        ('qq', fetch_qq, (None,)),
+        ('kugou', fetch_kugou, (None,)),
+    ]
+    with patch.object(sources, '_tasks', return_value=tasks):
+        updates = sources.iterLyricUpdates('Song', 'Singer', '42', 100000)
+        first = next(updates)
+        release['qq'].set()
+        second = next(updates)
+        release['kugou'].set()
+        third = next(updates)
+        rest = list(updates)
+    assert first.source == 'lrclib' and first.translation_source == ''
+    assert second.source == 'lrclib' and second.translation_source == 'qq'
+    assert third.source == 'lrclib' and third.translation_source == 'kugou'
+    assert rest == []
+
+
+def test_exceeds_duration_compares_last_line_against_song_length() -> None:
+    raw = sources._Raw('kugou', '[00:10.000]a\n[01:00.000]b', '', False, [])
+    assert sources._exceedsDuration(raw, 50000)
+    assert not sources._exceedsDuration(raw, 60000)
+    assert not sources._exceedsDuration(raw, 0)
+    word = sources._Raw(
+        'netease-ncm',
+        '[00:10.000]a',
+        '[10000,500](10000,500,0)a\n[300000,500](300000,500,0)b',
+        True,
+        [],
+    )
+    assert sources._exceedsDuration(word, 60000)
+    assert not sources._exceedsDuration(
+        sources._Raw('lrclib', '', '', False, []), 60000
+    )
+
+
+def test_exceeds_duration_ignores_trailing_credit_line() -> None:
+    raw = sources._Raw('qq', '[00:10.000]a\n[09:00.000]作词: someone', '', False, [])
+    assert not sources._exceedsDuration(raw, 50000)
+
+
+def test_iter_lyric_updates_ignores_source_longer_than_song() -> None:
+    qq_release = threading.Event()
+    valid = sources._Raw('netease-ncm', '[00:10.000]a\n[00:20.000]b', '', False, [])
+    too_long = sources._Raw('qq', '[00:10.000]a\n[05:00.000]b', '', False, ['甲', '乙'])
+
+    def fetch_netease(netease_id: Any, cancel: Any) -> sources._Raw:
+        return valid
+
+    def fetch_qq(track: Any, cancel: Any) -> sources._Raw:
+        qq_release.wait(2)
+        return too_long
+
+    tasks = [
+        ('netease-ncm', fetch_netease, (None,)),
+        ('qq', fetch_qq, (None,)),
+    ]
+    with patch.object(sources, '_tasks', return_value=tasks):
+        updates = sources.iterLyricUpdates('Song', 'Singer', '42', 60000)
+        first = next(updates)
+        qq_release.set()
+        rest = list(updates)
+    assert first.source == 'netease-ncm' and first.translation_source == ''
+    assert rest == []
+
+
+def test_iter_lyric_updates_rejects_sole_source_longer_than_song() -> None:
+    too_long = sources._Raw('qq', '[00:10.000]a\n[05:00.000]b', '', False, [])
+
+    def fetch_qq(track: Any, cancel: Any) -> sources._Raw:
+        return too_long
+
+    tasks = [('qq', fetch_qq, (None,))]
+    with patch.object(sources, '_tasks', return_value=tasks):
+        assert list(sources.iterLyricUpdates('Song', 'Singer', '42', 60000)) == []
+
+
 def main() -> None:
     checks = sorted(name for name in globals() if name.startswith('test_'))
     for name in checks:

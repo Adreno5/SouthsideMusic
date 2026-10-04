@@ -26,6 +26,7 @@ from core.lyric_formats import (
     alignTranslation,
     contentLines,
     hasWordTiming,
+    isInfoLine,
     krcDecrypt,
     krcTranslations,
     parseAny,
@@ -476,8 +477,46 @@ def _neteaseRaw(source: str, lyric: str, yrc: str, translated: str) -> _Raw | No
     )
 
 
+def _displayText(raw: _Raw) -> str:
+    return raw.yrc_lyric if raw.has_word and raw.yrc_lyric else raw.lyric
+
+
+_DURATION_SLACK_MS = 1000
+
+
+def _exceedsDuration(raw: _Raw, duration_ms: int) -> bool:
+    if duration_ms <= 0:
+        return False
+    lines = contentLines(parseAny(_displayText(raw)))
+    last = max((line.start for line in lines if not isInfoLine(line.text)), default=0)
+    return last > duration_ms + _DURATION_SLACK_MS
+
+
+def _translationLines(raw: _Raw) -> list[str]:
+    return [text for text in raw.translations if text.strip() and not isInfoLine(text)]
+
+
+def _pickTranslation(original: _Raw, raws: Sequence[_Raw]) -> _Raw | None:
+    paired = next(
+        (
+            raw
+            for raw in raws
+            if raw.source == original.source and _translationLines(raw)
+        ),
+        None,
+    )
+    if paired is not None:
+        return paired
+    candidates = [raw for raw in raws if _translationLines(raw)]
+    if not candidates:
+        return None
+    lines = contentLines(parseAny(_displayText(original)))
+    count = sum(1 for line in lines if not isInfoLine(line.text))
+    return min(candidates, key=lambda raw: abs(count - len(_translationLines(raw))))
+
+
 def _assemble(raw: _Raw, translation: _Raw | None) -> LyricCandidate:
-    display = raw.yrc_lyric if raw.has_word and raw.yrc_lyric else raw.lyric
+    display = _displayText(raw)
     translated = ''
     translation_source = ''
     if translation is not None:
@@ -1115,7 +1154,11 @@ def iterLyricUpdates(
     cancel = threading.Event()
     executor = ThreadPoolExecutor(max_workers=len(tasks))
     original = _buildRaw(cached) if cached else None
-    translation = original if original is not None and original.translations else None
+    if original is not None and _exceedsDuration(original, duration_ms):
+        _logger.info('cached lyrics exceed song duration')
+        original = None
+    raws: list[_Raw] = [original] if original is not None else []
+    translation: _Raw | None = None
     try:
         futures = {
             executor.submit(fetch, *args, cancel): name for name, fetch, args in tasks
@@ -1133,17 +1176,21 @@ def iterLyricUpdates(
                 if raw is None:
                     _logger.info('lyric source %s returned nothing', name)
                     continue
+                if _exceedsDuration(raw, duration_ms):
+                    _logger.info('lyric source %s exceeds song duration', name)
+                    continue
+                raws.append(raw)
                 changed = False
-                if raw.translations and translation is None:
-                    translation = raw
-                    changed = True
                 if (raw.lyric or raw.yrc_lyric) and (
                     original is None or (raw.has_word and not original.has_word)
                 ):
                     original = raw
                     changed = True
-                    if raw.translations:
-                        translation = raw
+                if original is not None:
+                    picked = _pickTranslation(original, raws)
+                    if picked is not translation:
+                        translation = picked
+                        changed = True
                 if not changed or original is None:
                     continue
                 _logger.info(
@@ -1153,7 +1200,12 @@ def iterLyricUpdates(
                     translation.source if translation else '',
                 )
                 yield _assemble(original, translation)
-            if original is not None and original.has_word and translation is not None:
+            if (
+                original is not None
+                and original.has_word
+                and translation is not None
+                and translation.source == original.source
+            ):
                 return
     finally:
         cancel.set()

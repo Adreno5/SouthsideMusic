@@ -9,12 +9,13 @@ import winreg
 from typing import TYPE_CHECKING
 
 from core.models import IMAGE_DATA_DIR, SongStorable, TrackDetailInfo
-from imports import QObject, QTimer
+from imports import QObject
 from services.events.event_bus import event_bus
 from services.events.events import (
     PLAY_STATE_CHANGED,
     PLAY_LAST,
     PLAY_NEXT,
+    SECOND_TICK,
     SONG_CHANGED,
 )
 from winrt.windows.media import (
@@ -110,9 +111,7 @@ class SmtcController(QObject):
         self.ctx = ctx
         self._smtc: SystemMediaTransportControls | None = None
         self._cover: RandomAccessStreamReference | None = None
-        self._timer = QTimer(self)
-        self._timer.setInterval(1000)
-        self._timer.timeout.connect(self._tick)
+        self._ticking = False
         event_bus.subscribe(SONG_CHANGED, self._onSongChanged)
         event_bus.subscribe(PLAY_STATE_CHANGED, self._onPlayStateChanged)
 
@@ -127,13 +126,22 @@ class SmtcController(QObject):
             return
         self._smtc.is_enabled = enabled
         if not enabled:
-            self._timer.stop()
+            self._setTicking(False)
             return
         self._updateMetadata()
         self._updateTimeline()
         self._updatePlayMode()
         self._setStatus(self.ctx.player.isPlaying())
-        self._timer.start()
+        self._setTicking(True)
+
+    def _setTicking(self, ticking: bool) -> None:
+        if ticking == self._ticking:
+            return
+        self._ticking = ticking
+        if ticking:
+            event_bus.subscribe(SECOND_TICK, self._tick)
+        else:
+            event_bus.unsubscribe(SECOND_TICK, self._tick)
 
     def _create(self) -> None:
         window = self.ctx.main_window

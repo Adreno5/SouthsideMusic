@@ -7,6 +7,7 @@ import shiboken6
 
 from core.backend import getBackend
 from imports import (
+    _50MS_TICK,
     AvatarWidget,
     CaptionLabel,
     FluentIcon,
@@ -17,7 +18,6 @@ from imports import (
     QPixmap,
     QSizePolicy,
     QSpacerItem,
-    QTimer,
     QVBoxLayout,
     QWidget,
     Qt,
@@ -27,6 +27,7 @@ from imports import (
     BodyLabel,
     SubtitleLabel,
     CardWidget,
+    event_bus,
 )
 from views.list_widget import SScrollArea
 from views.translation_handler import TranslationHandler
@@ -213,9 +214,7 @@ class CommentsPage(SScrollArea):
         self.setWidget(widget)
         self.setWidgetResizable(True)
 
-        self.check_timer = QTimer(self)
-        self.check_timer.timeout.connect(self.checkRect)
-        self.check_timer.start(50)
+        event_bus.subscribe(_50MS_TICK, self.checkRect)
 
     def _getTextPayload(self, text: str) -> int:
         units = sum(2 if '\u4e00' <= char <= '\u9fff' else 1 for char in text)

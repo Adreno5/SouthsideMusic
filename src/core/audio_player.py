@@ -33,6 +33,7 @@ from core.beat import BeatDetector, BeatFrame
 from core.config import cfg
 from core.pcm_timeline import PcmTimeline
 from imports import (
+    _100MS_TICK,
     DB_CHANGED,
     Property,
     QEasingCurve,
@@ -242,9 +243,7 @@ class AudioPlayer(QObject):
         self.fft_thread = threading.Thread(target=self._fft_worker, daemon=True)
         self.fft_thread.start()
 
-        self._telemetry_timer = QTimer(self)
-        self._telemetry_timer.timeout.connect(self._emitPlaybackTelemetry)
-        self._telemetry_timer.start(100)
+        event_bus.subscribe(_100MS_TICK, self._emitPlaybackTelemetry)
 
         event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
 
@@ -1551,7 +1550,7 @@ class AudioPlayer(QObject):
 
     def shutdown(self) -> None:
         self._logger.info('shutting down')
-        self._telemetry_timer.stop()
+        event_bus.unsubscribe(_100MS_TICK, self._emitPlaybackTelemetry)
         event_bus.unsubscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
         self.stop()
         self.stop_fft_thread()

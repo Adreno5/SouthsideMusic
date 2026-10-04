@@ -13,6 +13,7 @@ from core.i18n import bindText, tr
 from core.icons import bindIcon
 from core.llm_tools import LLMToolRunner, llmToolSchemas
 from imports import (
+    _200MS_TICK,
     CardWidget,
     ComboBox,
     FluentIcon,
@@ -29,7 +30,6 @@ from imports import (
     QSizePolicy,
     QSpacerItem,
     QTextCursor,
-    QTimer,
     QVBoxLayout,
     QWidget,
     Qt,
@@ -37,6 +37,7 @@ from imports import (
     TextEdit,
     TransparentPushButton,
     TransparentToolButton,
+    event_bus,
 )
 from views.animated_layout import SFlowLayout
 from views.chatting_viewer import ChattingViewer
@@ -213,8 +214,7 @@ class LLMViewerPanel(QFrame):
         llm_input_layout.addLayout(buttons_layout)
         llm_panel_layout.addWidget(self.llm_input_widget)
 
-        self.scroll_timer = QTimer(self)
-        self.scroll_timer.timeout.connect(self._scrollLLMChatToBottom)
+        self._scroll_ticking = False
 
     def _refreshInputStyle(self) -> None:
         self.llm_input.setStyleSheet(
@@ -459,7 +459,7 @@ class LLMViewerPanel(QFrame):
                     self._logger.exception(e)
 
             try:
-                self.ctx.addScheduledTask(lambda: self.scroll_timer.start(200))
+                self.ctx.addScheduledTask(lambda: self._setScrollTicking(True))
                 for chunk in self.ctx.llm.streamChat(
                     message,
                     history,
@@ -689,7 +689,7 @@ class LLMViewerPanel(QFrame):
         self.llm_stream_viewer = None
         self.llm_typing_viewers.clear()
         self._setLLMSendButtonStreaming(False)
-        self.scroll_timer.stop()
+        self._setScrollTicking(False)
 
     def editLLMMessage(self, index: int) -> None:
         if self.llm_streaming:
@@ -775,7 +775,7 @@ class LLMViewerPanel(QFrame):
             bindIcon(self.llm_send_btn, 'stop_gen')
             self.llm_send_btn.setToolTip(tr('main_window.llm_stop'))
         else:
-            self.scroll_timer.stop()
+            self._setScrollTicking(False)
             self.llm_send_btn.setIcon(FluentIcon.SEND)
             self.llm_send_btn.setToolTip(tr('main_window.llm_send'))
 
@@ -973,7 +973,7 @@ class LLMViewerPanel(QFrame):
         self.llm_typing_viewers.discard(viewer)
         if not self.llm_streaming:
             if not self.llm_typing_viewers:
-                self.scroll_timer.stop()
+                self._setScrollTicking(False)
         self._scrollLLMChatToBottom()
 
     def _isCurrentLLMGeneration(self, generation: int) -> bool:
@@ -993,6 +993,15 @@ class LLMViewerPanel(QFrame):
 
     def _insertBeforeStretch(self, widget: QWidget) -> None:
         self.llm_chat_layout.addWidget(widget)
+
+    def _setScrollTicking(self, ticking: bool) -> None:
+        if ticking == self._scroll_ticking:
+            return
+        self._scroll_ticking = ticking
+        if ticking:
+            event_bus.subscribe(_200MS_TICK, self._scrollLLMChatToBottom)
+        else:
+            event_bus.unsubscribe(_200MS_TICK, self._scrollLLMChatToBottom)
 
     def _scrollLLMChatToBottom(self) -> None:
         bar = self.llm_chat_scroller.verticalScrollBar()

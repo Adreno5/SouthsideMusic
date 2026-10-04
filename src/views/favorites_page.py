@@ -9,6 +9,7 @@ import shiboken6
 from core.app_context import AppContext
 from core.qt_utils import clearListWidget
 from imports import (
+    _50MS_TICK,
     FAVORITES_CHANGED,
     MWINDOW_REFRESH_FOLDERS,
     PLAYLIST_CHANGED,
@@ -141,9 +142,7 @@ class FavoritesPage(QWidget):
         self._batch_timer.setSingleShot(True)
         self._batch_timer.timeout.connect(self._appendSongBatch)
         self.song_viewer.verticalScrollBar().valueChanged.connect(self._onScroll)
-        self._lazy_timer = QTimer(self)
-        self._lazy_timer.timeout.connect(self._checkVisibleCards)
-        self._lazy_timer.start(50)
+        event_bus.subscribe(_50MS_TICK, self._checkVisibleCards)
 
         self.is_cloud = False
         self.curr_folder: LocalFolderInfo | None = None

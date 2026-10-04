@@ -11,6 +11,7 @@ from core.config import cfg
 from core.color import mixColor
 from core.qt_utils import clearListWidget
 from imports import (
+    _50MS_TICK,
     BACKGROUND_RATIO_CHANGED,
     PLAY_PLAYLIST_STORABLE,
     PLAYLIST_CHANGED,
@@ -79,9 +80,7 @@ class PlaylistPage(QWidget):
 
         self._song_cards: list[PlaylistSongCard] = []
         self._playlist_refresh_seq = 0
-        self._lazy_timer = QTimer(self)
-        self._lazy_timer.timeout.connect(self._checkVisibleCards)
-        self._lazy_timer.start(50)
+        event_bus.subscribe(_50MS_TICK, self._checkVisibleCards)
 
         btn_layout = QHBoxLayout()
         self.removeall_btn = TransparentPushButton('')

@@ -752,6 +752,14 @@ from qfluentwidgets import *  # type: ignore
 
 from services.events import *
 
+from services.events.events import (
+    _16MS_TICK as _16MS_TICK,
+    _20MS_TICK as _20MS_TICK,
+    _50MS_TICK as _50MS_TICK,
+    _100MS_TICK as _100MS_TICK,
+    _200MS_TICK as _200MS_TICK,
+)
+
 from core.i18n import bindText, hasTranslation, refreshBoundTexts, setBoundText, tr
 
 QOpenGLWidget = QtOpenGLWidgets.QOpenGLWidget

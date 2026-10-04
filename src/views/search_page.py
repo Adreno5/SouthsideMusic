@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from core.app_context import AppContext
-from imports import LANGUAGE_CHANGED, ComboBox, QSize, QTimer, Signal, tr
+from imports import _50MS_TICK, LANGUAGE_CHANGED, ComboBox, QSize, Signal, tr
 from imports import QPixmap
 from imports import (
     QAbstractItemView,
@@ -69,9 +69,7 @@ class SearchPage(QWidget):
 
         if lw:
             lw.subtitle('  starting scroll monitor')
-        self.check_timer = QTimer(self)
-        self.check_timer.timeout.connect(self.checkRect)
-        self.check_timer.start(50)
+        event_bus.subscribe(_50MS_TICK, self.checkRect)
 
         self.cards: list[SearchSongCard | SearchCloudFolderCard] = []
         event_bus.subscribe(LANGUAGE_CHANGED, self._refreshSearchTypeBox)

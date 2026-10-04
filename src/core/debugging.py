@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from core.app_context import AppContext
 from services.events import event_bus
-from imports import QObject, QTimer, QLabel
+from imports import _20MS_TICK, QObject, QLabel
 from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 from core.frame_profiler import frame_profiler
 import logging
@@ -21,20 +21,30 @@ class Debugging(QObject):
         ] = []  # [ {'debug info source name': ['line1', 'line2', ...]}, ... ]
 
         self.content_labels: list[QLabel] = []
-
-        self.collect_timer = QTimer(self)
-        self.collect_timer.timeout.connect(self.collectInfo)
+        self._collecting = False
 
         event_bus.subscribe(EMIT_DEBUG_INFO, self.onDebugInfo)
 
+    def isCollecting(self) -> bool:
+        return self._collecting
+
+    def setCollecting(self, collecting: bool) -> None:
+        if collecting == self._collecting:
+            return
+        self._collecting = collecting
+        if collecting:
+            event_bus.subscribe(_20MS_TICK, self.collectInfo)
+        else:
+            event_bus.unsubscribe(_20MS_TICK, self.collectInfo)
+
     def toggle(self) -> None:
         if not self.ctx.debugging:
-            self.collect_timer.start(20)
+            self.setCollecting(True)
             self.ctx.debugging = True
             frame_profiler.setEnabled(True)
             self.collectInfo()
         else:
-            self.collect_timer.stop()
+            self.setCollecting(False)
             self.ctx.debugging = False
             frame_profiler.setEnabled(False)
 

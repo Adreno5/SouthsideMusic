@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Callable, cast, override
 from core.app_context import AppContext
 
 from imports import (
+    _200MS_TICK,
     BACKGROUND_RATIO_CHANGED,
     DB_CHANGED,
     DESKTOP_LYRICS_ANCHOR_CHANGED,
@@ -1117,17 +1118,7 @@ class SettingPage(QWidget):
         self.status_widget.setLayout(status_layout)
         self.addSeparateWidget(self.status_widget, advanced=True)
 
-        self.update_statuses_timer = QTimer(self)
-        self.update_statuses_timer.timeout.connect(
-            lambda: self.sent_label.setText(f'{self.ctx.ws_handler.sent:.2f}')
-        )
-        self.update_statuses_timer.timeout.connect(
-            lambda: self.received_label.setText(f'{self.ctx.ws_handler.received:.2f}')
-        )
-        self.update_statuses_timer.timeout.connect(
-            lambda: self.latency_label.setText(f'{self.ctx.ws_handler.ping:.2f}')
-        )
-        self.update_statuses_timer.start(200)
+        event_bus.subscribe(_200MS_TICK, self._updateWsStatuses)
 
         self.disconnect_btn = TransparentPushButton('')
         bindText(self.disconnect_btn, 'setting_page.disconnect')
@@ -1168,6 +1159,11 @@ class SettingPage(QWidget):
             'ws_fft_interval',
         )
         self.addInfoBlock('setting_page.notice', 'setting_page.ws_interval_tip')
+
+    def _updateWsStatuses(self) -> None:
+        self.sent_label.setText(f'{self.ctx.ws_handler.sent:.2f}')
+        self.received_label.setText(f'{self.ctx.ws_handler.received:.2f}')
+        self.latency_label.setText(f'{self.ctx.ws_handler.ping:.2f}')
 
     def deviceChanged(self, idx: int):
         try:

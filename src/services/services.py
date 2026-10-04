@@ -19,6 +19,11 @@ from core.downloader import asyncTask
 from core.favorites import favorites_manager
 from core.frame_profiler import frame_profiler
 from imports import (
+    _16MS_TICK,
+    _20MS_TICK,
+    _50MS_TICK,
+    _100MS_TICK,
+    _200MS_TICK,
     BACKGROUND_RATIO_CHANGED,
     CLOUD_ADD_TO_LOCAL,
     CLOUD_REMOVE_FOLDER,
@@ -44,6 +49,15 @@ from imports import (
     tr,
 )
 from views.folder_card import CloudFolderCard, LocalFolderCard
+
+_TICK_INTERVALS: tuple[tuple[str, int], ...] = (
+    (_16MS_TICK, 16),
+    (_20MS_TICK, 20),
+    (_50MS_TICK, 50),
+    (_100MS_TICK, 100),
+    (_200MS_TICK, 200),
+    (SECOND_TICK, 1000),
+)
 
 
 class EventsServices(QObject):
@@ -72,9 +86,10 @@ class EventsServices(QObject):
         self._screen.refreshRateChanged.connect(self._screenRefreshRateChanged)
         event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
 
-        self.sec_timer = QTimer(self)
-        self.sec_timer.timeout.connect(lambda: event_bus.emit(SECOND_TICK))
-        self.sec_timer.start(1000)
+        self._tick_deadlines_ns: list[tuple[str, int, int]] = [
+            (event, interval * 1_000_000, self.last_repaint + interval * 1_000_000)
+            for event, interval in _TICK_INTERVALS
+        ]
 
         def _startListen():
             theme.getDarkdetect().listener(
@@ -83,9 +98,7 @@ class EventsServices(QObject):
 
         threading.Thread(target=_startListen, daemon=True).start()
 
-        self.pids_collect_timer = QTimer(self)
-        self.pids_collect_timer.timeout.connect(self.collectPids)
-        self.pids_collect_timer.start(1000)
+        event_bus.subscribe(SECOND_TICK, self.collectPids)
 
         event_bus.subscribe(
             SONG_CHANGED, lambda s: event_bus.emit(BACKGROUND_RATIO_CHANGED)
@@ -287,6 +300,7 @@ class EventsServices(QObject):
             handle.screenChanged.connect(self._onScreenChanged)
             self._onScreenChanged(handle.screen())
         now = time.perf_counter_ns()
+        self._emitTicks(now)
         if now >= self._deadline_ns:
             if frame_profiler.enabled:
                 frame_profiler.beginFrame()
@@ -305,6 +319,18 @@ class EventsServices(QObject):
         self.repaint_timer.start(
             max(1, math.ceil((self._deadline_ns - now) / 1_000_000))
         )
+
+    def _emitTicks(self, now: int) -> None:
+        deadlines = self._tick_deadlines_ns
+        for index, (event, interval_ns, deadline_ns) in enumerate(deadlines):
+            if now < deadline_ns:
+                continue
+            deadlines[index] = (
+                event,
+                interval_ns,
+                deadline_ns + ((now - deadline_ns) // interval_ns + 1) * interval_ns,
+            )
+            event_bus.emit(event)
 
     def _emitRepaint(self) -> None:
         now = time.perf_counter_ns()

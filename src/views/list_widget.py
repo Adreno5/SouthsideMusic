@@ -10,6 +10,7 @@ from core.icons import CachedFluentIcon
 from core.models import AnimatingObject
 from core.smooth import EaseOutTimer
 from imports import (
+    _16MS_TICK,
     REFRESH_RATE_CHANGED,
     Property,
     QAbstractItemView,
@@ -34,7 +35,6 @@ from imports import (
     QSize,
     QStyleOptionViewItem,
     Qt,
-    QTimer,
     QWheelEvent,
     QWidget,
     event_bus,
@@ -456,9 +456,7 @@ class SListWidget(ListWidget):
         self.scrollDelegate = SSmoothDelegate(self)
         self.viewport().installEventFilter(self)
 
-        self.ltimer = QTimer(self)
-        self.ltimer.timeout.connect(self._tick)
-        self.ltimer.start(16)
+        event_bus.subscribe(_16MS_TICK, self._tick)
 
     @override
     def setItemWidget(self, item: QListWidgetItem, widget: QWidget) -> None:
@@ -578,9 +576,7 @@ class SScrollArea(SmoothScrollArea):
 
         self.viewport().installEventFilter(self)
 
-        self.ltimer = QTimer(self)
-        self.ltimer.timeout.connect(self._tick)
-        self.ltimer.start(16)
+        event_bus.subscribe(_16MS_TICK, self._tick)
 
     def _create_guide_anim(self, prop: bytes) -> QPropertyAnimation:
         anim = QPropertyAnimation(self, prop)

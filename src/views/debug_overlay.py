@@ -19,6 +19,8 @@ from core.lyric_video_export import (
 from core.models import DATA_DIR
 from core.smooth import EaseOutTimer
 from imports import (
+    _50MS_TICK,
+    SECOND_TICK,
     QColor,
     QFont,
     QFontMetricsF,
@@ -86,8 +88,7 @@ class DebugOverlay(QOpenGLWidget):
         self.setMinimumSize(420, 360)
 
         self.mem_datas: dict[str, deque[int]] = {}
-        self.collect_timer = QTimer(self)
-        self.collect_timer.timeout.connect(self.updateDatas)
+        self._ticks_active = False
         self.total_mem = psutil.virtual_memory().total
         self.mmax_value: EaseOutTimer = EaseOutTimer(1, 2)
 
@@ -97,9 +98,6 @@ class DebugOverlay(QOpenGLWidget):
         self.last_wall: dict[int, float] = {}
         self.cmax_value: EaseOutTimer = EaseOutTimer(1, 2)
         self.tracked_pids: dict[str, set[int]] = {}
-
-        self.raise_timer = QTimer(self)
-        self.raise_timer.timeout.connect(self.tryRaise)
 
         self.process_cache: dict[int, psutil.Process] = {}
 
@@ -127,19 +125,31 @@ class DebugOverlay(QOpenGLWidget):
     def showEvent(self, event: QShowEvent) -> None:
         if self._capturing:
             return super().showEvent(event)
-        self.collect_timer.start(50)
-        self.raise_timer.start(1000)
+        self._startTicks()
         event_bus.subscribe(REPAINT_ALWAYS, self.refresh)
         return super().showEvent(event)
 
     def hideEvent(self, event: QHideEvent) -> None:
-        self.collect_timer.stop()
-        self.raise_timer.stop()
+        self._stopTicks()
         self._profile_history.clear()
         if not self._capturing:
             event_bus.unsubscribe(REPAINT_ALWAYS, self.refresh)
         self.ctx.debugging = False
         return super().hideEvent(event)
+
+    def _startTicks(self) -> None:
+        if self._ticks_active:
+            return
+        self._ticks_active = True
+        event_bus.subscribe(_50MS_TICK, self.updateDatas)
+        event_bus.subscribe(SECOND_TICK, self.tryRaise)
+
+    def _stopTicks(self) -> None:
+        if not self._ticks_active:
+            return
+        self._ticks_active = False
+        event_bus.unsubscribe(_50MS_TICK, self.updateDatas)
+        event_bus.unsubscribe(SECOND_TICK, self.tryRaise)
 
     def tryRaise(self):
         if self.isHidden():
@@ -367,8 +377,8 @@ class DebugOverlay(QOpenGLWidget):
             return
         self._capturing = True
         self.export_button.setEnabled(False)
-        self._resume_debug_collection = self.ctx.debugging_obj.collect_timer.isActive()
-        self.ctx.debugging_obj.collect_timer.stop()
+        self._resume_debug_collection = self.ctx.debugging_obj.isCollecting()
+        self.ctx.debugging_obj.setCollecting(False)
         self.hide()
         frame_profiler.startCapture()
         self._capture_deadline_ns = time.perf_counter_ns() + 10_000_000_000
@@ -401,7 +411,7 @@ class DebugOverlay(QOpenGLWidget):
             self.export_button.setEnabled(True)
             if self.ctx.debugging:
                 if self._resume_debug_collection:
-                    self.ctx.debugging_obj.collect_timer.start(20)
+                    self.ctx.debugging_obj.setCollecting(True)
                 self.show()
                 self.update()
 

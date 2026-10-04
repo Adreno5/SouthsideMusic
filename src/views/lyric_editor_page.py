@@ -10,6 +10,8 @@ from core.app_context import AppContext
 from core.lyrics import LyricInfo, YRCCharInfo, YRCLyricInfo
 from core.models import SongStorable
 from imports import (
+    _200MS_TICK,
+    _50MS_TICK,
     PLAY_STATE_CHANGED,
     PLAYBACK_LYRICS_UPDATED,
     QEvent,
@@ -19,7 +21,6 @@ from imports import (
     QSizePolicy,
     QSpacerItem,
     QStackedLayout,
-    QTimer,
     Qt,
     QVBoxLayout,
     QWidget,
@@ -142,12 +143,8 @@ class LyricEditorPage(QWidget):
         self._started_beat = False
         self._finished_beat = False
         self._space_press_started_at = 0.0
-        self._status_timer = QTimer(self)
-        self._status_timer.setInterval(50)
-        self._status_timer.timeout.connect(self._updateHoldingStatus)
-        self._finish_timer = QTimer(self)
-        self._finish_timer.setInterval(200)
-        self._finish_timer.timeout.connect(self._checkBeatFinished)
+        self._status_ticking = False
+        self._finish_ticking = False
 
         self.setObjectName('lyric_editor_page')
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -162,6 +159,24 @@ class LyricEditorPage(QWidget):
 
         self._buildEditPage()
         self._buildBeatPage()
+
+    def _setStatusTicking(self, ticking: bool) -> None:
+        if ticking == self._status_ticking:
+            return
+        self._status_ticking = ticking
+        if ticking:
+            event_bus.subscribe(_50MS_TICK, self._updateHoldingStatus)
+        else:
+            event_bus.unsubscribe(_50MS_TICK, self._updateHoldingStatus)
+
+    def _setFinishTicking(self, ticking: bool) -> None:
+        if ticking == self._finish_ticking:
+            return
+        self._finish_ticking = ticking
+        if ticking:
+            event_bus.subscribe(_200MS_TICK, self._checkBeatFinished)
+        else:
+            event_bus.unsubscribe(_200MS_TICK, self._checkBeatFinished)
 
     def openForCurrentSong(self) -> bool:
         song = self._currentSong()
@@ -201,8 +216,8 @@ class LyricEditorPage(QWidget):
         self.beat_page.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def backToEdit(self) -> None:
-        self._finish_timer.stop()
-        self._status_timer.stop()
+        self._setFinishTicking(False)
+        self._setStatusTicking(False)
         self._setBeatActionsVisible(False)
         self.ctx.player.pause()
         event_bus.emit(PLAY_STATE_CHANGED, False)
@@ -375,8 +390,8 @@ class LyricEditorPage(QWidget):
         ]
 
     def _resetBeatState(self) -> None:
-        self._status_timer.stop()
-        self._finish_timer.stop()
+        self._setStatusTicking(False)
+        self._setFinishTicking(False)
         self._token_lines.clear()
         self._flat_tokens.clear()
         self._token_source_lines.clear()
@@ -427,7 +442,7 @@ class LyricEditorPage(QWidget):
             self.ctx.player.setPosition(0)
             self.ctx.player.resume()
             event_bus.emit(PLAY_STATE_CHANGED, True)
-            self._finish_timer.start()
+            self._setFinishTicking(True)
         else:
             self._manual_position = max(
                 self._manual_position,
@@ -435,12 +450,12 @@ class LyricEditorPage(QWidget):
             )
         self._last_press_at = now
         self._space_press_started_at = time.perf_counter()
-        self._status_timer.start()
+        self._setStatusTicking(True)
         self._updateHoldingStatus()
         self._recordBeat(self._manual_position)
 
     def _stopSpaceBeat(self) -> None:
-        self._status_timer.stop()
+        self._setStatusTicking(False)
         if not self._finished_beat:
             self._setStatusText('lyric_editor.beat_waiting')
 
@@ -483,8 +498,8 @@ class LyricEditorPage(QWidget):
 
     def _finishBeat(self) -> None:
         self._finished_beat = True
-        self._finish_timer.stop()
-        self._status_timer.stop()
+        self._setFinishTicking(False)
+        self._setStatusTicking(False)
         self._manual_position = max(
             self._manual_position,
             self.ctx.playing_manager.getDisplayLength(),

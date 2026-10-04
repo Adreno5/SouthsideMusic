@@ -6,6 +6,7 @@ from views.animated_layout import SFlowLayout
 from views.list_widget import SScrollArea
 from views.number_viewer import NumberViewer
 from imports import (
+    _50MS_TICK,
     PLAYLIST_CHANGED,
     PLAY_STORABLE,
     POST_PLAY_STORABLE,
@@ -79,9 +80,8 @@ class LibraryPage(SScrollArea):
             )
         )
 
-        self._lazy_timer = QTimer(self)
-        self._lazy_timer.timeout.connect(self._checkVisibleCards)
-        self._lazy_timer.start(50)
+        self._lazy_subscribed = False
+        self._setLazyTicking(True)
 
         self._debounce_timer = QTimer(self)
         self._debounce_timer.timeout.connect(self.searchSongs)
@@ -97,8 +97,17 @@ class LibraryPage(SScrollArea):
     def search(self) -> None:
         self._debounce_timer.start(500)
 
+    def _setLazyTicking(self, ticking: bool) -> None:
+        if ticking == self._lazy_subscribed:
+            return
+        self._lazy_subscribed = ticking
+        if ticking:
+            event_bus.subscribe(_50MS_TICK, self._checkVisibleCards)
+        else:
+            event_bus.unsubscribe(_50MS_TICK, self._checkVisibleCards)
+
     def searchSongs(self) -> None:
-        self._lazy_timer.stop()
+        self._setLazyTicking(False)
         keyword = self.search_input.text().strip().casefold()
         visible_count = 0
         contents_widget = self.widget()
@@ -164,7 +173,7 @@ class LibraryPage(SScrollArea):
             0,
             lambda: self.cards_layout.setGeometry(self.cards_layout.geometry()),
         )
-        self._lazy_timer.start(50)
+        self._setLazyTicking(True)
 
     def _rebuildCardsLayout(self) -> None:
         for index, card in enumerate(self._song_cards):

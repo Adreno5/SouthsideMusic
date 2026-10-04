@@ -13,6 +13,7 @@ from core.config import cfg
 from core.lyrics import LyricInfo, YRCLyricInfo
 from core.smooth import EaseInOutTimer, EaseOutTimer, SScrollTimer
 from imports import (
+    _200MS_TICK,
     QColor,
     QCursor,
     QMouseEvent,
@@ -23,7 +24,6 @@ from imports import (
     QRect,
     QSize,
     Qt,
-    QTimer,
     QVBoxLayout,
     QWheelEvent,
     QWidget,
@@ -38,6 +38,7 @@ from services.events.events import (
     EMIT_DEBUG_INFO,
     REPAINT,
     REPAINT_ALWAYS,
+    SECOND_TICK,
 )
 from views.lyrics_viewer import LyricsViewer
 from views.playing_page import _artists_text
@@ -75,13 +76,8 @@ class DesktopLyricsViewer(LyricsViewer):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._keepOnTop()
 
-        self.keep_top_timer = QTimer(self)
-        self.keep_top_timer.timeout.connect(self._keepOnTop)
-        self.keep_top_timer.start(1000)
-
-        self.check_mouse_timer = QTimer(self)
-        self.check_mouse_timer.timeout.connect(self._checkMouse)
-        self.check_mouse_timer.start(200)
+        event_bus.subscribe(SECOND_TICK, self._keepOnTop)
+        event_bus.subscribe(_200MS_TICK, self._checkMouse)
 
         event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
         event_bus.unsubscribe(REPAINT, self._onRepaintTick)

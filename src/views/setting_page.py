@@ -106,6 +106,11 @@ class SectionContainer(QWidget):
         self._title = title
         self._expanded = True
         self._content_height = 0
+        self._content_offset = 0
+        self._height_from = 0
+        self._height_to = 0
+        self._offset_from = 0
+        self._offset_to = 0
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -167,6 +172,7 @@ class SectionContainer(QWidget):
 
     def collapseNow(self) -> None:
         self._expanded = False
+        self._content_offset = 0
         self.content_view.setFixedHeight(0)
         self.overlay.setGeometry(self.content_view.rect())
         self.overlay.hide()
@@ -195,19 +201,19 @@ class SectionContainer(QWidget):
         self.expandedChanged.emit(self._title, expanded)
         self._content_height = self._contentHeightHint()
         self.content_view.setFixedHeight(max(0, self.content_view.height()))
-        if expanded:
-            self.content_widget.move(0, 0)
-        else:
-            self.content_widget.move(
-                0, self.content_view.height() - self._content_height
-            )
+        self._height_from = self.content_view.height()
+        self._height_to = self._content_height if expanded else 0
+        if self._height_from == 0:
+            self._content_offset = 0
+        self._offset_from = self._content_offset
+        self._offset_to = 0 if expanded else -self._height_from
         self._syncContentGeometry()
         self.overlay.setGeometry(self.content_view.rect())
         self.overlay.hide()
 
         self.anim.stop()
-        self.anim.setStartValue(self.content_view.height())
-        self.anim.setEndValue(self._content_height if expanded else 0)
+        self.anim.setStartValue(self._height_from)
+        self.anim.setEndValue(self._height_to)
         self.anim.start()
 
     def resizeEvent(self, event) -> None:
@@ -217,8 +223,9 @@ class SectionContainer(QWidget):
     def _syncContentGeometry(self) -> None:
         self.header.setFixedHeight(self.header.heightForWidth(self.width()))
         height = self._contentHeightHint()
-        y = 0 if self._expanded else self.content_view.height() - height
-        self.content_widget.setGeometry(0, y, self.content_view.width(), height)
+        self.content_widget.setGeometry(
+            0, self._content_offset, self.content_view.width(), height
+        )
         self.overlay.setGeometry(self.content_view.rect())
 
     def _contentHeightHint(self) -> int:
@@ -236,7 +243,13 @@ class SectionContainer(QWidget):
         return self.content_view.height()
 
     def setContentHeight(self, value: int) -> None:
-        self.content_view.setFixedHeight(max(0, value))
+        height = max(0, value)
+        self.content_view.setFixedHeight(height)
+        span = self._height_to - self._height_from
+        ratio = 0.0 if span == 0 else (height - self._height_from) / span
+        self._content_offset = round(
+            self._offset_from + (self._offset_to - self._offset_from) * ratio
+        )
         self._syncContentGeometry()
         layout = self.layout()
         if layout is not None:
@@ -1278,8 +1291,10 @@ class SettingPage(QWidget):
         def __valueChanged(state: Qt.CheckState):
             setattr(cfg, configurationName, box.checkState() == Qt.CheckState.Checked)
             if onChanged:
-                try: onChanged(state == Qt.CheckState.Checked)
-                except TypeError: onChanged()
+                try:
+                    onChanged(state == Qt.CheckState.Checked)
+                except TypeError:
+                    onChanged()
 
         box.stateChanged.connect(__valueChanged)
         box.setChecked(getattr(cfg, configurationName))

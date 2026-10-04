@@ -146,7 +146,7 @@ class Config:
     download_concurrent_threads: int = 16
     data_cleanup_enabled: bool = True
     data_cache_max_mb: int = 4096
-    data_cache_max_age_minutes: int = 5
+    data_cache_max_age_minutes: int = 1440
 
     llm_base_url: str = 'https://api.openai.com/v1'
     llm_api_key_encrypted: str = ''

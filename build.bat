@@ -140,6 +140,16 @@ if not defined ISCC (
 echo Building - Inno Setup installer
 if defined ISCC (
     call "%ISCC%" installer.iss
+    if errorlevel 1 (
+        rem The compiler patches version info and the manifest into the setup exe
+        rem it has just written. Anything holding that file right then - antivirus
+        rem real-time scanning, a setup exe that is still running - makes that step
+        rem fail with "Resource update error: EndUpdateResource failed (110)".
+        echo [WARN] Inno Setup failed. Retrying once in case the output file was locked.
+        timeout /t 10 /nobreak >nul
+        call "%ISCC%" installer.iss
+        if errorlevel 1 echo [ERROR] If Inno reported EndUpdateResource, add "%~dp0build.result" to your antivirus trust list.
+    )
 ) else (
     echo [WARN] Inno Setup compiler not found.
     echo        Run 'python setup_workspace.py --innosetup' to auto-install.

@@ -61,6 +61,9 @@ class LocalFolderCard(QWidget):
         layout.addWidget(self.img_label)
 
         title_label = QLabel(folder.folder_name)
+        f = title_label.font()
+        f.setPointSize(10)
+        title_label.setFont(f)
         title_label.setAlignment(
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
         )
@@ -144,6 +147,9 @@ class CloudFolderCard(QWidget):
         layout.addWidget(self.img_label)
 
         title_label = QLabel(folder.folder_name)
+        f = title_label.font()
+        f.setPointSize(10)
+        title_label.setFont(f)
         title_label.setAlignment(
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
         )

@@ -73,6 +73,7 @@ from views.line_edit import SearchLineEdit
 from views.llm_viewer_panel import LLMViewerPanel, LLM_WINDOW_WIDTH_DELTA
 from views.lyric_editor_page import LyricEditorPage
 from views.playing_controller import PlayingController
+from views.separator import Separator
 from views.song_card import SearchSongCard
 from views.title_bar import SouthsideMusicTitleBar
 from views.debug_overlay import DebugOverlay
@@ -191,7 +192,7 @@ class MainWindow(FluentWindowBase):
         button_layout.addWidget(self.library_button)
 
         left_layout.addLayout(button_layout)
-        left_layout.addWidget(self.folders_list, 1)
+        left_layout.addWidget(self.folders_list, 2)
         left_layout.addWidget(self.settings_btn)
 
         self.account_widget = AccountWidget(self, self.ctx)
@@ -537,6 +538,9 @@ class MainWindow(FluentWindowBase):
                 self.contents_widget.setCurrentWidget(self.ctx.home_page)
 
                 self.controller.showLyrics()
+                self.ctx.setting_page._onLyricsAnimationTypeChanged(
+                    self.ctx.setting_page.lyrics_type_box.currentText().lower()
+                )
 
             self.ctx.addScheduledTask(_show)
 
@@ -812,9 +816,13 @@ class MainWindow(FluentWindowBase):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setFont(self.loading_ft)
         painter.setBrush(
-            mixColor(QColor(0, 0, 0) if theme.isDark() else QColor(255, 255, 255), mixColor(
-                self.song_theme, QColor(self.backgroundColor), cfg.background_ratio
-            ), 0.4)
+            mixColor(
+                QColor(0, 0, 0) if theme.isDark() else QColor(255, 255, 255),
+                mixColor(
+                    self.song_theme, QColor(self.backgroundColor), cfg.background_ratio
+                ),
+                0.4,
+            )
         )
         painter.drawRect(self.rect())
         painter.end()

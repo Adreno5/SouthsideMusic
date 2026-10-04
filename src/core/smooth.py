@@ -172,7 +172,7 @@ class SScrollTimer(QObject):
 
     def _tick(self, _: float) -> None:
         now = time.perf_counter_ns()
-        if not self.animating_objs:
+        if not self.animating_objs and not self.debug_forces:
             self.last_draw = now
             return
         elapsed = min((now - self.last_draw) / 1_000_000_000, 0.1)
@@ -197,6 +197,17 @@ class SScrollTimer(QObject):
             final_value = int(next_value)
             self._scroll_remainder = next_value - final_value
             self._value = final_value
+        self.debug_forces = forces
+        self.debug_total_force = total_delta
+        self.debug_offset = float(self._value)
+        self.debug_offset_target = self._projected_value()
+
+    def _projected_value(self) -> float:
+        return (
+            self._value
+            + self._scroll_remainder
+            + sum(obj.total * (1.0 - obj.last_progress) for obj in self.animating_objs)
+        )
 
     def scrollValue(self, delta: int, duration: int | None = None):
         self.animating_objs.append(
@@ -211,7 +222,7 @@ class SScrollTimer(QObject):
     def scrollTo(self, target: int, duration: int | None = None):
         self.animating_objs.append(
             AnimatingObject(
-                total=target - self._value,
+                total=target - self._projected_value(),
                 elapsed=0.0,
                 duration=duration if duration else self.duration,
                 last_progress=0.0,

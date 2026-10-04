@@ -1,5 +1,4 @@
 import logging
-import time
 from typing import cast, override
 
 from PySide6.QtCore import (
@@ -39,7 +38,7 @@ from qfluentwidgets.components.widgets.list_view import ListItemDelegate
 from core import config
 from core.icons import CachedFluentIcon
 from core.models import AnimatingObject
-from core.smooth import EaseOutTimer
+from core.smooth import EaseOutTimer, SScrollTimer
 from services.events import (
     LIST_SCROLLING_DURATION_CHANGED,
     REFRESH_RATE_CHANGED,
@@ -80,17 +79,13 @@ class SSmoothScrollBar(ScrollBar):
             button._icon = CachedFluentIcon(button._icon)
         self._logger = logging.getLogger(__name__)
         self._area = parent
-        self.animating_objs: list[AnimatingObject] = []
+        self.duration = config.cfg.scroll_duration
+
+        self._timer = SScrollTimer(self.duration, use_api=REPAINT)
+        self._timer.setParent(self)
         self.refresh_rate = max(60, parent.window().screen().refreshRate() / 2)
         self._logger.info(f'{self.refresh_rate=}')
         self.delta = 1 / self.refresh_rate
-        self.last_draw: int = time.perf_counter_ns()
-        self._scroll_remainder = 0.0
-        self.debug_forces: list[float] = []
-        self.debug_total_force = 0.0
-        self.debug_offset = 0.0
-        self.debug_offset_target = 0.0
-        self.duration = config.cfg.scroll_duration
 
         self.origin_setValue = self.setValue
         self.setValue = self._patched_setValue
@@ -100,6 +95,46 @@ class SSmoothScrollBar(ScrollBar):
             LIST_SCROLLING_DURATION_CHANGED, lambda v: setattr(self, 'duration', int(v))
         )
         event_bus.subscribe(REPAINT, self._tick)
+
+    @property
+    def animating_objs(self) -> list[AnimatingObject]:
+        return self._timer.animating_objs
+
+    @property
+    def refresh_rate(self) -> float:
+        return self._timer.refresh_rate
+
+    @refresh_rate.setter
+    def refresh_rate(self, value: float) -> None:
+        self._timer.refresh_rate = value
+
+    @property
+    def delta(self) -> float:
+        return self._timer.delta
+
+    @delta.setter
+    def delta(self, value: float) -> None:
+        self._timer.delta = value
+
+    @property
+    def last_draw(self) -> int:
+        return self._timer.last_draw
+
+    @property
+    def debug_forces(self) -> list[float]:
+        return self._timer.debug_forces
+
+    @property
+    def debug_total_force(self) -> float:
+        return self._timer.debug_total_force
+
+    @property
+    def debug_offset(self) -> float:
+        return self._timer.debug_offset
+
+    @property
+    def debug_offset_target(self) -> float:
+        return self._timer.debug_offset_target
 
     def _patched_setValue(self, value: int):
         self.scrollValue(value - self.value())
@@ -146,46 +181,17 @@ class SSmoothScrollBar(ScrollBar):
         self._logger.info(f'{self.refresh_rate=}')
         self.delta = 1 / self.refresh_rate
 
-    @staticmethod
-    def _smoothstep(t: float) -> float:
-        t = max(0.0, min(1.0, t))
-        return t * t * (3.0 - 2.0 * t)
-
     def _tick(self, _: float) -> None:
-        now = time.perf_counter_ns()
-        if not self.animating_objs and not self.debug_forces:
-            self.last_draw = now
-            return
-        elapsed = min((now - self.last_draw) / 1_000_000_000, 0.1)
-        self.last_draw = now
-        multiple_factor = elapsed * self.refresh_rate
-
-        new: list[AnimatingObject] = []
-        total_delta = 0.0
-        forces: list[float] = []
-        for obj in self.animating_objs:
-            obj.elapsed += self.delta * 1000 * multiple_factor
-            progress = self._smoothstep(obj.elapsed / obj.duration)
-            force = obj.total * (progress - obj.last_progress)
-            forces.append(force)
-            total_delta += force
-            obj.last_progress = progress
-            if obj.elapsed < obj.duration:
-                new.append(obj)
-        self.animating_objs = new
-        if total_delta != 0:
-            next_value = self.value() + total_delta + self._scroll_remainder
-            final_value = int(next_value)
-            self._scroll_remainder = next_value - final_value
-            self.origin_setValue(final_value)
-        self.debug_forces = forces
-        self.debug_total_force = total_delta
-        self.debug_offset = float(self.value())
-        self.debug_offset_target = (
-            self.debug_offset
-            + self._scroll_remainder
-            + sum(obj.total * (1.0 - obj.last_progress) for obj in self.animating_objs)
-        )
+        if not self.animating_objs:
+            self._timer.setValue(self.value())
+            if not self.debug_forces:
+                return
+        value = self._timer.getValue()
+        if value != self.value():
+            self.origin_setValue(value)
+            clamped = self.value()
+            if clamped != value:
+                self._timer.setValue(clamped)
         if _debugging_enabled(self._area):
             overlay = getattr(self._area, '_overlay', None)
             if overlay is not None:
@@ -194,16 +200,9 @@ class SSmoothScrollBar(ScrollBar):
     def scrollValue(self, delta: int) -> None:
         if delta == 0:
             return
-        if not self.animating_objs:
-            self.last_draw = time.perf_counter_ns()
-        self.animating_objs.append(
-            AnimatingObject(
-                total=float(delta),
-                elapsed=0.0,
-                duration=self.duration,
-                last_progress=0.0,
-            )
-        )
+        if not self._timer.animating_objs:
+            self._timer.setValue(self.value())
+        self._timer.scrollValue(delta, self.duration)
 
 
 class SSmoothDelegate(QObject):
@@ -232,21 +231,17 @@ class SSmoothDelegate(QObject):
             if e.modifiers() & Qt.KeyboardModifier.AltModifier and not delta.x():
                 delta = QPoint(delta.y(), 0)
             vdlimited = (
-                delta.y() < 0
-                and self.vScrollBar.value() == self.vScrollBar.maximum()
+                delta.y() < 0 and self.vScrollBar.value() == self.vScrollBar.maximum()
             )
             vulimited = (
-                delta.y() > 0
-                and self.vScrollBar.value() == self.vScrollBar.minimum()
+                delta.y() > 0 and self.vScrollBar.value() == self.vScrollBar.minimum()
             )
 
             hdlimited = (
-                delta.x() < 0
-                and self.hScrollBar.value() == self.hScrollBar.maximum()
+                delta.x() < 0 and self.hScrollBar.value() == self.hScrollBar.maximum()
             )
             hulimited = (
-                delta.x() > 0
-                and self.hScrollBar.value() == self.hScrollBar.minimum()
+                delta.x() > 0 and self.hScrollBar.value() == self.hScrollBar.minimum()
             )
 
             if (vdlimited or vulimited or hdlimited or hulimited) and not isinstance(

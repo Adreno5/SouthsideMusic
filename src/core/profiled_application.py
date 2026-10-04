@@ -29,7 +29,9 @@ class ProfiledApplication(QApplication):
             f'{receiver_type.__module__}.{receiver_type.__qualname__}'
             f'.{event.type().name}'
         )
-        frame_profiler.beginSection('views.debug_overlay.excluded' if excluded else name)
+        frame_profiler.beginSection(
+            'views.debug_overlay.excluded' if excluded else name
+        )
         try:
             return super().notify(receiver, event)
         finally:

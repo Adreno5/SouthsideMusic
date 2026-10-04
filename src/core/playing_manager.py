@@ -2789,8 +2789,10 @@ class PlayingManager(QObject):
             return
         lyrics = song_storable.getLyrics()
         self.ctx.lyrics_manager.applyLyrics(
-            lyrics['lyric'], lyrics['yrc_lyric'],
-            lyrics['translated_lyric'], self.total_length,
+            lyrics['lyric'],
+            lyrics['yrc_lyric'],
+            lyrics['translated_lyric'],
+            self.total_length,
         )
         event_bus.emit(PLAYBACK_LYRICS_UPDATED, song_storable)
 

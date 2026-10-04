@@ -70,7 +70,8 @@ from qfluentwidgets import (
     PushButton,
     Slider,
     SubtitleLabel,
-    PillToolButton, TitleLabel,
+    PillToolButton,
+    TitleLabel,
 )
 from views.lyrics_viewer import LyricsViewer
 from views.image_label import SImageLabel

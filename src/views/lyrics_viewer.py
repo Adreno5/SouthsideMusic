@@ -221,6 +221,12 @@ class LyricsViewer(QOpenGLWidget):
             self.ctx.playing_page, 'viewer', None
         )
 
+    def _contentWidth(self) -> float:
+        return float(self.width())
+
+    def _contentHeight(self) -> float:
+        return float(self.height())
+
     def _updateViewLayout(self, multiple_factor: float = 1.0) -> None:
         self._last_layout_ns = time.perf_counter_ns()
         position = self._viewPosition()
@@ -408,7 +414,7 @@ class LyricsViewer(QOpenGLWidget):
         block_height = self.font_height + (
             (2 + self.theight) * cur if has_translation else 0
         )
-        return (self.height() - block_height) * 0.5 + self.metri.ascent()
+        return (self._contentHeight() - block_height) * 0.5 + self.metri.ascent()
 
     def _lyricsForPosition(
         self, position: float
@@ -538,7 +544,7 @@ class LyricsViewer(QOpenGLWidget):
                 self.draw_offset += self.acc
 
     def _xScrollClipWidth(self) -> float:
-        return max(1.0, float(self.width()) - _HORIZONTAL_SCROLL_MARGIN)
+        return max(1.0, self._contentWidth() - _HORIZONTAL_SCROLL_MARGIN)
 
     def _updateXScroll(
         self,
@@ -609,7 +615,9 @@ class LyricsViewer(QOpenGLWidget):
         top_offset: float,
     ) -> list[int]:
         start = bisect_left(y_offsets, -top_offset - self.font_height)
-        end = bisect_right(y_offsets, self.height() - top_offset + self.font_height)
+        end = bisect_right(
+            y_offsets, self._contentHeight() - top_offset + self.font_height
+        )
         return list(range(start, min(end, len(lines))))
 
     def _colorPayload(self, color: QColor) -> dict[str, int]:
@@ -762,7 +770,9 @@ class LyricsViewer(QOpenGLWidget):
                 info = float2time(line.song_time if self._usesHandoff() else line.time)
                 hover_time_text = f'{info.minutes:02d}:{info.seconds:02d}'
                 hover_time_x = (
-                    self.width() - self.metri.horizontalAdvance(hover_time_text) - 5
+                    self._contentWidth()
+                    - self.metri.horizontalAdvance(hover_time_text)
+                    - 5
                 )
 
             debug_center = self.height() // 2
@@ -1029,7 +1039,7 @@ class LyricsViewer(QOpenGLWidget):
                     painter.drawRoundedRect(
                         toQtInt(x),
                         toQtInt(y - self.metri.ascent()),
-                        toQtInt(self.width() - x),
+                        toQtInt(self._contentWidth() - x),
                         toQtInt(self.font_height),
                         5,
                         5,
@@ -1040,7 +1050,7 @@ class LyricsViewer(QOpenGLWidget):
                     )
                     timetxt = f'{info.minutes:02d}:{info.seconds:02d}'
                     hover_time_x = (
-                        self.width() - self.metri.horizontalAdvance(timetxt) - 5
+                        self._contentWidth() - self.metri.horizontalAdvance(timetxt) - 5
                     )
                     painter.drawText(
                         toQtInt(hover_time_x),

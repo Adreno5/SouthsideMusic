@@ -4,14 +4,14 @@ import ctypes
 from ctypes import wintypes
 from typing import override
 
-from PySide6.QtCore import QPoint, QRect, QSize
+from PySide6.QtCore import QPoint, QRect, QRectF, QSize
 from PySide6.QtGui import (
     QColor,
     QCursor,
     QMouseEvent,
-    QMoveEvent,
     QPainter,
     QPainterPath,
+    QRegion,
     Qt,
     QWheelEvent,
 )
@@ -53,8 +53,12 @@ class DesktopLyricsViewer(LyricsViewer):
         self.width_timer = EaseInOutTimer(0.5, 3)
         self.height_timer = EaseOutTimer(0.5, 3)
 
+        self._pill_x: float = 0
+        self._pill_w: float = 1
+        self._pill_h: float = 1
         self.dragging: bool = False
         self.dragging_point: QPoint = QPoint(0, 0)
+        self._grab_dx: float = 0
         self._draw_progress_ratio = 0.0
         self._title_line: LyricInfo | None = None
         self._title_artist: str = ''
@@ -69,6 +73,8 @@ class DesktopLyricsViewer(LyricsViewer):
             | Qt.WindowType.BypassWindowManagerHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setFixedSize(self.scr_size.width(), 65)
+        self.move(0, 0)
         self._keepOnTop()
 
         event_bus.subscribe(SECOND_TICK, self._keepOnTop)
@@ -99,9 +105,15 @@ class DesktopLyricsViewer(LyricsViewer):
             0x0002 | 0x0001 | 0x0010,
         )
 
+    def _pillOffsetY(self) -> float:
+        return self.indentation_y if cfg.desktop_lyrics_anchor == 'top-center' else 0.0
+
     def _checkMouse(self):
         self.indentation = QRect(
-            -5, -int(self.indentation_y), self.width() + 5, self.height()
+            int(self._pill_x) - 5,
+            0,
+            int(self._pill_w) + 5,
+            int(self._pill_h),
         ).contains(self.mapFromGlobal(QCursor.pos()))
 
     def showMinimized(self) -> None:
@@ -211,13 +223,21 @@ class DesktopLyricsViewer(LyricsViewer):
             return self.font_height + self.theight + self.font_height * 0.75
         return self.font_height * 1.85
 
+    @override
+    def _contentWidth(self) -> float:
+        return self._pill_w
+
+    @override
+    def _contentHeight(self) -> float:
+        return self._pill_h
+
     def updateDatas(self, multiple_factor: float = 1.0) -> None:
         playing = self.ctx.player.isPlaying()
         self.indentation_y += (
             (
-                (-self.height() + 8 if self.indentation else 0)
+                (-self.height_timer.current_value + 8 if self.indentation else 0)
                 if playing
-                else -self.height()
+                else -self.height_timer.current_value
             )
             - self.indentation_y
         ) * min(1.0, max(0.0, (0.2 if playing else 0.05) * multiple_factor))
@@ -236,10 +256,8 @@ class DesktopLyricsViewer(LyricsViewer):
             if meta:
                 tar_height = self.font_height + 10
             self.height_timer.target_value = tar_height
-        height = max(1, int(self.height_timer.current_value))
-        if height != self.height():
-            self.setFixedHeight(height)
-        self.x_pad = self.height() / 2
+        self._pill_h = max(1.0, self.height_timer.current_value)
+        self.x_pad = self._pill_h / 2
 
         tar_width = 10
         if cur_line:
@@ -255,9 +273,14 @@ class DesktopLyricsViewer(LyricsViewer):
         tar_width += int(self.x_pad * 2)
 
         self.width_timer.target_value = tar_width
-        width = max(1, int(self.width_timer.current_value))
-        if width != self.width():
-            self.setFixedWidth(width)
+        self._pill_w = max(1.0, self.width_timer.current_value)
+        if cfg.desktop_lyrics_anchor == 'top-center':
+            pill_x = int(self.scr_size.width() * 0.5 - self._pill_w * 0.5)
+        else:
+            pill_x = int(cfg.desktop_lyrics_x - self._pill_w * 0.5)
+        self._pill_x = float(
+            max(0, min(pill_x, int(self.scr_size.width() - self._pill_w)))
+        )
 
         if self._dp.total_length > 0:
             self._draw_progress_ratio = max(
@@ -271,55 +294,48 @@ class DesktopLyricsViewer(LyricsViewer):
         else:
             self._draw_progress_ratio = 0.0
 
-        target_point = QPoint(0, 0)
-        if cfg.desktop_lyrics_anchor == 'top-center':
-            target_point = QPoint(
-                int(self.scr_size.width() * 0.5 - self.width() * 0.5),
-                0,
+        rect = QRect(
+            int(self._pill_x),
+            int(self._pillOffsetY()),
+            max(1, int(self._pill_w)),
+            max(1, int(self._pill_h)),
+        )
+        region = QRegion(rect)
+        if region != self.mask():
+            self.setMask(region)
+
+        if not self.dragging:
+            target_y = (
+                0
+                if cfg.desktop_lyrics_anchor == 'top-center'
+                else int(cfg.desktop_lyrics_y)
             )
-        if cfg.desktop_lyrics_anchor == 'normal' and not self.dragging:
-            target_point = QPoint(
-                int(cfg.desktop_lyrics_x - self.width() * 0.5), self.y()
-            )
-            if self.x() < 0:
-                cfg.desktop_lyrics_x = 0
-            if self.x() > self.scr_size.width() - self.width():
-                cfg.desktop_lyrics_x = self.scr_size.width() - self.width() // 2
-        if not self.dragging and cfg.desktop_lyrics_anchor == 'top-center':
-            target_point += QPoint(0, int(self.indentation_y))
-        if not self.dragging and target_point != self.pos():
-            self.move(target_point)
+            if self.y() != target_y:
+                self.move(0, target_y)
 
         super().updateDatas(multiple_factor)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         self.dragging = True
         self.dragging_point = event.pos()
+        self._grab_dx = event.position().x() - self._pill_x
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        if self.dragging:
-            tp: QPoint = event.globalPos() - self.dragging_point
-            center_x = tp.x() + self.width() * 0.5
-            screen_center_x = self.scr_size.width() * 0.5
-            if abs(center_x - screen_center_x) < 30 and tp.y() < 15:
-                cfg.desktop_lyrics_anchor = 'top-center'
-            else:
-                cfg.desktop_lyrics_anchor = 'normal'
-                self.move(tp)
+        if not self.dragging:
+            return
+        target_y = int(event.globalPos().y() - self.dragging_point.y())
+        center_x = event.globalPos().x() - self._grab_dx + self._pill_w * 0.5
+        if abs(center_x - self.scr_size.width() * 0.5) < 30 and target_y < 15:
+            cfg.desktop_lyrics_anchor = 'top-center'
+            return
+        cfg.desktop_lyrics_anchor = 'normal'
+        cfg.desktop_lyrics_x = int(center_x)
+        cfg.desktop_lyrics_y = target_y
+        self.move(0, target_y)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         self.dragging = False
         event_bus.emit(DESKTOP_LYRICS_ANCHOR_CHANGED)
-
-    def moveEvent(self, event: QMoveEvent) -> None:
-        if self.dragging:
-            center_x = event.pos().x() + self.width() * 0.5
-            if cfg.desktop_lyrics_anchor == 'normal':
-                cfg.desktop_lyrics_x, cfg.desktop_lyrics_y = (
-                    int(center_x),
-                    event.pos().y(),
-                )
-        return super().moveEvent(event)
 
     @override
     def paintGL(self) -> None:
@@ -337,7 +353,12 @@ class DesktopLyricsViewer(LyricsViewer):
 
             painter.setPen(Qt.PenStyle.NoPen)
 
-            draw_rect = QRect(12, 0, self.width() - 24, self.height())
+            width = int(self._pill_w)
+            height = int(self._pill_h)
+            painter.translate(self._pill_x, self._pillOffsetY())
+            painter.setClipRect(QRectF(0, 0, width, height))
+
+            draw_rect = QRect(12, 0, width - 24, height)
 
             painter.setBrush(
                 mixColor(
@@ -348,7 +369,7 @@ class DesktopLyricsViewer(LyricsViewer):
             )
 
             if cfg.desktop_lyrics_anchor == 'normal':
-                radius = int(self.height() * 0.5)
+                radius = int(height * 0.5)
                 painter.drawRoundedRect(draw_rect, radius, radius)
                 if self._dp.total_length > 0:
                     painter.save()
@@ -362,9 +383,9 @@ class DesktopLyricsViewer(LyricsViewer):
                         )
                     )
                     painter.drawRect(
-                        self.height() // 2,
+                        height // 2,
                         0,
-                        int((self.width() - self.height()) * self._draw_progress_ratio),
+                        int((width - height) * self._draw_progress_ratio),
                         1,
                     )
                     painter.restore()
@@ -387,13 +408,13 @@ class DesktopLyricsViewer(LyricsViewer):
                 painter.restore()
 
                 draw_path_r = QPainterPath()
-                draw_path_r.moveTo(self.width() - 4, 0)
-                draw_path_r.lineTo(self.width() - 36, 0)
-                draw_path_r.lineTo(self.width() - 12, 16)
+                draw_path_r.moveTo(width - 4, 0)
+                draw_path_r.lineTo(width - 36, 0)
+                draw_path_r.lineTo(width - 12, 16)
                 draw_path_r.closeSubpath()
 
                 exclude_path_r = QPainterPath()
-                exclude_path_r.addRect(self.width() - 12, 0, 12, 25)
+                exclude_path_r.addRect(width - 12, 0, 12, 25)
 
                 clip_path_r = draw_path_r - exclude_path_r
                 painter.save()
@@ -415,7 +436,7 @@ class DesktopLyricsViewer(LyricsViewer):
                     painter.drawRect(
                         12,
                         0,
-                        int((self.width() - 24) * self._draw_progress_ratio),
+                        int((width - 24) * self._draw_progress_ratio),
                         1,
                     )
                     painter.restore()
@@ -448,9 +469,6 @@ class DesktopLyricsPage(QWidget):
         self.viewer = DesktopLyricsViewer(ctx)
         self.viewer.setVisible(cfg.enable_desktop_lyrics)
 
-        self.viewer.move(cfg.desktop_lyrics_x, cfg.desktop_lyrics_y)
-        self.viewer.resize(ctx.app.primaryScreen().size().width(), 65)
-
         if ctx.launch_window:
             ctx.launch_window.subtitle(tr('desktop_lyrics.building_settings_panel'))
         global_layout = QVBoxLayout()
@@ -471,8 +489,9 @@ class DesktopLyricsPage(QWidget):
         self.setLayout(global_layout)
 
     def onResetPos(self):
-        self.viewer.move(0, 0)
         cfg.desktop_lyrics_anchor = 'normal'
+        cfg.desktop_lyrics_x = 0
+        cfg.desktop_lyrics_y = 0
         event_bus.emit(DESKTOP_LYRICS_ANCHOR_CHANGED)
 
     def setLyricsVisible(self, visible: bool) -> None:

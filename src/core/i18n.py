@@ -39,7 +39,10 @@ TRANSLATIONS: dict[str, list[str]] = {
         'Find overlooked favorites and songs you have not heard in a while.',
         '听听一直没轮到的收藏，找回很久没听的好歌。',
     ],
-    'rediscovery.entry_hint': ['Browse your favorites in a fresh order', '点击进入，换个顺序听收藏'],
+    'rediscovery.entry_hint': [
+        'Browse your favorites in a fresh order',
+        '点击进入，换个顺序听收藏',
+    ],
     'rediscovery.back': ['Back', '返回'],
     'rediscovery.all_favorites': ['All local favorites', '全部本地收藏'],
     'rediscovery.folder_scope': ['From {name}', '来自收藏夹：{name}'],
@@ -760,6 +763,8 @@ TRANSLATIONS: dict[str, list[str]] = {
         'show every setting, including options for tuning audio, model providers and client links',
         '显示全部设置，包括音效调节、模型服务和客户端连接等高级选项',
     ],
+    'setting_page.EQ': ['EQ', '均衡器'],
+    'setting_page.reset_eq_curve': ['Reset Curve', '重置曲线'],
     'setting_page.enable_smtc': ['SMTC Service', 'SMTC 服务'],
     'setting_page.enable_smtc_description': [
         'show and control playback in the Windows media overlay',
@@ -1406,8 +1411,8 @@ TRANSLATIONS: dict[str, list[str]] = {
     ],
     'song_export.original': ['Keep original file', '原文件导出'],
     'song_export.question': [
-        'Apply the playback effects in settings (speed, pitch, stereo, reverb) to the exported file?',
-        '是否附带设置里的播放效果（速度、音调、立体声、混响）导出？',
+        'Apply the playback effects in settings (speed, pitch, stereo, reverb, equalizer) to the exported file?',
+        '是否附带设置里的播放效果（速度、音调、立体声、混响、均衡器）导出？',
     ],
     'song_export.time_status': ['{current} s / {total} s', '{current} 秒 / {total} 秒'],
     'song_export.title': ['Export playback effects', '播放效果导出'],

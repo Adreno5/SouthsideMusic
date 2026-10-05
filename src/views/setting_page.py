@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+
+from core.models import CurveInfo
 from services.events import (
     LYRICS_SCROLLING_DURATION_CHANGED,
     LIST_SCROLLING_DURATION_CHANGED,
@@ -64,6 +66,8 @@ from core.ws_server import (
     WebSocketServer,
     QObjectHandler,
 )
+from views.curve_editor import CurveEditor
+from views.eq_editor import EQEditor
 
 from views.list_widget import SScrollArea, setTransparentBackground
 from views.number_viewer import NumberViewer, SettableNumberViewer
@@ -658,6 +662,39 @@ class SettingPage(QWidget):
             lambda val: self.ctx.playing_manager.restartPlaybackEffects(),
             advanced=True,
         )
+
+        self.addSpliter()
+
+        self.eq_label = SubtitleLabel()
+        bindText(self.eq_label, 'setting_page.EQ')
+        self._addOptionWidget(self.eq_label)
+
+        self.eq_edit = EQEditor()
+        self.eq_edit.setBands(cfg.eq_bands)
+        self._player.equalizerFFTDataReady.connect(self.eq_edit.updateFFTData)
+        self._player.beatDataReset.connect(self.eq_edit._resetFFT)
+        self.eq_edit.edited.connect(self._onEQEdited)
+        self._addOptionWidget(self.eq_edit)
+
+        self.eq_reset_btn = PushButton(FluentIcon.SYNC, '')
+        bindText(self.eq_reset_btn, 'setting_page.reset_eq_curve')
+        self.eq_reset_btn.clicked.connect(self._onEQReset)
+        self._addOptionWidget(self.eq_reset_btn)
+
+    def _onEQEdited(self, _info: CurveInfo) -> None:
+        self._saveEQBands()
+
+    def _onEQReset(self) -> None:
+        self.eq_edit.setBands([
+            (EQEditor.MIN_FREQUENCY, 0.0),
+            (EQEditor.MAX_FREQUENCY, 0.0),
+        ])
+        self._saveEQBands()
+
+    def _saveEQBands(self) -> None:
+        cfg.eq_bands = self.eq_edit.getBands()
+        saveConfig()
+        self._player.setEqualizer()
 
     def _addDesktopLyricsSection(self) -> None:
         self.addSection(
@@ -1288,7 +1325,7 @@ class SettingPage(QWidget):
         self._bindSettingText(box, title, not advanced)
         self._easy_text_widgets.append(box)
 
-        def __valueChanged(state: Qt.CheckState):
+        def __valueChanged(state: Qt.CheckState) -> None:
             setattr(cfg, configurationName, box.checkState() == Qt.CheckState.Checked)
             if onChanged:
                 try:
@@ -1296,7 +1333,7 @@ class SettingPage(QWidget):
                 except TypeError:
                     onChanged()
 
-        box.stateChanged.connect(__valueChanged)
+        box.checkStateChanged.connect(__valueChanged)
         box.setChecked(getattr(cfg, configurationName))
         self.addSetting(title, description, box, advanced=advanced)
         return box

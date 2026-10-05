@@ -17,6 +17,7 @@ from services.events import event_bus, COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 class WebSocketHandler(tornado.websocket.WebSocketHandler):
     def __init__(self, application, request, **kwargs) -> None:
         self._logger = logging.getLogger(__name__)
+        self.protocol_version = 1
         self.count = 0
         self.ioloop: tornado.ioloop.IOLoop | None = None
         ws_handler.onSend.connect(self.trySend)
@@ -116,6 +117,15 @@ class QObjectHandler(QObject):
         if self._current_handler is not None:
             self.onHandlerReceived.emit(self._current_handler)
         return self._current_handler
+
+    @property
+    def protocol_version(self) -> int:
+        return self._current_handler.protocol_version if self._current_handler else 1
+
+    @protocol_version.setter
+    def protocol_version(self, version: int) -> None:
+        if self._current_handler:
+            self._current_handler.protocol_version = version
 
     def isCurrentHandler(self, handler: WebSocketHandler) -> bool:
         return self.is_open and self._current_handler is handler

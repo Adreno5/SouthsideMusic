@@ -41,6 +41,7 @@ from core.app_context import AppContext
 from core.audio_player import AudioPlayer
 from core.color import mixColor
 from core.config import cfg
+from core.frame_profiler import frame_profiler
 from core.free_threaded_worker import jsonFloatArray
 from core.i18n import tr
 from core.icons import bindIcon
@@ -539,8 +540,24 @@ class PlayingController(QOpenGLWidget):
             self.cover_label.setVisible(visible)
         if self.middle_widget.isHidden() == visible:
             self.middle_widget.setVisible(visible)
-        self._updateFFTAndRepaint(multiple_factor)
-        self._updateLyric(multiple_factor)
+        if frame_profiler.isRecording():
+            frame_profiler.beginSection(
+                'views.playing_controller.PlayingController._updateFFTAndRepaint'
+            )
+            try:
+                self._updateFFTAndRepaint(multiple_factor)
+            finally:
+                frame_profiler.endSection()
+            frame_profiler.beginSection(
+                'views.playing_controller.PlayingController._updateLyric'
+            )
+            try:
+                self._updateLyric(multiple_factor)
+            finally:
+                frame_profiler.endSection()
+        else:
+            self._updateFFTAndRepaint(multiple_factor)
+            self._updateLyric(multiple_factor)
         self.draw_x_acc = self.draw_x_acc_timer.current_value
 
     def _updateXAcc(self) -> None:
@@ -686,14 +703,17 @@ class PlayingController(QOpenGLWidget):
         progress_left = self._progressLeft()
         self._draw_progress_left = progress_left
         path_state = (progress_left, self.width(), self._draw_fft, self._fft_active)
-        rebuild_path = playing or self._fft_active or path_state != self._fft_path_state
+        rebuild_path = self._fft_active or path_state != self._fft_path_state
         if self.isVisible() and rebuild_path:
             self._fft_path = QPainterPath(QPointF(progress_left, 0))
         if self._draw_fft and self.isVisible() and rebuild_path:
             total = len(self.fft_display_magnitudes)
+            self._fft_path.reserve(total + 2)
+            fft_width = self.width() - progress_left
+            fft_multiple = float(cfg.cfft_multiple)
             for i, magnitude in enumerate(self.fft_display_magnitudes):
-                x = progress_left + (i + 1) / total * (self.width() - progress_left)
-                self._fft_path.lineTo(QPointF(x, magnitude * cfg.cfft_multiple + 3.5))
+                x = progress_left + (i + 1) / total * fft_width
+                self._fft_path.lineTo(x, float(magnitude) * fft_multiple + 3.5)
             self._fft_path.lineTo(QPointF(self.width(), 0))
         if self.isVisible():
             self._fft_path_state = path_state
@@ -761,6 +781,7 @@ class PlayingController(QOpenGLWidget):
 
         duration = float(self._dp.total_length)
         position = draw_ratio * duration
+        self.sendMainMenuPlayback(draw_ratio)
         self._ws_handler.sendJsonFactory(
             lambda position=position, duration=duration, ratio=draw_ratio: {
                 'option': 'play_position',
@@ -839,29 +860,91 @@ class PlayingController(QOpenGLWidget):
 
     def _updateLyric(self, _multiple_factor: float = 1.0) -> None:
         position = self.ctx.playing_manager.getDisplayPosition()
+        parser = self._ymgr if self._ymgr.hasYrcTiming() else self._mgr
+        current_index = parser.getCurrentIndex(position)
+        current_line = (
+            parser.parsed[current_index]
+            if 0 <= current_index < len(parser.parsed)
+            else None
+        )
+        line_changed = current_line != self.last_lyric
+        now = time.perf_counter()
+        send_lyrics = (
+            self._ws_handler.is_open
+            and now - self._last_ws_lyric_send >= self.ctx.config.ws_lyrics_interval
+        )
+        if not line_changed and not send_lyrics:
+            return
         lines, current_line, current_index, use_yrc = self._lyricWindowPayload(position)
-        if self._ws_handler.is_open:
-            now = time.perf_counter()
-            if now - self._last_ws_lyric_send >= self.ctx.config.ws_lyrics_interval:
-                self._last_ws_lyric_send = now
-                layout = self._dp.viewer.lyricLayoutPayload()
-                translation_enabled = bool(cfg.show_translation)
-                self._ws_handler.sendJsonFactory(
-                    lambda position=position, current_index=current_index, use_yrc=use_yrc, lines=lines, layout=layout, translation_enabled=translation_enabled: {
+        if send_lyrics:
+            self._last_ws_lyric_send = now
+            layout = self._dp.viewer.lyricLayoutPayload()
+            translation_enabled = bool(cfg.show_translation)
+            if self._ws_handler.protocol_version >= 2:
+                self._ws_handler.sendJson(
+                    {'option': 'lyric_layout', 'layout': layout},
+                    coalesce_key='lyric_layout',
+                )
+                ratio, _width = (
+                    self._dp.viewer._yrcClipPayload(current_line, position)
+                    if current_line is not None and use_yrc
+                    else (0.0, 0.0)
+                )
+                song = self._dp.cur.storable if self._dp.cur else None
+                self._ws_handler.sendJson(
+                    {
+                        'option': 'main_menu_lyric',
+                        'song_id': str(song.id) if song else '',
+                        'index': current_index,
+                        'text': current_line.content.strip() if current_line else '',
+                        'translation': (
+                            self._translationTextForLine(current_line, use_yrc)
+                            if current_line is not None and translation_enabled
+                            else ''
+                        ),
+                        'has_yrc': bool(
+                            use_yrc
+                            and current_line is not None
+                            and not current_line.isMetadata
+                        ),
+                        'yrc_clip_ratio': ratio,
+                    },
+                    coalesce_key='main_menu_lyric',
+                )
+            else:
+                legacy_layout = dict(layout, schema='southside_lyric_layout_v1')
+                render_lines = _cast(list[dict[str, object]], layout['lines'])
+                self._ws_handler.sendJson(
+                    {
                         'option': 'update_lyric',
                         'position': position,
                         'current_index': current_index,
                         'use_yrc': use_yrc,
-                        'yrc_clip_ratio': layout.get('current_yrc_clip_ratio', 0.0),
-                        'yrc_clip_width': layout.get('current_yrc_clip_width', 0.0),
+                        'yrc_clip_ratio': next(
+                            (
+                                line['yrc_clip_ratio']
+                                for line in render_lines
+                                if line['is_current']
+                            ),
+                            0.0,
+                        ),
                         'translation_enabled': translation_enabled,
                         'lines': lines,
-                        'layout': layout,
-                        'render_lines': layout.get('lines', []),
+                        'layout': legacy_layout,
+                        'render_lines': [
+                            dict(
+                                line,
+                                alpha=_cast(dict[str, int], line['primary_color'])['a'],
+                                translation_alpha=_cast(
+                                    dict[str, int], line['translation_color']
+                                )['a'],
+                            )
+                            for line in render_lines
+                        ],
                     },
                     coalesce_key='update_lyric',
                 )
-        if current_line != self.last_lyric:
+        if line_changed:
             self.last_lyric = current_line
             current = lines[2]
             next_ = lines[3]
@@ -877,7 +960,28 @@ class PlayingController(QOpenGLWidget):
                 },
             )
 
-    def _onPlayStateChanged(self, is_playing: bool):
+    def sendMainMenuPlayback(self, ratio: float | None = None) -> None:
+        if not self._ws_handler.is_open or self._ws_handler.protocol_version < 2:
+            return
+        position = self.ctx.playing_manager.getDisplayPosition()
+        duration = self.ctx.playing_manager.getDisplayLength()
+        song = self._dp.cur.storable if self._dp.cur else None
+        self._ws_handler.sendJson(
+            {
+                'option': 'main_menu_playback',
+                'song_id': str(song.id) if song else '',
+                'is_playing': self._player.isPlaying(),
+                'position': position,
+                'duration': duration,
+                'ratio': ratio
+                if ratio is not None
+                else (max(0.0, min(1.0, position / duration)) if duration > 0 else 0.0),
+            },
+            coalesce_key='main_menu_playback',
+        )
+
+    def _onPlayStateChanged(self, is_playing: bool) -> None:
+        self.sendMainMenuPlayback()
         if is_playing:
             bindIcon(self.play_pausebtn, 'pause')
         else:

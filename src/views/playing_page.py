@@ -854,6 +854,8 @@ class PlayingPage(QWidget):
             lyrics_smooth_factor=cfg.lyrics_smooth_factor,
             acceleration_smooth_factor=cfg.acceleration_smooth_factor,
             background_ratio=cfg.background_ratio,
+            lyrics_animation_type=cfg.lyrics_animation_type,
+            lyrics_scrolling_duration=cfg.lyrics_scrolling_duration,
         )
 
     @staticmethod
@@ -923,8 +925,10 @@ class PlayingPage(QWidget):
         self._updateTranslationButton()
         self.viewer.prewarmFontMetrics()
 
+        self.img_label.clear()
         self.img_label.hide()
         self.ring.show()
+        self.sendSongCoverAndInfo()
         self._app.processEvents()
 
     def _onPlaybackImageLoaded(
@@ -933,6 +937,8 @@ class PlayingPage(QWidget):
         image_bytes: bytes,
         avg_color: list[int] | tuple[int, int, int] | None = None,
     ) -> None:
+        if self.cur is None or self.cur.storable.id != song.id:
+            return
         qimg = QImage()
         qimg.loadFromData(image_bytes)
         if qimg.isNull():
@@ -945,8 +951,9 @@ class PlayingPage(QWidget):
             Qt.TransformationMode.SmoothTransformation,
         )
         self.img_label.setPixmap(scaled)
-        self.img_label.show()
         self.ring.hide()
+        self.img_label.show()
+        self.sendSongCoverAndInfo()
 
         if avg_color is None:
             avg_color = [128, 128, 128]
@@ -985,16 +992,13 @@ class PlayingPage(QWidget):
             return
 
         pixmap = self.img_label.pixmap()
-        if pixmap is None or pixmap.isNull():
-            return
-
-        pixmap = pixmap.scaled(pixmap.size(), Qt.AspectRatioMode.KeepAspectRatio)
-
-        buffer = QBuffer()
-        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-        pixmap.save(buffer, 'PNG')
-        img_bytes = buffer.data().data()
-        buffer.close()
+        img_bytes = b''
+        if pixmap is not None and not pixmap.isNull():
+            buffer = QBuffer()
+            buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+            pixmap.save(buffer, 'PNG')
+            img_bytes = buffer.data().data()
+            buffer.close()
 
         song_name = self.cur.storable.name
         position = self.playing_manager.getDisplayPosition()
@@ -1003,19 +1007,28 @@ class PlayingPage(QWidget):
         use_yrc = self._ymgr.hasYrcTiming()
         artists = _artists_text(self.cur.storable)
         is_playing = self.ctx.player.isPlaying()
+        option = 'main_menu_song' if self._ws_handler.protocol_version >= 2 else 'cover'
+        song_id = str(self.cur.storable.id)
         self._ws_handler.sendJsonFactory(
-            lambda img_bytes=img_bytes, song_name=song_name, position=position, duration=duration, translation_enabled=translation_enabled, use_yrc=use_yrc, artists=artists, is_playing=is_playing: {
-                'option': 'cover',
+            lambda option=option, song_id=song_id, img_bytes=img_bytes, song_name=song_name, position=position, duration=duration, translation_enabled=translation_enabled, use_yrc=use_yrc, artists=artists, is_playing=is_playing: {
+                'option': option,
+                'song_id': song_id,
                 'image': jsonBase64Bytes(img_bytes),  # type: ignore
                 'song_name': song_name,
-                'position': position,
-                'duration': duration,
-                'translation_enabled': translation_enabled,
-                'use_yrc': use_yrc,
                 'artists': artists,
-                'is_playing': is_playing,
+                **(
+                    {
+                        'position': position,
+                        'duration': duration,
+                        'translation_enabled': translation_enabled,
+                        'use_yrc': use_yrc,
+                        'is_playing': is_playing,
+                    }
+                    if option == 'cover'
+                    else {}
+                ),
             },
-            coalesce_key='cover',
+            coalesce_key=option,
         )
 
     def paintEvent(self, event: QPaintEvent) -> None:

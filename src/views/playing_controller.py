@@ -7,6 +7,7 @@ from collections import deque
 from typing import TYPE_CHECKING, override
 from typing import cast as _cast
 
+import PySide6
 import numpy as np
 from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSize, QTimer
 from PySide6.QtGui import (
@@ -49,11 +50,11 @@ from core.lyrics import LRCLyricParser, LyricInfo, YRCLyricInfo, YRCLyricParser
 from core.models import SongStorable
 from core.qt_utils import toQtInt
 from core.smooth import EaseInOutTimer, EaseOutTimer
+from core.time_format import float2time
 from core.ws_server import QObjectHandler
 from services.events import (
     BACKGROUND_RATIO_CHANGED,
     BEAT_POINT,
-    COLLECT_DEBUG_INFO,
     EMIT_DEBUG_INFO,
     FINISH_CROSSFADE,
     LYRIC_LINE_CHANGED,
@@ -265,6 +266,11 @@ class PlayingController(QOpenGLWidget):
         self._stp: SettingPage = ctx.setting_page  # type: ignore
 
         self.seeking = False
+        self._seek_position = 0.0
+
+        self.ft = QFont(ctx.harmony_font_family, 9)
+        self.font_height = QFontMetricsF(self.ft).height()
+        self.metri = QFontMetricsF(self.ft)
 
         self.norm_timer: EaseOutTimer = EaseOutTimer(0.5, 2)
         self.norm_timer.current_value = 100000
@@ -281,6 +287,8 @@ class PlayingController(QOpenGLWidget):
         self.delta = 1 / self.refresh_rate
         self.setFFTBufferSeconds(self.ctx.config.fft_buffer_seconds)
 
+        self.progress_bar_height = 8
+        self.progress_expand = EaseInOutTimer(0.3, 3)
         self.progress_left_timer = EaseInOutTimer(0.225, 3)
         self.progress_left_timer.target_value = 52
         self.progress_left_timer.current_value = 52
@@ -402,6 +410,8 @@ class PlayingController(QOpenGLWidget):
         self.last_x_acc = 0.0
         self.draw_x_acc_timer = EaseOutTimer(0.1, 2)
 
+        self.setMouseTracking(True)
+
         event_bus.subscribe(PLAY_STATE_CHANGED, self._onPlayStateChanged)
         event_bus.subscribe(SONG_CHANGED, self._updateDatas)
         event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
@@ -417,7 +427,6 @@ class PlayingController(QOpenGLWidget):
         event_bus.subscribe(
             FINISH_CROSSFADE, lambda: setattr(self.bar_alpha_timer, 'target_value', 1)
         )
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
 
         if self._mwindow:
             self.bg_color = mixColor(
@@ -505,6 +514,9 @@ class PlayingController(QOpenGLWidget):
 
     def _onRepaintTick(self, multiple_factor: float = 1) -> None:
         self._updateXAcc()
+        self.progress_bar_height = 8 + int(
+            14 * self.progress_expand.current_value
+        )
         progress_left = self._progressLeft()
         factor = progress_left / 52
         if self._layout_dirty or self.width() != self._layout_width:
@@ -562,6 +574,9 @@ class PlayingController(QOpenGLWidget):
 
     def _updateXAcc(self) -> None:
         draw_x = self._draw_current_x
+        if not self.ctx.player.isPlaying():
+            self.draw_x_acc_timer.target_value = 0
+            return
         if self.seeking:
             if self.last_x_acc > draw_x:
                 self.draw_x_acc_timer.target_value = 1
@@ -726,13 +741,19 @@ class PlayingController(QOpenGLWidget):
             current_time = max(
                 0.0,
                 min(
-                    self.ctx.playing_manager.getDisplayPosition(),
+                    self._seek_position
+                    if self.seeking
+                    else self.ctx.playing_manager.getDisplayPosition(),
                     self._dp.total_length,
                 ),
             )
             self.draw_ratio_timer.target_value = current_time / self._dp.total_length
             draw_ratio = max(0.0, min(self.draw_ratio_timer.current_value, 1.0))
-            self._draw_current_x = progress_left + int(progress_width * draw_ratio)
+            self._draw_current_x = (
+                progress_left
+                + int(progress_width * draw_ratio)
+                - int((self.progress_bar_height - 8) / 2)
+            )
             self.prepared_ratio_timer.target_value = (
                 max(0.0, min(loaded_time, self._dp.total_length))
                 / self._dp.total_length
@@ -1005,39 +1026,51 @@ class PlayingController(QOpenGLWidget):
             loaded_time = max(0.0, loaded_time - 0.1)
         return min(progress * self._dp.total_length, loaded_time)
 
+    @override
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        self.progress_expand.target_value = (
+            1 if event.position().y() < self.progress_bar_height else 0
+        )
         if (
-            event.position().y() < 8
+            event.position().y() < self.progress_bar_height
             and event.position().x() > self._progressLeft()
             and not self.ctx.playing_manager.crossfading
         ):
-            position = self._eventPlayingTime(event)
-            self.seeking = self._player.beginScrub(
-                position, self.ctx.playing_manager.current_song_audio
-            )
-            if self.seeking:
-                event.accept()
-                return
-            self._player.setPosition(position)
-        elif event.position().y() > 8:
+            self._seek_position = self._eventPlayingTime(event)
+            self.seeking = True
+            event.accept()
+            return
+        elif event.position().y() > self.progress_bar_height:
             if self._mwindow and not self._mwindow.dp_animating:
                 self._mwindow.togglePlayingPageExpand()
         return super().mousePressEvent(event)
 
+    @override
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        self.progress_expand.target_value = (
+            1 if event.position().y() < self.progress_bar_height else 0
+        )
         if self.seeking:
             self.seeking = False
-            self._player.endScrub(self._eventPlayingTime(event))
+            self._player.setPosition(self._eventPlayingTime(event))
             event.accept()
             return
         return super().mouseReleaseEvent(event)
 
+    @override
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        self.progress_expand.target_value = (
+            1 if event.position().y() < self.progress_bar_height else 0
+        )
         if self.seeking:
-            self._player.scrubTo(self._eventPlayingTime(event))
+            self._seek_position = self._eventPlayingTime(event)
             event.accept()
             return
         return super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event: PySide6.QtCore.QEvent, /) -> None:
+        self.progress_expand.target_value = 0
+        return super().leaveEvent(event)
 
     def toggle(self):
         if self._dp.cur is None:
@@ -1078,7 +1111,7 @@ class PlayingController(QOpenGLWidget):
             painter.fillPath(self._fft_path, gradient)
 
         bar_alpha = int(self.bar_alpha_timer.current_value * 255)
-        painter.setPen(QPen(QColor(120, 120, 120, bar_alpha), 8))
+        painter.setPen(QPen(QColor(120, 120, 120, bar_alpha), self.progress_bar_height))
         progress_left = self._draw_progress_left
         painter.drawLine(progress_left, 0, self.width(), 0)
         if self.ctx.playing_manager.crossfading or bar_alpha < 255:
@@ -1087,7 +1120,7 @@ class PlayingController(QOpenGLWidget):
                     QColor(255, 255, 255, 255 - bar_alpha)
                     if isDark
                     else QColor(0, 0, 0, 255 - bar_alpha),
-                    8,
+                    self.progress_bar_height,
                 )
             )
             metrics = QFontMetricsF(painter.font())
@@ -1104,7 +1137,7 @@ class PlayingController(QOpenGLWidget):
                     QColor(255, 255, 255, self._overlay_alpha)
                     if isDark
                     else QColor(0, 0, 0, self._overlay_alpha),
-                    8,
+                    self.progress_bar_height,
                 )
             )
             painter.drawLine(
@@ -1116,13 +1149,14 @@ class PlayingController(QOpenGLWidget):
             painter.setPen(
                 QPen(
                     QColor(255, 255, 255, 80) if isDark else QColor(0, 0, 0, 80),
-                    8,
+                    self.progress_bar_height,
                 )
             )
+            offset = max(int((self.progress_bar_height - 8) / 2) - 8, 0)
             painter.drawLine(
                 0,
                 0,
-                self._draw_current_x + self._prepared_lead_width,
+                self._draw_current_x + self._prepared_lead_width - offset,
                 0,
             )
 
@@ -1131,22 +1165,26 @@ class PlayingController(QOpenGLWidget):
                     QColor(255, 255, 255, bar_alpha)
                     if isDark
                     else QColor(0, 0, 0, bar_alpha),
-                    8,
+                    self.progress_bar_height,
                 )
             )
             painter.drawLine(
                 progress_left,
                 0,
-                self._draw_current_x,
+                self._draw_current_x - offset,
                 0,
             )
 
         flash = self.beat_flash_timer.current_value
         theme_color = self.ctx.main_window.song_theme
         if flash > 0 and theme_color:
+            expand_offset = int((self.progress_bar_height - 8) / 2)
             width = self.width() * 0.1
             gradient = QLinearGradient(
-                self._draw_current_x - width, 0, self._draw_current_x + 5, 0
+                self._draw_current_x - width + expand_offset,
+                0,
+                self._draw_current_x + 5 + expand_offset,
+                0,
             )
             gradient.setColorAt(0, QColor(255, 255, 255, 0))
             mixed = mixColor(
@@ -1155,19 +1193,59 @@ class PlayingController(QOpenGLWidget):
             gradient.setColorAt(1, mixed)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(gradient)
-            painter.drawRect(QRectF(self._draw_current_x - width, -4, width + 5, 8))
+            painter.drawRect(
+                QRectF(
+                    self._draw_current_x - width + expand_offset,
+                    -self.progress_bar_height / 2,
+                    width + 5 + expand_offset,
+                    self.progress_bar_height,
+                )
+            )
             offset = max(
                 -self.width() * 0.05, min(self.width() * 0.05, self.draw_x_acc * 100)
             )
             gradient = QLinearGradient(
-                self._draw_current_x + 5, 0, self._draw_current_x + offset + 5, 0
+                self._draw_current_x + 5 + expand_offset,
+                0,
+                self._draw_current_x + offset + 5 + expand_offset,
+                0,
             )
             gradient.setColorAt(0, mixed)
             gradient.setColorAt(1, QColor(mixed.red(), mixed.green(), mixed.blue(), 0))
             painter.setBrush(gradient)
             rect_left = min(self._draw_current_x, self._draw_current_x + offset) + 5
             rect_width = abs(offset)
-            painter.drawRect(QRectF(rect_left, 0, rect_width, self.height()))
+            painter.drawRect(
+                QRectF(rect_left + expand_offset, 0, rect_width, self.height())
+            )
+
+        if self.progress_expand.current_value > 0:
+            i = float2time(self._seek_position if self.seeking else self.ctx.player.getPosition())
+            s = f'{f"{i.minutes}".zfill(2)}:{f"{i.seconds}".zfill(2)}'
+            width = self.metri.horizontalAdvance(s)
+            bar_height = int(self.progress_bar_height / 2)
+            right = self.last_btn.x() - 5
+            text_x = max(
+                min(self._draw_current_x - 16, right - width),
+                progress_left,
+            )
+            painter.save()
+            painter.setFont(self.ft)
+            t_alpha = int(255 * self.progress_expand.current_value)
+            painter.setPen(
+                QColor(0, 0, 0, t_alpha)
+                if isDark
+                else QColor(255, 255, 255, t_alpha)
+            )
+            painter.setClipRect(QRectF(text_x, 0, right - text_x, bar_height))
+            painter.drawText(
+                QPointF(
+                    text_x,
+                    (bar_height - self.font_height) * 0.5 + self.metri.ascent(),
+                ),
+                s,
+            )
+            painter.restore()
 
         painter.end()
 

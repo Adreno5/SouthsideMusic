@@ -1,16 +1,21 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
 import logging
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
 from pydub import AudioSegment
 
 from core.audio_decode import PatchedAudioSegment
-from core.audio_processing import AudioProcessingSettings, AudioProcessor
+from core.audio_processing import (
+    AudioProcessingSettings,
+    AudioProcessor,
+    applyEqualizer,
+    buildEqualizerKernel,
+)
 from core.config import cfg
 
 _logger = logging.getLogger(__name__)
@@ -108,6 +113,8 @@ def renderSongWithEffects(
     processor.sample_rate = sample_rate
     processor.channels = samples.shape[1]
     processor.settings = _renderSettings()
+    eq_kernel = buildEqualizerKernel(cfg.eq_bands, sample_rate)
+    eq_state = None
 
     expected_frames = max(1, round(total_frames / processor.settings.play_speed))
     chunks: list[bytes] = []
@@ -123,6 +130,9 @@ def renderSongWithEffects(
             chunk = chunk[: expected_frames - produced_frames]
         if len(chunk) == 0:
             break
+        if eq_kernel is not None:
+            chunk, eq_state = applyEqualizer(chunk, eq_kernel, eq_state)
+            chunk = chunk.astype(np.float32, copy=False)
         pcm = np.clip(chunk, -1.0, 1.0) * 32767.0
         chunks.append(pcm.astype('<i2').tobytes())
         produced_frames += len(chunk)

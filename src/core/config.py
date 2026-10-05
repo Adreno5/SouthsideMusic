@@ -2,6 +2,7 @@ import base64
 from dataclasses import dataclass, field
 import json
 import logging
+import math
 import os
 
 from typing import Any, Literal, cast
@@ -18,6 +19,11 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 CONFIG_PATH = os.path.join(_PROJECT_ROOT, 'config.json')
 LEGACY_PICKLE_CONFIG_PATH = os.path.join(_PROJECT_ROOT, 'config.pkl')
 SECRET_PREFIX = 'win32crypt:'
+
+DEFAULT_EQ_BANDS: tuple[tuple[float, float], ...] = (
+    (20.0, 0.0),
+    (20000.0, 0.0),
+)
 
 
 def _configToJsonObject() -> dict[str, Any]:
@@ -101,6 +107,8 @@ class Config:
     enable_reverb: bool = False
     reverb_intensity: int = 3
 
+    eq_bands: list[tuple[float, float]] = field(default_factory=list)
+
     enable_crossfade: bool = True
     enable_lyric_handoff: bool = False
     crossfade_strength: float = 1
@@ -166,6 +174,7 @@ class Config:
         super().__init__()
         self.setting_section_expanded = {}
         self.llm_providers = []
+        self.eq_bands = list(DEFAULT_EQ_BANDS)
         global _instance
         _instance = self
 
@@ -248,6 +257,26 @@ def _normalizeHexColor(value: Any, default: str) -> str:
     return f'#{text.upper()}'
 
 
+def _normalizeEQBands(value: Any) -> list[tuple[float, float]]:
+    if not isinstance(value, list):
+        return list(DEFAULT_EQ_BANDS)
+    bands: dict[float, float] = {}
+    for item in value:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+        try:
+            frequency = float(item[0])
+            gain = float(item[1])
+        except (TypeError, ValueError):
+            continue
+        if frequency <= 0 or not math.isfinite(frequency) or not math.isfinite(gain):
+            continue
+        bands[frequency] = gain
+    if not bands:
+        return list(DEFAULT_EQ_BANDS)
+    return [(frequency, bands[frequency]) for frequency in sorted(bands)]
+
+
 def _applyConfigJsonObject(data: dict[str, Any]) -> None:
     data.pop('animation_speed', None)
     if data.get('language') not in ('en_US', 'zh_CN'):
@@ -320,6 +349,8 @@ def _applyConfigJsonObject(data: dict[str, Any]) -> None:
         1,
         525600,
     )
+
+    data['eq_bands'] = _normalizeEQBands(data.get('eq_bands'))
 
     providers = data.get('llm_providers')
     if isinstance(providers, list):

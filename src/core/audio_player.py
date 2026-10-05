@@ -37,7 +37,12 @@ from core.audio_decode import (
     fixWavHeaders,
     getCachedAudio,
 )
-from core.audio_processing import AudioProcessingSettings, AudioProcessor
+from core.audio_processing import (
+    AudioProcessingSettings,
+    AudioProcessor,
+    applyEqualizer,
+    buildEqualizerKernel,
+)
 from core.beat import BeatDetector, BeatFrame
 from core.config import cfg
 from core.pcm_timeline import PcmTimeline
@@ -140,10 +145,11 @@ class AudioPlayer(QObject):
     positionChanged = Signal(float)
     seekRequested = Signal(float)
     fftDataReady = Signal(np.ndarray, np.ndarray)  # (freqs, magnitudes)
+    equalizerFFTDataReady = Signal(np.ndarray, np.ndarray, np.ndarray)
     beatDataReady = Signal(float, bool)
     beatDataReset = Signal()
     _beatFramesReady = Signal(int, object)
-    _spectrumReady = Signal(int, object, object)
+    _spectrumReady = Signal(int, object, object, object)
 
     def __init__(
         self, parent: QObject | None = None, devices: list[DevicesInfo] | None = None
@@ -190,8 +196,10 @@ class AudioPlayer(QObject):
 
         self.play_speed = cfg.play_speed
         self.play_pitch = cfg.play_pitch
+        self._eq_kernel: np.ndarray | None = None
+        self._eq_state: np.ndarray | None = None
 
-        self._BLOCK_SIZE = 4096
+        self._BLOCK_SIZE = 2048
 
         self._audio_queue: Queue[tuple[np.ndarray, int, float | None] | None] = Queue(
             maxsize=_PRODUCER_QUEUE_BLOCKS
@@ -240,7 +248,7 @@ class AudioPlayer(QObject):
             sys.exit(1)
         self._device_id: int = devices[0].index
         self.fft_queue: Queue[
-            tuple[int, int, int, float, np.ndarray, np.ndarray] | None
+            tuple[int, int, int, float, np.ndarray, np.ndarray, np.ndarray] | None
         ] = Queue(maxsize=8)
         self.fft_thread_running = True
         self.fft_thread = threading.Thread(target=self._fft_worker, daemon=True)
@@ -248,7 +256,23 @@ class AudioPlayer(QObject):
 
         event_bus.subscribe(_100MS_TICK, self._emitPlaybackTelemetry)
 
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+        self.setEqualizer()
+
+    def setEqualizer(self) -> None:
+        sample_rate = self.sample_rate
+        kernel = buildEqualizerKernel(list(cfg.eq_bands), sample_rate)
+        with self._lock:
+            if sample_rate != self.sample_rate:
+                return
+            self._eq_kernel = kernel
+            self._eq_state = None
+
+    def _equalize(self, chunk: np.ndarray) -> np.ndarray:
+        kernel = self._eq_kernel
+        if kernel is None or len(chunk) == 0:
+            return chunk
+        filtered, self._eq_state = applyEqualizer(chunk, kernel, self._eq_state)
+        return filtered.astype(np.float32, copy=False)
 
     def emitDebugInfo(self) -> None:
         event_bus.emit(
@@ -272,6 +296,7 @@ class AudioPlayer(QObject):
                 f'stereo_haas_index={cfg.stereo_haas_index}',
                 f'enable_reverb={cfg.enable_reverb}',
                 f'reverb_intensity={cfg.reverb_intensity}',
+                f'eq_taps={0 if self._eq_kernel is None else len(self._eq_kernel)}',
                 f'device_id={self._device_id}',
                 f'audio_qsize={self._audio_queue.qsize()}',
                 f'fft_qsize={self.fft_queue.qsize()}',
@@ -337,6 +362,7 @@ class AudioPlayer(QObject):
         self.samples = prepared.samples
         self.channels = prepared.channels
         self.output_channels = 2
+        self.setEqualizer()
 
         self.current_index = 0
         self._producer_index = 0
@@ -620,6 +646,7 @@ class AudioPlayer(QObject):
             self._track_origin = 0
             self._track_frames = None
             self.sample_rate = sample_rate
+            self.setEqualizer()
             self.samples = np.zeros((0, channels), dtype=np.float32)
             self.channels = channels
             self.output_channels = channels
@@ -709,6 +736,7 @@ class AudioPlayer(QObject):
                     self._logger.debug('failed to close audio stream', exc_info=True)
                 self.stream = None
             self.sample_rate = rate
+            self.setEqualizer()
             self._clearQueue()
             self._resetBeatAnalysis()
             if was_playing:
@@ -1405,12 +1433,19 @@ class AudioPlayer(QObject):
             self.fft_queue.not_full.notify_all()
         self.beatDataReset.emit()
 
-    @Slot(int, object, object)
+    @Slot(int, object, object, object)
     def _publishSpectrum(
-        self, generation: int, frequencies: np.ndarray, magnitudes: np.ndarray
+        self,
+        generation: int,
+        frequencies: np.ndarray,
+        magnitudes: np.ndarray,
+        original_magnitudes: np.ndarray,
     ) -> None:
         if generation == self._analysis_generation and self.fft_enabled:
             self.fftDataReady.emit(frequencies, magnitudes)
+            self.equalizerFFTDataReady.emit(
+                frequencies, original_magnitudes, magnitudes
+            )
 
     @Slot(int, object)
     def _publishBeatFrames(
@@ -1442,6 +1477,7 @@ class AudioPlayer(QObject):
 
     def _fft_worker(self) -> None:
         spectrum = SpectrumAnalyzer()
+        original_spectrum = SpectrumAnalyzer()
         detector = BeatDetector()
         generation = -1
         sample_rate = 0
@@ -1460,6 +1496,7 @@ class AudioPlayer(QObject):
                 presentation_time,
                 chunk,
                 beat_samples,
+                original_chunk,
             ) = packet
             if packet_generation != self._analysis_generation:
                 continue
@@ -1469,6 +1506,7 @@ class AudioPlayer(QObject):
                 or (last_sequence >= 0 and packet_sequence != last_sequence + 1)
             ):
                 spectrum.reset()
+                original_spectrum.reset()
                 detector.reset()
                 analyzed_samples = 0
             generation = packet_generation
@@ -1521,19 +1559,24 @@ class AudioPlayer(QObject):
 
             if not self.fft_enabled:
                 spectrum.reset()
+                original_spectrum.reset()
                 continue
 
             try:
                 fft_freqs, fft_vals = spectrum.process(
                     chunk, self.fft_size, sample_rate
                 )
+                _, original_vals = original_spectrum.process(
+                    original_chunk, self.fft_size, sample_rate
+                )
             except Exception:
                 self._logger.exception('spectrum analysis failed')
                 spectrum.reset()
+                original_spectrum.reset()
                 continue
             if not self.fft_thread_running:
                 break
-            self._spectrumReady.emit(generation, fft_freqs, fft_vals)
+            self._spectrumReady.emit(generation, fft_freqs, fft_vals, original_vals)
 
     def stop_fft_thread(self, timeout: float = 0.5) -> None:
         self.fft_thread_running = False
@@ -1640,6 +1683,8 @@ class AudioPlayer(QObject):
             raise sd.CallbackStop
 
         chunk, src_frames, block_gain = item
+        original_chunk = chunk
+        chunk = self._equalize(chunk)
         copy_len = min(len(chunk), frames)
         gain = self.volume_gain * (
             self.loudness_gain if block_gain is None else block_gain
@@ -1705,6 +1750,11 @@ class AudioPlayer(QObject):
                 presentation_time,
                 monitor_chunk,
                 chunk[:copy_len, : self.output_channels],
+                np.clip(
+                    original_chunk[:copy_len, : self.output_channels] * gain,
+                    -1.0,
+                    (61.0 + cfg.target_lufs) * 3.0,
+                ).mean(axis=1),
             )
             try:
                 self.fft_queue.put_nowait(packet)
@@ -1778,6 +1828,7 @@ class AudioPlayer(QObject):
         with self._audio_queue.mutex:
             self._audio_queue.queue.clear()
             self._audio_queue.not_full.notify_all()
+        self._eq_state = None
         self._producer_index = self.current_index
         self._prepared_start_index = self.current_index
         self._prepared_end_index = self.current_index

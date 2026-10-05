@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import gcd
+from math import gcd, isfinite
 
 import numpy as np
-from scipy.signal import firwin, resample_poly
+from scipy.signal import firwin, firwin2, minimum_phase, oaconvolve, resample_poly
 
 from core.pcm_timeline import PcmTimeline
 from core.wsola import WsolaStretcher
+
+_EQ_MAX_GAIN = 20.0
+_EQ_FLAT_GAIN = 1e-3
 
 _MAX_HAAS_DELAY_MS = 30
 _MIN_AUDIBLE_PITCH_SHIFT = 0.25
@@ -33,6 +36,83 @@ def _resampleWindow(max_rate: int) -> np.ndarray:
         ).astype(np.float32)
         _resample_windows[max_rate] = window
     return window
+
+
+def sampleEqualizerCurve(
+    bands: list[tuple[float, float]], frequencies: np.ndarray
+) -> np.ndarray:
+    points = sorted(
+        [
+            (float(np.log(frequency)), max(-_EQ_MAX_GAIN, min(_EQ_MAX_GAIN, gain)))
+            for frequency, gain in bands
+            if frequency > 0 and isfinite(frequency) and isfinite(gain)
+        ],
+        key=lambda point: point[0],
+    )
+    if not points:
+        return np.zeros_like(frequencies)
+    if len(points) == 1:
+        return np.full_like(frequencies, points[0][1])
+    x = np.array([position for position, _ in points])
+    y = np.array([gain for _, gain in points])
+    widths = np.diff(x)
+    slopes = np.divide(np.diff(y), widths, out=np.zeros_like(widths), where=widths > 0)
+    tangents = np.zeros_like(y)
+    tangents[0], tangents[-1] = slopes[0], slopes[-1]
+    for index in range(1, len(points) - 1):
+        before, after = slopes[index - 1], slopes[index]
+        if (before > 0 and after > 0) or (before < 0 and after < 0):
+            weight_before = 2 * widths[index] + widths[index - 1]
+            weight_after = widths[index] + 2 * widths[index - 1]
+            tangents[index] = (weight_before + weight_after) / (
+                weight_before / before + weight_after / after
+            )
+    positions = np.clip(
+        np.log(np.maximum(frequencies, np.finfo(float).tiny)), x[0], x[-1]
+    )
+    indices = np.clip(np.searchsorted(x, positions, side='right') - 1, 0, len(x) - 2)
+    segment_widths = widths[indices]
+    t = np.divide(
+        positions - x[indices],
+        segment_widths,
+        out=np.ones_like(positions),
+        where=segment_widths > 0,
+    )
+    return (
+        (1 - t) ** 2 * (1 + 2 * t) * y[indices]
+        + t**2 * (3 - 2 * t) * y[indices + 1]
+        + t * (1 - t) ** 2 * segment_widths * tangents[indices]
+        - t**2 * (1 - t) * segment_widths * tangents[indices + 1]
+    )
+
+
+def buildEqualizerKernel(
+    bands: list[tuple[float, float]], sample_rate: int
+) -> np.ndarray | None:
+    if sample_rate <= 0:
+        return None
+    size = 1 << max(1, int(np.ceil(np.log2(sample_rate / 4))))
+    frequencies = np.linspace(0.0, sample_rate / 2, size * 2 + 1)
+    gains = sampleEqualizerCurve(bands, frequencies)
+    if np.max(np.abs(gains)) <= _EQ_FLAT_GAIN:
+        return None
+    if np.ptp(gains) <= _EQ_FLAT_GAIN:
+        return np.array([10.0 ** (gains[0] / 20.0)], dtype=np.float32)
+    kernel = firwin2(size + 1, frequencies, 10.0 ** (gains / 20.0), fs=sample_rate)
+    return minimum_phase(kernel, n_fft=size * 16, half=False).astype(np.float32)
+
+
+def applyEqualizer(
+    chunk: np.ndarray, kernel: np.ndarray, state: np.ndarray | None
+) -> tuple[np.ndarray, np.ndarray | None]:
+    if len(chunk) == 0:
+        return chunk, state
+    if len(kernel) == 1:
+        return chunk * kernel[0], None
+    filtered = oaconvolve(chunk, kernel[:, None], axes=0)
+    if state is not None and state.shape == (len(kernel) - 1, chunk.shape[1]):
+        filtered[: len(state)] += state
+    return filtered[: len(chunk)], filtered[len(chunk) :]
 
 
 @dataclass(frozen=True)

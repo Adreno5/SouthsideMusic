@@ -92,7 +92,7 @@ Southside Music is an independent, non-commercial project and is not an official
 - Guided FFmpeg download when the dependency is missing
 - Automatic cleanup of old or oversized downloadable caches
 - Unhandled-exception dialog with traceback details
-- Runtime debug overlay available with `F3`
+- Optional debug mode with an `F3` overlay and startup timing reports
 - Persistent session refresh, cache-size cleanup, and graceful recovery from missing dependencies
 
 ---
@@ -203,7 +203,7 @@ Settings use a compact default view. Enable **Advanced Settings** to expose deta
 ## Shortcuts and Tips
 
 - Press **Space** to toggle play/pause.
-- Press **F3** to toggle the debug overlay.
+- Enable advanced settings, then **App > Debug mode** to use **F3** to toggle the debug overlay. Debug mode is off by default. While enabled, each launch saves stage timings as PNG and JSON in `data/debug/launch`.
 - Select the lower part of the playback bar to expand or collapse Now Playing.
 - Drag the progress line to seek after the song has loaded.
 - Select a song cover in supported lists to queue it after the current track.

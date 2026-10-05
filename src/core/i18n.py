@@ -763,6 +763,17 @@ TRANSLATIONS: dict[str, list[str]] = {
         'show every setting, including options for tuning audio, model providers and client links',
         '显示全部设置，包括音效调节、模型服务和客户端连接等高级选项',
     ],
+    'setting_page.debug_mode': ['Debug mode', '调试模式'],
+    'setting_page.debug_mode_description': [
+        (
+            'Enable the F3 debug panel. Starting with the next launch, save startup '
+            'timings as PNG and JSON in data/debug/launch.'
+        ),
+        (
+            '允许通过 F3 打开调试面板。下次启动起，将启动阶段耗时以 PNG 和 JSON '
+            '保存到 data/debug/launch。'
+        ),
+    ],
     'setting_page.EQ': ['EQ', '均衡器'],
     'setting_page.reset_eq_curve': ['Reset Curve', '重置曲线'],
     'setting_page.enable_smtc': ['SMTC Service', 'SMTC 服务'],

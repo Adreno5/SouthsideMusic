@@ -28,7 +28,6 @@ from core.smooth import EaseInOutTimer, EaseOutTimer, SScrollTimer
 from services.events import LYRICS_LINE_DURATION, event_bus
 from services.events.events import (
     _200MS_TICK,
-    COLLECT_DEBUG_INFO,
     DESKTOP_LYRICS_ANCHOR_CHANGED,
     EMIT_DEBUG_INFO,
     REPAINT,
@@ -80,7 +79,6 @@ class DesktopLyricsViewer(LyricsViewer):
         event_bus.subscribe(SECOND_TICK, self._keepOnTop)
         event_bus.subscribe(_200MS_TICK, self._checkMouse)
 
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
         event_bus.unsubscribe(REPAINT, self._onRepaintTick)
         event_bus.subscribe(REPAINT_ALWAYS, self._onRepaintTick)
         event_bus.subscribe(LYRICS_LINE_DURATION, lambda d: self._lyricsLineDuration(d))

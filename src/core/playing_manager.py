@@ -46,7 +46,6 @@ from core.rediscovery import recordListening
 from core.weighted_random import AdvancedRandom
 from services.events.event_bus import event_bus
 from services.events.events import (
-    COLLECT_DEBUG_INFO,
     EMIT_DEBUG_INFO,
     ENDING_NO_SOUND,
     FINISH_CROSSFADE,
@@ -217,7 +216,6 @@ class PlayingManager(QObject):
         event_bus.subscribe(PLAY_START_PLAYLIST, self.startPlaylist)
         event_bus.subscribe(PLAY_CONTINUE_LAST_SONG, self.continueLastSong)
         event_bus.subscribe(PLAYLIST_CHANGED, self.playlistChanged)
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
         event_bus.subscribe(SECOND_TICK, self._recordListening)
 
     def _recordListening(self) -> None:

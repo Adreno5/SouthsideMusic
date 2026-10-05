@@ -76,7 +76,6 @@ from views.playing_controller import PlayingController
 from views.separator import Separator
 from views.song_card import SearchSongCard
 from views.title_bar import SouthsideMusicTitleBar
-from views.debug_overlay import DebugOverlay
 from views.rediscovery_page import RediscoveryPage
 
 
@@ -272,12 +271,8 @@ class MainWindow(FluentWindowBase):
         self.controller.raise_()
         self.controller.show()
 
-        self.debug_overlay = DebugOverlay(ctx, self)
-        geo = self.rect()
-        geo.setWidth(int(self.width() * 0.4))
-        geo.setHeight(int(self.height() * 0.8))
-        self.debug_overlay.setGeometry(geo)
-        self.debug_overlay.raise_()
+        if cfg.debug_mode:
+            self.setDebugMode(True)
 
         self.setMouseTracking(True)
 
@@ -294,6 +289,22 @@ class MainWindow(FluentWindowBase):
         event_bus.subscribe(POST_THEME_CHANGED, self.onPostThemeChanged)
         event_bus.subscribe(REPAINT, self.checkAFK)
         self.refreshLoginInformations()
+
+    def setDebugMode(self, enabled: bool) -> None:
+        logging.getLogger().setLevel(logging.DEBUG if enabled else logging.INFO)
+        if enabled:
+            if self.ctx.debugging_obj is None:
+                from core.debugging import Debugging
+
+                self.ctx.debugging_obj = Debugging(self.ctx)
+            self.ctx.debugging_obj.setEnabled(True)
+        else:
+            if self.ctx.debugging_obj is not None:
+                self.ctx.debugging_obj.setEnabled(False)
+            if hasattr(self, 'debug_overlay'):
+                self.debug_overlay.export_timer.stop()
+                self.debug_overlay._finishExport()
+                self.debug_overlay.hide()
 
     def checkAFK(self, _):
         if (
@@ -355,7 +366,9 @@ class MainWindow(FluentWindowBase):
     def openRediscovery(
         self, folder: LocalFolderInfo | CloudFolderInfo | None = None
     ) -> None:
-        songs = self._fp.curr_cloud_songs if isinstance(folder, CloudFolderInfo) else None
+        songs = (
+            self._fp.curr_cloud_songs if isinstance(folder, CloudFolderInfo) else None
+        )
         self.ctx.rediscovery_page.setSource(folder, songs)
         self.contents_widget.setCurrentWidget(self.ctx.rediscovery_page)
 
@@ -798,7 +811,16 @@ class MainWindow(FluentWindowBase):
         if event.key() == Qt.Key.Key_Space:
             self.controller.toggle()
             event.accept()
-        elif event.key() == Qt.Key.Key_F3:
+        elif event.key() == Qt.Key.Key_F3 and cfg.debug_mode:
+            self.setDebugMode(True)
+            if not hasattr(self, 'debug_overlay'):
+                from views.debug_overlay import DebugOverlay
+
+                self.debug_overlay = DebugOverlay(self.ctx, self)
+                geo = self.rect()
+                geo.setWidth(int(self.width() * 0.4))
+                geo.setHeight(int(self.height() * 0.8))
+                self.debug_overlay.setGeometry(geo)
             self.ctx.debugging_obj.toggle()
             self.debug_overlay.refresh(raise_overlay=True)
             event.accept()

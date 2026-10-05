@@ -11,7 +11,7 @@ import tornado.httpserver
 import tornado.ioloop
 import tornado.web
 from PySide6.QtCore import QObject, Signal
-from services.events import event_bus, COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
+from services.events import event_bus, EMIT_DEBUG_INFO
 
 
 class WebSocketHandler(tornado.websocket.WebSocketHandler):
@@ -108,7 +108,6 @@ class QObjectHandler(QObject):
         self._ping_waiting = False
         self._ping_timer: threading.Timer | None = None
         self.onMessage.connect(self.messaged)
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
 
     def messaged(self, msg):
         self.received += len(msg) / 1024.0
@@ -348,7 +347,6 @@ class WebSocketServer(threading.Thread):
 
         ws_handler.onHandlerReceived.connect(self._setHandler)
         self.tryGetHandler()
-        event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
 
     def emitDebugInfo(self):
         event_bus.emit(

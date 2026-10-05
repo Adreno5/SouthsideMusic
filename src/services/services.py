@@ -97,8 +97,6 @@ class EventsServices(QObject):
 
         threading.Thread(target=_startListen, daemon=True).start()
 
-        event_bus.subscribe(SECOND_TICK, self.collectPids)
-
         event_bus.subscribe(
             SONG_CHANGED, lambda s: event_bus.emit(BACKGROUND_RATIO_CHANGED)
         )

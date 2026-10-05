@@ -440,6 +440,14 @@ class SettingPage(QWidget):
             lambda: self.ctx.smtc.setEnabled(cfg.smtc_enabled),
         )
 
+        self.addCheckSetting(
+            'setting_page.debug_mode',
+            'setting_page.debug_mode_description',
+            'debug_mode',
+            self._onDebugModeChanged,
+            advanced=True,
+        )
+
         self.addNumberSetting(
             'setting_page.afk_secs',
             'setting_page.afk_secs_desc',
@@ -449,6 +457,11 @@ class SettingPage(QWidget):
             'afk_secs',
             advanced=True,
         )
+
+    def _onDebugModeChanged(self, enabled: bool) -> None:
+        if self.ctx.main_window is not None:
+            self.ctx.main_window.setDebugMode(enabled)
+        saveConfig()
 
     def _addAppearanceSection(self) -> None:
         self.addSection(

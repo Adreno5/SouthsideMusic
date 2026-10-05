@@ -22,6 +22,7 @@ from services.events import event_bus, SECOND_TICK
 from PySide6.QtWidgets import QApplication
 from views.launch_window import LaunchWindow
 from core.profiled_application import ProfiledApplication
+from core.config import loadConfig, saveConfig, Config, cfg
 
 QApplication.setHighDpiScaleFactorRoundingPolicy(
     Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
@@ -35,7 +36,14 @@ from core.smtc import SmtcController, initAppIdentity
 
 initAppIdentity()
 
-launchwindow: LaunchWindow | None = LaunchWindow(app)
+try:
+    loadConfig()
+except (OSError, ValueError, UnicodeError):
+    import logging
+
+    logging.getLogger(__name__).exception('failed to load config, using defaults')
+
+launchwindow: LaunchWindow | None = LaunchWindow(app, cfg.debug_mode)
 launchwindow.subtitle('Loading libraries...')
 app.processEvents()
 
@@ -70,7 +78,6 @@ from services.events import (
 from qfluentwidgets import setTheme, Theme, InfoBar
 import shiboken6
 
-from core.config import loadConfig, saveConfig, Config, cfg
 from core.cache_cleanup import DEFAULT_DATA_CLEANUP_INTERVAL_SECONDS, cleanupDataFolder
 from core.favorites import favorites_manager, saveFavorites
 from core.icons import refreshBoundIcons
@@ -88,14 +95,16 @@ from views.desktop_lyrics import DesktopLyricsPage
 from views.favorites_page import FavoritesPage
 from views.main_window import LLM_WINDOW_WIDTH_DELTA, MainWindow
 from views.error_popup import ErrorPopupWindow
-from core.debugging import Debugging
 from services.update import startUpdateCheck
 
 terminal_thread = threading.Thread(target=terminalSizeListen, daemon=True)
 terminal_thread.start()
 
 logging_handler = LogHandler()
-logging.basicConfig(level=logging.DEBUG, handlers=[logging_handler])
+logging.basicConfig(
+    level=logging.DEBUG if cfg.debug_mode else logging.INFO,
+    handlers=[logging_handler],
+)
 hijackStreams()
 
 _logger = logging.getLogger('main')
@@ -599,9 +608,6 @@ def southsideMusic():
 
     app.processEvents()
 
-    loadConfig()
-    launchwindow.subtitle('Loading config...')
-
     launchwindow.subtitle('Loading fonts...')
     _font_path = os.path.join(
         os.path.dirname(_SRC_DIR), 'fonts', 'HARMONYOS_SANS_SC_REGULAR.ttf'
@@ -656,9 +662,6 @@ def southsideMusic():
         launchwindow.subtitle('Initializing events services...')
         ctx.events_service = EventsServices(ctx)
 
-        launchwindow.subtitle('Initializing debug window...')
-        dw = Debugging(ctx)
-        ctx.debugging_obj = dw
         launchwindow.subtitle('Initializing playing page...')
         dp = PlayingPage(ctx)
         ctx.playing_page = dp

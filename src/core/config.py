@@ -136,6 +136,7 @@ class Config:
 
     show_translation: bool = True
     show_advanced_settings: bool = False
+    debug_mode: bool = False
     smtc_enabled: bool = True
     setting_section_expanded: dict[str, bool] = field(default_factory=dict)
 
@@ -278,6 +279,7 @@ def _normalizeEQBands(value: Any) -> list[tuple[float, float]]:
 
 
 def _applyConfigJsonObject(data: dict[str, Any]) -> None:
+    data['debug_mode'] = data.get('debug_mode') is True
     data.pop('animation_speed', None)
     if data.get('language') not in ('en_US', 'zh_CN'):
         data.pop('language', None)

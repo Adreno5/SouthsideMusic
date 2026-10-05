@@ -1,26 +1,25 @@
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent
-from PySide6.QtGui import QEnterEvent
+from PySide6.QtCore import QEvent, QMargins, QPoint
+from PySide6.QtGui import (
+    QColor,
+    QCursor,
+    QEnterEvent,
+    QFocusEvent,
+    QFont,
+    QIcon,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    Qt,
+)
+from PySide6.QtWidgets import QLineEdit
 
 from core import theme
 from core.color import mixColor
 from core.config import cfg
 from core.icons import SouthsideIcon, bindIcon
 from core.smooth import EaseOutTimer
-from PySide6.QtCore import QPoint
-from PySide6.QtGui import (
-    QColor,
-    QCursor,
-    QFocusEvent,
-    QFont,
-    QIcon,
-    QMouseEvent,
-    QPaintEvent,
-    QPainter,
-    Qt,
-)
-from PySide6.QtWidgets import QLineEdit
 from services.events import (
     BACKGROUND_RATIO_CHANGED,
     POST_THEME_CHANGED,
@@ -85,7 +84,8 @@ class SearchLineEdit(QLineEdit):
     def leaveEvent(self, event: QEvent) -> None:
         if not self.rect().contains(self.mapFromGlobal(QCursor.pos())):
             self._hovering = False
-            self.clearFocus()
+            if not self.text().strip():
+                self.clearFocus()
             self.update()
         return super().leaveEvent(event)
 
@@ -162,7 +162,7 @@ class SearchLineEdit(QLineEdit):
             )
             draw_rect.setX(int((self.width() - draw_width) * 0.5))
             draw_rect.setWidth(draw_width)
-            self.setTextMargins(
+            text_margins = QMargins(
                 draw_rect.x() + self._text_padding,
                 0,
                 self.width()
@@ -173,6 +173,8 @@ class SearchLineEdit(QLineEdit):
                 + self._icon_gap,
                 0,
             )
+            if self.textMargins() != text_margins:
+                self.setTextMargins(text_margins)
             painter.drawRoundedRect(draw_rect, radius, radius)
 
             icon_x = (self.width() - icon_size) * (0.5 + expansion * 0.5)

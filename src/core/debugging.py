@@ -1,14 +1,17 @@
+from __future__ import annotations
+
+import logging
 from typing import TYPE_CHECKING
+
+from PySide6.QtCore import QObject
+from PySide6.QtWidgets import QLabel
+
+from core.frame_profiler import frame_profiler
+from services.events import event_bus
+from services.events.events import _100MS_TICK, COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
 
 if TYPE_CHECKING:
     from core.app_context import AppContext
-from services.events import event_bus
-from PySide6.QtCore import QObject
-from PySide6.QtWidgets import QLabel
-from services.events.events import _20MS_TICK
-from services.events.events import COLLECT_DEBUG_INFO, EMIT_DEBUG_INFO
-from core.frame_profiler import frame_profiler
-import logging
 
 _logger = logging.getLogger(__name__)
 
@@ -35,12 +38,12 @@ class Debugging(QObject):
             return
         self._collecting = collecting
         if collecting:
-            event_bus.subscribe(_20MS_TICK, self.collectInfo)
+            event_bus.subscribe(_100MS_TICK, self.collectInfo)
         else:
-            event_bus.unsubscribe(_20MS_TICK, self.collectInfo)
+            event_bus.unsubscribe(_100MS_TICK, self.collectInfo)
 
     def toggle(self) -> None:
-        if not self.ctx.debugging:
+        if not frame_profiler.enabled:
             self.setCollecting(True)
             self.ctx.debugging = True
             frame_profiler.setEnabled(True)

@@ -60,6 +60,9 @@ class DebugOverlay(QOpenGLWidget):
         self.content_metri = QFontMetricsF(self.content_ft)
         self.profile_colors: dict[str, QColor] = {}
         self._profile_history: deque[FrameProfile] = deque(maxlen=30)
+        self._profile_sections: list[tuple[str, float, float]] = []
+        self._profile_duration_ns = 0.0
+        self._last_update_ns = 0
         self._capturing = False
         self._capture_deadline_ns = 0
         self._resume_debug_collection = False
@@ -120,14 +123,14 @@ class DebugOverlay(QOpenGLWidget):
         if self._capturing:
             return super().showEvent(event)
         self._startTicks()
-        event_bus.subscribe(REPAINT_ALWAYS, self.refresh)
         return super().showEvent(event)
 
     def hideEvent(self, event: QHideEvent) -> None:
         self._stopTicks()
         self._profile_history.clear()
-        if not self._capturing:
-            event_bus.unsubscribe(REPAINT_ALWAYS, self.refresh)
+        self._profile_sections.clear()
+        self._profile_duration_ns = 0.0
+        self._last_update_ns = 0
         self.ctx.debugging = False
         return super().hideEvent(event)
 
@@ -135,6 +138,7 @@ class DebugOverlay(QOpenGLWidget):
         if self._ticks_active:
             return
         self._ticks_active = True
+        event_bus.subscribe(REPAINT_ALWAYS, self.refresh)
         event_bus.subscribe(_50MS_TICK, self.updateDatas)
         event_bus.subscribe(SECOND_TICK, self.tryRaise)
 
@@ -142,6 +146,7 @@ class DebugOverlay(QOpenGLWidget):
         if not self._ticks_active:
             return
         self._ticks_active = False
+        event_bus.unsubscribe(REPAINT_ALWAYS, self.refresh)
         event_bus.unsubscribe(_50MS_TICK, self.updateDatas)
         event_bus.unsubscribe(SECOND_TICK, self.tryRaise)
 
@@ -272,6 +277,9 @@ class DebugOverlay(QOpenGLWidget):
         self, _multiple_factor: float = 1.0, raise_overlay: bool = False
     ) -> None:
         if self._capturing:
+            if not frame_profiler.enabled:
+                self.export_timer.stop()
+                self._finishExport()
             return
         self.setVisible(self.ctx.debugging)
         if self.ctx.debugging:
@@ -287,6 +295,41 @@ class DebugOverlay(QOpenGLWidget):
                 self._profile_history.append(profile)
             if raise_overlay:
                 self.raise_()
+            now = time.perf_counter_ns()
+            if not raise_overlay and now - self._last_update_ns < 50_000_000:
+                return
+            self._last_update_ns = now
+            if self._profile_history:
+                sample_count = len(self._profile_history)
+                self._profile_duration_ns = (
+                    sum(profile.duration_ns for profile in self._profile_history)
+                    / sample_count
+                )
+                section_totals: dict[str, tuple[float, int]] = {}
+                for profile in self._profile_history:
+                    for name, duration_ns in profile.sections:
+                        percentage_sum, duration_sum = section_totals.get(
+                            name, (0.0, 0)
+                        )
+                        section_totals[name] = (
+                            percentage_sum + duration_ns / profile.duration_ns * 100,
+                            duration_sum + duration_ns,
+                        )
+                self._profile_sections = sorted(
+                    (
+                        (
+                            name,
+                            percentage_sum / sample_count,
+                            duration_sum / sample_count,
+                        )
+                        for name, (
+                            percentage_sum,
+                            duration_sum,
+                        ) in section_totals.items()
+                    ),
+                    key=lambda item: item[1],
+                    reverse=True,
+                )
             self.update()
 
     def adjustToParent(self) -> None:
@@ -379,7 +422,9 @@ class DebugOverlay(QOpenGLWidget):
         self.export_timer.start(10_000)
 
     def _finishExport(self) -> None:
-        if self._capturing and self.ctx.debugging:
+        if not self._capturing:
+            return
+        if frame_profiler.isRecording():
             remaining_ns = self._capture_deadline_ns - time.perf_counter_ns()
             if remaining_ns > 0:
                 self.export_timer.start(max(1, (remaining_ns + 999_999) // 1_000_000))
@@ -391,7 +436,6 @@ class DebugOverlay(QOpenGLWidget):
                 self.export_button.setText('PNG + JSON saved - Export 10s')
                 self.export_button.setToolTip(path)
                 _logger.info('performance report saved to %s', path)
-                self.show()
             else:
                 self.export_button.setText('Export 10s PNG')
                 self.export_button.setToolTip('Capture cancelled: debugging disabled')
@@ -401,7 +445,7 @@ class DebugOverlay(QOpenGLWidget):
             self.export_button.setToolTip(str(error))
         finally:
             self._capturing = False
-            self.ctx.debugging = True
+            self.ctx.debugging = frame_profiler.enabled
             self.export_button.setEnabled(True)
             if self.ctx.debugging:
                 if self._resume_debug_collection:
@@ -764,37 +808,8 @@ class DebugOverlay(QOpenGLWidget):
                 painter.drawLine(x, y - 645, x, y - 445)
             painter.restore()
 
-            if self._profile_history:
-                sample_count = len(self._profile_history)
-                frame_duration_ns = (
-                    sum(profile.duration_ns for profile in self._profile_history)
-                    / sample_count
-                )
-                section_totals: dict[str, tuple[float, int]] = {}
-                for profile in self._profile_history:
-                    for name, duration_ns in profile.sections:
-                        percentage_sum, duration_sum = section_totals.get(
-                            name, (0.0, 0)
-                        )
-                        section_totals[name] = (
-                            percentage_sum + duration_ns / profile.duration_ns * 100,
-                            duration_sum + duration_ns,
-                        )
-                sections = sorted(
-                    (
-                        (
-                            name,
-                            percentage_sum / sample_count,
-                            duration_sum / sample_count,
-                        )
-                        for name, (
-                            percentage_sum,
-                            duration_sum,
-                        ) in section_totals.items()
-                    ),
-                    key=lambda item: item[1],
-                    reverse=True,
-                )
+            if self._profile_sections:
+                sections = self._profile_sections
                 profile_x = column_width + 10
                 profile_width = column_width - 20
                 pie_size = 180
@@ -810,7 +825,7 @@ class DebugOverlay(QOpenGLWidget):
                     painter,
                     profile_x,
                     legend_y,
-                    f'Frame: {frame_duration_ns / 1_000_000:.3f} ms',
+                    f'Frame: {self._profile_duration_ns / 1_000_000:.3f} ms',
                 )
                 legend_y += row_height
                 angle = 0

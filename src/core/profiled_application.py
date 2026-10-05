@@ -15,7 +15,9 @@ class ProfiledApplication(QApplication):
         owner: QObject | None = receiver
         excluded = False
         while owner is not None:
-            if getattr(owner, '_exclude_from_profile', False):
+            if owner.__dict__.get('_exclude_from_profile', False) or getattr(
+                type(owner), '_exclude_from_profile', False
+            ):
                 excluded = True
                 break
             owner = owner.parent()

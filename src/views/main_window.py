@@ -77,6 +77,7 @@ from views.separator import Separator
 from views.song_card import SearchSongCard
 from views.title_bar import SouthsideMusicTitleBar
 from views.debug_overlay import DebugOverlay
+from views.rediscovery_page import RediscoveryPage
 
 
 class MainWindow(FluentWindowBase):
@@ -104,6 +105,7 @@ class MainWindow(FluentWindowBase):
         self._plp = ctx.playlist_page
         self.song_theme: QColor | None = None
         ctx.lyric_editor_page = LyricEditorPage(ctx)
+        ctx.rediscovery_page = RediscoveryPage(ctx)
 
         self.setWindowIcon(
             QIcon(str(Path(__file__).resolve().parent.parent.parent / 'icon.png'))
@@ -116,9 +118,9 @@ class MainWindow(FluentWindowBase):
             self._sp,
             self._stp,
             self.ctx.home_page,
-            self.ctx.library_page,
             self.ctx.lyric_editor_page,
             self.ctx.comments_page,
+            self.ctx.rediscovery_page,
         ]:
             if ctx.launch_window:
                 ctx.launch_window.subtitle(f'Adding {w} to stacked widget...')
@@ -184,12 +186,6 @@ class MainWindow(FluentWindowBase):
         bindText(self.refresh_button, 'main_window.refresh')
         self.refresh_button.clicked.connect(lambda: self.refreshFolders())
         button_layout.addWidget(self.refresh_button)
-
-        self.library_button = TransparentPushButton('')
-        bindText(self.library_button, 'main_window.library')
-        bindIcon(self.library_button, 'library')
-        self.library_button.clicked.connect(self._onLibraryClicked)
-        button_layout.addWidget(self.library_button)
 
         left_layout.addLayout(button_layout)
         left_layout.addWidget(self.folders_list, 2)
@@ -356,9 +352,12 @@ class MainWindow(FluentWindowBase):
     def _onHomeClicked(self):
         self.contents_widget.setCurrentWidget(self.ctx.home_page)
 
-    def _onLibraryClicked(self):
-        self.contents_widget.setCurrentWidget(self.ctx.library_page)
-        self.ctx.library_page.fetchSongs()
+    def openRediscovery(
+        self, folder: LocalFolderInfo | CloudFolderInfo | None = None
+    ) -> None:
+        songs = self._fp.curr_cloud_songs if isinstance(folder, CloudFolderInfo) else None
+        self.ctx.rediscovery_page.setSource(folder, songs)
+        self.contents_widget.setCurrentWidget(self.ctx.rediscovery_page)
 
     def search(self):
         if not self.search_input.text().strip():

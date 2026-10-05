@@ -163,6 +163,14 @@ Favorites can display either a local folder or a NetEase cloud playlist. Local f
 
 Song export supports `.mp3`, `.m4a`, `.flac`, `.wav`, `.ogg`, and `.opus`. Southside Music writes available cover art, lyrics, album, artist, and track metadata into the exported file.
 
+### Rediscover Your Favorites
+
+Home has a compact horizontal **Rediscover your favorites** entry at the top, separate from the four playback mode cards. It opens a dedicated page containing all local favorites. Favorite folders and cloud playlists have a compact **Rediscover** button that opens the page for that list only. **A fresh mix** favors lower playback counts and older listens; **Rarely heard** starts with the least-played songs; **Long time no listen** brings back previously played favorites. Songs heard within 24 hours and the current song are placed later when alternatives are available.
+
+The page displays 40 songs at a time and loads more as you scroll, until every song is shown. Loading keeps the existing order and adds no duplicates. Rows show covers, artists, playback counts, and listening dates. **Refresh order** generates a new order; **Play all** uses the full result as the playback queue, including rows not yet displayed. Click a song to start there or its cover to queue it after the current track. The back button returns to the entry page, and favorite folder order is preserved.
+
+Existing playback counts are used immediately. Listening dates start with this update and are saved to `data/listening_history.json` after 30 seconds of active playback, or half the duration for short songs. Paused playback and quick skips do not record a listening date. Older songs without a recorded date are labeled accordingly.
+
 ### Onerad
 
 Configure a provider in Settings, then select the chat button in the title bar. Onerad supports streaming responses and can request app actions such as searching, opening folders, controlling playback, or changing settings. Tool calls that affect the app require confirmation.

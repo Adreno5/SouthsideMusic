@@ -66,6 +66,10 @@ class FavoritesPage(QWidget):
         if lw:
             lw.subtitle(tr('favorites_page.initializing_favorites_page'))
         self.setObjectName('favorites_page')
+        self.is_cloud = False
+        self.curr_folder: LocalFolderInfo | None = None
+        self.curr_cloud_folder: CloudFolderInfo | None = None
+        self.curr_cloud_songs: list[SongStorable] = []
 
         global_layout = QVBoxLayout(self)
 
@@ -80,6 +84,11 @@ class FavoritesPage(QWidget):
         bindText(self.addpl_btn, 'favorites_page.add_to_playlist')
         self.addpl_btn.clicked.connect(self.addFolderToPlaylist)
         buttons_layout.addWidget(self.addpl_btn)
+        self.rediscovery_button = PushButton(FluentIcon.HISTORY, '', self)
+        bindText(self.rediscovery_button, 'rediscovery.entry_button')
+        self.rediscovery_button.setEnabled(False)
+        self.rediscovery_button.clicked.connect(self.openRediscovery)
+        buttons_layout.addWidget(self.rediscovery_button)
         self.batch_btn = PillToolButton(self)
         self.batch_btn.setFixedSize(32, 32)
         self.batch_btn.setToolTip(tr('favorites_page.multiple_selection'))
@@ -138,10 +147,6 @@ class FavoritesPage(QWidget):
         self.song_viewer.verticalScrollBar().valueChanged.connect(self._onScroll)
         event_bus.subscribe(_50MS_TICK, self._checkVisibleCards)
 
-        self.is_cloud = False
-        self.curr_folder: LocalFolderInfo | None = None
-        self.curr_cloud_folder: CloudFolderInfo | None = None
-        self.curr_cloud_songs: list[SongStorable] = []
         self._cloud_loading = False
         self._batch_mode = False
         self._selected_song_ids: set[str] = set()
@@ -161,8 +166,6 @@ class FavoritesPage(QWidget):
         ):
             return
         self.refresh()
-
-        self.ctx.library_page.fetchSongs(force=True)
 
         event_bus.emit(MWINDOW_REFRESH_FOLDERS)
 
@@ -196,6 +199,7 @@ class FavoritesPage(QWidget):
         return self._song_cards
 
     def displayEmpty(self) -> None:
+        self.rediscovery_button.setEnabled(False)
         self._favorites_refresh_seq += 1
         self._batch_timer.stop()
         self._batch_songs = []
@@ -350,6 +354,7 @@ class FavoritesPage(QWidget):
             return
 
         songs = list(songs)
+        self.rediscovery_button.setEnabled(bool(songs))
         self._selected_song_ids.intersection_update(str(song.id) for song in songs)
         self._syncBatchButtons()
         self._batch_songs = songs
@@ -836,6 +841,11 @@ class FavoritesPage(QWidget):
             parent=self._mwindow,
         )
         event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+
+    def openRediscovery(self) -> None:
+        folder = self.curr_cloud_folder if self.is_cloud else self.curr_folder
+        if folder is not None and self._songs():
+            self.ctx.main_window.openRediscovery(folder)
 
     def playAll(self, tip=True):
         self._pm.setPlaylist(list(self._songs()))

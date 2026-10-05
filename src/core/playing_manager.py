@@ -42,6 +42,7 @@ from core.models import (
     MUSIC_DATA_DIR,
     SongStorable,
 )
+from core.rediscovery import recordListening
 from core.weighted_random import AdvancedRandom
 from services.events.event_bus import event_bus
 from services.events.events import (
@@ -66,6 +67,7 @@ from services.events.events import (
     PLAY_NEXT,
     SONG_CHANGED,
     SONG_FINISH,
+    SECOND_TICK,
     START_CROSSFADE,
     START_PROGRESS_LOADING,
     STOP_PROGRESS_LOADING,
@@ -156,6 +158,11 @@ class PlayingManager(QObject):
         self.crossfading = False
         self._play_storable_time: float = timeLib.time()
         self._last_storable: SongStorable | None = None
+        self._listening_play_seq = -1
+        self._listening_seconds = 0.0
+        self._listening_tick = timeLib.monotonic()
+        self._listening_recorded = False
+        self._listening_active = False
 
         if ctx is not None:
             self._bindEvents()
@@ -211,6 +218,38 @@ class PlayingManager(QObject):
         event_bus.subscribe(PLAY_CONTINUE_LAST_SONG, self.continueLastSong)
         event_bus.subscribe(PLAYLIST_CHANGED, self.playlistChanged)
         event_bus.subscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+        event_bus.subscribe(SECOND_TICK, self._recordListening)
+
+    def _recordListening(self) -> None:
+        now = timeLib.monotonic()
+        elapsed = max(0.0, min(2.0, now - self._listening_tick))
+        self._listening_tick = now
+        player = self._player
+        song = self.current_song
+        was_active = self._listening_active
+        self._listening_active = bool(
+            song is not None
+            and player is not None
+            and not player.is_paused
+            and player.isPlaying()
+        )
+        if self._listening_play_seq != self._play_seq:
+            self._listening_play_seq = self._play_seq
+            self._listening_seconds = 0.0
+            self._listening_recorded = False
+            return
+        if (
+            self._listening_recorded
+            or song is None
+            or not self._listening_active
+            or not was_active
+        ):
+            return
+        self._listening_seconds += elapsed
+        threshold = min(30.0, self.total_length / 2) if self.total_length > 0 else 30.0
+        if self._listening_seconds >= threshold:
+            recordListening(song)
+            self._listening_recorded = True
 
     def emitDebugInfo(self):
         crossfade_info = self.crossfade_info
@@ -858,6 +897,7 @@ class PlayingManager(QObject):
         boundary = player.beginQueuedTrack(boundary[0], frames, gain, boundary[1])
         self.total_length = player.getLength()
         self._startLyricSong(selection.song)
+        event_bus.emit(PLAYBACK_SONG_LOADING, selection.song)
         self.crossfading = boundary[1] > player.current_index
         self._transition_end = boundary[1] if self.crossfading else None
         if self.crossfading:

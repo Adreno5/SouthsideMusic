@@ -40,7 +40,6 @@ launchwindow.subtitle('Loading libraries...')
 app.processEvents()
 
 from views.home_page import HomePage
-from views.library_page import LibraryPage
 from views.comments_page import CommentsPage
 
 from core.lyrics import LyricManager
@@ -438,6 +437,17 @@ def _handle_ws_message(message: str) -> None:
         return
 
     option = payload.get('option')
+    if option == 'bridge_hello':
+        ws_handler.protocol_version = max(
+            1, min(2, _payload_int(payload, 'protocol_version', 1))
+        )
+        if mwindow:
+            mwindow.ctx.playing_page.sendSongCoverAndInfo()
+            mwindow.controller.sendMainMenuPlayback()
+            mwindow.controller._last_ws_lyric_send = 0.0
+            mwindow.controller._updateLyric()
+        _send_ws_playlist_state()
+        return
     if option == 'playlist_control':
         _schedule_ws_task(lambda payload=payload: _handle_ws_playlist_control(payload))
         return
@@ -670,9 +680,6 @@ def southsideMusic():
         launchwindow.subtitle('Initializing home page...')
         hp = HomePage(ctx)
         ctx.home_page = hp
-        launchwindow.subtitle('Initializing library page...')
-        lrp = LibraryPage(ctx)
-        ctx.library_page = lrp
         launchwindow.subtitle('Initializing comments page...')
         ctp = CommentsPage(ctx)
         ctx.comments_page = ctp
@@ -684,7 +691,6 @@ def southsideMusic():
         ctx.setting_page = stp
         ctx.playlist_page = plp
         ctx.home_page = hp
-        ctx.library_page = lrp
 
         ctx.process_pids['main'] = os.getpid()
 

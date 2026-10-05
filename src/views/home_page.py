@@ -36,6 +36,7 @@ from views.animated_layout import SFlowLayout
 from views.number_viewer import NumberViewer
 from core.downloader import asyncTask
 from views.song_card import CloudFavoriteSongCard
+from views.rediscovery_card import RediscoveryCard
 
 
 class HeartModeCard(CardWidget):
@@ -298,11 +299,13 @@ class HomePage(SScrollArea):
         self.private_roam_card = PrivateRoamCard(self.ctx)
         self.private_radar_card = PrivateRadarCard(self.ctx)
         self.similar_songs_card = SimilarSongsCard(self.ctx)
-        mode_cards_layout.addWidget(self.heart_mode_card)
-        mode_cards_layout.addWidget(self.private_roam_card)
-        mode_cards_layout.addWidget(self.private_radar_card)
-        mode_cards_layout.addWidget(self.similar_songs_card)
+        self.rediscovery_card = RediscoveryCard(self.ctx)
+        mode_cards_layout.addWidget(self.heart_mode_card, 1)
+        mode_cards_layout.addWidget(self.private_roam_card, 1)
+        mode_cards_layout.addWidget(self.private_radar_card, 1)
+        mode_cards_layout.addWidget(self.similar_songs_card, 1)
 
+        contents_layout.addWidget(self.rediscovery_card)
         contents_layout.addLayout(welcome_layout)
         contents_layout.addLayout(mode_cards_layout)
 
@@ -310,7 +313,9 @@ class HomePage(SScrollArea):
         if getBackend().loggedIn():
             self.setWidget(self._contents_widget)
         else:
-            self.setWidget(WelcomeWidget(self.accounter))
+            welcome = WelcomeWidget(self.accounter)
+            welcome.layout().insertWidget(0, self.rediscovery_card)
+            self.setWidget(welcome)
 
         self.setAutoFillBackground(False)
 

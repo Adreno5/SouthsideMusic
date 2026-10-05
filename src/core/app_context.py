@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from views.search_page import SearchPage
     from views.setting_page import SettingPage
     from views.home_page import HomePage
-    from views.library_page import LibraryPage
+    from views.rediscovery_page import RediscoveryPage
     from views.lyric_editor_page import LyricEditorPage
 
 
@@ -106,7 +106,7 @@ class AppContext:
         self.setting_page: SettingPage = cast('SettingPage', cast(object, None))
         self.playlist_page: PlaylistPage = cast('PlaylistPage', cast(object, None))
         self.home_page: HomePage = cast('HomePage', cast(object, None))
-        self.library_page: LibraryPage = cast('LibraryPage', cast(object, None))
+        self.rediscovery_page: RediscoveryPage = cast('RediscoveryPage', None)
         self.lyric_editor_page: LyricEditorPage = cast(
             'LyricEditorPage', cast(object, None)
         )

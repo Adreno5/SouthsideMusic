@@ -83,7 +83,6 @@ class SouthsideIcon(FluentIconBase, Enum):
     STOP_GEN = 'stop_gen'
     EDIT = 'edit'
     TRASH = 'trash'
-    LIBRARY = 'library'
     COMMENT = 'comment'
     QUALITY = 'quality'
 

@@ -33,6 +33,59 @@ def _isValidWidget(widget: object) -> bool:
 
 
 TRANSLATIONS: dict[str, list[str]] = {
+    'rediscovery.title': ['Rediscover your favorites', '重新发现收藏'],
+    'rediscovery.entry_button': ['Rediscover', '重新发现'],
+    'rediscovery.entry_description': [
+        'Find overlooked favorites and songs you have not heard in a while.',
+        '听听一直没轮到的收藏，找回很久没听的好歌。',
+    ],
+    'rediscovery.entry_hint': ['Browse your favorites in a fresh order', '点击进入，换个顺序听收藏'],
+    'rediscovery.back': ['Back', '返回'],
+    'rediscovery.all_favorites': ['All local favorites', '全部本地收藏'],
+    'rediscovery.folder_scope': ['From {name}', '来自收藏夹：{name}'],
+    'rediscovery.loaded': [
+        '{loaded} / {count} songs · Scroll for more',
+        '已显示 {loaded} / {count} 首 · 向下滚动继续加载',
+    ],
+    'rediscovery.loaded_all': [
+        'All {count} songs loaded',
+        '已显示全部 {count} 首收藏',
+    ],
+    'rediscovery.balanced': ['A fresh mix', '换个顺序'],
+    'rediscovery.rare': ['Rarely heard', '很少听到'],
+    'rediscovery.forgotten': ['Long time no listen', '很久没听'],
+    'rediscovery.balanced_description': [
+        'Give overlooked favorites a turn, with fewer recent repeats.',
+        '让收藏夹后面的歌也有机会，少一点最近听过的重复。',
+    ],
+    'rediscovery.rare_description': [
+        'Start with the favorites you have played the least.',
+        '从播放次数最少的收藏开始，听听那些一直没轮到的歌。',
+    ],
+    'rediscovery.forgotten_description': [
+        'Bring back songs you have heard before, starting with older listens.',
+        '找回以前听过的歌，优先播放更久没有听到的收藏。',
+    ],
+    'rediscovery.play': ['Play all', '播放全部'],
+    'rediscovery.refresh': ['Refresh order', '换个排序'],
+    'rediscovery.history_tip': [
+        'Listening dates start with this update, after 30 seconds of playback (half for short songs). Older playback counts are used immediately.',
+        '旧播放次数会立即参与挑选。听歌时间从本次更新起记录，听满 30 秒记一次，短歌听满一半。',
+    ],
+    'rediscovery.empty': [
+        'Add songs to a local favorite folder to discover a fresh mix.',
+        '把歌曲加入本地收藏夹，就能从收藏里换一组来听。',
+    ],
+    'rediscovery.no_history': [
+        'No previously played songs here yet. Try Rarely heard first.',
+        '这里还没有听过的歌曲，先试试“很少听到”。',
+    ],
+    'rediscovery.play_from': ['Play from {name}', '从《{name}》开始听'],
+    'rediscovery.days_ago': ['{days} days ago', '{days} 天前听过'],
+    'rediscovery.today': ['Heard within 24 hours', '24 小时内听过'],
+    'rediscovery.unplayed': ['Not played yet', '还没听过'],
+    'rediscovery.unknown_date': ['Last listen not recorded', '上次听歌时间未记录'],
+    'rediscovery.song_stats': ['{count} plays · {reason}', '{count} 次播放 · {reason}'],
     'dependences_window.audio_output_checking': [
         'Audio Output: Checking',
         '音频输出：检查中',
@@ -484,7 +537,6 @@ TRANSLATIONS: dict[str, list[str]] = {
     'main_window.logout': ['Log out', '登出账号'],
     'main_window.logout_successful': ['Logged out successfully', '已成功登出账号'],
     'main_window.home': ['Home', '首页'],
-    'main_window.library': ['Library', '库'],
     'home_page.title': ['Home', '首页'],
     'home_page.not_logged_in': ["You're currently not logged in!", '你现在还没有登录!'],
     'home_page.login': ['Login', '登录'],
@@ -566,17 +618,6 @@ TRANSLATIONS: dict[str, list[str]] = {
         'Failed to start Similar Songs.',
         '相似歌曲启动失败。',
     ],
-    'library_page.title': ['Library', '库'],
-    'library_page.number_prefix': ['', '一共'],
-    'library_page.number_suffix': ['songs in total', '首'],
-    'library_page.sort.name_asc': ['Song name A-Z', '歌名升序'],
-    'library_page.sort.name_desc': ['Song name Z-A', '歌名降序'],
-    'library_page.sort.artist_asc': ['Artist name A-Z', '作者升序'],
-    'library_page.sort.artist_desc': ['Artist name Z-A', '作者降序'],
-    'library_page.sort.name_length_asc': ['Song name length ↑', '歌名长度升序'],
-    'library_page.sort.name_length_desc': ['Song name length ↓', '歌名长度降序'],
-    'library_page.sort.count_asc': ['Play count ↑', '播放次数升序'],
-    'library_page.sort.count_desc': ['Play count ↓', '播放次数降序'],
     'setting_page.acceleration_smooth_factor': [
         'Acceleration Smooth Factor',
         '加速度平滑系数',
@@ -1359,6 +1400,18 @@ TRANSLATIONS: dict[str, list[str]] = {
         '这首歌已在所有文件夹中',
     ],
     'song_card.played_times': ['times', '次'],
+    'song_export.exporting': [
+        'Exporting with playback effects',
+        '正在应用播放效果导出',
+    ],
+    'song_export.original': ['Keep original file', '原文件导出'],
+    'song_export.question': [
+        'Apply the playback effects in settings (speed, pitch, stereo, reverb) to the exported file?',
+        '是否附带设置里的播放效果（速度、音调、立体声、混响）导出？',
+    ],
+    'song_export.time_status': ['{current} s / {total} s', '{current} 秒 / {total} 秒'],
+    'song_export.title': ['Export playback effects', '播放效果导出'],
+    'song_export.with_effects': ['Export with effects', '附带效果导出'],
     'playing_controller.crossfading_tip': ['Crossfading', '正在交叉淡化'],
     'playing_controller.crossfading_tip_easy': [
         'Seamless Transition',

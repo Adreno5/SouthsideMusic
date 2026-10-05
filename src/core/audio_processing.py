@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from math import gcd
 
 import numpy as np
-from scipy.signal import resample_poly
+from scipy.signal import firwin, resample_poly
 
 from core.pcm_timeline import PcmTimeline
 from core.wsola import WsolaStretcher
@@ -14,6 +14,25 @@ _MIN_AUDIBLE_PITCH_SHIFT = 0.25
 _REVERB_DELAY_MS = (29, 43, 61, 79)
 _REVERB_TAP_GAINS = (0.42, 0.31, 0.22, 0.15)
 _REVERB_GAIN_COMPENSATION = 0.18
+_RESAMPLE_HALF_LENGTH_FACTOR = 10
+_RESAMPLE_WINDOW = ('kaiser', 5.0)
+_RESAMPLE_WINDOW_CACHE_LIMIT = 8
+
+_resample_windows: dict[int, np.ndarray] = {}
+
+
+def _resampleWindow(max_rate: int) -> np.ndarray:
+    window = _resample_windows.get(max_rate)
+    if window is None:
+        if len(_resample_windows) >= _RESAMPLE_WINDOW_CACHE_LIMIT:
+            _resample_windows.clear()
+        window = firwin(
+            _RESAMPLE_HALF_LENGTH_FACTOR * max_rate * 2 + 1,
+            1.0 / max_rate,
+            window=_RESAMPLE_WINDOW,
+        ).astype(np.float32)
+        _resample_windows[max_rate] = window
+    return window
 
 
 @dataclass(frozen=True)
@@ -163,9 +182,10 @@ class AudioProcessor:
         factor = gcd(len(chunk), frames)
         up = frames // factor
         down = len(chunk) // factor
-        out = resample_poly(chunk, up, down, axis=0, padtype='line').astype(
-            np.float32, copy=False
-        )
+        window = _resampleWindow(max(up, down))
+        out = resample_poly(
+            chunk, up, down, axis=0, window=window.copy(), padtype='line'
+        ).astype(np.float32, copy=False)
         if len(out) > frames:
             return out[:frames]
         if len(out) < frames:

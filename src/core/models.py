@@ -68,6 +68,11 @@ def getCachedHashes(song_id: str) -> dict[str, str]:
 
 
 @dataclass
+class CurveInfo:
+    points: list[tuple[float, float]] = field(default_factory=list)
+
+
+@dataclass
 class ArtistInfo:
     id: int
     name: str

@@ -119,6 +119,8 @@ class LyricVideoSources:
     lyrics_smooth_factor: float = 0.028
     acceleration_smooth_factor: float = 0.068
     background_ratio: float = 0.4
+    lyrics_animation_type: Literal['physics', 'scrolling'] = 'scrolling'
+    lyrics_scrolling_duration: float = 500
 
 
 class _ParallelExportUnavailable(RuntimeError):
@@ -827,6 +829,10 @@ class _LyricVideoRenderer:
         self.target_draw_offset = 0.0
         self.acc = 0.0
         self.target_acc = 0.0
+        self._scroll_start_offset = 0.0
+        self._scroll_target_offset = 0
+        self._scroll_elapsed = 0.0
+        self._scroll_duration = 0.0
         self._line_alphas: dict[int, _FrameEaseOutValue] = {}
         self._x_scroll_ease = _FrameEaseOutValue(_X_SCROLL_RESET_SECONDS, 2)
         self._last_render_position: float | None = None
@@ -1055,7 +1061,7 @@ class _LyricVideoRenderer:
                 self.target_draw_offset = 0
             if self.target_draw_offset < -total_height:
                 self.target_draw_offset = -total_height
-            self._updateDrawOffset(elapsed * self.refresh_rate)
+            self._updateDrawOffset(current_index, elapsed)
         else:
             self.draw_offset = -y_offsets[current_index]
             self.target_draw_offset = self.draw_offset
@@ -1099,7 +1105,36 @@ class _LyricVideoRenderer:
         self._x_scroll_ease.setTarget(target)
         self._x_scroll_ease.step(elapsed)
 
-    def _updateDrawOffset(self, multiple_factor: float = 1.0) -> None:
+    def _updateDrawOffset(self, current_index: int, elapsed: float) -> None:
+        if self.sources.lyrics_animation_type == 'scrolling':
+            target_offset = int(self.target_draw_offset)
+            if target_offset != self._scroll_target_offset:
+                duration = int(self.sources.lyrics_scrolling_duration)
+                if current_index < len(self.lines) - 1:
+                    line_duration = max(
+                        1,
+                        int(
+                            (self.times[current_index + 1] - self.times[current_index])
+                            * 1000
+                        ),
+                    )
+                    duration = min(duration, line_duration)
+                self._scroll_start_offset = self.draw_offset
+                self._scroll_target_offset = target_offset
+                self._scroll_elapsed = 0.0
+                self._scroll_duration = max(0.001, duration / 1000)
+            self._scroll_elapsed += elapsed
+            progress = min(
+                1.0, self._scroll_elapsed / max(0.001, self._scroll_duration)
+            )
+            eased = progress * progress * (3.0 - 2.0 * progress)
+            self.draw_offset = (
+                self._scroll_start_offset
+                + (self._scroll_target_offset - self._scroll_start_offset) * eased
+            )
+            return
+
+        multiple_factor = elapsed * self.refresh_rate
         self.target_acc = (
             (self.target_draw_offset - self.draw_offset)
             * self.delta
@@ -1183,6 +1218,10 @@ class _LyricVideoRenderer:
         self.target_draw_offset = 0.0
         self.acc = 0.0
         self.target_acc = 0.0
+        self._scroll_start_offset = 0.0
+        self._scroll_target_offset = 0
+        self._scroll_elapsed = 0.0
+        self._scroll_duration = 0.0
         self._line_alphas.clear()
         self._last_render_position = None
         self._layout_y_offsets = []
@@ -1357,10 +1396,15 @@ def _sourcesPayload(sources: LyricVideoSources) -> dict[str, Any]:
         'lyrics_smooth_factor': sources.lyrics_smooth_factor,
         'acceleration_smooth_factor': sources.acceleration_smooth_factor,
         'background_ratio': sources.background_ratio,
+        'lyrics_animation_type': sources.lyrics_animation_type,
+        'lyrics_scrolling_duration': sources.lyrics_scrolling_duration,
     }
 
 
 def _sourcesFromPayload(payload: dict[str, Any]) -> LyricVideoSources:
+    animation_type: Literal['physics', 'scrolling'] = (
+        'physics' if payload.get('lyrics_animation_type') == 'physics' else 'scrolling'
+    )
     return LyricVideoSources(
         lyric=str(payload.get('lyric', '')),
         translated_lyric=str(payload.get('translated_lyric', '')),
@@ -1376,6 +1420,8 @@ def _sourcesFromPayload(payload: dict[str, Any]) -> LyricVideoSources:
             payload.get('acceleration_smooth_factor', 0.068)
         ),
         background_ratio=float(payload.get('background_ratio', 0.4)),
+        lyrics_animation_type=animation_type,
+        lyrics_scrolling_duration=float(payload.get('lyrics_scrolling_duration', 500)),
     )
 
 

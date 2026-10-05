@@ -14,6 +14,18 @@ _RESET_TOLERANCE = 16
 ReadSamples = Callable[[int, int], np.ndarray]
 SampleCount = Callable[[], int]
 
+_fade_windows: dict[int, np.ndarray] = {}
+
+
+def _fadeWindow(hop: int) -> np.ndarray:
+    window = _fade_windows.get(hop)
+    if window is None:
+        window = (
+            0.5 - 0.5 * np.cos(np.linspace(0.0, np.pi, hop, dtype=np.float32))
+        ).reshape(-1, 1)
+        _fade_windows[hop] = window
+    return window
+
 
 def hopSize(sample_rate: int) -> int:
     return max(_MIN_HOP, sample_rate // _HOP_DIVISOR)
@@ -98,12 +110,30 @@ class WsolaStretcher:
             return max(0, min(ideal_start, n))
 
         source = self._readSamples(min_start, max_start + overlap)[:, channel]
-        windows = np.lib.stride_tricks.sliding_window_view(source, overlap)
-        centered = windows - windows.mean(axis=1, keepdims=True)
-        powers = np.sqrt(np.sum(centered * centered, axis=1))
-        scores = centered @ tail_channel
-        scores /= np.maximum(powers * tail_power, 1e-6)
-        positions = np.arange(len(scores), dtype=np.float32) + min_start
+        count = len(source) - overlap + 1
+        if count <= 0:
+            return max(0, min(ideal_start, n))
+
+        cumulative = np.cumsum(source, dtype=np.float64)
+        cumulative_square = np.cumsum(np.square(source, dtype=np.float64))
+        window_sum = cumulative[overlap - 1 :].copy()
+        window_square = cumulative_square[overlap - 1 :].copy()
+        if count > 1:
+            window_sum[1:] -= cumulative[: count - 1]
+            window_square[1:] -= cumulative_square[: count - 1]
+
+        tail_total = float(np.sum(tail_channel, dtype=np.float64))
+        centered_dot = np.correlate(source, tail_channel, mode='valid')
+        centered_dot = (
+            centered_dot.astype(np.float64, copy=False)
+            - (window_sum / overlap) * tail_total
+        )
+        centered_energy = window_square - window_sum * window_sum / overlap
+        np.maximum(centered_energy, 0.0, out=centered_energy)
+        powers = np.sqrt(centered_energy)
+
+        scores = centered_dot / np.maximum(powers * tail_power, 1e-6)
+        positions = np.arange(count, dtype=np.float32) + min_start
         center_bias = np.abs(positions - ideal_start) / max(1, search)
         scores -= center_bias * _CENTER_BIAS
         return min_start + int(np.argmax(scores))
@@ -136,9 +166,7 @@ class WsolaStretcher:
         if len(segment) == 0:
             return np.zeros((0, channels), dtype=np.float32)
 
-        fade_in = (
-            0.5 - 0.5 * np.cos(np.linspace(0.0, np.pi, hop, dtype=np.float32))
-        ).reshape(-1, 1)
+        fade_in = _fadeWindow(hop)
         mixed = self._tail * (1.0 - fade_in) + segment[:hop] * fade_in
         self._tail = segment[hop:frame_size].copy()
         return mixed.astype(np.float32, copy=False)

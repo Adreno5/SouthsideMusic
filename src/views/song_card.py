@@ -66,7 +66,7 @@ from core.icons import bindIcon, getQIcon
 from core.downloader import (
     asyncTask,
 )
-from core.soundfile import getSongFormat, saveSongWithInformation
+from core.soundfile import getSongFormat
 import requests
 from core.favorites import favorites_manager
 from core.backend import getBackend
@@ -75,6 +75,7 @@ from core import theme
 from views.list_widget import SListWidget
 from views.image_label import SImageLabel
 from views.folder_card import CloudFolderCard, LocalFolderCard
+from views.song_export import exportSong
 
 
 _image_download_locks: dict[str, threading.Lock] = {}
@@ -816,54 +817,7 @@ class PlaylistSongCard(_SongCardItem):
             )
 
         if export_path:
-
-            def _export():
-                detail = getBackend().getTrackDetail(self.storable.id)
-                image_url = detail.cover_url
-
-                image_bytes = requests.get(image_url).content
-
-                album = detail.album_name
-                track_number = f'{detail.cd}/{detail.track_no}'
-                publish_time = detail.publish_time
-                year = ''
-                if publish_time:
-                    import datetime
-
-                    year = str(
-                        datetime.datetime.fromtimestamp(publish_time / 1000).year
-                    )
-
-                with open(cache_path, 'rb') as song:
-                    music_bytes = song.read()
-                    touchCacheFile(cache_path)
-                    saveSongWithInformation(
-                        music_bytes,
-                        image_bytes,
-                        self.storable.name,
-                        self.storable.artists,
-                        export_path,
-                        self.storable.lyric,
-                        album,
-                        '',
-                        year,
-                        track_number,
-                        '',
-                        '',
-                    )
-
-            def _final():
-                InfoBar.success(
-                    tr('song_card.export'),
-                    tr(
-                        'song_card.exported_song_song_name',
-                        song_name=self.storable.name,
-                    ),
-                    parent=self._mwindow,
-                    duration=5000,
-                )
-
-            asyncTask(_export, (), self._mwindow, _final)
+            exportSong(self.storable, cache_path, export_path, self._mwindow)
 
     def _removeSong(self):
         playlist = self._dp.playing_manager.playlist
@@ -940,54 +894,7 @@ class FavoriteSongCard(_SongCardItem):
             )
 
         if export_path:
-
-            def _export():
-                detail = getBackend().getTrackDetail(self.storable.id)
-                image_url = detail.cover_url
-
-                image_bytes = requests.get(image_url).content
-
-                album = detail.album_name
-                track_number = f'{detail.cd}/{detail.track_no}'
-                publish_time = detail.publish_time
-                year = ''
-                if publish_time:
-                    import datetime
-
-                    year = str(
-                        datetime.datetime.fromtimestamp(publish_time / 1000).year
-                    )
-
-                with open(cache_path, 'rb') as song:
-                    music_bytes = song.read()
-                    touchCacheFile(cache_path)
-                    saveSongWithInformation(
-                        music_bytes,
-                        image_bytes,
-                        self.storable.name,
-                        self.storable.artists,
-                        export_path,
-                        self.storable.lyric,
-                        album,
-                        '',
-                        year,
-                        track_number,
-                        '',
-                        '',
-                    )
-
-            def _final():
-                InfoBar.success(
-                    tr('song_card.export'),
-                    tr(
-                        'song_card.exported_song_song_name',
-                        song_name=self.storable.name,
-                    ),
-                    parent=self._mwindow,
-                    duration=5000,
-                )
-
-            asyncTask(_export, (), self._mwindow, _final)
+            exportSong(self.storable, cache_path, export_path, self._mwindow)
 
 
 class CloudFavoriteSongCard(_SongCardItem):
@@ -1044,51 +951,4 @@ class CloudFavoriteSongCard(_SongCardItem):
             )
 
         if export_path:
-
-            def _export():
-                detail = getBackend().getTrackDetail(self.storable.id)
-                image_url = detail.cover_url
-
-                image_bytes = requests.get(image_url).content
-
-                album = detail.album_name
-                track_number = f'{detail.cd}/{detail.track_no}'
-                publish_time = detail.publish_time
-                year = ''
-                if publish_time:
-                    import datetime
-
-                    year = str(
-                        datetime.datetime.fromtimestamp(publish_time / 1000).year
-                    )
-
-                with open(cache_path, 'rb') as song:
-                    music_bytes = song.read()
-                    touchCacheFile(cache_path)
-                    saveSongWithInformation(
-                        music_bytes,
-                        image_bytes,
-                        self.storable.name,
-                        self.storable.artists,
-                        export_path,
-                        self.storable.lyric,
-                        album,
-                        '',
-                        year,
-                        track_number,
-                        '',
-                        '',
-                    )
-
-            def _final():
-                InfoBar.success(
-                    tr('song_card.export'),
-                    tr(
-                        'song_card.exported_song_song_name',
-                        song_name=self.storable.name,
-                    ),
-                    parent=self._mwindow,
-                    duration=5000,
-                )
-
-            asyncTask(_export, (), self._mwindow, _final)
+            exportSong(self.storable, cache_path, export_path, self._mwindow)

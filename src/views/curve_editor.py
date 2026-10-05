@@ -257,6 +257,35 @@ class CurveEditor(QOpenGLWidget):
             return
         super().keyPressEvent(event)
 
+    def _curvePath(self, positions: list[QPointF]) -> QPainterPath:
+        widths = [right.x() - left.x() for left, right in pairwise(positions)]
+        slopes = [
+            (right.y() - left.y()) / width if width > 0 else 0.0
+            for left, right, width in zip(positions, positions[1:], widths)
+        ]
+        tangents = [slopes[0]]
+        for index in range(1, len(positions) - 1):
+            before, after = slopes[index - 1], slopes[index]
+            if before * after <= 0:
+                tangents.append(0.0)
+            else:
+                weight_before = 2 * widths[index] + widths[index - 1]
+                weight_after = widths[index] + 2 * widths[index - 1]
+                tangents.append(
+                    (weight_before + weight_after)
+                    / (weight_before / before + weight_after / after)
+                )
+        tangents.append(slopes[-1])
+        path = QPainterPath(positions[0])
+        for index, (left, right) in enumerate(pairwise(positions)):
+            width = widths[index] / 3
+            path.cubicTo(
+                QPointF(left.x() + width, left.y() + tangents[index] * width),
+                QPointF(right.x() - width, right.y() - tangents[index + 1] * width),
+                right,
+            )
+        return path
+
     @override
     def paintGL(self) -> None:
         painter = QPainter(self)
@@ -267,6 +296,7 @@ class CurveEditor(QOpenGLWidget):
 
         is_dark = theme.isDark()
         foreground = QColor(255, 255, 255) if is_dark else QColor(0, 0, 0)
+        foreground.setAlpha(48)
         accent = themeColor()
         background = QColor(40, 40, 40) if is_dark else QColor(230, 230, 230)
         song_theme = getattr(self.window(), 'song_theme', None)
@@ -294,36 +324,7 @@ class CurveEditor(QOpenGLWidget):
         ]
         ordered_positions = sorted(positions, key=lambda point: point.x())
         if len(ordered_positions) >= 2:
-            widths = [
-                right.x() - left.x() for left, right in pairwise(ordered_positions)
-            ]
-            slopes = [
-                (right.y() - left.y()) / width if width > 0 else 0.0
-                for left, right, width in zip(
-                    ordered_positions, ordered_positions[1:], widths
-                )
-            ]
-            tangents = [slopes[0]]
-            for index in range(1, len(ordered_positions) - 1):
-                before, after = slopes[index - 1], slopes[index]
-                if before * after <= 0:
-                    tangents.append(0.0)
-                else:
-                    weight_before = 2 * widths[index] + widths[index - 1]
-                    weight_after = widths[index] + 2 * widths[index - 1]
-                    tangents.append(
-                        (weight_before + weight_after)
-                        / (weight_before / before + weight_after / after)
-                    )
-            tangents.append(slopes[-1])
-            path = QPainterPath(ordered_positions[0])
-            for index, (left, right) in enumerate(pairwise(ordered_positions)):
-                width = widths[index] / 3
-                path.cubicTo(
-                    QPointF(left.x() + width, left.y() + tangents[index] * width),
-                    QPointF(right.x() - width, right.y() - tangents[index + 1] * width),
-                    right,
-                )
+            path = self._curvePath(ordered_positions)
             fill_path = QPainterPath(path)
             fill_path.lineTo(ordered_positions[-1].x(), rect.bottom())
             fill_path.lineTo(ordered_positions[0].x(), rect.bottom())

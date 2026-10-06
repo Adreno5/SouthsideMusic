@@ -11,3 +11,16 @@ jobs:
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@v7
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          echo "event_name = ${{ github.event_name }}"
+          echo "ref_name   = ${{ github.ref_name }}"
+          echo "github.ref = ${{ github.ref }}"
+          $tag = 'demo'
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Read it back
+        shell: pwsh
+        run: echo "version step produced tag = ${{ steps.version.outputs.tag }}"

@@ -58,12 +58,6 @@ if 'PYNCM_DEBUG' in os.environ:
 
 API_HOST = 'interfacepc.music.163.com'
 CLIENT_OS = 'pc'
-CLIENT_APPVER = '3.1.40.205461'
-CLIENT_UA = (
-    'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) '
-    'Safari/537.36 Chrome/91.0.4472.164 NeteaseMusicDesktop/3.1.40.205461'
-)
-DEVICE_ID_CHARS = '0123456789ABCDEF'
 
 
 def _osVersion() -> str:
@@ -89,7 +83,7 @@ def _osVersion() -> str:
 def _eapiConfig(deviceId: str, clientSign: str = '') -> dict:
     config = {
         'os': CLIENT_OS,
-        'appver': CLIENT_APPVER,
+        'appver': '3.1.40.205461',
         'osver': _osVersion(),
         'deviceId': str(deviceId),
     }
@@ -99,7 +93,7 @@ def _eapiConfig(deviceId: str, clientSign: str = '') -> dict:
 
 
 def generateDeviceId() -> str:
-    return _random_string(52, DEVICE_ID_CHARS)
+    return _random_string(52, '0123456789ABCDEF')
 
 
 DEVICE_ID_DEFAULT = generateDeviceId()
@@ -125,10 +119,10 @@ class Session(requests.Session):
     """
 
     HOST = 'music.163.com'
-    UA_DEFAULT = (
-        'Mozilla/5.0 (linux@github.com/mos9527/ncm) Chrome/PyNCM.%s' % __version__
+    UA_EAPI = (
+        'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Safari/537.36 Chrome/91.0.4472.164 NeteaseMusicDesktop/3.1.40.205461'
     )
-    UA_EAPI = CLIENT_UA
     UA_LINUX_API = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36'
     force_http = False
 
@@ -145,7 +139,8 @@ class Session(requests.Session):
         super().__init__(*a, **k)
         self.headers = {
             'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': self.UA_DEFAULT,
+            'User-Agent': 'Mozilla/5.0 (linux@github.com/mos9527/ncm) Chrome/PyNCM.%s'
+            % __version__,
             'Referer': self.HOST,
         }
         self.login_info: dict[str, Any] = {
@@ -164,35 +159,36 @@ class Session(requests.Session):
     def deviceId(self, v):
         self.eapi_config['deviceId'] = str(v)
 
-    @property
-    def uid(self):
-        return self.login_info['content']['account']['id'] if self.logged_in else 0  # type: ignore
+    def _loginSection(self, key: str) -> dict[str, Any]:
+        content = self.login_info.get('content')
+        if not isinstance(content, dict):
+            return {}
+        section = content.get(key)
+        return section if isinstance(section, dict) else {}
 
     @property
-    def nickname(self):
-        return (
-            self.login_info['content']['profile']['nickname'] if self.logged_in else ''  # type: ignore
-        )
+    def uid(self) -> int | str:
+        return self._loginSection('account').get('id') or 0
 
     @property
-    def lastIP(self):
-        return (
-            self.login_info['content']['profile']['lastLoginIP']  # type: ignore
-            if self.logged_in
-            else ''
-        )
+    def nickname(self) -> str:
+        return self._loginSection('profile').get('nickname') or ''
 
     @property
-    def vipType(self):
-        return (
-            self.login_info['content']['profile']['vipType']  # type: ignore
-            if self.logged_in and not self.is_anonymous
-            else 0
-        )
+    def lastIP(self) -> str:
+        return self._loginSection('profile').get('lastLoginIP') or ''
 
     @property
-    def logged_in(self):
-        return self.login_info['success']
+    def vipType(self) -> int | str:
+        if not self.logged_in or self.is_anonymous:
+            return 0
+        return self._loginSection('profile').get('vipType') or 0
+
+    @property
+    def logged_in(self) -> bool:
+        if not self.login_info.get('success'):
+            return False
+        return bool(self._loginSection('account') or self._loginSection('profile'))
 
     @property
     def is_anonymous(self):
@@ -341,9 +337,14 @@ def writeLoginInfo(content):
             content = json.loads(content)
         except Exception:
             pass
-    sessionManager.session.login_info = {'tick': time(), 'content': content}  # type: ignore
-    if isinstance(content, bytes) or not content.get('code') == 200:  # type: ignore
+    sessionManager.session.login_info = {'tick': time(), 'content': content}
+    if not isinstance(content, dict) or content.get('code') != 200:
         sessionManager.session.login_info['success'] = False
         raise Exception(content)
+    account = content.get('account')
+    profile = content.get('profile')
+    if not isinstance(account, dict) and not isinstance(profile, dict):
+        sessionManager.session.login_info['success'] = False
+        return
     sessionManager.session.login_info['success'] = True
     sessionManager.session.csrf_token = sessionManager.session.cookies.get('__csrf')  # type: ignore

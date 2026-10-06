@@ -25,9 +25,6 @@ class DownloadingManager(QObject):
     workerFinished = Signal(bytes)
     downloadFinished = Signal(bytes)
 
-    MAX_CHUNK_THREADS = int(cfg.download_concurrent_threads)
-    MIN_CHUNK_SIZE = 4096
-
     def __init__(
         self,
         parent=None,
@@ -43,8 +40,8 @@ class DownloadingManager(QObject):
             self.url,
             self.headers,
             self.data,
-            self.MAX_CHUNK_THREADS,
-            self.MIN_CHUNK_SIZE,
+            int(cfg.download_concurrent_threads),
+            4096,
             self.receiveProgress.emit,
         )
         self._thread: threading.Thread | None = None

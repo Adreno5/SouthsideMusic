@@ -21,6 +21,8 @@ Primary docs are `docs/README.md` and `docs/README_zh.md`. No Cursor rules
 - `uv.lock` is present; prefer `uv run ...` when available.
 - Initial workspace setup is automated by `python setup_workspace.py`.
 - Build output goes to `build.result\raw\` and optionally `build.result\installer\`.
+- `torch_venv/` and `freethreaded_venv/` are local virtualenvs. Never search,
+  count, or edit files inside them; scope every `find`/`rg` away from them.
 
 ## Commands
 
@@ -44,17 +46,20 @@ is installed. Without Inno Setup, raw portable files remain in `build.result\raw
 
 ## Tests
 
-There is no formal test suite yet. `src/test.py` is a manual API exploration
-script, not pytest. Do not invent a test framework unless explicitly needed.
+`tests/` is the real suite. pytest is **not** installed, so do not invoke it.
 
-If tests are added, use these commands:
+- `unittest`-based (each has a `__main__` guard, so one file runs directly with
+  `uv run python tests/<file>.py`; discover with
+  `uv run python -m unittest discover -s tests`): `test_equalizer_curve.py`,
+  `test_lyric_sources.py`, `test_music_bridge.py`, `test_rediscovery.py`,
+  `test_search_line_edit.py`, `test_streaming_sample_rate.py`.
+- Plain assert scripts with a `main()`: `test_lyric_formats.py`,
+  `test_llm_lyric_tools.py`, `test_lyrics_viewer_translation.py`.
+- Broken at import: `test_crossfade_playback.py`, `test_audio_player_pipeline.py`,
+  `test_audio_player_sample_rate.py` still do `from imports import QApplication`,
+  but that shim was removed in commit f8cb20c. Fix the import when touching them.
 
-```bash
-uv run python -m pytest tests/                     # all tests
-uv run python -m pytest tests/test_foo.py          # one test file
-uv run python -m pytest tests/test_foo.py -k name  # one test by expression
-uv run python -m pytest tests/test_foo.py::test_x  # one exact test
-```
+`src/test.py` is a manual API exploration script, not part of the suite.
 
 For small non-test changes, prefer narrow validation first: `python -m py_compile <file>`, then `uv run ruff check <file>`, then broader lint/type checks if useful.
 
@@ -63,11 +68,12 @@ For small non-test changes, prefer narrow validation first: `python -m py_compil
 ```text
 src/
   main.py          # app entry, QApplication setup, logging, excepthook
-  imports.py       # centralized imports/re-exports for Qt, typing, events
   core/            # audio, config, models, lyrics, theme, icons, backends
   services/        # event bus and update checks
   views/           # PySide6 UI pages, cards, windows, widgets
   ncm/             # forked NetEase CloudMusic API client
+tests/             # unittest / assert-script suite (no pytest)
+scripts/           # icon generation, labs, reverse-engineering helpers
 docs/              # English/Chinese user documentation
 data/              # runtime caches for music, images, lyrics, temp data
 icons/, images/    # packaged UI resources
@@ -80,18 +86,24 @@ Reference style files: `src/views/search_page.py`, `src/views/error_popup.py`.
 ## Import Style
 
 - Use `from __future__ import annotations` when the file already follows it.
-- Import Qt/PySide6 classes from `imports`, not directly from PySide6:
+- Import Qt/PySide6 classes directly from their PySide6 module. There is no
+  re-export shim: `src/imports.py` was removed in commit f8cb20c.
 
 ```python
-from imports import QTimer, QVBoxLayout, QWidget, Qt, Signal, event_bus
+from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtWidgets import QVBoxLayout, QWidget
+from qfluentwidgets import InfoBar, TransparentPushButton
 ```
 
-- `src/imports.py` re-exports PySide6 classes, typing helpers, qfluentwidgets,
-  and event bus members.
-- Direct third-party imports are fine for non-Qt libraries (`numpy`, `requests`).
+- Event constants and `event_bus` come from `services.events`:
+
+```python
+from services.events import PLAYLIST_CHANGED, event_bus
+```
+
+- Direct third-party imports are fine (`numpy`, `requests`, `qfluentwidgets`).
 - Use `if TYPE_CHECKING:` for type-only imports that could create circular imports.
 - Keep imports grouped as standard library, third-party, then project imports.
-- qfluentwidgets may be imported directly when existing code does so.
 
 ## Formatting
 
@@ -101,6 +113,42 @@ from imports import QTimer, QVBoxLayout, QWidget, Qt, Signal, event_bus
 - Prefer small, local diffs. Do not reformat unrelated files.
 - Avoid large abstractions; this codebase favors direct PySide code.
 - Write no comments and no docstrings. Names and structure carry the meaning.
+
+## Constants
+
+A constant must earn its name. The single most common failure here is hoisting a
+value that is written once and read once.
+
+- If a literal has exactly one use, write the literal at the use site. Do not
+  introduce a module-level or class-level name for it.
+- Add a constant only when at least two real call sites need the same value, or
+  when the value is an identity that outlives any single call site.
+- Module-level parameter defaults are still single-use. `def cleanup(\n
+  max_age_minutes: int = 24 * 60,\n)` does not need a
+  `DEFAULT_MAX_AGE_MINUTES` above it unless a caller passes it explicitly.
+- A class attribute read from `self.X` in exactly one method is a single-use
+  constant. Inline it as a literal.
+- Keep the name when the literal is opaque and the name *is* the documented
+  meaning: `STD_INPUT_HANDLE = -10`, `AES.BLOCKSIZE`, `winreg.REG_SZ`. Inlining
+  these turns a documented API value into a magic number.
+- Keep the name for lookup tables and long format/prompt strings read once
+  (`LEVEL_BY_BITRATE`, `ONERAD_SYSTEM_PROMPT`) — the name is the documentation
+  and the literal is not self-evident at the call site.
+- Inline the name when the literal is self-evident at the use site:
+  `APP_DISPLAY_NAME = 'Southside Music'` reads better as the literal.
+
+A registry is not a constant. Before deleting anything that looks unused,
+verify how it is read:
+
+- `SouthsideIcon.FAV = 'fav'` and friends are looked up **by string value**
+  (`_icon_map = {icon.value: icon for icon in SouthsideIcon}`, then
+  `bindIcon(widget, 'fav')`, `getQIcon('drop_up')`). Deleting an enum member
+  that greps as "unused" raises `KeyError` at runtime.
+- Event names in `services/events/events.py` are the cross-component vocabulary.
+- Before inlining or deleting, search the whole project:
+  `rg -wn <NAME> src tests scripts` — a hit in `tests/` counts.
+- A name may also be reachable through a string literal, `getattr`, or a dict
+  key. Grep the string value too, not just the identifier.
 
 ## Types
 
@@ -150,7 +198,7 @@ from imports import QTimer, QVBoxLayout, QWidget, Qt, Signal, event_bus
 - Backend abstraction is `MusicServiceBackend` -> `NeteaseCloudMusicBackend`.
 - Use the event bus in `services/events/` for cross-component communication:
   `event_bus.subscribe(EVENT, listener)` and `event_bus.emit(EVENT, *args)`.
-- Event constants are re-exported through `imports`.
+- Event constants and `event_bus` are imported from `services.events`.
 - Views build their own layouts; cards like `song_card` are composable widgets.
 - Keep ownership and signal wiring obvious; prefer direct `if/else` over factories.
 
@@ -176,6 +224,7 @@ from imports import QTimer, QVBoxLayout, QWidget, Qt, Signal, event_bus
 - No comments, no docstrings. If a block needs explaining, rewrite the block.
 - No over-engineering. Ship the smallest thing that works and stop there.
 - Do not add a helper, class, module, config key, or event for a single caller.
+- Do not add a constant for a single use. See "Constants" above.
 - Do not add options, flags, fallbacks, or abstractions "for later".
 - Extract shared code only when two real callers already need it.
 - Keep functions linear: no state machines, no plugin registries, no indirection.

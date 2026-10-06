@@ -23,8 +23,7 @@ def _hex_compose(hexstr: str):
 
 def _hash_digest(text):
     # Digests 128 bit md5 hash
-    HASH = md5(text.encode('utf-8'))
-    return HASH.digest()
+    return md5(text.encode('utf-8')).digest()
 
 
 def _hash_hex_digest(text):

@@ -5,8 +5,6 @@ from . import _hex_digest, _hash_hex_digest
 from .aes import AES
 
 # region secrets
-EAPI_DIGEST_SALT = 'nobody%(url)suse%(text)smd5forencrypt'
-EAPI_DATA_SALT = '%(url)s-36cd479b6b5-%(text)s-36cd479b6b5-%(digest)s'
 EAPI_AES_KEY = 'e82ckenh8dichen8'  # ecb
 # endregion
 
@@ -52,8 +50,14 @@ def _aes_decrypt(data: str, key: str, iv='', mode=AES.MODE_CBC):
 def _eapi_encrypt(url, params):
     """Implements EAPI request encryption"""
     url, params = str(url), str(params)
-    digest = _hash_hex_digest(EAPI_DIGEST_SALT % {'url': url, 'text': params})
-    params = EAPI_DATA_SALT % ({'url': url, 'text': params, 'digest': digest})
+    digest = _hash_hex_digest(
+        'nobody%(url)suse%(text)smd5forencrypt' % {'url': url, 'text': params}
+    )
+    params = '%(url)s-36cd479b6b5-%(text)s-36cd479b6b5-%(digest)s' % ({
+        'url': url,
+        'text': params,
+        'digest': digest,
+    })
     return {
         'params': _hex_digest(_aes_encrypt(params, key=EAPI_AES_KEY, mode=AES.MODE_ECB))
     }

@@ -11,7 +11,6 @@ from .. import CLIENT_OS, getCurrentSession, writeLoginInfo
 from ..utils.crypto import _hash_hex_digest
 from ..utils.security import cloudmusic_dll_encode_id
 
-QRCODE_LOGIN_URL = 'https://st.music.163.com/st/platform/scanlogin'
 QRCODE_CLIENT_TYPE = 5
 
 
@@ -158,7 +157,7 @@ def getLoginQRCodeUrl(unikey: str) -> str:
         int(time() * 1000),
     )
     return '%s?%s' % (
-        QRCODE_LOGIN_URL,
+        'https://st.music.163.com/st/platform/scanlogin',
         urlencode({
             'codekey': unikey,
             'chainId': chain_id,

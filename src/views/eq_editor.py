@@ -39,9 +39,6 @@ class EQEditor(CurveEditor):
     PLOT_RIGHT = 14.0
     LABEL_GAP = 3.0
     LABEL_ROW_GAP = 1.0
-    INSET_ANIMATION = 0.25
-    FFT_HEIGHT = 0.35
-    FFT_DIFFERENCE = 2.5
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -65,7 +62,7 @@ class EQEditor(CurveEditor):
             maxlen=max(1, int(refresh_rate * cfg.fft_buffer_seconds))
         )
         self._fft_norm_timer = EaseOutTimer(0.5, 2)
-        self._inset_timer = EaseInOutTimer(self.INSET_ANIMATION, 3)
+        self._inset_timer = EaseInOutTimer(0.25, 3)
         self._inset_timer.target_value = self._targetInset()
         self._inset_timer.current_value = self._targetInset()
         self._inset_animation = QTimer(self)
@@ -146,10 +143,9 @@ class EQEditor(CurveEditor):
         self._fft_draw *= pow(0.93, multiple_factor)
         self._fft_levels[:] = np.power(self._fft_draw, 0.75)
         self._fft_levels[1] = (
-            self._fft_levels[0]
-            + (self._fft_levels[1] - self._fft_levels[0]) * self.FFT_DIFFERENCE
+            self._fft_levels[0] + (self._fft_levels[1] - self._fft_levels[0]) * 2.5
         )
-        self._fft_levels *= self.FFT_HEIGHT
+        self._fft_levels *= 0.35
         np.maximum(self._fft_levels, 0.0, out=self._fft_levels)
         peak = float(np.max(self._fft_levels))
         if peak > 0.55:

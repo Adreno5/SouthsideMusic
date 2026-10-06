@@ -40,7 +40,6 @@ if TYPE_CHECKING:
     from core.ws_server import QObjectHandler, WebSocketServer
 
 WHITE = QColor(255, 255, 255, 100)
-BLACK = QColor(0, 0, 0, 100)
 LIST_BUILD_BATCH_SIZE = 40
 
 
@@ -275,7 +274,7 @@ class PlaylistPage(QWidget):
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
-        painter.setPen(QPen(WHITE if theme.isDark() else BLACK, 1))
+        painter.setPen(QPen(WHITE if theme.isDark() else QColor(0, 0, 0, 100), 1))
         painter.setBrush(self.bg_color)
         painter.drawRoundedRect(self.rect(), 10, 10)
         painter.end()

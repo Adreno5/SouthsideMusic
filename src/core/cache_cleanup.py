@@ -11,18 +11,11 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 DATA_DIR = os.path.join(_PROJECT_ROOT, 'data')
 MUSIC_DATA_DIR = os.path.join(DATA_DIR, 'music')
 IMAGE_DATA_DIR = os.path.join(DATA_DIR, 'image')
-COVER_DATA_DIR = os.path.join(DATA_DIR, 'cover')
-TEMP_DATA_DIR = os.path.join(DATA_DIR, 'temp')
 
-DEFAULT_DATA_CACHE_MAX_BYTES = 4 * 1024 * 1024 * 1024
-# Cache entries can remain referenced by the currently playing song even when
-# their mtime is old; a short age window caused visible covers to disappear.
-DEFAULT_DATA_CACHE_MAX_AGE_MINUTES = 24 * 60
 DEFAULT_DATA_CLEANUP_INTERVAL_SECONDS = 5 * 60
-DEFAULT_TEMP_CACHE_MAX_AGE_MINUTES = 5
 
 _RECENT_FILE_GRACE_SECONDS = 5 * 60
-_CACHE_DIRS = (MUSIC_DATA_DIR, IMAGE_DATA_DIR, COVER_DATA_DIR)
+_CACHE_DIRS = (MUSIC_DATA_DIR, IMAGE_DATA_DIR, os.path.join(DATA_DIR, 'cover'))
 _PROTECTED_DATA_FILES = (
     os.path.join(DATA_DIR, 'count.json'),
     os.path.join(DATA_DIR, 'cache_index.json'),
@@ -52,10 +45,12 @@ def touchCacheFile(path: str) -> None:
         pass
 
 
+# Cache entries can remain referenced by the currently playing song even when
+# their mtime is old; a short age window caused visible covers to disappear.
 def cleanupDataFolder(
-    max_bytes: int = DEFAULT_DATA_CACHE_MAX_BYTES,
-    max_age_minutes: int = DEFAULT_DATA_CACHE_MAX_AGE_MINUTES,
-    temp_max_age_minutes: int = DEFAULT_TEMP_CACHE_MAX_AGE_MINUTES,
+    max_bytes: int = 4 * 1024 * 1024 * 1024,
+    max_age_minutes: int = 24 * 60,
+    temp_max_age_minutes: int = 5,
 ) -> CacheCleanupResult:
     """Trim redownloadable files in data/."""
     now = time.time()
@@ -63,7 +58,7 @@ def cleanupDataFolder(
     max_age_seconds = max(0, int(max_age_minutes)) * 60
     temp_max_age_seconds = max(0, int(temp_max_age_minutes)) * 60
     cache_files = _iterCacheFiles(_CACHE_DIRS)
-    temp_files = _iterCacheFiles((TEMP_DATA_DIR,))
+    temp_files = _iterCacheFiles((os.path.join(DATA_DIR, 'temp'),))
 
     removed_paths: set[str] = set()
     removed_count = 0

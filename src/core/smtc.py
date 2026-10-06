@@ -47,15 +47,12 @@ _LAUNCHER_RELATIVE_PATH = os.path.join('launcher', 'Launch.exe')
 _LAUNCHER_PATH = os.path.join(_PROJECT_ROOT, _LAUNCHER_RELATIVE_PATH)
 _INSTALL_PATH_KEY = r'SOFTWARE\Southside Music'
 
-APP_USER_MODEL_ID = 'Adreno9135.SouthsideMusic'
-APP_DISPLAY_NAME = 'Southside Music'
-
 
 def _appUserModelId() -> str:
     for candidate in _launcherCandidates():
         if os.path.exists(candidate):
             return candidate
-    return APP_USER_MODEL_ID
+    return 'Adreno9135.SouthsideMusic'
 
 
 def _launcherCandidates() -> list[str]:
@@ -78,7 +75,9 @@ def initAppIdentity() -> None:
         shell32.SetCurrentProcessExplicitAppUserModelID(aumid)
         key = rf'Software\Classes\AppUserModelId\{aumid}'
         with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, key) as handle:
-            winreg.SetValueEx(handle, 'DisplayName', 0, winreg.REG_SZ, APP_DISPLAY_NAME)
+            winreg.SetValueEx(
+                handle, 'DisplayName', 0, winreg.REG_SZ, 'Southside Music'
+            )
             winreg.SetValueEx(handle, 'IconUri', 0, winreg.REG_SZ, _ICON_PATH)
     except Exception as e:
         _logger.exception(e)

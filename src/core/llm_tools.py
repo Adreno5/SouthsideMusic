@@ -39,7 +39,6 @@ ToolCallback = Callable[[str, str, str], None]
 PendingCallback = Callable[[str, list[dict[str, Any]]], None]
 
 USAGE_FREE_TOOLS = {'get_tool_usage', 'get_confirm'}
-CONFIRM_REQUIRED_TOOLS = {'remove_song'}
 KNOWN_TOOLS = set(TOOL_USAGE)
 TOOL_SCHEMA_DESCRIPTION = (
     'Available app tool. Call get_tool_usage with this exact name before use.'
@@ -504,7 +503,7 @@ class LLMToolRunner:
                 'tool_name': name,
                 'error': f'Call get_tool_usage with tool_name="{name}" before using this tool.',
             }
-        if name in CONFIRM_REQUIRED_TOOLS and not self.allow_actions:
+        if name == 'remove_song' and not self.allow_actions:
             return {
                 'requires_user_confirmation': True,
                 'tool_name': name,

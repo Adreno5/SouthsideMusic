@@ -18,9 +18,6 @@ from core.wsola import WsolaStretcher
 
 _logger = logging.getLogger(__name__)
 
-BPM_MIN = 50.0
-BPM_MAX = 210.0
-
 _ANALYSIS_BLOCK_MS = 10
 _SILENCE_FLOOR_DB = -45.0
 _SILENCE_ABS_LEVEL = 1e-4
@@ -523,6 +520,7 @@ def _cache_token(
     agc: bool,
     current_gain: float,
     next_gain: float,
+    current_duration: float,
 ) -> str:
     payload = '|'.join((
         current_id,
@@ -540,6 +538,7 @@ def _cache_token(
         str(agc),
         f'{current_gain:.6f}',
         f'{next_gain:.6f}',
+        f'{current_duration:.6f}',
     )).encode('utf-8')
     return hashlib.sha256(payload).hexdigest()
 
@@ -565,12 +564,16 @@ def getCrossfade(
     strength = _clamp(crossfade_strength, 0.0, 1.0)
     sample_rate = current.frame_rate
     channels = _target_channels(current, next)
+    current_duration = (
+        current_duration_seconds
+        if current_duration_seconds is not None
+        else len(current) / 1000.0
+    )
 
     cache_token: str | None = None
     use_cache = (
         current_song_id is not None
         and next_song_id is not None
-        and current_duration_seconds is None
     )
     if use_cache:
         assert current_song_id is not None and next_song_id is not None
@@ -589,6 +592,7 @@ def getCrossfade(
             agc,
             current_gain,
             next_gain,
+            current_duration,
         )
         cached = CrossFadeInfo.load_from_cache(cache_token, sample_rate, channels)
         if cached is not None and cached.fade_seconds > 0:
@@ -604,11 +608,6 @@ def getCrossfade(
         window_seconds * 1000,
         len(current),
         len(next),
-    )
-    current_duration = (
-        current_duration_seconds
-        if current_duration_seconds is not None
-        else len(current) / 1000.0
     )
     current_tail = current[-window_ms:]
     next_head = next[:window_ms]
@@ -756,7 +755,7 @@ def getCrossfade(
         beat_phase=beat_phase,
     )
 
-    if cache_token is not None and current_duration_seconds is None:
+    if cache_token is not None:
         info.save_to_cache(cache_token)
 
     return info
@@ -1143,7 +1142,7 @@ def _analyze_rhythm(
         return 0.0, 0.0
     period, next_beat = grid
     bpm = 60.0 / period
-    if not BPM_MIN <= bpm <= BPM_MAX:
+    if not 50.0 <= bpm <= 210.0:
         return 0.0, 0.0
     phase = ((next_beat - duration) / period) % 1.0
     return bpm, phase

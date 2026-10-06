@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from functools import lru_cache
 import logging
-from typing import TYPE_CHECKING
-
-from textwrap import dedent
-import scipy.signal
 import warnings
+from textwrap import dedent
+from typing import TYPE_CHECKING, cast
+
 import numpy as np
+import scipy.signal
+
+from core.audio_decode import FileAudioSegment
 
 if TYPE_CHECKING:
     from pydub import AudioSegment
@@ -181,25 +182,28 @@ class Meter(object):
         self.overlap = overlap
         self.blockwise_loudness = []
 
-    def integratedLoudness(self, data):
-        """measure integrated gated loudness of a signal in db LUFS.
-
-        input data shape: (samples, ch) or (samples,) for mono, up to 5 channels.
-        channel order: [Left, Right, Center, Left surround, Right surround].
-        """
-        input_data = data.copy()
-        validAudio(input_data, self.rate, self.block_size)
-
-        if input_data.ndim == 1:
-            input_data = np.reshape(input_data, (input_data.shape[0], 1))
-
-        numChannels = input_data.shape[1]
-        numSamples = input_data.shape[0]
-
-        for filter_class, filter_stage in self._filters.items():
-            for ch in range(numChannels):
-                input_data[:, ch] = filter_stage.applyFilter(input_data[:, ch])
-
+    def integratedLoudness(self, data: np.ndarray | FileAudioSegment) -> float:
+        if isinstance(data, FileAudioSegment):
+            numChannels = 2 if data.channels == 2 else 1
+            numSamples = data.frames * data.channels // numChannels
+            if numSamples < self.block_size * self.rate:
+                raise ValueError('Audio must have length greater than the block size.')
+            chunks = (
+                np.frombuffer(
+                    data.readPcm(start, start + 65536), dtype=data.array_type
+                ).astype(np.float32).reshape(-1, numChannels)
+                / np.iinfo(data.array_type).max
+                for start in range(0, data.frames, 65536)
+            )
+        else:
+            validAudio(data, self.rate, self.block_size)
+            array_data = cast(np.ndarray, data)
+            numChannels = data.shape[1] if data.ndim == 2 else 1
+            numSamples = len(data)
+            chunks = (
+                array_data[start : start + 65536].reshape(-1, numChannels).copy()
+                for start in range(0, numSamples, 65536)
+            )
         G = [1.0, 1.0, 1.0, 1.41, 1.41]
         T_g = self.block_size
         Gamma_a = -70.0
@@ -211,13 +215,44 @@ class Meter(object):
         j_range = np.arange(0, numBlocks)
         z = np.zeros(shape=(numChannels, numBlocks))
 
-        for i in range(numChannels):
-            for j in j_range:
-                start = int(T_g * (j * step) * self.rate)
-                u = int(T_g * (j * step + 1) * self.rate)
-                z[i, j] = (1.0 / (T_g * self.rate)) * np.sum(
-                    np.square(input_data[start:u, i])
-                )
+        starts = [int(T_g * (j * step) * self.rate) for j in j_range]
+        stops = [int(T_g * (j * step + 1) * self.rate) for j in j_range]
+        states = {
+            (name, ch): np.zeros(max(len(stage.a), len(stage.b)) - 1)
+            for name, stage in self._filters.items()
+            for ch in range(numChannels)
+        }
+        pending = np.empty((0, numChannels), dtype=np.float32)
+        origin = 0
+        processed = 0
+        next_block = 0
+        for chunk in chunks:
+            for name, stage in self._filters.items():
+                for ch in range(numChannels):
+                    filtered, states[name, ch] = scipy.signal.lfilter(
+                        stage.b, stage.a, chunk[:, ch], zi=states[name, ch]
+                    )
+                    chunk[:, ch] = stage.passband_gain * filtered
+            pending = np.concatenate((pending, chunk))
+            processed += len(chunk)
+            while next_block < numBlocks and (
+                stops[next_block] <= processed or processed == numSamples
+            ):
+                window = pending[
+                    starts[next_block] - origin : stops[next_block] - origin
+                ]
+                for ch in range(numChannels):
+                    z[ch, next_block] = np.sum(np.square(window[:, ch])) / (
+                        T_g * self.rate
+                    )
+                next_block += 1
+            if next_block < numBlocks:
+                keep = min(processed, starts[next_block])
+                pending = pending[keep - origin :].copy()
+                origin = keep
+            else:
+                pending = np.empty((0, numChannels), dtype=np.float32)
+                origin = processed
 
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', category=RuntimeWarning)
@@ -399,8 +434,10 @@ def getAdjustedGainFactorFromSamples(
     return gain
 
 
-@lru_cache(maxsize=1024)
 def getAdjustedGainFactorImpl(target_lufs: float, audio: AudioSegment) -> float:
+    if isinstance(audio, FileAudioSegment):
+        loudness = Meter(audio.frame_rate).integratedLoudness(audio)
+        return float(10 ** ((target_lufs - loudness) / 20.0))
     samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
     dtype_map = {1: np.int8, 2: np.int16, 4: np.int32}
     dtype = dtype_map[audio.sample_width]

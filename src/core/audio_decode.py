@@ -7,34 +7,33 @@ import logging
 import struct
 import subprocess
 import threading
-from collections import OrderedDict, namedtuple
+import time
+import wave
+from collections import namedtuple
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, override
+from typing import Any, cast, override
+from weakref import WeakValueDictionary
 
 from pydub import AudioSegment
 from pydub.exceptions import CouldntDecodeError
-from pydub.utils import audioop, fsdecode, get_prober_name, mediainfo_json
+from pydub.utils import audioop, db_to_float, fsdecode, get_prober_name
 
-_AUDIO_DECODE_CACHE: OrderedDict[str, AudioSegment] = OrderedDict()
+from core.pcm_buffer import PcmBuffer, PcmFile
+
+_AUDIO_DECODE_CACHE: WeakValueDictionary[str, AudioSegment] = WeakValueDictionary()
 _AUDIO_CACHE_LOCK = threading.Lock()
-_AUDIO_CACHE_MAX = 10
 _logger = logging.getLogger(__name__)
 
 
 def cacheDecodedAudio(key: str, segment: AudioSegment) -> None:
     with _AUDIO_CACHE_LOCK:
         _AUDIO_DECODE_CACHE[key] = segment
-        _AUDIO_DECODE_CACHE.move_to_end(key)
-        while len(_AUDIO_DECODE_CACHE) > _AUDIO_CACHE_MAX:
-            _AUDIO_DECODE_CACHE.popitem(last=False)
 
 
 def getCachedAudio(key: str) -> AudioSegment | None:
     with _AUDIO_CACHE_LOCK:
-        seg = _AUDIO_DECODE_CACHE.get(key)
-        if seg is not None:
-            _AUDIO_DECODE_CACHE.move_to_end(key)
-        return seg
+        return _AUDIO_DECODE_CACHE.get(key)
 
 
 WavSubChunk = namedtuple('WavSubChunk', ['id', 'position', 'size'])
@@ -77,9 +76,11 @@ class PatchedAudioSegment(AudioSegment):
     def from_file(
         cls,
         file: bytes | str | Path | io.BytesIO,
+        *,
+        timeout: float = 90.0,
     ) -> PatchedAudioSegment:
+        deadline = time.monotonic() + timeout
         filename: str | None
-        stdin_parameter = None
         stdin_data = None
 
         if isinstance(file, bytes):
@@ -102,13 +103,10 @@ class PatchedAudioSegment(AudioSegment):
         if filename:
             conversion_command += ['-i', filename]
         else:
-            stdin_parameter = subprocess.PIPE
             conversion_command += ['-i', 'pipe:0']
 
         info = None
-        if filename:
-            info = mediainfo_json(filename, read_ahead_limit=-1)
-        elif stdin_data is not None:
+        if filename or stdin_data is not None:
             probe_command = [
                 get_prober_name(),
                 '-of',
@@ -117,17 +115,17 @@ class PatchedAudioSegment(AudioSegment):
                 'info',
                 '-show_format',
                 '-show_streams',
-                'pipe:0',
+                filename or 'pipe:0',
             ]
-            probe = subprocess.Popen(
+            probe = subprocess.run(
                 probe_command,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                input=stdin_data,
+                capture_output=True,
+                check=False,
+                timeout=max(0.0, deadline - time.monotonic()),
             )
-            probe_out, _probe_err = probe.communicate(input=stdin_data)
-            if probe.returncode == 0 and probe_out:
-                info = json.loads(probe_out.decode('utf-8', 'ignore'))
+            if probe.returncode == 0 and probe.stdout:
+                info = json.loads(probe.stdout.decode('utf-8', 'ignore'))
 
         if info:
             audio_streams = [x for x in info['streams'] if x['codec_type'] == 'audio']
@@ -147,6 +145,15 @@ class PatchedAudioSegment(AudioSegment):
                     or audio_streams[0].get('bits_per_raw_sample')
                     or 0
                 )
+                if bits_per_sample <= 0:
+                    bits_per_sample = {
+                        'u8': 8,
+                        's16': 16,
+                        's32': 32,
+                        's64': 64,
+                        'flt': 32,
+                        'dbl': 64,
+                    }.get(audio_streams[0].get('sample_fmt', '').rstrip('p'), 0)
             if bits_per_sample <= 0:
                 acodec = None
             elif bits_per_sample == 8:
@@ -165,28 +172,53 @@ class PatchedAudioSegment(AudioSegment):
 
         conversion_command += ['-']
 
-        p = subprocess.Popen(
+        decoded_file = PcmFile()
+        result = subprocess.run(
             conversion_command,
-            stdin=stdin_parameter,
-            stdout=subprocess.PIPE,
+            input=stdin_data,
+            stdout=decoded_file.file,
             stderr=subprocess.PIPE,
+            check=False,
+            timeout=max(0.0, deadline - time.monotonic()),
         )
-        p_out, p_err = p.communicate(input=stdin_data)
 
         cls._logger.debug(conversion_command)
 
-        if p.returncode != 0 or len(p_out) == 0:
+        if result.returncode != 0 or decoded_file.file.seek(0, 2) == 0:
             raise CouldntDecodeError(
                 'Decoding failed. ffmpeg returned error code: {}\n\nOutput from ffmpeg/avlib:\n\n{}'.format(
-                    p.returncode, p_err.decode(errors='ignore')
+                    result.returncode, result.stderr.decode(errors='ignore')
                 )
             )
 
-        wav_data = bytearray(p_out)
-        fixWavHeaders(wav_data)
-        obj = cls(bytes(wav_data))
-
-        return obj
+        decoded_file.file.seek(0)
+        storage = PcmFile()
+        with wave.open(decoded_file.file, 'rb') as reader:
+            channels = reader.getnchannels()
+            sample_width = reader.getsampwidth()
+            frame_rate = reader.getframerate()
+            frames = 0
+            while raw := reader.readframes(65536):
+                if sample_width == 1:
+                    raw = audioop.bias(raw, 1, -128)
+                elif sample_width == 3:
+                    raw = cls(
+                        data=raw,
+                        sample_width=3,
+                        frame_rate=frame_rate,
+                        channels=channels,
+                    ).raw_data
+                storage.append(raw)
+                frames += len(raw) // (
+                    channels * (4 if sample_width == 3 else sample_width)
+                )
+        return FileAudioSegment(
+            storage,
+            frames,
+            4 if sample_width == 3 else sample_width,
+            frame_rate,
+            channels,
+        )
 
     @override
     def set_channels(self, channels: int) -> PatchedAudioSegment:
@@ -225,30 +257,104 @@ class PatchedAudioSegment(AudioSegment):
         )
 
 
+class FileAudioSegment(PatchedAudioSegment):
+    def __init__(
+        self,
+        storage: PcmFile,
+        frames: int,
+        sample_width: int,
+        frame_rate: int,
+        channels: int,
+    ) -> None:
+        self.storage = storage
+        self.frames = frames
+        self.prepared_pcm: PcmBuffer | None = None
+        super().__init__(
+            data=b'',
+            sample_width=sample_width,
+            frame_rate=frame_rate,
+            channels=channels,
+        )
+
+    @property
+    def _data(self) -> bytes:
+        return self.readPcm(0, self.frames)
+
+    @_data.setter
+    def _data(self, value: bytes) -> None:
+        if value:
+            raise ValueError('File PCM cannot be replaced with an in-memory buffer')
+
+    @override
+    def frame_count(self, ms: float | None = None) -> float:
+        return ms * self.frame_rate / 1000 if ms is not None else float(self.frames)
+
+    def readPcm(self, start: int, stop: int) -> bytes:
+        start = max(0, min(start, self.frames))
+        stop = max(start, min(stop, self.frames))
+        return self.storage.read(
+            start * self.frame_width, (stop - start) * self.frame_width
+        )
+
+    @override
+    def apply_gain(self, volume_change: float) -> FileAudioSegment:
+        storage = PcmFile()
+        gain = db_to_float(volume_change)
+        for start in range(0, self.frames, 65536):
+            storage.append(
+                audioop.mul(self.readPcm(start, start + 65536), self.sample_width, gain)
+            )
+        return FileAudioSegment(
+            storage, self.frames, self.sample_width, self.frame_rate, self.channels
+        )
+
+    @override
+    def __getitem__(
+        self, millisecond: int | slice
+    ) -> PatchedAudioSegment | Generator[PatchedAudioSegment]:
+        if isinstance(millisecond, slice):
+            if millisecond.step:
+                return (
+                    cast(PatchedAudioSegment, self[start : start + millisecond.step])
+                    for start in range(*millisecond.indices(len(self)))
+                )
+            start_ms = millisecond.start if millisecond.start is not None else 0
+            stop_ms = millisecond.stop if millisecond.stop is not None else len(self)
+        else:
+            start_ms, stop_ms = millisecond, millisecond + 1
+        start = self._parse_position(min(start_ms, len(self)))
+        stop = self._parse_position(min(stop_ms, len(self)))
+        raw = self.readPcm(start, stop)
+        missing = (stop - start) * self.frame_width - len(raw)
+        if missing > 0:
+            raw += b'\0' * missing
+        return PatchedAudioSegment(
+            data=raw,
+            sample_width=self.sample_width,
+            frame_rate=self.frame_rate,
+            channels=self.channels,
+        )
+
+    @override
+    def _spawn(
+        self, data: Any, overrides: dict[str, Any] | None = None
+    ) -> PatchedAudioSegment:
+        return PatchedAudioSegment(
+            data=data,
+            metadata={
+                'sample_width': self.sample_width,
+                'frame_rate': self.frame_rate,
+                'frame_width': self.frame_width,
+                'channels': self.channels,
+                **(overrides or {}),
+            },
+        )
+
+
 def decodeAudioWithSidecar(
     file: bytes | str | Path | io.BytesIO,
     sidecar: Any | None = None,
     *,
     timeout: float = 90.0,
 ) -> PatchedAudioSegment:
-    if sidecar is None:
-        return PatchedAudioSegment.from_file(file)
-
-    payload: dict[str, object]
-    if isinstance(file, bytes):
-        payload = {'data': file}
-    elif isinstance(file, io.BytesIO):
-        file.seek(0)
-        payload = {'data': file.read()}
-    else:
-        payload = {'path': str(file)}
-
-    try:
-        decoded = sidecar.call('decode_audio', payload, timeout=timeout)
-    except Exception:
-        _logger.debug('sidecar audio decode failed', exc_info=True)
-        decoded = None
-
-    if isinstance(decoded, bytes):
-        return PatchedAudioSegment(decoded)
-    return PatchedAudioSegment.from_file(file)
+    return PatchedAudioSegment.from_file(file, timeout=timeout)

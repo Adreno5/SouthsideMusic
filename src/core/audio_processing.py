@@ -6,6 +6,7 @@ from math import gcd, isfinite
 import numpy as np
 from scipy.signal import firwin, firwin2, minimum_phase, oaconvolve, resample_poly
 
+from core.pcm_buffer import PcmBuffer
 from core.pcm_timeline import PcmTimeline
 from core.wsola import WsolaStretcher
 
@@ -128,7 +129,7 @@ class AudioProcessingSettings:
 
 class AudioProcessor:
     def __init__(self) -> None:
-        self.samples = np.empty((0, 1), dtype=np.float32)
+        self.samples: np.ndarray | PcmBuffer = np.empty((0, 1), dtype=np.float32)
         self.timeline: PcmTimeline | None = None
         self.sample_rate = 0
         self.channels = 1

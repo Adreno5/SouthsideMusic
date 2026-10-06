@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from datetime import datetime
-import threading
-from typing import Any, Literal
 import base64
 import hashlib
 import json
 import os
 import shutil
+import threading
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Literal
 
 from core.cache_cleanup import touchCacheFile
 
@@ -387,13 +387,25 @@ class SongStorable:
         )
 
     def getMusicBytes(self) -> bytes:
+        with open(self.getMusicPath(), 'rb') as file:
+            return file.read()
+
+    def getMusicPath(self) -> str:
         self._ensureCacheFields()
-        result = self._readCache(self.content_cache_hash, MUSIC_DATA_DIR)
-        if result is not None:
-            return result
-        raise FileNotFoundError(
-            f'Music cache not found for {self.name}: hash={self.content_cache_hash}'
-        )
+        path = self._getCachePath(MUSIC_DATA_DIR, self.content_cache_hash)
+        if self.content_cache_hash and not os.path.isfile(path):
+            legacy_path = self._getLegacyCachePath(
+                MUSIC_DATA_DIR, self.content_cache_hash
+            )
+            if os.path.isfile(legacy_path):
+                self._ensureCacheDirs()
+                shutil.move(legacy_path, path)
+        if not self.content_cache_hash or not os.path.isfile(path):
+            raise FileNotFoundError(
+                f'Music cache not found for {self.name}: hash={self.content_cache_hash}'
+            )
+        touchCacheFile(path)
+        return path
 
     def getLyricPath(self) -> str:
         self._ensureCacheFields()

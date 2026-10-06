@@ -1,39 +1,41 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QObject
-
 import base64
 import logging
 import os
-from pathlib import Path
 import re
 import subprocess
 import tempfile
 import threading
-from dataclasses import dataclass
-from services.events import REQUEST_BR_CHANGED
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict
 import time as timeLib
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict
 
 import numpy as np
-
 import requests
 import sounddevice as sd
 from pydub.utils import get_prober_name
+from PySide6.QtCore import QObject, QTimer
+
+from core.audio_decode import FileAudioSegment
 from core.audio_player import (
     AudioPlayer,
-    PatchedAudioSegment as AudioSegment_,
     PreparedAudioBuffer,
     cacheDecodedAudio,
     decodeAudioWithSidecar,
     getCachedAudio,
 )
+from core.audio_player import (
+    PatchedAudioSegment as AudioSegment_,
+)
 from core.backend import getBackend
 from core.config import cfg
 from core.crossfade import CrossFadeInfo, getCrossfade
-from core.downloader import asyncTask, asyncDownload
+from core.downloader import asyncDownload, asyncTask
 from core.favorites import saveFavorites
 from core.free_threaded_worker import FreeThreadedJsonSender
+from core.i18n import tr
 from core.image import getAverageColorFromBytes
 from core.loudness import getAdjustedGainFactor
 from core.lyric_sources import LyricCandidate, iterLyricUpdates
@@ -44,6 +46,7 @@ from core.models import (
 )
 from core.rediscovery import recordListening
 from core.weighted_random import AdvancedRandom
+from services.events import REQUEST_BR_CHANGED
 from services.events.event_bus import event_bus
 from services.events.events import (
     EMIT_DEBUG_INFO,
@@ -51,29 +54,27 @@ from services.events.events import (
     FINISH_CROSSFADE,
     IMAGE_ASSET_PERSISTED,
     PLAY_CONTINUE_LAST_SONG,
+    PLAY_LAST,
+    PLAY_NEXT,
     PLAY_PLAYLIST_STORABLE,
     PLAY_SONG_AT_INDEX,
     PLAY_START_PLAYLIST,
     PLAY_STATE_CHANGED,
     PLAY_STORABLE,
-    POST_PLAY_STORABLE,
     PLAYBACK_ERROR,
     PLAYBACK_IMAGE_LOADED,
     PLAYBACK_LYRICS_UPDATED,
     PLAYBACK_SONG_LOADING,
-    PLAY_LAST,
     PLAYLIST_CHANGED,
-    PLAY_NEXT,
+    POST_PLAY_STORABLE,
+    SECOND_TICK,
     SONG_CHANGED,
     SONG_FINISH,
-    SECOND_TICK,
     START_CROSSFADE,
     START_PROGRESS_LOADING,
     STOP_PROGRESS_LOADING,
     UPDATE_LOADING_PROGRESS,
 )
-from PySide6.QtCore import QTimer
-from core.i18n import tr
 
 if TYPE_CHECKING:
     from core.app_context import AppContext
@@ -512,13 +513,14 @@ class PlayingManager(QObject):
         target_lufs: float,
         audio: AudioSegment_,
     ) -> float:
+        if isinstance(audio, FileAudioSegment):
+            return getAdjustedGainFactor(target_lufs, audio)
         try:
-            samples = audio.get_array_of_samples()
             result = self._callFreeThreadedWorker(
                 'loudness_gain',
                 {
                     'target_lufs': float(target_lufs),
-                    'samples': samples.tobytes(),
+                    'samples': audio.raw_data,
                     'sample_width': int(audio.sample_width),
                     'frame_rate': int(audio.frame_rate),
                     'channels': int(audio.channels),
@@ -927,8 +929,19 @@ class PlayingManager(QObject):
             if self._player is not None
             else current_audio.frame_rate
         )
-        current_audio = current_audio.set_frame_rate(rate).set_channels(2)
-        next_audio = next_audio.set_frame_rate(rate).set_channels(2)
+        duration = (
+            current_duration_seconds
+            if current_duration_seconds is not None
+            else len(current_audio) / 1000.0
+        )
+        window_ms = max(
+            30000,
+            round(cfg.crossfade_max_duration) * 1000,
+            round(cfg.crossfade_bpm_window) * 1000,
+        )
+        window_ms = min(window_ms, len(current_audio), len(next_audio))
+        current_audio = current_audio[-window_ms:].set_frame_rate(rate).set_channels(2)
+        next_audio = next_audio[:window_ms].set_frame_rate(rate).set_channels(2)
         crossfade_seconds = self._lyricCrossfadeSeconds()
         worker_info = self._computeCrossfadeInfoInWorker(
             current_audio,
@@ -936,7 +949,7 @@ class PlayingManager(QObject):
             crossfade_seconds,
             current_song_id,
             next_song_id,
-            current_duration_seconds,
+            duration,
             current_gain,
             next_gain,
         )
@@ -957,7 +970,7 @@ class PlayingManager(QObject):
                     tempo_match=cfg.crossfade_tempo_match,
                     key_match=cfg.crossfade_key_match,
                     agc=cfg.crossfade_agc,
-                    current_duration_seconds=current_duration_seconds,
+                    current_duration_seconds=duration,
                     current_gain=current_gain,
                     next_gain=next_gain,
                 )
@@ -1344,17 +1357,17 @@ class PlayingManager(QObject):
                 try:
                     lock = self._lock
                     if lock is None:
-                        song_bytes = next_song.getMusicBytes()
+                        song_path = next_song.getMusicPath()
                     else:
                         with lock:
-                            song_bytes = next_song.getMusicBytes()
+                            song_path = next_song.getMusicPath()
                     cache_key = next_song.content_cache_hash
                     cached = getCachedAudio(cache_key) if cache_key else None
                     if cached is not None:
                         audio = cached
                     else:
                         audio = decodeAudioWithSidecar(
-                            song_bytes,
+                            song_path,
                             self._ft_worker,
                         )
                         if cache_key:
@@ -2058,12 +2071,12 @@ class PlayingManager(QObject):
         if preloaded_audio is not None:
             return preloaded_audio
 
-        music_bytes = song_storable.getMusicBytes()
+        music_path = song_storable.getMusicPath()
         cache_key = song_storable.content_cache_hash
         cached = getCachedAudio(cache_key) if cache_key else None
         if cached is not None:
             return cached
-        audio = decodeAudioWithSidecar(music_bytes, self._ft_worker)
+        audio = decodeAudioWithSidecar(music_path, self._ft_worker)
         if cache_key:
             cacheDecodedAudio(cache_key, audio)
         return audio

@@ -5,11 +5,14 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from core.pcm_buffer import PcmBuffer
+
 
 @dataclass(frozen=True)
 class PcmBlock:
     start: int
-    samples: np.ndarray
+    samples: np.ndarray | PcmBuffer
+    gain: float = 1.0
 
     @property
     def end(self) -> int:
@@ -24,13 +27,17 @@ class PcmTimeline:
         self.end = start
         self.blocks: deque[PcmBlock] = deque()
 
-    def append(self, samples: np.ndarray, gain: float = 1.0) -> None:
+    def append(self, samples: np.ndarray | PcmBuffer, gain: float = 1.0) -> None:
         if samples.ndim != 2 or samples.shape[1] != self.channels:
             raise ValueError('PCM channel count does not match the timeline')
+        if isinstance(samples, PcmBuffer):
+            if len(samples):
+                self.blocks.append(PcmBlock(self.end, samples, gain))
+                self.end += len(samples)
+            return
         for offset in range(0, len(samples), 65536):
-            # Own each block so releasing a prefix also releases its allocation.
-            chunk = (samples[offset : offset + 65536] * gain).astype(
-                np.float32, copy=True
+            chunk = np.multiply(
+                samples[offset : offset + 65536], gain, dtype=np.float32
             )
             self.blocks.append(PcmBlock(self.end, chunk))
             self.end += len(chunk)
@@ -47,12 +54,29 @@ class PcmTimeline:
             if block.start >= stop:
                 break
             left, right = max(start, block.start), min(stop, block.end)
-            result[left - start : right - start] = block.samples[
-                left - block.start : right - block.start
-            ]
+            np.multiply(
+                block.samples[left - block.start : right - block.start],
+                block.gain,
+                out=result[left - start : right - start],
+            )
             copied += right - left
         if copied != len(result):
             raise ValueError('Requested PCM has already been released')
+        return result
+
+    def slice(self, start: int, stop: int) -> PcmTimeline:
+        result = PcmTimeline(self.channels, start)
+        for block in self.blocks:
+            left, right = max(start, block.start), min(stop, block.end)
+            if right <= left:
+                continue
+            samples = (
+                block.samples.view(left - block.start, right - block.start)
+                if isinstance(block.samples, PcmBuffer)
+                else block.samples[left - block.start : right - block.start]
+            )
+            result.blocks.append(PcmBlock(left, samples, block.gain))
+        result.end = min(stop, self.end)
         return result
 
     def replaceFrom(self, start: int, tail: PcmTimeline) -> None:
@@ -65,7 +89,13 @@ class PcmTimeline:
         if self.blocks and self.blocks[-1].end > start:
             block = self.blocks.pop()
             self.blocks.append(
-                PcmBlock(block.start, block.samples[: start - block.start].copy())
+                PcmBlock(
+                    block.start,
+                    block.samples.view(0, start - block.start)
+                    if isinstance(block.samples, PcmBuffer)
+                    else block.samples[: start - block.start].copy(),
+                    block.gain,
+                )
             )
         self.blocks.extend(tail.blocks)
         self.end = tail.end

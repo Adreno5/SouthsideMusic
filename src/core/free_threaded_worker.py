@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 import base64
-from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 import io
 import logging
 import os
-from pathlib import Path
 import pickle
 import struct
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any
-
 
 _B64_BYTES_KEY = '__southside_b64_bytes__'
 _FLOAT_ARRAY_KEY = '__southside_float_array__'
@@ -385,15 +384,18 @@ def _workerMain() -> int:
 
             request_id = int(request.get('id', 0))
             if request.get('op') in _MAIN_THREAD_OPS:
+                msg = None
                 try:
                     msg = _handleWorkerRequest(request)
                     _sendResponse({'id': request_id, 'ok': True, 'msg': msg})
                 except Exception as e:
                     _sendResponse({'id': request_id, 'ok': False, 'error': repr(e)})
+                del msg, request
                 continue
 
             future = executor.submit(_handleWorkerRequest, request)
             future.add_done_callback(lambda fut, rid=request_id: _done(rid, fut))
+            del future, request
 
 
 class FreeThreadedJsonSender:
@@ -646,6 +648,7 @@ class FreeThreadedJsonSender:
             with self._lock:
                 callback = self._callbacks.pop(request_id, None)
             if callback is None:
+                del response
                 continue
             if response.get('ok'):
                 callback(response.get('msg'))
@@ -655,6 +658,7 @@ class FreeThreadedJsonSender:
                     response.get('error'),
                 )
                 callback(None)
+            del response, callback
 
         with self._lock:
             callbacks = list(self._callbacks.values())

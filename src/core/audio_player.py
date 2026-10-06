@@ -30,6 +30,7 @@ from scipy.signal import resample_poly
 
 from core.audio_analysis import SpectrumAnalyzer
 from core.audio_decode import (
+    FileAudioSegment,
     PatchedAudioSegment,
     cacheDecodedAudio,
     decodeAudioWithSidecar,
@@ -45,6 +46,7 @@ from core.audio_processing import (
 )
 from core.beat import BeatDetector, BeatFrame
 from core.config import cfg
+from core.pcm_buffer import PcmBuffer, PcmFile
 from core.pcm_timeline import PcmTimeline
 from services.events import DB_CHANGED, event_bus
 from services.events.events import (
@@ -68,14 +70,10 @@ __all__ = [
 ]
 
 _logger = logging.getLogger(__name__)
-_PRODUCER_QUEUE_BLOCKS = 32768
-_PRODUCER_PROGRESS_BOOST_RATIO = 0.2
+_PRODUCER_QUEUE_BLOCKS = 1024
 _PRODUCER_EARLY_LEAD = 5.0
 _PRODUCER_EARLY_STRESSED_LEAD = 3.0
 _PRODUCER_EARLY_IDLE_LEAD = 8.0
-_PRODUCER_LATE_LEAD = 90.0
-_PRODUCER_LATE_STRESSED_LEAD = 25.0
-_PRODUCER_LATE_IDLE_LEAD = 120.0
 _PRODUCER_REFILL_RATIO = 0.75
 _PRODUCER_MIN_REFILL_LEAD = 2.0
 _PRODUCER_YIELD_BLOCKS = 32
@@ -134,7 +132,7 @@ def getAudioDevices() -> list[DevicesInfo]:
 
 @dataclass(frozen=True)
 class PreparedAudioBuffer:
-    samples: np.ndarray
+    samples: np.ndarray | PcmBuffer
     sample_rate: int
     channels: int
 
@@ -157,7 +155,7 @@ class AudioPlayer(QObject):
         super().__init__(parent)
         self._logger = logging.getLogger(__name__)
 
-        self.samples: np.ndarray = np.zeros((0, 1), dtype=np.float32)
+        self.samples: np.ndarray | PcmBuffer = np.zeros((0, 1), dtype=np.float32)
         self._timeline: PcmTimeline | None = None
         self._queued_restore: PcmTimeline | None = None
         self._queued_start = 0
@@ -204,7 +202,8 @@ class AudioPlayer(QObject):
         self._audio_queue: Queue[tuple[np.ndarray, int, float | None] | None] = Queue(
             maxsize=_PRODUCER_QUEUE_BLOCKS
         )
-        self._scrub_samples: np.ndarray | None = None
+        self._scrub_samples: np.ndarray | PcmBuffer | None = None
+        self._scrub_buffer: tuple[int, np.ndarray] | None = None
         self._scrub_scale = 1.0
         self._scrub_frame = 0
         self._scrub_was_playing = False
@@ -227,7 +226,7 @@ class AudioPlayer(QObject):
         self._growing_file_size = 0
         self._growing_file_last_decode = 0.0
         self._growing_stream_mode = False
-        self._growing_stream_buffer: np.ndarray | None = None
+        self._growing_stream_buffer: PcmBuffer | None = None
         self._callback_events_lock = threading.Lock()
         self._pending_full_finished = False
         self._pending_ending_no_sound = False
@@ -347,12 +346,29 @@ class AudioPlayer(QObject):
 
     @classmethod
     def prepareBuffer(cls, audio: PatchedAudioSegment) -> PreparedAudioBuffer:
-        samples = cls._prepareSamples(audio)
+        samples: np.ndarray | PcmBuffer
+        if isinstance(audio, FileAudioSegment):
+            disk_samples = audio.prepared_pcm
+            if disk_samples is None:
+                disk_samples = PcmBuffer(PcmFile(), min(audio.channels, 2))
+                for start in range(0, audio.frames, 65536):
+                    chunk = PatchedAudioSegment(
+                        data=audio.readPcm(start, start + 65536),
+                        sample_width=audio.sample_width,
+                        frame_rate=audio.frame_rate,
+                        channels=audio.channels,
+                    )
+                    disk_samples.append(cls._prepareSamples(chunk))
+                audio.prepared_pcm = disk_samples
+            samples = disk_samples
+        else:
+            samples = cls._prepareSamples(audio)
         channels = samples.shape[1] if samples.ndim == 2 else 1
         return PreparedAudioBuffer(samples, audio.frame_rate, channels)
 
     def _applyPreparedBuffer(self, prepared: PreparedAudioBuffer) -> None:
         self._scrub_samples = None
+        self._scrub_buffer = None
         self._scrub_handoff = False
         self._timeline = None
         self._queued_restore = None
@@ -439,6 +455,29 @@ class AudioPlayer(QObject):
         prepared: PreparedAudioBuffer, sample_rate: int, channels: int = 2
     ) -> PreparedAudioBuffer:
         samples = prepared.samples
+        if isinstance(samples, PcmBuffer):
+            if prepared.sample_rate == sample_rate and prepared.channels == channels:
+                return prepared
+            converted = PcmBuffer(PcmFile(), channels)
+            factor = gcd(prepared.sample_rate, sample_rate)
+            up, down = sample_rate // factor, prepared.sample_rate // factor
+            size = max(down, 65536 // down * down)
+            halo = ((10 * max(up, down) + up - 1) // up + down - 1) // down * down
+            for start in range(0, len(samples), size):
+                stop = min(start + size, len(samples))
+                left, right = max(0, start - halo), min(len(samples), stop + halo)
+                chunk = samples[left:right]
+                if up != down:
+                    chunk = resample_poly(chunk, up, down, axis=0)
+                    offset = (start - left) * up // down
+                    count = (stop * up + down - 1) // down - start * up // down
+                    chunk = chunk[offset : offset + count]
+                if chunk.shape[1] != channels:
+                    chunk = np.repeat(
+                        chunk.mean(axis=1, keepdims=True), channels, axis=1
+                    )
+                converted.append(chunk)
+            return PreparedAudioBuffer(converted, sample_rate, channels)
         if prepared.sample_rate != sample_rate and len(samples):
             factor = gcd(prepared.sample_rate, sample_rate)
             samples = resample_poly(
@@ -485,7 +524,12 @@ class AudioPlayer(QObject):
         tail = PcmTimeline(2, start)
         if transition is not None:
             tail.append(transition.samples)
-        tail.append(following.samples[fade_frames:], next_gain)
+        tail.append(
+            following.samples.view(fade_frames, len(following.samples))
+            if isinstance(following.samples, PcmBuffer)
+            else following.samples[fade_frames:],
+            next_gain,
+        )
         base = timeline
         if base is None:
             base = PcmTimeline(2)
@@ -501,8 +545,7 @@ class AudioPlayer(QObject):
                 or self.current_index + self._BLOCK_SIZE * 2 >= start
             ):
                 return None
-            restore = PcmTimeline(2, start)
-            restore.append(base.read(start, track_end))
+            restore = base.slice(start, track_end)
             self._queued_restore = restore
             self._queued_start = start
             base.replaceFrom(start, tail)
@@ -647,7 +690,7 @@ class AudioPlayer(QObject):
             self._track_frames = None
             self.sample_rate = sample_rate
             self.setEqualizer()
-            self.samples = np.zeros((0, channels), dtype=np.float32)
+            self.samples = PcmBuffer(PcmFile(), channels)
             self.channels = channels
             self.output_channels = channels
             self.current_index = 0
@@ -665,7 +708,7 @@ class AudioPlayer(QObject):
             self._growing_file_size = 0
             self._growing_file_last_decode = time.perf_counter()
             self._growing_stream_mode = True
-            self._growing_stream_buffer = None
+            self._growing_stream_buffer = self.samples
             self._ensureStream()
 
     def appendGrowingStreamPcm(
@@ -680,32 +723,12 @@ class AudioPlayer(QObject):
             return self.getLength()
 
         chunk = np.frombuffer(pcm_data[:valid_len], dtype='<f4').reshape(-1, channels)
-        chunk = chunk.astype(np.float32, copy=True)
         with self._lock:
             if self._growing_file_path != file_path or self._growing_file_complete:
                 return self.getLength()
-            previous = self.samples
-            previous_length = len(previous)
             buffer = self._growing_stream_buffer
-            required_length = previous_length + len(chunk)
-            if buffer is None or required_length > len(buffer):
-                capacity = max(required_length, self.sample_rate * 8)
-                if buffer is not None:
-                    capacity = max(capacity, len(buffer) * 2)
-                expanded = np.empty((capacity, channels), dtype=np.float32)
-            else:
-                expanded = None
-        if expanded is not None:
-            expanded[:previous_length] = previous
-        with self._lock:
-            if self._growing_file_path != file_path or self._growing_file_complete:
-                return self.getLength()
-            if expanded is not None:
-                buffer = expanded
-                self._growing_stream_buffer = buffer
             assert buffer is not None
-            buffer[previous_length:required_length] = chunk
-            self.samples = buffer[:required_length]
+            buffer.append(chunk)
             self._growing_file_size += valid_len
             self._growing_file_last_decode = time.perf_counter()
             return self.getLength()
@@ -1056,21 +1079,27 @@ class AudioPlayer(QObject):
             if self._sampleCount() == 0:
                 return False
             if self._timeline is not None:
+                if isinstance(audio, FileAudioSegment):
+                    source = self.prepareBuffer(audio).samples
+                    scale = 1.0
+                else:
+                    source = None
                 if (
                     audio is None
                     or audio.frame_rate != self.sample_rate
                     or audio.sample_width not in (1, 2, 4)
                 ):
                     return False
-                dtype = {1: np.int8, 2: np.int16, 4: np.int32}[audio.sample_width]
-                source = np.frombuffer(audio.raw_data, dtype=dtype).reshape(
-                    -1, audio.channels
-                )
-                scale = (
-                    float(2**31)
-                    if audio.sample_width == 4
-                    else float(2 ** (audio.sample_width * 8 - 1) - 1)
-                )
+                if source is None:
+                    dtype = {1: np.int8, 2: np.int16, 4: np.int32}[audio.sample_width]
+                    source = np.frombuffer(audio.raw_data, dtype=dtype).reshape(
+                        -1, audio.channels
+                    )
+                    scale = (
+                        float(2**31)
+                        if audio.sample_width == 4
+                        else float(2 ** (audio.sample_width * 8 - 1) - 1)
+                    )
             else:
                 source = self.samples
                 scale = 1.0
@@ -1080,6 +1109,7 @@ class AudioPlayer(QObject):
             self._scrub_was_paused = self.is_paused
             self._stopProducer()
             self._clearQueue()
+            self._scrub_buffer = None
             self._scrub_samples = source
             self._scrub_scale = scale
             self._scrub_handoff = False
@@ -1101,9 +1131,27 @@ class AudioPlayer(QObject):
             self._scrub_frame = max(
                 0, min(round(seconds * self.sample_rate), len(source) - 1)
             )
+            self._fillScrubBuffer()
             self._playback_time = self._scrub_frame / self.sample_rate
             self._smooth_position_start = self._playback_time
             self._smooth_position_end = self._playback_time
+
+    def _fillScrubBuffer(self) -> None:
+        with self._lock:
+            source = self._scrub_samples
+            if not isinstance(source, PcmBuffer):
+                self._scrub_buffer = None
+                return
+            start = self._scrub_frame
+            size = max(self._BLOCK_SIZE * 4, round(self.sample_rate * 0.5))
+            buffered = self._scrub_buffer
+            if (
+                buffered is not None
+                and buffered[0] <= start
+                and buffered[0] + len(buffered[1]) - start >= size // 2
+            ):
+                return
+            self._scrub_buffer = (start, source[start : start + size])
 
     def endScrub(self, seconds: float) -> None:
         with self._lock:
@@ -1634,7 +1682,14 @@ class AudioPlayer(QObject):
         if source is not None:
             if not self._scrub_handoff or self._audio_queue.empty():
                 start = self._scrub_frame
-                raw = source[start : start + frames]
+                if isinstance(source, PcmBuffer):
+                    buffered = self._scrub_buffer
+                    if buffered is None or start < buffered[0]:
+                        return
+                    offset = start - buffered[0]
+                    raw = buffered[1][offset : offset + frames]
+                else:
+                    raw = source[start : start + frames]
                 copy_len = len(raw)
                 if copy_len:
                     chunk = raw.astype(np.float32, copy=False) / self._scrub_scale
@@ -1793,6 +1848,7 @@ class AudioPlayer(QObject):
 
     def _emitPlaybackTelemetry(self) -> None:
         self._closeFinishedStreams()
+        self._fillScrubBuffer()
         self.positionChanged.emit(self._playback_time)
         if self.is_playing:
             event_bus.emit(DB_CHANGED, self, self.db)
@@ -1874,20 +1930,11 @@ class AudioPlayer(QObject):
             and self._producer_cpu_load < 35.0
             and self._producer_memory_load < 75.0
         )
-        progress = self.current_index / sample_count
-
-        if progress < _PRODUCER_PROGRESS_BOOST_RATIO:
-            if stressed:
-                return _PRODUCER_EARLY_STRESSED_LEAD
-            if idle:
-                return _PRODUCER_EARLY_IDLE_LEAD
-            return _PRODUCER_EARLY_LEAD
-
         if stressed:
-            return _PRODUCER_LATE_STRESSED_LEAD
+            return _PRODUCER_EARLY_STRESSED_LEAD
         if idle:
-            return _PRODUCER_LATE_IDLE_LEAD
-        return _PRODUCER_LATE_LEAD
+            return _PRODUCER_EARLY_IDLE_LEAD
+        return _PRODUCER_EARLY_LEAD
 
     def _sampleProducerResources(self, force: bool = False) -> None:
         now = time.perf_counter()

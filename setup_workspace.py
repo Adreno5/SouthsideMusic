@@ -139,14 +139,15 @@ def run(
         print(f'  [ERROR] Command timed out after {timeout}s: {" ".join(cmd)}')
         raise
     except subprocess.CalledProcessError as e:
-        if hasattr(e, 'stderr') and e.stderr:
-            stderr_text = e.stderr.decode('utf-8', errors='replace').strip()
-            if stderr_text:
-                print(f'  [ERROR] stderr: {stderr_text}')
-        if hasattr(e, 'stdout') and e.stdout:
-            stdout_text = e.stdout.decode('utf-8', errors='replace').strip()
-            if stdout_text:
-                print(f'  [ERROR] stdout: {stdout_text}')
+        for name in ('stderr', 'stdout'):
+            value = getattr(e, name, None)
+            if not value:
+                continue
+            if isinstance(value, bytes):
+                value = value.decode('utf-8', errors='replace')
+            text = value.strip()
+            if text:
+                print(f'  [ERROR] {name}: {text}')
         raise
 
 
@@ -560,13 +561,23 @@ def _is_free_threaded_python(python_exe: str) -> bool:
 
 
 def _locate_uv_free_threaded_python() -> str:
-    result = run(
+    probe = run(
         ['uv', 'python', 'find', '3.14t'],
         cwd=SCRIPT_DIR,
         capture_output=True,
         text=True,
+        check=False,
     )
-    python_exe = result.stdout.strip()
+    if probe.returncode != 0:
+        print('  uv has no free-threaded 3.14 yet, installing it...')
+        run(['uv', 'python', 'install', '3.14t'], cwd=SCRIPT_DIR)
+        probe = run(
+            ['uv', 'python', 'find', '3.14t'],
+            cwd=SCRIPT_DIR,
+            capture_output=True,
+            text=True,
+        )
+    python_exe = probe.stdout.strip()
     if not _is_free_threaded_python(python_exe):
         raise SetupError(f'uv returned a non-free-threaded Python: {python_exe}')
     return python_exe

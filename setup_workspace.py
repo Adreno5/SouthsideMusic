@@ -768,6 +768,15 @@ def _patch_embed_pth() -> None:
 # ---------------------------------------------------------------------------
 # Step: build venv (clean venv with Nuitka only)
 # ---------------------------------------------------------------------------
+def _interpreterVersion(python_exe: str) -> str:
+    result = run(
+        [python_exe, '-c', 'import sys; print("%d.%d" % sys.version_info[:2])'],
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
 def _setup_build_venv() -> None:
     """Create a clean venv with only Nuitka, used for building launcher.py.
 
@@ -789,17 +798,24 @@ def _setup_build_venv() -> None:
     _safe_remove(BUILD_VENV)
 
     print('  Creating venv...')
-    # Build with the same Python the app runs on. A build venv from an older
+    # The embedded distribution ships no venv module, so the build venv has to
+    # come from the interpreter running this script. That interpreter still has
+    # to match the version the app runs on: a build venv from an older
     # interpreter makes Launch.exe ship python3XX.dll of that version, and the
-    # app's free-threaded Python then loads the wrong DLL whenever an extension
-    # imports ctypes (scipy does), which crashes it.
+    # app's free-threaded Python then loads the wrong DLL through scipy ->
+    # ctypes, which crashes it.
     base_python = sys.executable
+    base_version = _interpreterVersion(base_python)
     embed_python = os.path.join(EMBED_DIR, 'python.exe')
     if os.path.isfile(embed_python):
-        base_python = embed_python
-        print(f'  Using {embed_python} as the base interpreter.')
-    else:
-        print(f'  [WARNING] {embed_python} not found; building with {base_python}.')
+        embed_version = _interpreterVersion(embed_python)
+        if base_version != embed_version:
+            print(
+                f'  [WARNING] {base_python} is Python {base_version} but the app '
+                f'runs on {embed_version}; Launch.exe would ship a mismatched '
+                f'python3XX.dll. Run this script with a {embed_version} interpreter.'
+            )
+    print(f'  Using {base_python} (Python {base_version}) as the base interpreter.')
     try:
         run([base_python, '-m', 'venv', BUILD_VENV, '--clear'])
     except subprocess.CalledProcessError:

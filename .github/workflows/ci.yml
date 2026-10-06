@@ -30,6 +30,12 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Install FFmpeg
+        run: |
+          choco install ffmpeg -y --no-progress
+          ffmpeg -version
+          ffprobe -version
+
       - name: Install dependencies
         run: uv sync --frozen
 

@@ -89,3 +89,39 @@ jobs:
           }
           Get-Item $exe | Select-Object Name, @{n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) }}
           Get-ChildItem 'build.result\raw' | Select-Object Name
+          
+      - name: Package portable zip
+        shell: pwsh
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          $root = (Get-Location).Path
+          $zip = Join-Path $root "build.result\Southside_${tag}_Portable.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          $sevenZip = Join-Path $env:ProgramFiles '7-Zip\7z.exe'
+          if (-not (Test-Path $sevenZip)) { throw "没找到 7-Zip: $sevenZip" }
+          Push-Location (Join-Path $root 'build.result\raw')
+          try {
+            & $sevenZip a -tzip -mx=5 -mmt=on $zip '*'
+            if ($LASTEXITCODE -ne 0) { throw "7z 退出码 $LASTEXITCODE" }
+          } finally {
+            Pop-Location
+          }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
+          try { $names = @($archive.Entries | ForEach-Object { $_.FullName -replace '\\', '/' }) }
+          finally { $archive.Dispose() }
+          foreach ($required in @('bootstrap.py', 'launcher/Launch.exe', 'src/main.py', 'python/python.exe')) {
+            if ($names -notcontains $required) { throw "Portable.zip 缺少 $required" }
+          }
+          Write-Output "portable entries: $($names.Count)"
+          Get-Item $zip | Select-Object Name, @{n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: SouthsideMusic-${{ steps.version.outputs.tag }}
+          path: |
+            build.result/installer/*.exe
+            build.result/Southside_*_Portable.zip
+          if-no-files-found: error
+          retention-days: 7

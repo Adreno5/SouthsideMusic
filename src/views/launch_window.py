@@ -62,7 +62,9 @@ class LaunchWindow(QWidget):
             screen_geometry.y() + (screen_geometry.height() - self.height()) // 2,
         )
 
-        icon_path = os.path.join(os.path.dirname(__file__), '..', '..', 'icon.png')
+        icon_path = os.path.join(
+            os.path.dirname(__file__), '..', '..', 'icons', 'app.ico'
+        )
         self._icon_pixmap = QIcon(icon_path).pixmap(
             QSize(28, 28), self.devicePixelRatioF()
         )

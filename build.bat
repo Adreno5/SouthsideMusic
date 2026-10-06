@@ -40,6 +40,9 @@ echo Building - Copy src
 xcopy .\src .\build.result\raw\src /E /I /Y /Q /J >nul
 echo Building - Copy fonts
 xcopy .\fonts .\build.result\raw\fonts /E /I /Y /Q /J >nul
+echo Building - Generate icon
+call python scripts\create_icon.py
+
 echo Building - Copy icons
 xcopy .\icons .\build.result\raw\icons /E /I /Y /Q /J >nul
 echo Building - Copy images
@@ -117,9 +120,6 @@ if exist "build.result\raw\freethreaded_python" (
     del /Q "build.result\raw\freethreaded_python\Lib\site-packages\*.whl" >nul
     del /Q "build.result\raw\freethreaded_python\Lib\site-packages\README.txt" >nul
 )
-
-echo Building - Generate icon
-call python scripts\create_icon.py
 
 echo Building - Locate Inno Setup
 set ISCC=

@@ -105,7 +105,9 @@ class MainWindow(FluentWindowBase):
         ctx.rediscovery_page = RediscoveryPage(ctx)
 
         self.setWindowIcon(
-            QIcon(str(Path(__file__).resolve().parent.parent.parent / 'icon.png'))
+            QIcon(
+                str(Path(__file__).resolve().parent.parent.parent / 'icons' / 'app.ico')
+            )
         )
 
         self.contents_widget = QStackedWidget()

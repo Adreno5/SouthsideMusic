@@ -5,7 +5,17 @@ RD /S /Q build.result >nul
 RD /S /Q *.dist >nul
 
 echo Building - Nuitka
-call build_venv\Scripts\python.exe -m nuitka launcher.py --windows-console-mode=hide --output-filename=Launch --standalone --windows-icon-from-ico=icons\app.ico
+rem force-dependencies-pefile keeps Nuitka off Dependency Walker. Nuitka only
+rem fetches that tool into the local AppData cache, and on a clean machine in a
+rem non-interactive shell it refuses to, then dies with "FATAL: Nuitka does not
+rem work in '--mode=standalone' ... without dependency walker." The pefile
+rem backend ships inside Nuitka and needs no external file.
+call build_venv\Scripts\python.exe -m nuitka launcher.py --windows-console-mode=hide --output-filename=Launch --standalone --windows-icon-from-ico=icons\app.ico --experimental=force-dependencies-pefile
+if errorlevel 1 (
+    echo [ERROR] Nuitka failed to build the launcher. Aborting build.
+    pause
+    exit /b 1
+)
 
 mkdir build.result >nul
 echo Building - Copy launcher

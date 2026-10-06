@@ -1,14 +1,18 @@
 name: AutoBuild
 on:
-  push:
-    tags:
-      - '**'
+  workflow_call:
+    outputs:
+      tag:
+        description: '本次构建的版本号, 例如 v51'
+        value: ${{ jobs.build.outputs.tag }}
   workflow_dispatch:
   
 jobs:
   build:
     runs-on: windows-latest
     timeout-minutes: 240
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
       - name: Resolve version

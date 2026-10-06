@@ -1,0 +1,43 @@
+name: AutoRelease
+
+on:
+  push:
+    tags:
+      - '**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+
+  release:
+    needs: build
+    if: ${{ github.event_name == 'push' }}
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: 'SouthsideMusic-${{ needs.build.outputs.tag }}-*'
+          merge-multiple: true
+          path: dist
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ needs.build.outputs.tag }}'
+          Get-ChildItem dist -Recurse | Select-Object Name, @{n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) }}
+
+          $exe = (Get-ChildItem dist -Recurse -Filter '*_win64_setup.exe' | Select-Object -First 1).FullName
+          $zip = (Get-ChildItem dist -Recurse -Filter '*_Portable.zip'   | Select-Object -First 1).FullName
+          if (-not $exe) { throw '没下载到安装包' }
+          if (-not $zip) { throw '没下载到 Portable.zip' }
+
+          gh release create $tag $exe $zip `
+            --repo ${{ github.repository }} `
+            --title "$tag Released" `
+            --generate-notes

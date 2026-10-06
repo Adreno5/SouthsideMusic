@@ -189,9 +189,10 @@ class Meter(object):
             if numSamples < self.block_size * self.rate:
                 raise ValueError('Audio must have length greater than the block size.')
             chunks = (
-                np.frombuffer(
-                    data.readPcm(start, start + 65536), dtype=data.array_type
-                ).astype(np.float32).reshape(-1, numChannels)
+                np
+                .frombuffer(data.readPcm(start, start + 65536), dtype=data.array_type)
+                .astype(np.float32)
+                .reshape(-1, numChannels)
                 / np.iinfo(data.array_type).max
                 for start in range(0, data.frames, 65536)
             )

@@ -571,10 +571,7 @@ def getCrossfade(
     )
 
     cache_token: str | None = None
-    use_cache = (
-        current_song_id is not None
-        and next_song_id is not None
-    )
+    use_cache = current_song_id is not None and next_song_id is not None
     if use_cache:
         assert current_song_id is not None and next_song_id is not None
         cache_token = _cache_token(

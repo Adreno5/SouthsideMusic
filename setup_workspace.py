@@ -304,6 +304,7 @@ def _precheck_required_files() -> None:
 # ---------------------------------------------------------------------------
 def main() -> None:
     innosetup_only = '--innosetup' in sys.argv
+    build_only = '--build-only' in sys.argv
 
     print('SouthsideMusic Workspace Setup')
     print(f'  Python: {sys.version}')
@@ -314,18 +315,23 @@ def main() -> None:
         ('USTC', 'https://pypi.mirrors.ustc.edu.cn/simple/'),
         ('Aliyun', 'https://mirrors.aliyun.com/pypi/simple/'),
     )
-    print('\nPyPI mirror:')
-    for number, (name, _) in enumerate(mirrors, 1):
-        print(f'  {number}. {name}')
-    try:
-        choice = input('Select PyPI mirror [1-3, default 2]: ').strip() or '2'
-    except EOFError:
-        choice = '2'
-    if choice not in ('1', '2', '3'):
-        raise SetupError(f'Invalid PyPI mirror selection: {choice}')
-    mirror_name, mirror_url = mirrors[int(choice) - 1]
-    os.environ['PIP_INDEX_URL'] = mirror_url
-    print(f'  Using {mirror_name}: {mirror_url}')
+    if os.environ.get('PIP_INDEX_URL'):
+        mirror_name = 'PIP_INDEX_URL'
+        mirror_url = os.environ['PIP_INDEX_URL']
+        print(f'  Using PIP_INDEX_URL: {mirror_url}')
+    else:
+        print('\nPyPI mirror:')
+        for number, (name, _) in enumerate(mirrors, 1):
+            print(f'  {number}. {name}')
+        try:
+            choice = input('Select PyPI mirror [1-3, default 2]: ').strip() or '2'
+        except EOFError:
+            choice = '2'
+        if choice not in ('1', '2', '3'):
+            raise SetupError(f'Invalid PyPI mirror selection: {choice}')
+        mirror_name, mirror_url = mirrors[int(choice) - 1]
+        os.environ['PIP_INDEX_URL'] = mirror_url
+        print(f'  Using {mirror_name}: {mirror_url}')
 
     if innosetup_only:
         ensure_module('tqdm')
@@ -388,10 +394,11 @@ def main() -> None:
     print('\n[1/6] Syncing uv environment...')
     _uv_sync_with_retry()
 
-    _setup_torch()
+    if not build_only:
+        _setup_torch()
 
     # 7. Set up free-threaded worker environment
-    _setup_free_threaded_worker_python()
+    _setup_free_threaded_worker_python(install_packages=not build_only)
 
     # 8. Set up embedded Python
     _setup_embed_python(tqdm, requests, zipfile)
@@ -595,7 +602,7 @@ def _ensure_free_threaded_venv(base_python: str) -> str:
     return venv_python
 
 
-def _setup_free_threaded_worker_python() -> None:
+def _setup_free_threaded_worker_python(*, install_packages: bool = True) -> None:
     print('\n[2/6] Setting up free-threaded worker Python...')
 
     ft_python = _free_threaded_python_exe()
@@ -604,6 +611,9 @@ def _setup_free_threaded_worker_python() -> None:
         _copy_free_threaded_runtime(source_python)
         if not _is_free_threaded_python(ft_python):
             raise SetupError('Portable free-threaded Python failed validation.')
+
+    if not install_packages:
+        return
 
     env = os.environ.copy()
     env['PYTHON_GIL'] = '0'

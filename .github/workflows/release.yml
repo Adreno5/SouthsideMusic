@@ -69,12 +69,23 @@ jobs:
       - name: Build
         shell: cmd
         run: build.bat < nul
-
+        
       - name: Verify build output
         shell: pwsh
         run: |
           $tag = '${{ steps.version.outputs.tag }}'
-          $exe = "build.result\installer\SouthsideMusic_${tag}_win64_setup.exe"
-          if (-not (Test-Path $exe)) { throw "安装包没有生成: $exe" }
+          $root = (Get-Location).Path
+          $exe = Join-Path $root "build.result\installer\SouthsideMusic_${tag}_win64_setup.exe"
+          $required = @(
+            $exe,
+            (Join-Path $root 'build.result\raw\launcher\Launch.exe'),
+            (Join-Path $root 'build.result\raw\python\python.exe'),
+            (Join-Path $root 'build.result\raw\freethreaded_python\python.exe'),
+            (Join-Path $root 'build.result\raw\src\main.py'),
+            (Join-Path $root 'build.result\raw\bootstrap.py')
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) { throw "缺少产物: $path" }
+          }
           Get-Item $exe | Select-Object Name, @{n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) }}
-          Get-ChildItem build.result\raw | Select-Object Name
+          Get-ChildItem 'build.result\raw' | Select-Object Name

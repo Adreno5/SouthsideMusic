@@ -41,3 +41,22 @@ jobs:
       - name: Read it back
         shell: pwsh
         run: echo "version step produced tag = ${{ steps.version.outputs.tag }}"
+        
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+
+      - name: Cache build inputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            embed_python
+            freethreaded_python
+            build_venv
+          key: build-inputs-${{ runner.os }}-${{ hashFiles('.requirements_sha256', 'embed_python_requirements.txt', '.python-version') }}

@@ -1,0 +1,13 @@
+name: AutoRelease
+on:
+  push:
+    tags:
+      - '**'
+  workflow_dispatch:
+  
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7

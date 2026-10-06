@@ -307,7 +307,7 @@ class CurveEditor(QOpenGLWidget):
         background.setAlpha(255)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(background)
-        painter.drawRoundedRect(QRectF(self.rect()), 10, 10)
+        painter.drawRect(QRectF(self.rect()))
 
         rect = self._plotRect()
         grid_color = QColor(foreground)

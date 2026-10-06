@@ -37,10 +37,6 @@ jobs:
           }
 
           "tag=$tag" >> $env:GITHUB_OUTPUT
-
-      - name: Read it back
-        shell: pwsh
-        run: echo "version step produced tag = ${{ steps.version.outputs.tag }}"
         
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -69,3 +65,16 @@ jobs:
         env:
           PIP_INDEX_URL: https://pypi.org/simple/
         run: python setup_workspace.py --build-only < nul
+        
+      - name: Build
+        shell: cmd
+        run: build.bat < nul
+
+      - name: Verify build output
+        shell: pwsh
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          $exe = "build.result\installer\SouthsideMusic_${tag}_win64_setup.exe"
+          if (-not (Test-Path $exe)) { throw "安装包没有生成: $exe" }
+          Get-Item $exe | Select-Object Name, @{n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) }}
+          Get-ChildItem build.result\raw | Select-Object Name

@@ -60,3 +60,12 @@ jobs:
             freethreaded_python
             build_venv
           key: build-inputs-${{ runner.os }}-${{ hashFiles('.requirements_sha256', 'embed_python_requirements.txt', '.python-version') }}
+          
+      - name: Install icon tooling
+        run: python -m pip install --disable-pip-version-check pillow
+
+      - name: Prepare build environment
+        shell: cmd
+        env:
+          PIP_INDEX_URL: https://pypi.org/simple/
+        run: python setup_workspace.py --build-only < nul

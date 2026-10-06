@@ -116,12 +116,18 @@ jobs:
           Write-Output "portable entries: $($names.Count)"
           Get-Item $zip | Select-Object Name, @{n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) }}
 
-      - name: Upload artifacts
+      - name: Upload installer
         uses: actions/upload-artifact@v7
         with:
-          name: SouthsideMusic-${{ steps.version.outputs.tag }}
-          path: |
-            build.result/installer/*.exe
-            build.result/Southside_*_Portable.zip
+          name: SouthsideMusic-${{ steps.version.outputs.tag }}-installer
+          path: build.result/installer/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload portable zip
+        uses: actions/upload-artifact@v7
+        with:
+          name: SouthsideMusic-${{ steps.version.outputs.tag }}-portable
+          path: build.result/Southside_*_Portable.zip
           if-no-files-found: error
           retention-days: 7

@@ -66,7 +66,6 @@ from core.ws_server import (
     WebSocketServer,
     QObjectHandler,
 )
-from views.curve_editor import CurveEditor
 from views.eq_editor import EQEditor
 
 from views.list_widget import SScrollArea, setTransparentBackground

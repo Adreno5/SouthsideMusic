@@ -514,9 +514,7 @@ class PlayingController(QOpenGLWidget):
 
     def _onRepaintTick(self, multiple_factor: float = 1) -> None:
         self._updateXAcc()
-        self.progress_bar_height = 8 + int(
-            14 * self.progress_expand.current_value
-        )
+        self.progress_bar_height = 8 + int(14 * self.progress_expand.current_value)
         progress_left = self._progressLeft()
         factor = progress_left / 52
         if self._layout_dirty or self.width() != self._layout_width:
@@ -1220,7 +1218,9 @@ class PlayingController(QOpenGLWidget):
             )
 
         if self.progress_expand.current_value > 0:
-            i = float2time(self._seek_position if self.seeking else self.ctx.player.getPosition())
+            i = float2time(
+                self._seek_position if self.seeking else self.ctx.player.getPosition()
+            )
             s = f'{f"{i.minutes}".zfill(2)}:{f"{i.seconds}".zfill(2)}'
             width = self.metri.horizontalAdvance(s)
             bar_height = int(self.progress_bar_height / 2)
@@ -1233,9 +1233,7 @@ class PlayingController(QOpenGLWidget):
             painter.setFont(self.ft)
             t_alpha = int(255 * self.progress_expand.current_value)
             painter.setPen(
-                QColor(0, 0, 0, t_alpha)
-                if isDark
-                else QColor(255, 255, 255, t_alpha)
+                QColor(0, 0, 0, t_alpha) if isDark else QColor(255, 255, 255, t_alpha)
             )
             painter.setClipRect(QRectF(text_x, 0, right - text_x, bar_height))
             painter.drawText(

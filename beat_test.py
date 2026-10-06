@@ -422,7 +422,7 @@ def main() -> None:
         audio_path = find_audio_file(track, music_dir)
 
         if audio_path is None:
-            print(f'  [!] Audio file not found')
+            print('  [!] Audio file not found')
             results.append({
                 'track_id': track['id'],
                 'track_name': track['name'],

@@ -1,5 +1,23 @@
 line-length = 88
 indent-width = 4
+extend-exclude = [
+    "build.result",
+    "embed_python",
+    "freethreaded_python",
+    "freethreaded_venv",
+    "build_venv",
+    "torch_venv",
+    "launcher.dist",
+    "launcher.build",
+    "data",
+]
+
+[lint]
+select = ["E4", "E7", "E9", "F"]
+ignore = [
+    "E402", # imports after the module-level sys.path bootstrap
+    "F403", # services/events/__init__.py is a re-export shim
+]
 
 [format]
 quote-style = "single"

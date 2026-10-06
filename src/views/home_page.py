@@ -1,7 +1,6 @@
-import PySide6
 from PySide6.QtCore import QRect, QEvent
 from PySide6.QtGui import QColor
-from qfluentwidgets import FlowLayout, PrimaryPushButton
+from qfluentwidgets import PrimaryPushButton
 from core import theme
 from services.events import SECOND_TICK
 from typing import TYPE_CHECKING
@@ -9,8 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from core.app_context import AppContext
 from core.backend import getBackend
-from core.models import CloudFolderInfo, SongStorable
-from core.qt_utils import removeWidgets
+from core.models import SongStorable
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QLinearGradient, QMouseEvent, QPainter, Qt
 from PySide6.QtWidgets import (
@@ -25,17 +23,11 @@ from qfluentwidgets import (
     CardWidget,
     IndeterminateProgressBar,
     SubtitleLabel,
-    TitleLabel,
 )
 from core.i18n import bindText
-from services.events import PLAYLIST_CHANGED, PLAY_STORABLE, VIEW_FOLDER, event_bus
-from views.folder_card import CloudFolderCard
+from services.events import PLAYLIST_CHANGED, PLAY_STORABLE, event_bus
 from views.list_widget import SScrollArea
 from views.account_widget import AccountWidget
-from views.animated_layout import SFlowLayout
-from views.number_viewer import NumberViewer
-from core.downloader import asyncTask
-from views.song_card import CloudFavoriteSongCard
 from views.rediscovery_card import RediscoveryCard
 
 

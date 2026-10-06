@@ -1,4 +1,3 @@
-from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QWidget
 from qfluentwidgets import (
@@ -9,7 +8,6 @@ from qfluentwidgets import (
     TitleLabel,
     CaptionLabel,
     InfoBar,
-    FluentLabelBase,
     InfoBarPosition,
 )
 
@@ -20,7 +18,7 @@ from core.i18n import tr
 from core.models import QualityLevelInfo
 from core import theme as themeModule
 from services.events import event_bus, REQUEST_BR_CHANGED
-from views.list_widget import SListWidget, SScrollArea
+from views.list_widget import SScrollArea
 from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QSpacerItem, QVBoxLayout
 
 

@@ -39,7 +39,6 @@ from services.events import (
     MWINDOW_REFRESH_FOLDERS,
     PLAY_CONTINUE_LAST_SONG,
     PLAY_STORABLE,
-    REFRESH_RATE_CHANGED,
     REPAINT,
     REPAINT_EVENT_INTERVAL,
     SONG_FINISH,
@@ -73,7 +72,6 @@ from views.line_edit import SearchLineEdit
 from views.llm_viewer_panel import LLMViewerPanel, LLM_WINDOW_WIDTH_DELTA
 from views.lyric_editor_page import LyricEditorPage
 from views.playing_controller import PlayingController
-from views.separator import Separator
 from views.song_card import SearchSongCard
 from views.title_bar import SouthsideMusicTitleBar
 from views.rediscovery_page import RediscoveryPage

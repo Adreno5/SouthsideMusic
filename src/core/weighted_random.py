@@ -1,7 +1,6 @@
 import logging
 import random
 
-from services.events import event_bus, EMIT_DEBUG_INFO
 from typing import Any, Generic, TypeVar
 
 _logger = logging.getLogger(__name__)

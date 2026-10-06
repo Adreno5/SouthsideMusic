@@ -85,7 +85,7 @@ from services.events import (
     PRE_THEME_CHANGED,
     SONG_CHANGED,
 )
-from qfluentwidgets import setTheme, Theme, InfoBar
+from qfluentwidgets import setTheme, Theme
 import shiboken6
 
 from core.cache_cleanup import DEFAULT_DATA_CLEANUP_INTERVAL_SECONDS, cleanupDataFolder

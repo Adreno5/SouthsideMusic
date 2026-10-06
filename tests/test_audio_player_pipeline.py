@@ -15,11 +15,12 @@ import sounddevice as sd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
+from PySide6.QtWidgets import QApplication
+
 from core.audio_analysis import SpectrumAnalyzer
 from core.audio_player import AudioPlayer, DevicesInfo, PreparedAudioBuffer
 from core.audio_processing import AudioProcessor
 from core.config import cfg
-from imports import QApplication
 
 
 class OutputStream:
@@ -188,7 +189,7 @@ def checkStaleSpectrum(player: AudioPlayer, app: QApplication) -> None:
     old_generation = player._analysis_generation
     pending = threading.Thread(
         target=lambda: player._spectrumReady.emit(
-            old_generation, np.ones(5), np.ones(5)
+            old_generation, np.ones(5), np.ones(5), np.ones(5)
         )
     )
     pending.start()
@@ -198,10 +199,14 @@ def checkStaleSpectrum(player: AudioPlayer, app: QApplication) -> None:
     player.loadPrepared(PreparedAudioBuffer(source, 48000, 2))
     app.processEvents()
     assert not frames
-    player._publishSpectrum(player._analysis_generation, np.ones(5), np.ones(5))
+    player._publishSpectrum(
+        player._analysis_generation, np.ones(5), np.ones(5), np.ones(5)
+    )
     assert len(frames) == 1
     player.fft_enabled = False
-    player._publishSpectrum(player._analysis_generation, np.ones(5), np.ones(5))
+    player._publishSpectrum(
+        player._analysis_generation, np.ones(5), np.ones(5), np.ones(5)
+    )
     assert len(frames) == 1
     player.fft_enabled = True
     app.processEvents()
@@ -241,6 +246,7 @@ def checkAnalysisWorker(app: QApplication) -> None:
                     time.perf_counter(),
                     source.mean(axis=1),
                     source,
+                    source.mean(axis=1),
                 ))
             waitUntil(lambda: bool(spectra), app)
             errors.assert_called_once_with('spectrum analysis failed')
@@ -255,6 +261,7 @@ def checkAnalysisWorker(app: QApplication) -> None:
                 time.perf_counter(),
                 source.mean(axis=1),
                 source,
+                source.mean(axis=1),
             ))
             waitUntil(lambda: bool(beats), app)
             assert all(intensity == 0.0 for intensity in beats)

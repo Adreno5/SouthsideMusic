@@ -11,6 +11,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
+from PySide6.QtWidgets import QApplication
+
 from core.audio_player import (
     AudioPlayer,
     DevicesInfo,
@@ -21,7 +23,6 @@ from core.playing_manager import (
     PlayingManager,
     PlaySelection,
 )
-from imports import QApplication
 from services.events import REQUEST_BR_CHANGED
 
 
@@ -67,6 +68,8 @@ def checkQualitySync(max_br: int, stale: bool = False) -> None:
         )
         manager._loadPlaybackImage = Mock()
         manager._show_original_lyrics = Mock()
+        manager._startLyricSong = Mock()
+        manager.refreshLyricPreview = Mock()
         manager._compute_gain_async = Mock()
         manager._download_update_lyrics = Mock()
         manager._playDownloadingStorable = Mock()

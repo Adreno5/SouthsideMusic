@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import io
 import logging
-from pathlib import Path
-from queue import Queue
 import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
+from queue import Queue
 from types import SimpleNamespace
 from typing import Any, Callable
 from unittest.mock import Mock, patch
@@ -96,6 +96,7 @@ def checkStreaming(
             _player=player,
             _play_seq=1,
             _request_br=3200000,
+            ctx=SimpleNamespace(config=SimpleNamespace(target_request_br=3200000)),
             current_song=song,
             current_song_audio=None,
             _mwindow_obj=None,
@@ -135,7 +136,10 @@ def checkStreaming(
             patch('core.playing_manager.MUSIC_DATA_DIR', directory),
             patch(
                 'core.playing_manager.getBackend',
-                return_value=SimpleNamespace(getTrackAudio=lambda *a, **k: audio),
+                return_value=SimpleNamespace(
+                    getTrackAudio=lambda *a, **k: audio,
+                    getSongQualityPrivilege=lambda *a: SimpleNamespace(max_br=3200000),
+                ),
             ),
             patch('core.playing_manager.asyncTask', side_effect=runTask),
             patch('core.playing_manager.requests.get', return_value=response),

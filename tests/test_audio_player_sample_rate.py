@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
 import tempfile
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -10,13 +10,14 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
 from core.audio_player import (  # noqa: E402
     AudioPlayer,
     DevicesInfo,
     PatchedAudioSegment,
     PreparedAudioBuffer,
 )
-from imports import QApplication  # noqa: E402
 
 
 class OutputStream:

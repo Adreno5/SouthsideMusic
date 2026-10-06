@@ -43,7 +43,18 @@ except (OSError, ValueError, UnicodeError):
 
     logging.getLogger(__name__).exception('failed to load config, using defaults')
 
-launchwindow: LaunchWindow | None = LaunchWindow(app, cfg.debug_mode)
+launchwindow: LaunchWindow | None = LaunchWindow(
+    app, cfg.debug_mode, separate_process=True
+)
+
+from views.dependences_window import DependencesWindow
+
+ctx = AppContext()
+ctx.app = app
+ctx.launch_window = launchwindow
+ctx.dependences_available = False
+ctx.dependences_window = DependencesWindow(ctx)
+
 launchwindow.subtitle('Loading libraries...')
 app.processEvents()
 
@@ -51,7 +62,6 @@ from views.home_page import HomePage
 from views.comments_page import CommentsPage
 
 from core.lyrics import LyricManager
-from views.dependences_window import DependencesWindow
 import logging
 
 from views.playlist_page import PlaylistPage
@@ -224,6 +234,7 @@ def patchedExceptHook(
 
     txt = '\n'.join(inf)
     if launchwindow is not None and shiboken6.isValid(launchwindow):
+        launchwindow.close()
         launchwindow.deleteLater()
 
     popup = ErrorPopupWindow(txt)
@@ -497,8 +508,6 @@ def _handle_ws_message(message: str) -> None:
     _schedule_ws_task(_run)
 
 
-ctx = AppContext()
-ctx.app = app
 ctx.player = AudioPlayer()
 ctx.config = Config.instance()
 ctx.lyrics_manager = LyricManager()
@@ -508,7 +517,6 @@ ctx.ymgr = ctx.lyrics_manager.yrc
 ctx.ws_server = ws_server
 ctx.ws_handler = ws_handler
 ctx.lock = lock
-ctx.launch_window = launchwindow
 ctx.llm = LLM()
 ctx.playing_manager = PlayingManager(ctx)
 ctx.smtc = SmtcController(ctx)
@@ -531,7 +539,7 @@ event_bus.subscribe(
 )
 
 
-def southsideMusic():
+def southsideMusic() -> None:
     assert launchwindow is not None
     launchwindow.subtitle('Phase 1 (start core...)')
 
@@ -648,13 +656,10 @@ def southsideMusic():
     launchwindow.clear()
     launchwindow.subtitle('Phase 2 (initialize components...)')
 
-    from core.app_context import AppContext
-
     launchwindow.subtitle('Preparing (checking dependences...)')
-    depwindow = DependencesWindow(ctx)
-    ctx.dependences_window = depwindow
+    depwindow = ctx.dependences_window
 
-    def _postStageInit():
+    def _postStageInit() -> None:
         global mwindow
 
         if not launchwindow:
@@ -713,6 +718,9 @@ def southsideMusic():
         _logger.debug(f'{sys.path=}')
 
     depwindow.destroyed.connect(lambda _obj=None: QTimer.singleShot(0, _postStageInit))
+    depwindow.allChecked.connect(depwindow.deleteLater)
+    if ctx.dependences_available:
+        depwindow.deleteLater()
 
     app.exec()
 

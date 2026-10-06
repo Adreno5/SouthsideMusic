@@ -10,8 +10,6 @@ from typing import TYPE_CHECKING
 
 import requests
 
-from core.audio_player import getAudioDevices
-from core.downloader import asyncDownload
 from core import theme
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtGui import Qt
@@ -86,17 +84,13 @@ class DependencesWindow(QWidget):
         )
 
         self.setLayout(layout)
-        self.setFixedSize(self.ctx.launch_window.size())
-        self.move(self.ctx.launch_window.pos())
-        self.show()
-        self.raise_()
-        self.activateWindow()
+        self.setFixedSize(self.ctx.app.primaryScreen().size() * 0.25)
+        self.move(self.ctx.launch_window.geometry().center() - self.rect().center())
+        self.startCheck()
 
-        self.ctx.app.processEvents()
+    def downloadFFmpeg(self) -> None:
+        from core.downloader import asyncDownload
 
-        QTimer.singleShot(500, self.startCheck)
-
-    def downloadFFmpeg(self):
         self.ffmpeg_label.setStyleSheet('')
 
         url = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip'
@@ -104,20 +98,28 @@ class DependencesWindow(QWidget):
         self.probar.setRange(0, 1000)
         self.probar.setValue(0)
         self.probar.show()
+        self.ctx.launch_window.setDownloadProgress(0)
         self.ffmpeg_label.setText(tr('dependences_window.ffmpeg_downloading'))
         self.ctx.app.processEvents()
 
-        def _progress(cur: float):
+        def _progress(cur: float) -> None:
             self.probar.setValue(int(cur * 1000))
+            self.ctx.launch_window.setDownloadProgress(cur)
             self.ffmpeg_label.setText(
                 tr('dependences_window.ffmpeg_downloading_percent', percent=cur * 100)
             )
 
-        def _finished(data: bytes):
+        def _finished(data: bytes) -> None:
+            if data:
+                self.ctx.launch_window.setDownloadProgress(1)
+            self.ctx.launch_window.setDownloadProgress(None)
             if not data:
                 self.ffmpeg_label.setText(
                     tr('dependences_window.ffmpeg_download_failed')
                 )
+                self.show()
+                self.raise_()
+                self.activateWindow()
                 return
 
             self.ffmpeg_label.setText(tr('dependences_window.ffmpeg_extracting'))
@@ -157,6 +159,9 @@ class DependencesWindow(QWidget):
                 self.ffmpeg_label.setText(
                     tr('dependences_window.ffmpeg_extraction_failed')
                 )
+                self.show()
+                self.raise_()
+                self.activateWindow()
                 return
             finally:
                 if os.path.exists(zip_path):
@@ -256,12 +261,17 @@ class DependencesWindow(QWidget):
             and all(self._results.values())
         ):
             self.ctx.dependences_available = True
-            self.allChecked.emit()
             self.hide()
-            self.deleteLater()
+            self.allChecked.emit()
             return
 
+        if not ok and name != 'FFmpeg' and not self.isVisible():
+            self.show()
+            self.raise_()
+            self.activateWindow()
+
         if name == 'FFmpeg' and not ok:
+            self.ctx.launch_window.setDownloadProgress(0)
             QTimer.singleShot(300, self.downloadFFmpeg)
 
         self.updatePosition()
@@ -270,9 +280,7 @@ class DependencesWindow(QWidget):
         launch_window = self.ctx.launch_window
         if launch_window is None:
             return
-        self.setFixedSize(launch_window.size())
-        self.move(launch_window.pos())
-        self.raise_()
+        self.move(launch_window.geometry().center() - self.rect().center())
 
     def checkFFmpeg(self) -> None:
         try:
@@ -281,7 +289,10 @@ class DependencesWindow(QWidget):
             )
             ffmpeg_exe = os.path.join(base_dir, 'ffmpeg', 'bin', 'ffmpeg.exe')
             output = subprocess.run(
-                [ffmpeg_exe, '-version'], text=True, capture_output=True
+                [ffmpeg_exe, '-version'],
+                text=True,
+                capture_output=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             version = (
                 output.stdout
@@ -303,13 +314,18 @@ class DependencesWindow(QWidget):
 
     def checkAudio(self) -> None:
         try:
-            devices = getAudioDevices()
-            if devices:
-                self.logger.info(f'Audio Output found: {len(devices)} device(s)')
+            import sounddevice
+
+            count = sum(
+                device['max_output_channels'] > 0
+                for device in sounddevice.query_devices()
+            )
+            if count:
+                self.logger.info(f'Audio Output found: {count} device(s)')
                 self.checkDone.emit(
                     'Audio Output',
                     True,
-                    tr('dependences_window.count_device_s', count=len(devices)),
+                    tr('dependences_window.count_device_s', count=count),
                 )
             else:
                 self.logger.warning('Audio Output not found: no output device')

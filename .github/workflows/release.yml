@@ -15,10 +15,27 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          echo "event_name = ${{ github.event_name }}"
-          echo "ref_name   = ${{ github.ref_name }}"
-          echo "github.ref = ${{ github.ref }}"
-          $tag = 'demo'
+          $pyproject = (Select-String pyproject.toml -Pattern '^version = "(.+)"$').Matches[0].Groups[1].Value
+          $installer = (Select-String installer.iss -Pattern '^#define AppVersion "(.+)"$').Matches[0].Groups[1].Value
+
+          if ('${{ github.event_name }}' -eq 'push') {
+            $tag = '${{ github.ref_name }}'
+          } else {
+            $tag = $pyproject
+          }
+
+          Write-Output "trigger   = ${{ github.event_name }}"
+          Write-Output "pyproject = $pyproject"
+          Write-Output "installer = $installer"
+          Write-Output "version   = $tag"
+
+          if ($installer -ne $pyproject) {
+            throw "installer.iss 是 $installer, pyproject.toml 是 $pyproject; 先跑 updates.bat"
+          }
+          if ($tag -ne $pyproject) {
+            throw "tag 是 $tag, pyproject.toml 是 $pyproject; 推 tag 前先跑 updates.bat 改成 $tag"
+          }
+
           "tag=$tag" >> $env:GITHUB_OUTPUT
 
       - name: Read it back

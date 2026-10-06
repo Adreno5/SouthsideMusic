@@ -17,6 +17,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+
       - name: Download artifacts
         uses: actions/download-artifact@v7
         with:
@@ -30,6 +32,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = '${{ needs.build.outputs.tag }}'
+          $repo = '${{ github.repository }}'
           Get-ChildItem dist -Recurse | Select-Object Name, @{n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) }}
 
           $exe = (Get-ChildItem dist -Recurse -Filter '*_win64_setup.exe' | Select-Object -First 1).FullName
@@ -37,7 +40,28 @@ jobs:
           if (-not $exe) { throw '没下载到安装包' }
           if (-not $zip) { throw '没下载到 Portable.zip' }
 
-          gh release create $tag $exe $zip `
-            --repo ${{ github.repository }} `
-            --title "$tag Released" `
-            --generate-notes
+          $notes = Join-Path (Get-Location) "release-notes\$tag.md"
+          $args = @('release', 'create', $tag, $exe, $zip, '--repo', $repo)
+
+          if (Test-Path $notes) {
+            Write-Output "使用发布说明: $notes"
+            $lines = @(Get-Content $notes)
+            $first = if ($lines.Count -gt 0) { $lines[0] } else { '' }
+            $title = ''
+            if ($first -match '^\s*#\s+(.+?)\s*$') { $title = $matches[1].Trim() }
+            if ($title -and $title -match [regex]::Escape($tag)) {
+              $args += @('--title', $title)
+              $body = Join-Path $env:RUNNER_TEMP 'release-body.md'
+              if ($lines.Count -gt 1) { $lines[1..($lines.Count - 1)] | Set-Content $body -Encoding utf8 }
+              else { Set-Content $body -Value '' -Encoding utf8 }
+              $args += @('--notes-file', $body)
+            } else {
+              Write-Output "首行不是含 $tag 的标题, 整篇作为正文"
+              $args += @('--title', "$tag Released", '--notes-file', $notes)
+            }
+          } else {
+            Write-Output "没有 release-notes\$tag.md, 退回 --generate-notes"
+            $args += @('--title', "$tag Released", '--generate-notes')
+          }
+
+          gh @args

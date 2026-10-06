@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, QMargins, QPoint
+from PySide6.QtCore import QEvent, QMargins, QPoint, QRect
 from PySide6.QtGui import (
     QColor,
     QCursor,
@@ -14,6 +14,7 @@ from PySide6.QtGui import (
     Qt,
 )
 from PySide6.QtWidgets import QLineEdit
+from qframelesswindow.utils import startSystemMove
 
 from core import theme
 from core.color import mixColor
@@ -47,7 +48,7 @@ class SearchLineEdit(QLineEdit):
     ) -> None:
         super().__init__()
         self._mwindow = mwindow
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.setAttribute(Qt.WidgetAttribute.WA_InputMethodEnabled, True)
         self.setCursor(Qt.CursorShape.IBeamCursor)
         self.setFrame(False)
@@ -79,7 +80,12 @@ class SearchLineEdit(QLineEdit):
 
     def enterEvent(self, event: QEnterEvent) -> None:
         self._hovering = True
+        self._updateCursor()
         return super().enterEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        self._updateCursor()
+        return super().mouseMoveEvent(event)
 
     def leaveEvent(self, event: QEvent) -> None:
         if not self.rect().contains(self.mapFromGlobal(QCursor.pos())):
@@ -88,6 +94,12 @@ class SearchLineEdit(QLineEdit):
                 self.clearFocus()
             self.update()
         return super().leaveEvent(event)
+
+    def _updateCursor(self) -> None:
+        pos = self.mapFromGlobal(QCursor.pos())
+        inside = self._drawRect(self.expand_timer.current_value).contains(pos)
+        cursor = Qt.CursorShape.IBeamCursor if inside else Qt.CursorShape.ArrowCursor
+        self.setCursor(cursor)
 
     def _onThemeChanged(self, song=None):
         song_theme = self._mwindow.song_theme if self._mwindow else None
@@ -126,6 +138,13 @@ class SearchLineEdit(QLineEdit):
         return bool(self.text().strip()) or self.hasFocus()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        if not self._drawRect(self.expand_timer.current_value).contains(
+            event.position().toPoint()
+        ):
+            if event.button() == Qt.MouseButton.LeftButton:
+                startSystemMove(self.window(), event.globalPosition().toPoint())
+            event.ignore()
+            return
         self.setFocus(Qt.FocusReason.MouseFocusReason)
         self.update()
         return super().mousePressEvent(event)
@@ -142,6 +161,14 @@ class SearchLineEdit(QLineEdit):
         self._updateIconLayout()
         return super().resizeEvent(event)
 
+    def _drawRect(self, expansion: float) -> QRect:
+        collapsed_width = self.height() * 1.32
+        draw_width = int(collapsed_width + (self.width() - collapsed_width) * expansion)
+        rect = self.rect()
+        rect.setX(int((self.width() - draw_width) * 0.5))
+        rect.setWidth(draw_width)
+        return rect
+
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(
@@ -155,13 +182,9 @@ class SearchLineEdit(QLineEdit):
             radius = int(min(self.width() / 2, self.height() * 0.5))
             self.expand_timer.target_value = 1.0 if should else 0.0
             expansion = self.expand_timer.current_value
-            collapsed_width = self.height() * 1.32
-            draw_rect = self.rect()
-            draw_width = int(
-                collapsed_width + (self.width() - collapsed_width) * expansion
-            )
-            draw_rect.setX(int((self.width() - draw_width) * 0.5))
-            draw_rect.setWidth(draw_width)
+            draw_rect = self._drawRect(expansion)
+            draw_width = draw_rect.width()
+            self._updateCursor()
             text_margins = QMargins(
                 draw_rect.x() + self._text_padding,
                 0,

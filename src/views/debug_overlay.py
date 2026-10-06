@@ -1,20 +1,15 @@
-import json
-import logging
 import os
 import time
 from collections import deque
-from dataclasses import asdict
 from typing import override
 
-import numpy as np
 import psutil
-from PySide6.QtCore import QPoint, QPointF, QRect, QTimer
+from PySide6.QtCore import QPoint, QRect
 from PySide6.QtGui import (
     QColor,
     QFont,
     QFontMetricsF,
     QHideEvent,
-    QImage,
     QMouseEvent,
     QPainter,
     QPainterPath,
@@ -24,21 +19,17 @@ from PySide6.QtGui import (
     QWheelEvent,
 )
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
-from PySide6.QtWidgets import QPushButton, QWidget
+from PySide6.QtWidgets import QWidget
 
 from core import theme
 from core.app_context import AppContext
-from core.frame_profiler import FrameProfile, frame_profiler
 from core.lyric_video_export import (
     lyricVideoExportDebugInfo,
     lyricVideoExportDebugProcessPids,
 )
-from core.models import DATA_DIR
 from core.smooth import EaseOutTimer
 from services.events import REPAINT_ALWAYS, SECOND_TICK, event_bus
 from services.events.events import _50MS_TICK
-
-_logger = logging.getLogger(__name__)
 
 
 class DebugOverlay(QOpenGLWidget):
@@ -58,21 +49,6 @@ class DebugOverlay(QOpenGLWidget):
         self.title_height = int(QFontMetricsF(self.title_ft).height())
         self.content_height = int(QFontMetricsF(self.content_ft).height())
         self.content_metri = QFontMetricsF(self.content_ft)
-        self.profile_colors: dict[str, QColor] = {}
-        self._profile_history: deque[FrameProfile] = deque(maxlen=30)
-        self._profile_sections: list[tuple[str, float, float]] = []
-        self._profile_duration_ns = 0.0
-        self._last_update_ns = 0
-        self._capturing = False
-        self._capture_deadline_ns = 0
-        self._resume_debug_collection = False
-        self.export_button = QPushButton('Export 10s PNG', self)
-        self.export_button.setGeometry(430, 10, 180, 30)
-        self.export_timer = QTimer(self)
-        self.export_timer.setSingleShot(True)
-        self.export_timer.setTimerType(Qt.TimerType.PreciseTimer)
-        self.export_button.clicked.connect(self._startExport)
-        self.export_timer.timeout.connect(self._finishExport)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.dragging = False
@@ -120,17 +96,11 @@ class DebugOverlay(QOpenGLWidget):
         self.beat_points.clear()
 
     def showEvent(self, event: QShowEvent) -> None:
-        if self._capturing:
-            return super().showEvent(event)
         self._startTicks()
         return super().showEvent(event)
 
     def hideEvent(self, event: QHideEvent) -> None:
         self._stopTicks()
-        self._profile_history.clear()
-        self._profile_sections.clear()
-        self._profile_duration_ns = 0.0
-        self._last_update_ns = 0
         self.ctx.debugging = False
         return super().hideEvent(event)
 
@@ -276,60 +246,10 @@ class DebugOverlay(QOpenGLWidget):
     def refresh(
         self, _multiple_factor: float = 1.0, raise_overlay: bool = False
     ) -> None:
-        if self._capturing:
-            if not frame_profiler.enabled:
-                self.export_timer.stop()
-                self._finishExport()
-            return
         self.setVisible(self.ctx.debugging)
         if self.ctx.debugging:
-            profile = frame_profiler.snapshot
-            if (
-                profile is not None
-                and profile.duration_ns > 0
-                and (
-                    not self._profile_history
-                    or self._profile_history[-1] is not profile
-                )
-            ):
-                self._profile_history.append(profile)
             if raise_overlay:
                 self.raise_()
-            now = time.perf_counter_ns()
-            if not raise_overlay and now - self._last_update_ns < 50_000_000:
-                return
-            self._last_update_ns = now
-            if self._profile_history:
-                sample_count = len(self._profile_history)
-                self._profile_duration_ns = (
-                    sum(profile.duration_ns for profile in self._profile_history)
-                    / sample_count
-                )
-                section_totals: dict[str, tuple[float, int]] = {}
-                for profile in self._profile_history:
-                    for name, duration_ns in profile.sections:
-                        percentage_sum, duration_sum = section_totals.get(
-                            name, (0.0, 0)
-                        )
-                        section_totals[name] = (
-                            percentage_sum + duration_ns / profile.duration_ns * 100,
-                            duration_sum + duration_ns,
-                        )
-                self._profile_sections = sorted(
-                    (
-                        (
-                            name,
-                            percentage_sum / sample_count,
-                            duration_sum / sample_count,
-                        )
-                        for name, (
-                            percentage_sum,
-                            duration_sum,
-                        ) in section_totals.items()
-                    ),
-                    key=lambda item: item[1],
-                    reverse=True,
-                )
             self.update()
 
     def adjustToParent(self) -> None:
@@ -398,283 +318,6 @@ class DebugOverlay(QOpenGLWidget):
         self.resizing = False
         self._updateResizeCursor(event.pos())
 
-    def _profileColor(self, name: str) -> QColor:
-        if name not in self.profile_colors:
-            self.profile_colors[name] = QColor.fromHsvF(
-                len(self.profile_colors) * 0.61803398875 % 1, 0.65, 0.95
-            )
-        return self.profile_colors[name]
-
-    def _startExport(self) -> None:
-        if (
-            self._capturing
-            or not self.ctx.debugging
-            or not frame_profiler.isRecording()
-        ):
-            return
-        self._capturing = True
-        self.export_button.setEnabled(False)
-        self._resume_debug_collection = self.ctx.debugging_obj.isCollecting()
-        self.ctx.debugging_obj.setCollecting(False)
-        self.hide()
-        frame_profiler.startCapture()
-        self._capture_deadline_ns = time.perf_counter_ns() + 10_000_000_000
-        self.export_timer.start(10_000)
-
-    def _finishExport(self) -> None:
-        if not self._capturing:
-            return
-        if frame_profiler.isRecording():
-            remaining_ns = self._capture_deadline_ns - time.perf_counter_ns()
-            if remaining_ns > 0:
-                self.export_timer.start(max(1, (remaining_ns + 999_999) // 1_000_000))
-                return
-        try:
-            frames = frame_profiler.finishCapture()
-            if frames:
-                path = self._savePerformanceReport(frames)
-                self.export_button.setText('PNG + JSON saved - Export 10s')
-                self.export_button.setToolTip(path)
-                _logger.info('performance report saved to %s', path)
-            else:
-                self.export_button.setText('Export 10s PNG')
-                self.export_button.setToolTip('Capture cancelled: debugging disabled')
-        except Exception as error:
-            _logger.exception('performance report export failed')
-            self.export_button.setText('Export failed - Retry')
-            self.export_button.setToolTip(str(error))
-        finally:
-            self._capturing = False
-            self.ctx.debugging = frame_profiler.enabled
-            self.export_button.setEnabled(True)
-            if self.ctx.debugging:
-                if self._resume_debug_collection:
-                    self.ctx.debugging_obj.setCollecting(True)
-                self.show()
-                self.update()
-
-    def _savePerformanceReport(self, frames: tuple[FrameProfile, ...]) -> str:
-        all_frames = frames
-        frames = tuple(frame for frame in frames if frame.complete)
-        totals: dict[str, int] = {}
-        counts: dict[str, int] = {}
-        for frame in frames:
-            for name, duration in frame.sections:
-                totals[name] = totals.get(name, 0) + duration
-            for name, count in frame.section_counts:
-                counts[name] = counts.get(name, 0) + count
-        duration_ns = sum(frame.duration_ns for frame in frames)
-        wall_ns = sum(frame.wall_duration_ns or frame.duration_ns for frame in frames)
-        frame_count = sum(frame.frame_count for frame in frames)
-        if duration_ns <= 0 or frame_count <= 0:
-            raise ValueError('No performance samples were recorded')
-        refresh_rate = self.ctx.events_service.refresh_rate
-        budget_ns = 1_000_000_000 / refresh_rate
-        interval_ns = np.array([frame.wall_duration_ns for frame in frames])
-        work_ns = np.array([frame.work_duration_ns for frame in frames])
-        statistics = {
-            'interval_percentiles_ms': (
-                np.percentile(interval_ns, [50, 95, 99]) / 1_000_000
-            ).tolist(),
-            'work_percentiles_ms': (
-                np.percentile(work_ns, [50, 95, 99]) / 1_000_000
-            ).tolist(),
-            'interval_over_budget_ratio': float(np.mean(interval_ns > budget_ns)),
-            'work_over_budget_ratio': float(np.mean(work_ns > budget_ns)),
-            'interval_over_two_budgets_ratio': float(
-                np.mean(interval_ns > 2 * budget_ns)
-            ),
-        }
-        idle_name = 'Idle / uninstrumented'
-        top = sorted(
-            (
-                (name, duration)
-                for name, duration in totals.items()
-                if name != idle_name
-            ),
-            key=lambda item: item[1],
-            reverse=True,
-        )[:10]
-        other_ns = duration_ns - totals.get(idle_name, 0) - sum(v for _, v in top)
-        slices = [*top, ('Other modules', max(0, other_ns))]
-        slices.append((idle_name, totals.get(idle_name, 0)))
-        series = ['Refresh interval (wall time)', *(name for name, _ in top)]
-        width = 1680
-        height = 1260 + ((len(series) + 1) // 2) * 30
-        image = QImage(width, height, QImage.Format.Format_ARGB32)
-        image.fill(QColor('#171a20'))
-        painter = QPainter(image)
-        try:
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            painter.setPen(QColor('#edf0f5'))
-            painter.setFont(QFont(self.ctx.harmony_font_family, 22, QFont.Weight.Bold))
-            painter.drawText(40, 48, 'SouthsideMusic - Performance capture')
-            painter.setFont(QFont(self.ctx.harmony_font_family, 12))
-            painter.drawText(
-                40,
-                82,
-                f'{wall_ns / 1_000_000_000:.3f}s | {frame_count} refresh cycles | '
-                f'{frame_count * 1_000_000_000 / max(1, wall_ns):.1f} Hz | '
-                f'Screen: {refresh_rate:.1f} Hz | '
-                f'Average interval: {wall_ns / frame_count / 1_000_000:.3f} ms | '
-                'Debug overlay excluded',
-            )
-            painter.setFont(QFont(self.ctx.harmony_font_family, 16, QFont.Weight.Bold))
-            painter.drawText(40, 126, 'Average time distribution')
-            painter.drawText(410, 126, 'Top 10 modules - average over complete cycles')
-            pie_rect = QRect(40, 154, 310, 310)
-            angle = 0
-            elapsed_ns = 0
-            painter.setPen(Qt.PenStyle.NoPen)
-            for name, duration in slices:
-                elapsed_ns += duration
-                end_angle = round(elapsed_ns / duration_ns * 5760)
-                painter.setBrush(self._profileColor(name))
-                painter.drawPie(pie_rect, angle, end_angle - angle)
-                angle = end_angle
-            painter.setFont(QFont(self.ctx.harmony_font_family, 11))
-            for i, (name, duration) in enumerate(top):
-                row_y = 166 + i * 50
-                painter.fillRect(
-                    QRect(410, row_y - 14, 12, 12), self._profileColor(name)
-                )
-                painter.setPen(QColor('#edf0f5'))
-                text = painter.fontMetrics().elidedText(
-                    f'{i + 1}. {name}', Qt.TextElideMode.ElideRight, 1200
-                )
-                painter.drawText(432, row_y, text)
-                painter.setPen(QColor('#aeb8c8'))
-                painter.drawText(
-                    432,
-                    row_y + 22,
-                    f'{duration / frame_count / 1_000_000:.4f} ms/cycle | '
-                    f'{duration / duration_ns * 100:.2f}% | '
-                    f'{counts.get(name, 0)} calls | '
-                    f'{duration / max(1, counts.get(name, 0)) / 1_000_000:.4f} ms/call',
-                )
-            for i, (name, duration) in enumerate(slices[-2:]):
-                row_y = 500 + i * 35
-                painter.fillRect(
-                    QRect(40, row_y - 14, 12, 12), self._profileColor(name)
-                )
-                painter.setPen(QColor('#edf0f5'))
-                painter.drawText(
-                    62, row_y, f'{name}: {duration / duration_ns * 100:.2f}%'
-                )
-            painter.setPen(QColor('#edf0f5'))
-            painter.setFont(QFont(self.ctx.harmony_font_family, 16, QFont.Weight.Bold))
-            painter.drawText(
-                40, 708, 'Per-cycle time (ms) - refresh interval and top 10 modules'
-            )
-            plot = QRect(85, 746, width - 130, 340)
-            painter.setFont(QFont(self.ctx.harmony_font_family, 11))
-            max_ms = max(frame.wall_duration_ns / 1_000_000 for frame in frames) * 1.1
-            max_ms = max(1.0, max_ms)
-            for tick in range(6):
-                grid_y = plot.bottom() - round(plot.height() * tick / 5)
-                painter.setPen(QPen(QColor('#343c48'), 1))
-                painter.drawLine(plot.left(), grid_y, plot.right(), grid_y)
-                painter.setPen(QColor('#aeb8c8'))
-                painter.drawText(15, grid_y + 5, f'{max_ms * tick / 5:.1f}')
-                tick_x = plot.left() + round(plot.width() * tick / 5)
-                painter.drawText(
-                    tick_x - 16, plot.bottom() + 26, f'{wall_ns / 1e9 * tick / 5:.1f}s'
-                )
-            samples = [dict(frame.sections) for frame in frames]
-            painter.save()
-            painter.setClipRect(plot.adjusted(-1, -1, 1, 1))
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            for series_index, name in enumerate(series):
-                path = QPainterPath()
-                elapsed = 0
-                for index, frame in enumerate(frames):
-                    elapsed += frame.wall_duration_ns or frame.duration_ns
-                    value_ns = (
-                        frame.wall_duration_ns
-                        if series_index == 0
-                        else samples[index].get(name, 0)
-                    )
-                    x = plot.left() + (plot.width() - 1) * elapsed / max(1, wall_ns)
-                    y = (
-                        plot.bottom()
-                        - (plot.height() - 1) * value_ns / 1_000_000 / max_ms
-                    )
-                    (path.moveTo if index == 0 else path.lineTo)(x, y)
-                color = (
-                    QColor('#edf0f5') if series_index == 0 else self._profileColor(name)
-                )
-                painter.setPen(QPen(color, 2 if series_index == 0 else 1.2))
-                painter.drawPath(path)
-                if len(frames) == 1:
-                    painter.drawEllipse(QPointF(x, y), 3, 3)
-            painter.restore()
-            for index, name in enumerate(series):
-                x = 40 + (index % 2) * 820
-                y = 1150 + (index // 2) * 30
-                color = QColor('#edf0f5') if index == 0 else self._profileColor(name)
-                painter.fillRect(QRect(x, y - 12, 12, 12), color)
-                painter.setPen(QColor('#edf0f5'))
-                painter.drawText(
-                    x + 22,
-                    y,
-                    painter.fontMetrics().elidedText(
-                        name, Qt.TextElideMode.ElideRight, 760
-                    ),
-                )
-            interval_text = ' / '.join(
-                f'{v:.3f}' for v in statistics['interval_percentiles_ms']
-            )
-            work_text = ' / '.join(
-                f'{v:.3f}' for v in statistics['work_percentiles_ms']
-            )
-            painter.drawText(
-                40, height - 70, f'Interval P50 / P95 / P99: {interval_text} ms'
-            )
-            painter.drawText(
-                40, height - 45, f'Instrumented work P50 / P95 / P99: {work_text} ms'
-            )
-            painter.drawText(
-                40,
-                height - 20,
-                f'Budget: {budget_ns / 1_000_000:.3f} ms | '
-                f'Interval over budget: {statistics["interval_over_budget_ratio"]:.1%} | '
-                f'Work over budget: {statistics["work_over_budget_ratio"]:.1%} | '
-                f'Interval over 2x budget: {statistics["interval_over_two_budgets_ratio"]:.1%}',
-            )
-        finally:
-            painter.end()
-        directory = os.path.join(DATA_DIR, 'debug', 'performance')
-        os.makedirs(directory, exist_ok=True)
-        filename = f'performance-{time.strftime("%Y%m%d-%H%M%S")}-{time.time_ns() % 1_000_000_000:09d}.png'
-        file_path = os.path.join(directory, filename)
-        if not image.save(file_path):
-            raise OSError(f'Could not save performance report: {file_path}')
-        with open(
-            os.path.splitext(file_path)[0] + '.json', 'w', encoding='utf-8'
-        ) as file:
-            json.dump(
-                {
-                    'refresh_rate_hz': refresh_rate,
-                    'window_size': [
-                        self.ctx.main_window.width(),
-                        self.ctx.main_window.height(),
-                    ],
-                    'device_pixel_ratio': self.ctx.main_window.devicePixelRatioF(),
-                    'window_visible': self.ctx.main_window.isVisible(),
-                    'window_minimized': self.ctx.main_window.isMinimized(),
-                    'window_exposed': bool(
-                        (handle := self.ctx.main_window.windowHandle()) is not None
-                        and handle.isExposed()
-                    ),
-                    'budget_ns': budget_ns,
-                    'statistics': statistics,
-                    'frames': [asdict(frame) for frame in all_frames],
-                },
-                file,
-                ensure_ascii=False,
-            )
-        return file_path
-
     def _drawText(self, painter: QPainter, x: int, y: int, text: str) -> bool:
         bounds = painter.fontMetrics().boundingRect(text).translated(x, y)
         if not self.rect().contains(painter.worldTransform().mapRect(bounds)):
@@ -693,7 +336,7 @@ class DebugOverlay(QOpenGLWidget):
             painter.setCompositionMode(
                 QPainter.CompositionMode.CompositionMode_SourceOver
             )
-            if not self.ctx.debugging or self._capturing:
+            if not self.ctx.debugging:
                 return
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             painter.translate(0, 50 + self.offset_timer.current_value)
@@ -808,63 +451,6 @@ class DebugOverlay(QOpenGLWidget):
                 painter.drawLine(x, y - 645, x, y - 445)
             painter.restore()
 
-            if self._profile_sections:
-                sections = self._profile_sections
-                profile_x = column_width + 10
-                profile_width = column_width - 20
-                pie_size = 180
-                pie_rect = QRect(
-                    profile_x + (profile_width - pie_size) // 2,
-                    y + 10,
-                    pie_size,
-                    pie_size,
-                )
-                row_height = self.content_height + 4
-                legend_y = pie_rect.bottom() + 15 + row_height
-                self._drawText(
-                    painter,
-                    profile_x,
-                    legend_y,
-                    f'Frame: {self._profile_duration_ns / 1_000_000:.3f} ms',
-                )
-                legend_y += row_height
-                angle = 0
-                elapsed_percentage = 0.0
-                painter.save()
-                painter.setPen(Qt.PenStyle.NoPen)
-                for name, percentage, mean_duration_ns in sections:
-                    color = self._profileColor(name)
-                    elapsed_percentage += percentage
-                    end_angle = round(elapsed_percentage / 100 * 5760)
-                    painter.setBrush(color)
-                    painter.drawPie(pie_rect, angle, end_angle - angle)
-                    angle = end_angle
-                painter.restore()
-                for name, percentage, mean_duration_ns in sections:
-                    value_text = (
-                        f'{percentage:5.1f}%  {mean_duration_ns / 1_000_000:.3f} ms'
-                    )
-                    value_width = self.content_metri.horizontalAdvance(value_text)
-                    name_width = max(1, profile_width - value_width - 25)
-                    name_text = self.content_metri.elidedText(
-                        name, Qt.TextElideMode.ElideRight, name_width
-                    )
-                    self._drawText(painter, profile_x + 15, legend_y, name_text)
-                    self._drawText(
-                        painter,
-                        int(profile_x + profile_width - value_width),
-                        legend_y,
-                        value_text,
-                    )
-                    color_rect = QRect(
-                        profile_x, legend_y - self.content_height + 3, 10, 10
-                    )
-                    if self.rect().contains(
-                        painter.worldTransform().mapRect(color_rect)
-                    ):
-                        painter.fillRect(color_rect, self.profile_colors[name])
-                    legend_y += row_height
-
             y += 10
             export_info = lyricVideoExportDebugInfo()
             blocks: list[tuple[str, list[str]]] = []
@@ -878,7 +464,7 @@ class DebugOverlay(QOpenGLWidget):
                 available_width = max(1, self.width() - 20)
                 column_count = max(1, available_width // column_width)
                 column_heights = [y for _ in range(column_count)]
-                columns = [column for column in range(column_count) if column != 1]
+                columns = list(range(column_count))
 
                 for name, lines in blocks:
                     column = min(columns, key=column_heights.__getitem__)

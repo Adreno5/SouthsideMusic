@@ -72,7 +72,7 @@ class Debugging(QObject):
     def toggle(self) -> None:
         if not self._enabled or not self.ctx.config.debug_mode:
             return
-        if not frame_profiler.enabled:
+        if not frame_profiler.debug_enabled:
             self.setCollecting(True)
             self.ctx.debugging = True
             frame_profiler.setEnabled(True)

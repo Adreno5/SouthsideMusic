@@ -22,6 +22,8 @@ class FrameProfile:
 class FrameProfiler:
     def __init__(self) -> None:
         self.enabled = False
+        self.debug_enabled = False
+        self._performance_enabled = False
         self.snapshot: FrameProfile | None = None
         self._thread_id = 0
         self._window_start = 0
@@ -35,6 +37,14 @@ class FrameProfiler:
         self._capture_first = False
 
     def setEnabled(self, enabled: bool) -> None:
+        self.debug_enabled = enabled
+        self._setEnabled(enabled or self._performance_enabled)
+
+    def setPerformanceEnabled(self, enabled: bool) -> None:
+        self._performance_enabled = enabled
+        self._setEnabled(enabled or self.debug_enabled)
+
+    def _setEnabled(self, enabled: bool) -> None:
         if self.enabled == enabled:
             return
         self.enabled = enabled
@@ -69,6 +79,7 @@ class FrameProfiler:
         self._charge(perf_counter_ns())
         excluded = (bool(self._stack) and self._stack[-1] is None) or name.startswith((
             'views.debug_overlay.',
+            'views.performances.',
             'core.debugging.',
         ))
         self._stack.append(None if excluded else name)

@@ -301,9 +301,11 @@ class MainWindow(FluentWindowBase):
         else:
             if self.ctx.debugging_obj is not None:
                 self.ctx.debugging_obj.setEnabled(False)
+            if hasattr(self, 'performance_overlay'):
+                self.performance_overlay.export_timer.stop()
+                self.performance_overlay._finishExport()
+                self.performance_overlay.hide()
             if hasattr(self, 'debug_overlay'):
-                self.debug_overlay.export_timer.stop()
-                self.debug_overlay._finishExport()
                 self.debug_overlay.hide()
 
     def checkAFK(self, _):
@@ -511,21 +513,21 @@ class MainWindow(FluentWindowBase):
         last_playlist: list[SongStorable] = []
         last_playing_index = -1
 
-        def _init():
+        def _init() -> None:
             nonlocal last_playlist, last_playing_index
 
             if cfg.last_playlist:
                 last_playlist = cfg.last_playlist
                 last_playing_index = cfg.last_playing_index
 
-        def _finish_init():
+        def _finish_init() -> None:
             if last_playlist:
                 self._launchwindow.subtitle('restore playlist...')
                 self._dp.playlist = list(last_playlist)
                 if 0 <= last_playing_index < len(last_playlist):
                     self._launchwindow.subtitle('continue last song...')
 
-                    def _continue():
+                    def _continue() -> None:
                         event_bus.emit(PLAY_CONTINUE_LAST_SONG, cfg.last_playing_index)
 
                     self.ctx.addScheduledTask(_continue)
@@ -533,13 +535,8 @@ class MainWindow(FluentWindowBase):
             self._launchwindow.subtitle('refreshing login information')
             asyncTask(self.refreshLoginInformations, (), self)
 
-            event_bus._lw = None
-            self._launchwindow.close()
-            self._launchwindow.deleteLater()
-
-            def _show():
+            def _show() -> None:
                 self.show()
-                self.raise_()
 
                 if self.llm_viewer_panel.expanded:
                     self.toggleLLMViewerExpand()
@@ -553,6 +550,13 @@ class MainWindow(FluentWindowBase):
                 self.ctx.setting_page._onLyricsAnimationTypeChanged(
                     self.ctx.setting_page.lyrics_type_box.currentText().lower()
                 )
+
+                self.raise_()
+                self.activateWindow()
+
+                event_bus._lw = None
+                self._launchwindow.close()
+                self._launchwindow.deleteLater()
 
             self.ctx.addScheduledTask(_show)
 
@@ -770,6 +774,10 @@ class MainWindow(FluentWindowBase):
             self.debug_overlay.adjustToParent()
             self.debug_overlay.raise_()
 
+        if hasattr(self, 'performance_overlay'):
+            self.performance_overlay.adjustToParent()
+            self.performance_overlay.raise_()
+
     def onWebsocketConnected(self):
         InfoBar.success(
             tr('main_window.southside_client_connection'),
@@ -823,6 +831,18 @@ class MainWindow(FluentWindowBase):
                 self.debug_overlay.setGeometry(geo)
             self.ctx.debugging_obj.toggle()
             self.debug_overlay.refresh(raise_overlay=True)
+            event.accept()
+        elif event.key() == Qt.Key.Key_F4 and cfg.debug_mode:
+            self.setDebugMode(True)
+            if not hasattr(self, 'performance_overlay'):
+                from views.performances import PerformanceOverlay
+
+                self.performance_overlay = PerformanceOverlay(self.ctx, self)
+                geo = self.rect()
+                geo.setWidth(int(self.width() * 0.7))
+                geo.setHeight(int(self.height() * 0.8))
+                self.performance_overlay.setGeometry(geo)
+            self.performance_overlay.toggle()
             event.accept()
         else:
             return super().keyPressEvent(event)

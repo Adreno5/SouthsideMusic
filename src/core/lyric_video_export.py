@@ -16,7 +16,7 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Any, Literal
+from typing import IO, Any, Literal
 
 _SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if _SRC_DIR in sys.path:
@@ -288,7 +288,7 @@ def _exportLyricVideoSingle(
             last_frame_time = frame_time
 
             image = renderer.renderFrame(frame_index / options.fps)
-            stdin.write(_qimageBytes(image))
+            _writeFrame(stdin, image, process)
             if progress_callback is not None and frame_count > 0:
                 current_frame = frame_index + 1
                 preview_image = (
@@ -1540,7 +1540,7 @@ def _segmentWorkerMain(payload_path: str) -> int:
                 image = first_image
             else:
                 image = renderer.renderFrame(frame_index / options.fps)
-            stdin.write(_qimageBytes(image))
+            _writeFrame(stdin, image, process)
 
             rendered = frame_index - start_frame + 1
             current_frame = frame_index + 1
@@ -1850,6 +1850,27 @@ def _qimageBytes(image: QImage) -> bytes:
         return bits.tobytes(image.sizeInBytes())  # type: ignore[call-arg]
     except TypeError:
         return bits.tobytes()  # type: ignore[union-attr]
+
+
+def _writeFrame(
+    stdin: IO[Any],
+    image: QImage,
+    process: subprocess.Popen[bytes],
+) -> None:
+    try:
+        stdin.write(_qimageBytes(image))
+    except OSError as e:
+        returncode = process.poll()
+        if returncode is None:
+            raise
+        stderr = process.stderr.read() if process.stderr is not None else b''
+        text = stderr.decode('utf-8', 'ignore').strip()
+        raise RuntimeError(
+            'FFmpeg exited with code {}: {}'.format(
+                returncode,
+                text[-2000:] if text else 'no error output',
+            )
+        ) from e
 
 
 def _imageToBase64(image: QImage) -> str:

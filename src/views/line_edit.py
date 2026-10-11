@@ -21,12 +21,7 @@ from core.color import mixColor
 from core.config import cfg
 from core.icons import SouthsideIcon, bindIcon
 from core.smooth import EaseOutTimer
-from services.events import (
-    BACKGROUND_RATIO_CHANGED,
-    POST_THEME_CHANGED,
-    REPAINT,
-    event_bus,
-)
+from services.events import Events, event_bus
 
 if TYPE_CHECKING:
     from views.main_window import MainWindow
@@ -74,9 +69,9 @@ class SearchLineEdit(QLineEdit):
         self._updateIconLayout()
         self._onThemeChanged()
 
-        event_bus.subscribe(POST_THEME_CHANGED, self._onThemeChanged)
-        event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._onThemeChanged)
-        event_bus.subscribe(REPAINT, self._repaintTick)
+        event_bus.subscribe(Events.POST_THEME_CHANGED, self._onThemeChanged)
+        event_bus.subscribe(Events.BACKGROUND_RATIO_CHANGED, self._onThemeChanged)
+        event_bus.subscribe(Events.REPAINT, self._repaintTick)
 
     def enterEvent(self, event: QEnterEvent) -> None:
         self._hovering = True

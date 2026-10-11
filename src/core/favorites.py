@@ -18,7 +18,7 @@ from core.models import (
     MUSIC_DATA_DIR,
     SongStorable,
 )
-from services.events import IMAGE_ASSET_PERSISTED, event_bus
+from services.events import Events, event_bus
 from qfluentwidgets import MessageBoxBase, SubtitleLabel
 from views.list_widget import SListWidget
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QVBoxLayout
@@ -150,7 +150,7 @@ class FavoritesManager:
                 return
             storable._writeCache(image_bytes, IMAGE_DATA_DIR, 'image_cache_hash')
             self._save()
-            event_bus.emit(IMAGE_ASSET_PERSISTED, storable)
+            event_bus.emit(Events.IMAGE_ASSET_PERSISTED, storable)
         finally:
             lock.release()
 

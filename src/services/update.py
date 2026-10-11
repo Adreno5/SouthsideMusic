@@ -16,12 +16,7 @@ from urllib.parse import quote as _url_quote
 import requests
 from qfluentwidgets import MessageBox
 from core.i18n import tr
-from services.events import (
-    START_PROGRESS_LOADING,
-    STOP_PROGRESS_LOADING,
-    UPDATE_LOADING_PROGRESS,
-    event_bus,
-)
+from services.events import Events, event_bus
 
 if TYPE_CHECKING:
     from views.main_window import MainWindow
@@ -144,8 +139,8 @@ def initFile():
 
 def applyUpdate(update_info: UpdateInfo) -> bool:
     try:
-        event_bus.emit(START_PROGRESS_LOADING)
-        event_bus.emit(UPDATE_LOADING_PROGRESS, 0.0)
+        event_bus.emit(Events.START_PROGRESS_LOADING)
+        event_bus.emit(Events.UPDATE_LOADING_PROGRESS, 0.0)
 
         download_url = _build_codeload_url(update_info.tag_name)
 
@@ -166,9 +161,11 @@ def applyUpdate(update_info: UpdateInfo) -> bool:
             raw_data.extend(chunk)
             downloaded += len(chunk)
             if total_size > 0:
-                event_bus.emit(UPDATE_LOADING_PROGRESS, 0.5 * downloaded / total_size)
+                event_bus.emit(
+                    Events.UPDATE_LOADING_PROGRESS, 0.5 * downloaded / total_size
+                )
 
-        event_bus.emit(UPDATE_LOADING_PROGRESS, 0.5)
+        event_bus.emit(Events.UPDATE_LOADING_PROGRESS, 0.5)
 
         with zipfile.ZipFile(io.BytesIO(bytes(raw_data))) as zf:
             namelist = zf.namelist()
@@ -188,16 +185,16 @@ def applyUpdate(update_info: UpdateInfo) -> bool:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(zf.read(name))
                 event_bus.emit(
-                    UPDATE_LOADING_PROGRESS, 0.5 + 0.5 * (i + 1) / total_files
+                    Events.UPDATE_LOADING_PROGRESS, 0.5 + 0.5 * (i + 1) / total_files
                 )
 
         _write_installed_release(update_info.published_at, update_info.tag_name)
-        event_bus.emit(UPDATE_LOADING_PROGRESS, 1.0)
-        event_bus.emit(STOP_PROGRESS_LOADING)
+        event_bus.emit(Events.UPDATE_LOADING_PROGRESS, 1.0)
+        event_bus.emit(Events.STOP_PROGRESS_LOADING)
         return True
 
     except Exception as e:
-        event_bus.emit(STOP_PROGRESS_LOADING)
+        event_bus.emit(Events.STOP_PROGRESS_LOADING)
         _logger.exception(e)
         return False
 

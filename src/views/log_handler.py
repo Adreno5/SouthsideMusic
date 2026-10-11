@@ -8,11 +8,10 @@ import shutil
 import re
 import sys
 import threading
-from services.events import SECOND_TICK
+from services.events import Events, event_bus
 from typing import TextIO, Optional
 import ctypes
 from ctypes import wintypes
-from services.events import TERMINAL_SIZE_CHANGED, event_bus
 
 kernel32 = ctypes.windll.kernel32
 STD_INPUT_HANDLE = -10
@@ -73,8 +72,8 @@ class LogHandler(logging.Handler):
 
         self.terminal_width = shutil.get_terminal_size().columns
 
-        event_bus.subscribe(TERMINAL_SIZE_CHANGED, self._refreshTerminalWidth)
-        event_bus.subscribe(SECOND_TICK, self._refreshTerminalWidth)
+        event_bus.subscribe(Events.TERMINAL_SIZE_CHANGED, self._refreshTerminalWidth)
+        event_bus.subscribe(Events.SECOND_TICK, self._refreshTerminalWidth)
 
     def _refreshTerminalWidth(self):
         self.terminal_width = shutil.get_terminal_size().columns
@@ -281,4 +280,4 @@ def terminalSizeListen():
     while True:
         kernel32.ReadConsoleInputW(h, ctypes.byref(record), 1, ctypes.byref(read))
         if record.EventType == 0x0004:  # WINDOW_BUFFER_SIZE_EVENT
-            event_bus.emit(TERMINAL_SIZE_CHANGED)
+            event_bus.emit(Events.TERMINAL_SIZE_CHANGED)

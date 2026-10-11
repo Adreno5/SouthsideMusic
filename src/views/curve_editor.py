@@ -22,12 +22,7 @@ from core.color import mixColor
 from core.config import cfg
 from core.models import CurveInfo
 from core.smooth import EaseInOutTimer, EaseOutTimer
-from services.events import (
-    BACKGROUND_RATIO_CHANGED,
-    POST_THEME_CHANGED,
-    SONG_CHANGED,
-    event_bus,
-)
+from services.events import Events, event_bus
 
 
 class CurveEditor(QOpenGLWidget):
@@ -56,7 +51,11 @@ class CurveEditor(QOpenGLWidget):
         self._animation_timer.timeout.connect(self._repaintTick)
 
         self.setPoints([(0.0, 0.0), (1.0, 1.0)])
-        for event in (POST_THEME_CHANGED, BACKGROUND_RATIO_CHANGED, SONG_CHANGED):
+        for event in (
+            Events.POST_THEME_CHANGED,
+            Events.BACKGROUND_RATIO_CHANGED,
+            Events.SONG_CHANGED,
+        ):
             event_bus.subscribe(event, self._onThemeChanged)
         qconfig.themeColorChanged.connect(self._onThemeChanged)
 

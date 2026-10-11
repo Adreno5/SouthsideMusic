@@ -20,8 +20,7 @@ from PySide6.QtWidgets import QWidget
 from core import theme
 from core.app_context import AppContext
 from core.smooth import EaseOutTimer
-from services.events import event_bus
-from services.events.events import REPAINT
+from services.events import Events, event_bus
 
 
 class NumberViewer(QOpenGLWidget):
@@ -64,7 +63,7 @@ class NumberViewer(QOpenGLWidget):
         for char in self.numbers:
             self.width_map[char] = self.metri.horizontalAdvance(char)
 
-        event_bus.subscribe(REPAINT, self.updateDatas)
+        event_bus.subscribe(Events.REPAINT, self.updateDatas)
 
     def updateDatas(self, _: float) -> None:
         background_key = self._backgroundKey()

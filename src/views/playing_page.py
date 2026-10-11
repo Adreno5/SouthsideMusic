@@ -39,24 +39,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from core.i18n import tr
-from services.events import (
-    BACKGROUND_RATIO_CHANGED,
-    PLAYBACK_ERROR,
-    PLAYBACK_IMAGE_LOADED,
-    PLAYBACK_LYRICS_UPDATED,
-    PLAYBACK_SONG_LOADING,
-    PLAY_START_PLAYLIST,
-    PLAY_STATE_CHANGED,
-    POST_PLAY_STORABLE,
-    POST_THEME_CHANGED,
-    REPAINT,
-    SONG_CHANGED,
-    START_PROGRESS_LOADING,
-    STOP_PROGRESS_LOADING,
-    UPDATE_COVER,
-    UPDATE_LOADING_PROGRESS,
-    event_bus,
-)
+from services.events import Events, event_bus
 from PySide6.QtGui import QColor, QImage, QPixmap
 from qfluentwidgets import (
     CaptionLabel,
@@ -506,15 +489,17 @@ class PlayingPage(QWidget):
         self.buttons_expand = EaseInOutTimer(0.3, 3)
         self.buttons_expand.target_value = 0
 
-        event_bus.subscribe(PLAYBACK_SONG_LOADING, self._onPlaybackSongLoading)
-        event_bus.subscribe(PLAYBACK_IMAGE_LOADED, self._onPlaybackImageLoaded)
-        event_bus.subscribe(PLAYBACK_LYRICS_UPDATED, self._onPlaybackLyricsUpdated)
-        event_bus.subscribe(PLAYBACK_ERROR, self._onPlaybackError)
-        event_bus.subscribe(POST_PLAY_STORABLE, self._onPostPlayStorable)
-        event_bus.subscribe(SONG_CHANGED, self._updateDatas)
-        event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
-        event_bus.subscribe(REPAINT, self._onRepaintTick)
-        event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
+        event_bus.subscribe(Events.PLAYBACK_SONG_LOADING, self._onPlaybackSongLoading)
+        event_bus.subscribe(Events.PLAYBACK_IMAGE_LOADED, self._onPlaybackImageLoaded)
+        event_bus.subscribe(
+            Events.PLAYBACK_LYRICS_UPDATED, self._onPlaybackLyricsUpdated
+        )
+        event_bus.subscribe(Events.PLAYBACK_ERROR, self._onPlaybackError)
+        event_bus.subscribe(Events.POST_PLAY_STORABLE, self._onPostPlayStorable)
+        event_bus.subscribe(Events.SONG_CHANGED, self._updateDatas)
+        event_bus.subscribe(Events.POST_THEME_CHANGED, self._updateDatas)
+        event_bus.subscribe(Events.REPAINT, self._onRepaintTick)
+        event_bus.subscribe(Events.BACKGROUND_RATIO_CHANGED, self._updateDatas)
 
     @property
     def _mwindow_obj(self):
@@ -641,7 +626,7 @@ class PlayingPage(QWidget):
             return
 
         event_bus.emit(
-            UPDATE_COVER,
+            Events.UPDATE_COVER,
             self.img_label.pixmap(),
             self.cur.info.name if self.cur else '',
         )
@@ -651,7 +636,7 @@ class PlayingPage(QWidget):
 
     def onPlayButtonClicked(self) -> None:
         if self.cur is None:
-            event_bus.emit(PLAY_START_PLAYLIST)
+            event_bus.emit(Events.PLAY_START_PLAYLIST)
 
     def exportLyricVideo(self) -> None:
         if self.cur is None:
@@ -701,7 +686,7 @@ class PlayingPage(QWidget):
         result: dict[str, str] = {}
         if self.ctx.player.isPlaying():
             self.ctx.player.pause()
-            event_bus.emit(PLAY_STATE_CHANGED, False)
+            event_bus.emit(Events.PLAY_STATE_CHANGED, False)
 
         progress_dialog = LyricVideoExportProgressDialog(self._mwindow_obj)
         self._lyric_video_progress_dialog = progress_dialog
@@ -749,7 +734,7 @@ class PlayingPage(QWidget):
                     if status.stage == 'merge'
                     else min(progress, 0.95)
                 )
-                event_bus.emit(UPDATE_LOADING_PROGRESS, global_progress)
+                event_bus.emit(Events.UPDATE_LOADING_PROGRESS, global_progress)
                 current_dialog.setStatus(status)
 
             self.ctx.addScheduledTask(_apply)
@@ -769,7 +754,7 @@ class PlayingPage(QWidget):
                 result['error'] = str(e)
 
         def _final() -> None:
-            event_bus.emit(STOP_PROGRESS_LOADING)
+            event_bus.emit(Events.STOP_PROGRESS_LOADING)
             active_dialog = dialog_state.get(str(dialog_state['stage']))
             if not isinstance(active_dialog, LyricVideoExportProgressDialog):
                 active_dialog = progress_dialog
@@ -792,8 +777,8 @@ class PlayingPage(QWidget):
                 duration=5000,
             )
 
-        event_bus.emit(UPDATE_LOADING_PROGRESS, 0)
-        event_bus.emit(START_PROGRESS_LOADING)
+        event_bus.emit(Events.UPDATE_LOADING_PROGRESS, 0)
+        event_bus.emit(Events.START_PROGRESS_LOADING)
         asyncTask(_export, (), self._mwindow_obj, _final)
 
     def editLyrics(self) -> None:
@@ -961,7 +946,7 @@ class PlayingPage(QWidget):
             int(avg_color[0]), int(avg_color[1]), int(avg_color[2])
         )
         self._mwindow_obj.update()
-        event_bus.emit(POST_THEME_CHANGED)
+        event_bus.emit(Events.POST_THEME_CHANGED)
 
     def _onPostPlayStorable(self, song: SongStorable) -> None:
         if self.cur is not None and self.cur.storable.id != song.id:

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from shiboken6 import isValid
 
-from services.events import SECOND_TICK
+from services.events import Events, event_bus
 
 if TYPE_CHECKING:
     from core.app_context import AppContext
@@ -23,39 +23,15 @@ from core.downloader import asyncTask
 from core.favorites import favorites_manager
 from core.frame_profiler import frame_profiler
 from core.i18n import tr
-from services.events import (
-    BACKGROUND_RATIO_CHANGED,
-    CLOUD_ADD_TO_LOCAL,
-    CLOUD_REMOVE_FOLDER,
-    CLOUD_RENAME_FOLDER,
-    LOCAL_ADD_TO_CLOUD,
-    LOCAL_REMOVE_FOLDER,
-    LOCAL_RENAME_FOLDER,
-    MWINDOW_REFRESH_FOLDERS,
-    PRE_THEME_CHANGED,
-    REFRESH_RATE_CHANGED,
-    REPAINT,
-    REPAINT_ALWAYS,
-    REPAINT_EVENT_INTERVAL,
-    SONG_CHANGED,
-    event_bus,
-)
-from services.events.events import (
-    _16MS_TICK,
-    _20MS_TICK,
-    _50MS_TICK,
-    _100MS_TICK,
-    _200MS_TICK,
-)
 from views.folder_card import CloudFolderCard, LocalFolderCard
 
-_TICK_INTERVALS: tuple[tuple[str, int], ...] = (
-    (_16MS_TICK, 16),
-    (_20MS_TICK, 20),
-    (_50MS_TICK, 50),
-    (_100MS_TICK, 100),
-    (_200MS_TICK, 200),
-    (SECOND_TICK, 1000),
+_TICK_INTERVALS: tuple[tuple[Events, int], ...] = (
+    (Events.TICK_16MS, 16),
+    (Events.TICK_20MS, 20),
+    (Events.TICK_50MS, 50),
+    (Events.TICK_100MS, 100),
+    (Events.TICK_200MS, 200),
+    (Events.SECOND_TICK, 1000),
 )
 
 
@@ -83,30 +59,31 @@ class EventsServices(QObject):
         self.repaint_timer.timeout.connect(self._tickRepaint)
         self.repaint_timer.start(math.ceil(self._period_ns / 1_000_000))
         self._screen.refreshRateChanged.connect(self._screenRefreshRateChanged)
-        event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
+        event_bus.subscribe(Events.REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
 
-        self._tick_deadlines_ns: list[tuple[str, int, int]] = [
+        self._tick_deadlines_ns: list[tuple[Events, int, int]] = [
             (event, interval * 1_000_000, self.last_repaint + interval * 1_000_000)
             for event, interval in _TICK_INTERVALS
         ]
 
         def _startListen():
             theme.getDarkdetect().listener(
-                lambda t: event_bus.emit(PRE_THEME_CHANGED, t)
+                lambda t: event_bus.emit(Events.PRE_THEME_CHANGED, t)
             )
 
         threading.Thread(target=_startListen, daemon=True).start()
 
         event_bus.subscribe(
-            SONG_CHANGED, lambda s: event_bus.emit(BACKGROUND_RATIO_CHANGED)
+            Events.SONG_CHANGED,
+            lambda s: event_bus.emit(Events.BACKGROUND_RATIO_CHANGED),
         )
-        event_bus.subscribe(LOCAL_REMOVE_FOLDER, self.localRemoveFolder)
-        event_bus.subscribe(LOCAL_RENAME_FOLDER, self.localRenameFolder)
-        event_bus.subscribe(LOCAL_ADD_TO_CLOUD, self.localAddToCloud)
-        event_bus.subscribe(CLOUD_REMOVE_FOLDER, self.cloudRemoveFolder)
-        event_bus.subscribe(CLOUD_RENAME_FOLDER, self.cloudRenameFolder)
-        event_bus.subscribe(CLOUD_ADD_TO_LOCAL, self.cloudAddToLocal)
-        event_bus.subscribe(REPAINT_EVENT_INTERVAL, self._setRepaintInterval)
+        event_bus.subscribe(Events.LOCAL_REMOVE_FOLDER, self.localRemoveFolder)
+        event_bus.subscribe(Events.LOCAL_RENAME_FOLDER, self.localRenameFolder)
+        event_bus.subscribe(Events.LOCAL_ADD_TO_CLOUD, self.localAddToCloud)
+        event_bus.subscribe(Events.CLOUD_REMOVE_FOLDER, self.cloudRemoveFolder)
+        event_bus.subscribe(Events.CLOUD_RENAME_FOLDER, self.cloudRenameFolder)
+        event_bus.subscribe(Events.CLOUD_ADD_TO_LOCAL, self.cloudAddToLocal)
+        event_bus.subscribe(Events.REPAINT_EVENT_INTERVAL, self._setRepaintInterval)
 
     def _setRepaintInterval(self, interval: float) -> None:
         if interval == self.last_interval:
@@ -144,7 +121,7 @@ class EventsServices(QObject):
                 favorites_manager.addSong(folder_name, song)
 
         def _finished():
-            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+            event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
             self.ctx.addScheduledTask(
                 lambda: InfoBar.success(
                     tr('events_services.imported_successfully'),
@@ -169,7 +146,7 @@ class EventsServices(QObject):
             )
 
         def _finished():
-            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+            event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
             self.ctx.addScheduledTask(
                 lambda: InfoBar.success(
                     tr('events_services.imported_successfully'),
@@ -207,7 +184,7 @@ class EventsServices(QObject):
         confirmed = self._confirmRemoveFolder(card.folder.folder_name)
         if confirmed:
             getBackend().removePlaylist(card.folder.id)
-            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+            event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
 
     def cloudRenameFolder(self, card: CloudFolderCard):
         new_name = getTextLineedit(
@@ -230,7 +207,7 @@ class EventsServices(QObject):
             getBackend().removePlaylist(folder_id)
 
         def _finished():
-            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+            event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
             self.ctx.addScheduledTask(
                 lambda: InfoBar.success(
                     tr('events_services.renamed_successfully'),
@@ -250,7 +227,7 @@ class EventsServices(QObject):
         confirmed = self._confirmRemoveFolder(card.folder.folder_name)
         if confirmed:
             favorites_manager.removeFolder(card.folder.folder_name)
-            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+            event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
 
     def localRenameFolder(self, card: LocalFolderCard):
         new = getTextLineedit(
@@ -261,10 +238,10 @@ class EventsServices(QObject):
         )
         if new:
             favorites_manager.renameFolder(card.folder.folder_name, new)
-            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+            event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
 
     def _screenRefreshRateChanged(self, _: float) -> None:
-        event_bus.emit(REFRESH_RATE_CHANGED)
+        event_bus.emit(Events.REFRESH_RATE_CHANGED)
 
     def _onScreenChanged(self, screen: QScreen | None) -> None:
         if screen is None or screen is self._screen:
@@ -273,7 +250,7 @@ class EventsServices(QObject):
             self._screen.refreshRateChanged.disconnect(self._screenRefreshRateChanged)
         self._screen = screen
         self._screen.refreshRateChanged.connect(self._screenRefreshRateChanged)
-        event_bus.emit(REFRESH_RATE_CHANGED)
+        event_bus.emit(Events.REFRESH_RATE_CHANGED)
 
     def _onRefreshRateChanged(self) -> None:
         normal_interval = self._repaint_interval_ns == self._period_ns
@@ -334,14 +311,14 @@ class EventsServices(QObject):
         elapsed = min((now - self.last_repaint) / 1_000_000_000, 0.1)
         self.last_repaint = now
         multiple_factor = elapsed * self.refresh_rate
-        event_bus.emit(REPAINT, multiple_factor)
+        event_bus.emit(Events.REPAINT, multiple_factor)
 
     def _emitAlwaysRepaint(self) -> None:
         now = time.perf_counter_ns()
         elapsed = min((now - self.last_always_repaint) / 1_000_000_000, 0.1)
         self.last_always_repaint = now
         multiple_factor = elapsed * self.refresh_rate
-        event_bus.emit(REPAINT_ALWAYS, multiple_factor)
+        event_bus.emit(Events.REPAINT_ALWAYS, multiple_factor)
 
     @staticmethod
     def _start_session_refresher() -> None:

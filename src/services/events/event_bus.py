@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Callable
 import shiboken6
 
 from core.frame_profiler import frame_profiler
+from services.events.events import Events
 
 
 if TYPE_CHECKING:
@@ -18,7 +19,7 @@ Listener = Callable[..., Any]
 _Entry = tuple[Listener, Any]
 
 _EMPTY: tuple[_Entry, ...] = ()
-_QUIET_EVENTS = frozenset({'image_asset_persisted', 'storable_count_changed'})
+_QUIET_EVENTS = frozenset({Events.IMAGE_ASSET_PERSISTED, Events.STORABLE_COUNT_CHANGED})
 _isValid = shiboken6.isValid
 
 
@@ -45,15 +46,15 @@ class EventBus:
     def __init__(
         self, thread_safe: bool = True, launchwindow: LaunchWindow | None = None
     ) -> None:
-        self._listeners: dict[str, list[_Entry]] = defaultdict(list)
-        self._snapshots: dict[str, tuple[_Entry, ...]] = {}
+        self._listeners: dict[Events, list[_Entry]] = defaultdict(list)
+        self._snapshots: dict[Events, tuple[_Entry, ...]] = {}
         self._lock = threading.Lock() if thread_safe else None
         self._lw = launchwindow
         self.enabled = True
 
         self._logger = logging.getLogger('event_bus')
 
-    def subscribe(self, event: str, listener: Listener) -> None:
+    def subscribe(self, event: Events, listener: Listener) -> None:
         if self._logger.isEnabledFor(logging.INFO) and event not in _QUIET_EVENTS:
             self._logger.info(
                 'subscribing %s to %s.%s',
@@ -70,7 +71,7 @@ class EventBus:
             self._listeners[event].append(entry)
             self._snapshots.pop(event, None)
 
-    def unsubscribe(self, event: str, listener: Listener) -> None:
+    def unsubscribe(self, event: Events, listener: Listener) -> None:
         if self._logger.isEnabledFor(logging.INFO) and event not in _QUIET_EVENTS:
             self._logger.info(
                 'unsubscribing %s from %s',
@@ -83,7 +84,7 @@ class EventBus:
         else:
             self._drop(event, listener)
 
-    def _drop(self, event: str, listener: Listener) -> None:
+    def _drop(self, event: Events, listener: Listener) -> None:
         entries = self._listeners.get(event)
         if not entries:
             return
@@ -93,18 +94,18 @@ class EventBus:
                 self._snapshots.pop(event, None)
                 return
 
-    def _snapshot(self, event: str) -> tuple[_Entry, ...]:
+    def _snapshot(self, event: Events) -> tuple[_Entry, ...]:
         if self._lock is not None:
             with self._lock:
                 return self._rebuild(event)
         return self._rebuild(event)
 
-    def _rebuild(self, event: str) -> tuple[_Entry, ...]:
+    def _rebuild(self, event: Events) -> tuple[_Entry, ...]:
         entries = tuple(self._listeners.get(event, _EMPTY))
         self._snapshots[event] = entries
         return entries
 
-    def emit(self, event: str, *args: Any, **kwargs: Any) -> None:
+    def emit(self, event: Events, *args: Any, **kwargs: Any) -> None:
         if not self.enabled:
             return
         entries = self._snapshots.get(event)
@@ -112,41 +113,44 @@ class EventBus:
             entries = self._snapshot(event)
         if not entries:
             return
+        is_valid = _isValid
+        profiler = frame_profiler
+        recording = profiler.enabled and profiler.isRecording()
         dead: list[Listener] | None = None
-        recording = frame_profiler.enabled and frame_profiler.isRecording()
         for listener, owner in entries:
-            if owner is not None and not _isValid(owner):
+            if owner is not None and not is_valid(owner):
                 if dead is None:
                     dead = []
                 dead.append(listener)
                 continue
-            if recording and frame_profiler.enabled:
-                frame_profiler.beginSection(
+            if recording:
+                profiler.beginSection(
                     f'{getattr(listener, "__module__", type(listener).__module__)}.'
                     f'{getattr(listener, "__qualname__", type(listener).__qualname__)}'
                 )
                 try:
                     listener(*args, **kwargs)
                 finally:
-                    frame_profiler.endSection()
+                    profiler.endSection()
             else:
                 listener(*args, **kwargs)
         if dead is not None:
             self._prune(event, dead)
 
-    def _prune(self, event: str, dead: list[Listener]) -> None:
+    def _prune(self, event: Events, dead: list[Listener]) -> None:
         if self._lock is not None:
             with self._lock:
                 self._pruneEntries(event, dead)
         else:
             self._pruneEntries(event, dead)
 
-    def _pruneEntries(self, event: str, dead: list[Listener]) -> None:
+    def _pruneEntries(self, event: Events, dead: list[Listener]) -> None:
         entries = self._listeners.get(event)
         if not entries:
             return
+        dead_ids = {id(listener) for listener in dead}
         self._listeners[event] = [
-            entry for entry in entries if not any(entry[0] is d for d in dead)
+            entry for entry in entries if id(entry[0]) not in dead_ids
         ]
         self._snapshots.pop(event, None)
 

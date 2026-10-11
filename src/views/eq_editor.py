@@ -22,7 +22,7 @@ from core.audio_processing import sampleEqualizerCurve
 from core.color import mixColor
 from core.config import DEFAULT_EQ_BANDS, cfg
 from core.smooth import EaseInOutTimer, EaseOutTimer
-from services.events import PLAY_STATE_CHANGED, REPAINT, SONG_CHANGED, event_bus
+from services.events import Events, event_bus
 from views.curve_editor import CurveEditor
 
 
@@ -72,9 +72,9 @@ class EQEditor(CurveEditor):
         self.pointsChanged.connect(self._emitBands)
         self.pointsChanged.connect(self._updateInset)
         self.setBands(list(DEFAULT_EQ_BANDS))
-        event_bus.subscribe(PLAY_STATE_CHANGED, self._resetFFT)
-        event_bus.subscribe(SONG_CHANGED, self._resetFFT)
-        event_bus.subscribe(REPAINT, self._updateFFT)
+        event_bus.subscribe(Events.PLAY_STATE_CHANGED, self._resetFFT)
+        event_bus.subscribe(Events.SONG_CHANGED, self._resetFFT)
+        event_bus.subscribe(Events.REPAINT, self._updateFFT)
 
     def updateFFTData(
         self,

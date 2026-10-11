@@ -28,8 +28,7 @@ from core.lyric_video_export import (
     lyricVideoExportDebugProcessPids,
 )
 from core.smooth import EaseOutTimer
-from services.events import REPAINT_ALWAYS, SECOND_TICK, event_bus
-from services.events.events import _50MS_TICK
+from services.events import Events, event_bus
 
 
 class DebugOverlay(QOpenGLWidget):
@@ -108,17 +107,17 @@ class DebugOverlay(QOpenGLWidget):
         if self._ticks_active:
             return
         self._ticks_active = True
-        event_bus.subscribe(REPAINT_ALWAYS, self.refresh)
-        event_bus.subscribe(_50MS_TICK, self.updateDatas)
-        event_bus.subscribe(SECOND_TICK, self.tryRaise)
+        event_bus.subscribe(Events.REPAINT_ALWAYS, self.refresh)
+        event_bus.subscribe(Events.TICK_50MS, self.updateDatas)
+        event_bus.subscribe(Events.SECOND_TICK, self.tryRaise)
 
     def _stopTicks(self) -> None:
         if not self._ticks_active:
             return
         self._ticks_active = False
-        event_bus.unsubscribe(REPAINT_ALWAYS, self.refresh)
-        event_bus.unsubscribe(_50MS_TICK, self.updateDatas)
-        event_bus.unsubscribe(SECOND_TICK, self.tryRaise)
+        event_bus.unsubscribe(Events.REPAINT_ALWAYS, self.refresh)
+        event_bus.unsubscribe(Events.TICK_50MS, self.updateDatas)
+        event_bus.unsubscribe(Events.SECOND_TICK, self.tryRaise)
 
     def tryRaise(self):
         if self.isHidden():

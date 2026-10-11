@@ -48,13 +48,7 @@ from core.beat import BeatDetector, BeatFrame
 from core.config import cfg
 from core.pcm_buffer import PcmBuffer, PcmFile
 from core.pcm_timeline import PcmTimeline
-from services.events import DB_CHANGED, event_bus
-from services.events.events import (
-    _100MS_TICK,
-    BEAT_POINT,
-    COLLECT_DEBUG_INFO,
-    EMIT_DEBUG_INFO,
-)
+from services.events import Events, event_bus
 
 __all__ = [
     'AudioPlayer',
@@ -253,7 +247,7 @@ class AudioPlayer(QObject):
         self.fft_thread = threading.Thread(target=self._fft_worker, daemon=True)
         self.fft_thread.start()
 
-        event_bus.subscribe(_100MS_TICK, self._emitPlaybackTelemetry)
+        event_bus.subscribe(Events.TICK_100MS, self._emitPlaybackTelemetry)
 
         self.setEqualizer()
 
@@ -275,7 +269,7 @@ class AudioPlayer(QObject):
 
     def emitDebugInfo(self) -> None:
         event_bus.emit(
-            EMIT_DEBUG_INFO,
+            Events.EMIT_DEBUG_INFO,
             'AudioPlayer',
             [
                 f'is_playing={self.is_playing}',
@@ -1521,7 +1515,7 @@ class AudioPlayer(QObject):
     def _publishBeatPoint(self, generation: int) -> None:
         if generation != self._analysis_generation or not cfg.beat_detection_enabled:
             return
-        event_bus.emit(BEAT_POINT)
+        event_bus.emit(Events.BEAT_POINT)
 
     def _fft_worker(self) -> None:
         spectrum = SpectrumAnalyzer()
@@ -1644,8 +1638,8 @@ class AudioPlayer(QObject):
 
     def shutdown(self) -> None:
         self._logger.info('shutting down')
-        event_bus.unsubscribe(_100MS_TICK, self._emitPlaybackTelemetry)
-        event_bus.unsubscribe(COLLECT_DEBUG_INFO, self.emitDebugInfo)
+        event_bus.unsubscribe(Events.TICK_100MS, self._emitPlaybackTelemetry)
+        event_bus.unsubscribe(Events.COLLECT_DEBUG_INFO, self.emitDebugInfo)
         self.stop()
         self.stop_fft_thread()
         self._closeFinishedStreams(wait=True)
@@ -1851,7 +1845,7 @@ class AudioPlayer(QObject):
         self._fillScrubBuffer()
         self.positionChanged.emit(self._playback_time)
         if self.is_playing:
-            event_bus.emit(DB_CHANGED, self, self.db)
+            event_bus.emit(Events.DB_CHANGED, self, self.db)
 
         with self._callback_events_lock:
             full_finished = self._pending_full_finished

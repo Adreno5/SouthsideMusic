@@ -41,7 +41,7 @@ from core.frame_profiler import FrameProfile, frame_profiler
 from core.lyric_video_export import lyricVideoExportDebugProcessPids
 from core.models import DATA_DIR
 from core.smooth import EaseOutTimer
-from services.events import REPAINT_ALWAYS, event_bus
+from services.events import Events, event_bus
 
 _logger = logging.getLogger(__name__)
 
@@ -317,7 +317,7 @@ class PerformanceOverlay(QWidget):
         self._profile_duration_ns = 0.0
         self._last_frame_update_ns = 0
         frame_profiler.setPerformanceEnabled(True)
-        event_bus.subscribe(REPAINT_ALWAYS, self.refresh)
+        event_bus.subscribe(Events.REPAINT_ALWAYS, self.refresh)
         self.memory_timer.start()
         self.updateMemory()
 
@@ -325,7 +325,7 @@ class PerformanceOverlay(QWidget):
         if not self._ticks_active:
             return
         self._ticks_active = False
-        event_bus.unsubscribe(REPAINT_ALWAYS, self.refresh)
+        event_bus.unsubscribe(Events.REPAINT_ALWAYS, self.refresh)
         self.memory_timer.stop()
         frame_profiler.setPerformanceEnabled(False)
 

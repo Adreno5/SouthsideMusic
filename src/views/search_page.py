@@ -6,8 +6,7 @@ from core.app_context import AppContext
 from PySide6.QtCore import QSize, Signal
 from qfluentwidgets import ComboBox
 from core.i18n import tr
-from services.events import LANGUAGE_CHANGED
-from services.events.events import _50MS_TICK
+from services.events import Events, event_bus
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -16,7 +15,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from services.events import event_bus
 from views.folder_card import SearchCloudFolderCard
 from views.list_widget import SListWidget
 
@@ -73,10 +71,10 @@ class SearchPage(QWidget):
 
         if lw:
             lw.subtitle('  starting scroll monitor')
-        event_bus.subscribe(_50MS_TICK, self.checkRect)
+        event_bus.subscribe(Events.TICK_50MS, self.checkRect)
 
         self.cards: list[SearchSongCard | SearchCloudFolderCard] = []
-        event_bus.subscribe(LANGUAGE_CHANGED, self._refreshSearchTypeBox)
+        event_bus.subscribe(Events.LANGUAGE_CHANGED, self._refreshSearchTypeBox)
 
     @property
     def _mwindow(self):

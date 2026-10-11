@@ -23,13 +23,7 @@ from core.i18n import bindText, tr
 from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable
 from core.qt_utils import clearListWidget
 from core.rediscovery import RediscoveryMode, getListeningHistory, getRediscoverySongs
-from services.events import (
-    FAVORITES_CHANGED,
-    LANGUAGE_CHANGED,
-    PLAYLIST_CHANGED,
-    event_bus,
-)
-from services.events.events import _50MS_TICK
+from services.events import Events, event_bus
 from views.list_widget import SListWidget, setTransparentBackground
 from views.song_card import _SongCardItem
 
@@ -104,9 +98,9 @@ class RediscoveryPage(QWidget):
         scrollbar = self.song_viewer.verticalScrollBar()
         scrollbar.valueChanged.connect(self._queueSongBatch)
         scrollbar.rangeChanged.connect(self._queueSongBatch)
-        event_bus.subscribe(_50MS_TICK, self._checkVisibleCards)
-        event_bus.subscribe(FAVORITES_CHANGED, self._favoritesChanged)
-        event_bus.subscribe(LANGUAGE_CHANGED, self._languageChanged)
+        event_bus.subscribe(Events.TICK_50MS, self._checkVisibleCards)
+        event_bus.subscribe(Events.FAVORITES_CHANGED, self._favoritesChanged)
+        event_bus.subscribe(Events.LANGUAGE_CHANGED, self._languageChanged)
         self._updateTexts()
 
     def setSource(
@@ -317,7 +311,7 @@ class RediscoveryPage(QWidget):
     def _queueSong(self, song: SongStorable) -> None:
         manager = self.ctx.playing_manager
         manager.playlist.insert(max(0, manager.current_index + 1), song)
-        event_bus.emit(PLAYLIST_CHANGED)
+        event_bus.emit(Events.PLAYLIST_CHANGED)
 
     def goBack(self) -> None:
         target = (

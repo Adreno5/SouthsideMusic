@@ -52,23 +52,7 @@ from core.qt_utils import toQtInt
 from core.smooth import EaseInOutTimer, EaseOutTimer
 from core.time_format import float2time
 from core.ws_server import QObjectHandler
-from services.events import (
-    BACKGROUND_RATIO_CHANGED,
-    BEAT_POINT,
-    EMIT_DEBUG_INFO,
-    FINISH_CROSSFADE,
-    LYRIC_LINE_CHANGED,
-    PLAY_LAST,
-    PLAY_NEXT,
-    PLAY_START_PLAYLIST,
-    PLAY_STATE_CHANGED,
-    POST_THEME_CHANGED,
-    REFRESH_RATE_CHANGED,
-    REPAINT,
-    SONG_CHANGED,
-    START_CROSSFADE,
-    event_bus,
-)
+from services.events import Events, event_bus
 from views.image_label import SImageLabel
 from views.setting_page import SettingPage
 from views.translation_handler import TranslationHandler
@@ -112,8 +96,8 @@ class PlayingControllerLyricsViewer(QWidget):
 
         self.delta = 1 / self.refresh_rate
 
-        event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
-        event_bus.subscribe(REPAINT, self._onRepaintTick)
+        event_bus.subscribe(Events.REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
+        event_bus.subscribe(Events.REPAINT, self._onRepaintTick)
 
     def prewarmFontMetrics(self):
         self._lyrics_ready = False
@@ -363,8 +347,8 @@ class PlayingController(QOpenGLWidget):
         self.play_pausebtn.clicked.connect(self.toggle)
         self.playlist_btn.clicked.connect(self.onTogglePlaylist)
 
-        self.next_btn.clicked.connect(lambda: event_bus.emit(PLAY_NEXT))
-        self.last_btn.clicked.connect(lambda: event_bus.emit(PLAY_LAST))
+        self.next_btn.clicked.connect(lambda: event_bus.emit(Events.PLAY_NEXT))
+        self.last_btn.clicked.connect(lambda: event_bus.emit(Events.PLAY_LAST))
 
         global_layout.addWidget(self.cover_label)
         global_layout.addWidget(self.middle_widget)
@@ -396,7 +380,7 @@ class PlayingController(QOpenGLWidget):
         ):
             widget.installEventFilter(self)
 
-        event_bus.subscribe(REPAINT, self._onRepaintTick)
+        event_bus.subscribe(Events.REPAINT, self._onRepaintTick)
 
         self._player.fftDataReady.connect(self.updateFFTData)
 
@@ -412,20 +396,22 @@ class PlayingController(QOpenGLWidget):
 
         self.setMouseTracking(True)
 
-        event_bus.subscribe(PLAY_STATE_CHANGED, self._onPlayStateChanged)
-        event_bus.subscribe(SONG_CHANGED, self._updateDatas)
-        event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
-        event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
-        event_bus.subscribe(BEAT_POINT, self._onBeatPoint)
+        event_bus.subscribe(Events.PLAY_STATE_CHANGED, self._onPlayStateChanged)
+        event_bus.subscribe(Events.SONG_CHANGED, self._updateDatas)
+        event_bus.subscribe(Events.POST_THEME_CHANGED, self._updateDatas)
+        event_bus.subscribe(Events.BACKGROUND_RATIO_CHANGED, self._updateDatas)
+        event_bus.subscribe(Events.BEAT_POINT, self._onBeatPoint)
         self._finishInitSubscriptions()
 
     def _finishInitSubscriptions(self) -> None:
-        event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
+        event_bus.subscribe(Events.REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(
-            START_CROSSFADE, lambda: setattr(self.bar_alpha_timer, 'target_value', 0.2)
+            Events.START_CROSSFADE,
+            lambda: setattr(self.bar_alpha_timer, 'target_value', 0.2),
         )
         event_bus.subscribe(
-            FINISH_CROSSFADE, lambda: setattr(self.bar_alpha_timer, 'target_value', 1)
+            Events.FINISH_CROSSFADE,
+            lambda: setattr(self.bar_alpha_timer, 'target_value', 1),
         )
 
         if self._mwindow:
@@ -444,7 +430,7 @@ class PlayingController(QOpenGLWidget):
     def emitDebugInfo(self):
         info = []
         info.extend(self.norm_timer.getDebugInfo())
-        event_bus.emit(EMIT_DEBUG_INFO, 'PlayingController', info)
+        event_bus.emit(Events.EMIT_DEBUG_INFO, 'PlayingController', info)
 
     def _onRefreshRateChanged(self) -> None:
         self.refresh_rate = max(60, self.window().screen().refreshRate() / 2)
@@ -970,7 +956,7 @@ class PlayingController(QOpenGLWidget):
             third = lines[4]
             last = lines[1]
             event_bus.emit(
-                LYRIC_LINE_CHANGED,
+                Events.LYRIC_LINE_CHANGED,
                 {
                     'content': current['text'],
                     'next': next_['text'],
@@ -1072,14 +1058,14 @@ class PlayingController(QOpenGLWidget):
 
     def toggle(self):
         if self._dp.cur is None:
-            event_bus.emit(PLAY_START_PLAYLIST)
+            event_bus.emit(Events.PLAY_START_PLAYLIST)
             return
         if self._player.isPlaying():
             self._player.pause()
-            event_bus.emit(PLAY_STATE_CHANGED, False)
+            event_bus.emit(Events.PLAY_STATE_CHANGED, False)
         else:
             self._player.resume()
-            event_bus.emit(PLAY_STATE_CHANGED, True)
+            event_bus.emit(Events.PLAY_STATE_CHANGED, True)
 
     @override
     def paintGL(self) -> None:

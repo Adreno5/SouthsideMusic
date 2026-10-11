@@ -32,28 +32,8 @@ from qfluentwidgets import (
     TransparentPushButton,
     TransparentToolButton,
 )
-from services.events import (
-    BACKGROUND_RATIO_CHANGED,
-    ENDING_NO_SOUND,
-    LANGUAGE_CHANGED,
-    MWINDOW_REFRESH_FOLDERS,
-    PLAY_CONTINUE_LAST_SONG,
-    PLAY_STORABLE,
-    REPAINT,
-    REPAINT_EVENT_INTERVAL,
-    SONG_FINISH,
-    START_INTER_LOADING,
-    START_PROGRESS_LOADING,
-    STOP_INTER_LOADING,
-    STOP_PROGRESS_LOADING,
-    UPDATE_LOADING_PROGRESS,
-    VIEW_FOLDER,
-    WEBSOCKET_CONNECTED,
-    WEBSOCKET_DISCONNECTED,
-    event_bus,
-)
+from services.events import Events, event_bus
 from PySide6.QtGui import QCloseEvent, QColor, QKeyEvent, QPainter
-from services.events.events import POST_THEME_CHANGED
 from views.list_widget import SListWidget, setTransparentBackground
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import InfoBar
@@ -153,7 +133,7 @@ class MainWindow(FluentWindowBase):
         contents_layout.setContentsMargins(0, 48, 0, 0)
 
         self.controller = PlayingController(ctx)
-        ctx.player.onFullFinished.connect(lambda: event_bus.emit(SONG_FINISH))
+        ctx.player.onFullFinished.connect(lambda: event_bus.emit(Events.SONG_FINISH))
         ctx.player.onEndingNoSound.connect(ctx.playing_manager.onEndingNoSound)
         ctx.player.positionChanged.connect(ctx.playing_manager.onPlayerPositionChanged)
 
@@ -276,18 +256,22 @@ class MainWindow(FluentWindowBase):
 
         self.setMouseTracking(True)
 
-        event_bus.subscribe(START_INTER_LOADING, self.onStartInterLoading)
-        event_bus.subscribe(STOP_INTER_LOADING, self.onStopInterLoading)
-        event_bus.subscribe(STOP_PROGRESS_LOADING, self.onStopProgressLoading)
-        event_bus.subscribe(START_PROGRESS_LOADING, self.onStartProgressLoading)
-        event_bus.subscribe(UPDATE_LOADING_PROGRESS, self.onUpdateLoadingProgress)
-        event_bus.subscribe(ENDING_NO_SOUND, lambda: event_bus.emit(SONG_FINISH))
-        event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self.updateDatas)
-        event_bus.subscribe(VIEW_FOLDER, self.onViewFolder)
-        event_bus.subscribe(MWINDOW_REFRESH_FOLDERS, self.refreshFolders)
-        event_bus.subscribe(LANGUAGE_CHANGED, self.updateLanguage)
-        event_bus.subscribe(POST_THEME_CHANGED, self.onPostThemeChanged)
-        event_bus.subscribe(REPAINT, self.checkAFK)
+        event_bus.subscribe(Events.START_INTER_LOADING, self.onStartInterLoading)
+        event_bus.subscribe(Events.STOP_INTER_LOADING, self.onStopInterLoading)
+        event_bus.subscribe(Events.STOP_PROGRESS_LOADING, self.onStopProgressLoading)
+        event_bus.subscribe(Events.START_PROGRESS_LOADING, self.onStartProgressLoading)
+        event_bus.subscribe(
+            Events.UPDATE_LOADING_PROGRESS, self.onUpdateLoadingProgress
+        )
+        event_bus.subscribe(
+            Events.ENDING_NO_SOUND, lambda: event_bus.emit(Events.SONG_FINISH)
+        )
+        event_bus.subscribe(Events.BACKGROUND_RATIO_CHANGED, self.updateDatas)
+        event_bus.subscribe(Events.VIEW_FOLDER, self.onViewFolder)
+        event_bus.subscribe(Events.MWINDOW_REFRESH_FOLDERS, self.refreshFolders)
+        event_bus.subscribe(Events.LANGUAGE_CHANGED, self.updateLanguage)
+        event_bus.subscribe(Events.POST_THEME_CHANGED, self.onPostThemeChanged)
+        event_bus.subscribe(Events.REPAINT, self.checkAFK)
         self.refreshLoginInformations()
 
     def setDebugMode(self, enabled: bool) -> None:
@@ -313,10 +297,11 @@ class MainWindow(FluentWindowBase):
             time.time() - self.last_action > self.ctx.config.afk_secs
             and not self.isActiveWindow()
         ):
-            event_bus.emit(REPAINT_EVENT_INTERVAL, 200)
+            event_bus.emit(Events.REPAINT_EVENT_INTERVAL, 200)
         else:
             event_bus.emit(
-                REPAINT_EVENT_INTERVAL, 1000 / self.ctx.events_service.refresh_rate
+                Events.REPAINT_EVENT_INTERVAL,
+                1000 / self.ctx.events_service.refresh_rate,
             )
 
     def mousePressEvent(self, e):
@@ -505,7 +490,7 @@ class MainWindow(FluentWindowBase):
                 duration=card.info.duration,
             )
         )
-        event_bus.emit(PLAY_STORABLE, storable)
+        event_bus.emit(Events.PLAY_STORABLE, storable)
 
     def init(self) -> None:
         self._launchwindow.clear()
@@ -528,7 +513,9 @@ class MainWindow(FluentWindowBase):
                     self._launchwindow.subtitle('continue last song...')
 
                     def _continue() -> None:
-                        event_bus.emit(PLAY_CONTINUE_LAST_SONG, cfg.last_playing_index)
+                        event_bus.emit(
+                            Events.PLAY_CONTINUE_LAST_SONG, cfg.last_playing_index
+                        )
 
                     self.ctx.addScheduledTask(_continue)
 
@@ -798,7 +785,7 @@ class MainWindow(FluentWindowBase):
         self._stp.disconnect_btn.setEnabled(True)
         self._stp.connect_btn.setEnabled(False)
 
-        event_bus.emit(WEBSOCKET_CONNECTED)
+        event_bus.emit(Events.WEBSOCKET_CONNECTED)
 
     def onWebsocketDisconnected(self):
         InfoBar.warning(
@@ -813,7 +800,7 @@ class MainWindow(FluentWindowBase):
         self._stp.connect_btn.setEnabled(True)
         self._stp.disconnect_btn.setEnabled(False)
 
-        event_bus.emit(WEBSOCKET_DISCONNECTED)
+        event_bus.emit(Events.WEBSOCKET_DISCONNECTED)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Space:

@@ -28,8 +28,7 @@ from qfluentwidgets import (
     TitleLabel,
 )
 from core.i18n import bindText
-from services.events import event_bus
-from services.events.events import _50MS_TICK
+from services.events import Events, event_bus
 from views.list_widget import SScrollArea
 from views.translation_handler import TranslationHandler
 from core.i18n import tr
@@ -215,7 +214,7 @@ class CommentsPage(SScrollArea):
         self.setWidget(widget)
         self.setWidgetResizable(True)
 
-        event_bus.subscribe(_50MS_TICK, self.checkRect)
+        event_bus.subscribe(Events.TICK_50MS, self.checkRect)
 
     def _getTextPayload(self, text: str) -> int:
         units = sum(2 if '\u4e00' <= char <= '\u9fff' else 1 for char in text)

@@ -27,17 +27,7 @@ from PySide6.QtWidgets import (
 )
 from qfluentwidgets import RoundMenu
 from core.i18n import tr
-from services.events import (
-    CLOUD_ADD_TO_LOCAL,
-    CLOUD_REMOVE_FOLDER,
-    CLOUD_RENAME_FOLDER,
-    IMAGE_ASSET_PERSISTED,
-    LOCAL_ADD_TO_CLOUD,
-    LOCAL_REMOVE_FOLDER,
-    LOCAL_RENAME_FOLDER,
-    VIEW_FOLDER,
-    event_bus,
-)
+from services.events import Events, event_bus
 from qfluentwidgets import SubtitleLabel
 
 
@@ -73,7 +63,7 @@ class LocalFolderCard(QWidget):
         layout.addWidget(title_label)
 
         self.imagePersisted.connect(self._loadFirstSongImage)
-        event_bus.subscribe(IMAGE_ASSET_PERSISTED, self._onImageAssetPersisted)
+        event_bus.subscribe(Events.IMAGE_ASSET_PERSISTED, self._onImageAssetPersisted)
         self._loadFirstSongImage()
         favorites_manager.ensureFolderFirstImage(folder)
 
@@ -118,11 +108,17 @@ class LocalFolderCard(QWidget):
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         menu = RoundMenu()
         rm_ac = QAction(SouthsideIcon.REMOVE.icon(), tr('folder_card.remove'))
-        rm_ac.triggered.connect(lambda: event_bus.emit(LOCAL_REMOVE_FOLDER, self))
+        rm_ac.triggered.connect(
+            lambda: event_bus.emit(Events.LOCAL_REMOVE_FOLDER, self)
+        )
         rn_ac = QAction(SouthsideIcon.RENAME.icon(), tr('folder_card.rename'))
-        rn_ac.triggered.connect(lambda: event_bus.emit(LOCAL_RENAME_FOLDER, self))
+        rn_ac.triggered.connect(
+            lambda: event_bus.emit(Events.LOCAL_RENAME_FOLDER, self)
+        )
         addto_cloud = QAction(SouthsideIcon.ADD.icon(), tr('folder_card.add_to_cloud'))
-        addto_cloud.triggered.connect(lambda: event_bus.emit(LOCAL_ADD_TO_CLOUD, self))
+        addto_cloud.triggered.connect(
+            lambda: event_bus.emit(Events.LOCAL_ADD_TO_CLOUD, self)
+        )
         menu.addActions([rm_ac, rn_ac, addto_cloud])
         menu.exec(event.globalPos())
 
@@ -212,11 +208,17 @@ class CloudFolderCard(QWidget):
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         menu = RoundMenu()
         rm_ac = QAction(SouthsideIcon.REMOVE.icon(), tr('folder_card.remove'))
-        rm_ac.triggered.connect(lambda: event_bus.emit(CLOUD_REMOVE_FOLDER, self))
+        rm_ac.triggered.connect(
+            lambda: event_bus.emit(Events.CLOUD_REMOVE_FOLDER, self)
+        )
         rn_ac = QAction(SouthsideIcon.RENAME.icon(), tr('folder_card.rename'))
-        rn_ac.triggered.connect(lambda: event_bus.emit(CLOUD_RENAME_FOLDER, self))
+        rn_ac.triggered.connect(
+            lambda: event_bus.emit(Events.CLOUD_RENAME_FOLDER, self)
+        )
         add_local = QAction(SouthsideIcon.ADD.icon(), tr('folder_card.add_to_local'))
-        add_local.triggered.connect(lambda: event_bus.emit(CLOUD_ADD_TO_LOCAL, self))
+        add_local.triggered.connect(
+            lambda: event_bus.emit(Events.CLOUD_ADD_TO_LOCAL, self)
+        )
         menu.addActions([rm_ac, rn_ac, add_local])
         menu.exec(event.globalPos())
 
@@ -316,7 +318,7 @@ class SearchCloudFolderCard(QWidget):
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             event_bus.emit(
-                VIEW_FOLDER,
+                Events.VIEW_FOLDER,
                 CloudFolderInfo(
                     folder_name=self.folder.folder_name,
                     image_url=self.folder.image_url,
@@ -328,10 +330,16 @@ class SearchCloudFolderCard(QWidget):
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         menu = RoundMenu()
         rm_ac = QAction(SouthsideIcon.REMOVE.icon(), tr('folder_card.remove'))
-        rm_ac.triggered.connect(lambda: event_bus.emit(CLOUD_REMOVE_FOLDER, self))
+        rm_ac.triggered.connect(
+            lambda: event_bus.emit(Events.CLOUD_REMOVE_FOLDER, self)
+        )
         rn_ac = QAction(SouthsideIcon.RENAME.icon(), tr('folder_card.rename'))
-        rn_ac.triggered.connect(lambda: event_bus.emit(CLOUD_RENAME_FOLDER, self))
+        rn_ac.triggered.connect(
+            lambda: event_bus.emit(Events.CLOUD_RENAME_FOLDER, self)
+        )
         add_local = QAction(SouthsideIcon.ADD.icon(), tr('folder_card.add_to_local'))
-        add_local.triggered.connect(lambda: event_bus.emit(CLOUD_ADD_TO_LOCAL, self))
+        add_local.triggered.connect(
+            lambda: event_bus.emit(Events.CLOUD_ADD_TO_LOCAL, self)
+        )
         menu.addActions([rm_ac, rn_ac, add_local])
         menu.exec(event.globalPos())

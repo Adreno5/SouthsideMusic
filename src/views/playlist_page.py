@@ -13,15 +13,7 @@ from core.qt_utils import clearListWidget
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QColor, QPaintEvent, QPainter, QPen, Qt
 from core.i18n import bindText, tr
-from services.events import (
-    BACKGROUND_RATIO_CHANGED,
-    PLAYLIST_CHANGED,
-    PLAY_PLAYLIST_STORABLE,
-    POST_THEME_CHANGED,
-    SONG_CHANGED,
-    event_bus,
-)
-from services.events.events import _50MS_TICK
+from services.events import Events, event_bus
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QListWidget,
@@ -74,7 +66,7 @@ class PlaylistPage(QWidget):
 
         self._song_cards: list[PlaylistSongCard] = []
         self._playlist_refresh_seq = 0
-        event_bus.subscribe(_50MS_TICK, self._checkVisibleCards)
+        event_bus.subscribe(Events.TICK_50MS, self._checkVisibleCards)
 
         btn_layout = QHBoxLayout()
         self.removeall_btn = TransparentPushButton('')
@@ -92,11 +84,11 @@ class PlaylistPage(QWidget):
 
         self.bg_color = QColor(0, 0, 0)
 
-        event_bus.subscribe(SONG_CHANGED, self._onSongChanged)
-        event_bus.subscribe(SONG_CHANGED, self._updateDatas)
-        event_bus.subscribe(PLAYLIST_CHANGED, self.refreshPlaylistWidget)
-        event_bus.subscribe(POST_THEME_CHANGED, self._updateDatas)
-        event_bus.subscribe(BACKGROUND_RATIO_CHANGED, self._updateDatas)
+        event_bus.subscribe(Events.SONG_CHANGED, self._onSongChanged)
+        event_bus.subscribe(Events.SONG_CHANGED, self._updateDatas)
+        event_bus.subscribe(Events.PLAYLIST_CHANGED, self.refreshPlaylistWidget)
+        event_bus.subscribe(Events.POST_THEME_CHANGED, self._updateDatas)
+        event_bus.subscribe(Events.BACKGROUND_RATIO_CHANGED, self._updateDatas)
 
     @property
     def _dp(self):
@@ -188,7 +180,7 @@ class PlaylistPage(QWidget):
         return item
 
     def _onSongClicked(self, storable: SongStorable):
-        event_bus.emit(PLAY_PLAYLIST_STORABLE, storable)
+        event_bus.emit(Events.PLAY_PLAYLIST_STORABLE, storable)
 
     def _checkVisibleCards(self):
         if not self.isVisible():
@@ -270,7 +262,7 @@ class PlaylistPage(QWidget):
         if current_song is not None:
             self._pm.current_index = playlist.index(current_song)
 
-        event_bus.emit(PLAYLIST_CHANGED)
+        event_bus.emit(Events.PLAYLIST_CHANGED)
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)

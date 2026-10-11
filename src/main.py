@@ -18,7 +18,7 @@ sys.path.append(os.path.join(_SRC_DIR, 'services'))
 
 from PySide6.QtCore import Qt
 from core.app_context import AppContext
-from services.events import event_bus, SECOND_TICK
+from services.events import Events, event_bus
 from PySide6.QtWidgets import QApplication
 from views.launch_window import LaunchWindow
 from core.profiled_application import ProfiledApplication
@@ -76,15 +76,6 @@ from services.services import EventsServices
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFontDatabase
-from services.events import (
-    PLAYLIST_CHANGED,
-    PLAY_LAST,
-    PLAY_NEXT,
-    PLAY_STATE_CHANGED,
-    POST_THEME_CHANGED,
-    PRE_THEME_CHANGED,
-    SONG_CHANGED,
-)
 from qfluentwidgets import setTheme, Theme
 import shiboken6
 
@@ -404,7 +395,7 @@ def _handle_ws_playlist_control(payload: dict) -> None:
             playing_manager.current_index -= 1
         elif playing_manager.current_index >= len(playlist):
             playing_manager.current_index = len(playlist) - 1
-        event_bus.emit(PLAYLIST_CHANGED)
+        event_bus.emit(Events.PLAYLIST_CHANGED)
         if removing_current and 0 <= playing_manager.current_index < len(playlist):
             playing_manager.playSongAtIndex(playing_manager.current_index)
         return
@@ -430,7 +421,7 @@ def _handle_ws_playlist_control(payload: dict) -> None:
                 playing_manager.current_index = playlist.index(current_song)
             except ValueError:
                 playing_manager.current_index = -1
-        event_bus.emit(PLAYLIST_CHANGED)
+        event_bus.emit(Events.PLAYLIST_CHANGED)
         return
 
     if action == 'clear':
@@ -443,7 +434,7 @@ def _handle_ws_playlist_control(payload: dict) -> None:
             playing_manager.current_index = 0
         else:
             playing_manager.current_index = -1
-        event_bus.emit(PLAYLIST_CHANGED)
+        event_bus.emit(Events.PLAYLIST_CHANGED)
 
 
 def _handle_ws_message(message: str) -> None:
@@ -484,10 +475,10 @@ def _handle_ws_message(message: str) -> None:
                 player_obj = ctx.player
                 if player_obj.isPlaying():
                     player_obj.pause()
-                    event_bus.emit(PLAY_STATE_CHANGED, False)
+                    event_bus.emit(Events.PLAY_STATE_CHANGED, False)
                 else:
                     player_obj.resume()
-                    event_bus.emit(PLAY_STATE_CHANGED, True)
+                    event_bus.emit(Events.PLAY_STATE_CHANGED, True)
         elif command == 'seek':
             player_obj = ctx.player
             try:
@@ -501,9 +492,9 @@ def _handle_ws_message(message: str) -> None:
                 return
             player_obj.setPosition(max(0.0, min(position, duration)))
         elif command == 'next':
-            event_bus.emit(PLAY_NEXT)
+            event_bus.emit(Events.PLAY_NEXT)
         elif command == 'previous':
-            event_bus.emit(PLAY_LAST)
+            event_bus.emit(Events.PLAY_LAST)
 
     _schedule_ws_task(_run)
 
@@ -523,10 +514,10 @@ ctx.smtc = SmtcController(ctx)
 
 ws_handler.onMessage.connect(_handle_ws_message)
 ws_handler.onConnected.connect(_send_ws_playlist_state)
-event_bus.subscribe(PLAYLIST_CHANGED, lambda: _send_ws_playlist_state())
-event_bus.subscribe(SONG_CHANGED, lambda _song: _send_ws_playlist_state())
+event_bus.subscribe(Events.PLAYLIST_CHANGED, lambda: _send_ws_playlist_state())
+event_bus.subscribe(Events.SONG_CHANGED, lambda _song: _send_ws_playlist_state())
 event_bus.subscribe(
-    PLAY_STATE_CHANGED,
+    Events.PLAY_STATE_CHANGED,
     lambda is_playing: ws_handler.sendJson(
         {
             'option': 'play_state',
@@ -560,12 +551,12 @@ def southsideMusic() -> None:
             setTheme(Theme.LIGHT if theme == 'Light' else Theme.DARK)
             app.setStyleSheet(f'color: {"white" if themeModule.isDark() else "black"};')
             refreshBoundIcons()
-            event_bus.emit(POST_THEME_CHANGED)
+            event_bus.emit(Events.POST_THEME_CHANGED)
 
         if mwindow:
             mwindow.ctx.addScheduledTask(_updateTheme)
 
-    event_bus.subscribe(PRE_THEME_CHANGED, _themeChanged)
+    event_bus.subscribe(Events.PRE_THEME_CHANGED, _themeChanged)
 
     def _cleanCaches():
         last_data_cleanup = 0.0
@@ -612,7 +603,7 @@ def southsideMusic() -> None:
     setTheme(Theme.LIGHT if themeModule.isLight() else Theme.DARK)
     themeModule.syncSystemThemeColor()
 
-    event_bus.subscribe(SECOND_TICK, themeModule.syncSystemThemeColor)
+    event_bus.subscribe(Events.SECOND_TICK, themeModule.syncSystemThemeColor)
 
     app.processEvents()
 

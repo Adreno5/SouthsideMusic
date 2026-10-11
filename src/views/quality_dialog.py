@@ -17,7 +17,7 @@ from core.downloader import asyncTask
 from core.i18n import tr
 from core.models import QualityLevelInfo
 from core import theme as themeModule
-from services.events import event_bus, REQUEST_BR_CHANGED
+from services.events import Events, event_bus
 from views.list_widget import SScrollArea
 from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QSpacerItem, QVBoxLayout
 
@@ -48,7 +48,7 @@ class QualityCard(CardWidget):
 
         self.setClickEnabled(level.charge_type)
         self.clicked.connect(self._clickedOn)
-        event_bus.subscribe(REQUEST_BR_CHANGED, self._syncQualityLevel)
+        event_bus.subscribe(Events.REQUEST_BR_CHANGED, self._syncQualityLevel)
         self._syncQualityLevel(self.ctx.playing_manager.getCurrentRequestBr())
 
     def _syncQualityLevel(self, br):

@@ -29,16 +29,7 @@ from core.lyrics import LyricInfo, YRCLyricInfo
 from core.qt_utils import toQtInt
 from core.smooth import EaseOutTimer, SScrollTimer
 from core.time_format import float2time
-from services.events import (
-    BEAT_POINT,
-    LYRICS_LINE_DURATION,
-    LYRICS_SCROLLING_DURATION_CHANGED,
-    REPAINT,
-    event_bus,
-)
-from services.events.events import (
-    PLAY_STORABLE,
-)
+from services.events import Events, event_bus
 
 _HORIZONTAL_SCROLL_MARGIN = 12.0
 _X_SCROLL_SMOOTH_DURATION = 0.3
@@ -147,11 +138,11 @@ class LyricsViewer(QOpenGLWidget):
 
         self.scroller = SScrollTimer()
 
-        event_bus.subscribe(REPAINT, self._onRepaintTick)
-        event_bus.subscribe(PLAY_STORABLE, lambda _: self.prewarmFontMetrics())
-        event_bus.subscribe(BEAT_POINT, self._onBeatPoint)
+        event_bus.subscribe(Events.REPAINT, self._onRepaintTick)
+        event_bus.subscribe(Events.PLAY_STORABLE, lambda _: self.prewarmFontMetrics())
+        event_bus.subscribe(Events.BEAT_POINT, self._onBeatPoint)
         event_bus.subscribe(
-            LYRICS_SCROLLING_DURATION_CHANGED,
+            Events.LYRICS_SCROLLING_DURATION_CHANGED,
             lambda v: setattr(self.scroller, 'duration', int(v)),
         )
 
@@ -517,7 +508,7 @@ class LyricsViewer(QOpenGLWidget):
                 not self.selecting
                 and self.last_target_draw_offset != self.target_draw_offset
             ):
-                event_bus.emit(LYRICS_LINE_DURATION, duration)
+                event_bus.emit(Events.LYRICS_LINE_DURATION, duration)
                 self.scroller.scrollTo(int(self.target_draw_offset), duration=duration)
                 self.last_target_draw_offset = self.target_draw_offset
             if (
@@ -525,7 +516,7 @@ class LyricsViewer(QOpenGLWidget):
                 and self.scroller.getValue() != int(self.target_draw_offset)
                 and not self.selecting
             ):
-                event_bus.emit(LYRICS_LINE_DURATION, duration)
+                event_bus.emit(Events.LYRICS_LINE_DURATION, duration)
                 self.scroller.scrollTo(int(self.target_draw_offset), duration=duration)
             self.draw_offset = self.scroller.getValue()
         else:

@@ -2,7 +2,7 @@ from PySide6.QtCore import QRect, QEvent
 from PySide6.QtGui import QColor
 from qfluentwidgets import PrimaryPushButton
 from core import theme
-from services.events import SECOND_TICK
+from services.events import Events, event_bus
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -25,7 +25,6 @@ from qfluentwidgets import (
     SubtitleLabel,
 )
 from core.i18n import bindText
-from services.events import PLAYLIST_CHANGED, PLAY_STORABLE, event_bus
 from views.list_widget import SScrollArea
 from views.account_widget import AccountWidget
 from views.rediscovery_card import RediscoveryCard
@@ -316,16 +315,16 @@ class HomePage(SScrollArea):
             Qt.WidgetAttribute.WA_TranslucentBackground, True
         )
 
-        event_bus.subscribe(SECOND_TICK, self.update)
+        event_bus.subscribe(Events.SECOND_TICK, self.update)
 
     def _playSong(self, song: SongStorable) -> None:
-        event_bus.emit(PLAY_STORABLE, song)
+        event_bus.emit(Events.PLAY_STORABLE, song)
 
     def _queueSong(self, song: SongStorable) -> None:
         playlist = self.ctx.playing_manager.playlist
         insert_index = self.ctx.playing_manager.current_index + 2
         playlist.insert(insert_index, song)
-        event_bus.emit(PLAYLIST_CHANGED)
+        event_bus.emit(Events.PLAYLIST_CHANGED)
 
     def viewportEvent(self, event):
         ret = super().viewportEvent(event)

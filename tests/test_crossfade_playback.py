@@ -23,7 +23,7 @@ from core.playing_manager import (
     PlayingManager,
     PlaySelection,
 )
-from services.events import REQUEST_BR_CHANGED
+from services.events import Events
 
 
 class OutputStream:
@@ -130,7 +130,7 @@ def checkQualitySync(max_br: int, stale: bool = False) -> None:
             expected_br = 3200000 if stale else min(max_br, 3200000)
             assert manager.getCurrentRequestBr() == expected_br
             if expected_br != 3200000:
-                emit.assert_called_once_with(REQUEST_BR_CHANGED, expected_br)
+                emit.assert_called_once_with(Events.REQUEST_BR_CHANGED, expected_br)
                 assert manager._preload_download_seq == download_seq + 1
                 assert manager._preload_download_song_id is None
                 manager.preloadNextSong.assert_called_once()

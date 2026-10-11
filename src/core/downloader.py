@@ -8,14 +8,7 @@ from typing import Callable, Dict, Optional
 from core.config import cfg
 
 from PySide6.QtCore import QObject, Signal
-from services.events import (
-    START_INTER_LOADING,
-    START_PROGRESS_LOADING,
-    STOP_INTER_LOADING,
-    STOP_PROGRESS_LOADING,
-    UPDATE_LOADING_PROGRESS,
-    event_bus,
-)
+from services.events import Events, event_bus
 import requests
 
 
@@ -57,12 +50,12 @@ class DownloadingManager(QObject):
         self.workerFinished.emit(self._worker.run())
 
     def progress(self, progress: float):
-        event_bus.emit(UPDATE_LOADING_PROGRESS, max(0.0, min(1.0, progress)))
+        event_bus.emit(Events.UPDATE_LOADING_PROGRESS, max(0.0, min(1.0, progress)))
 
     def _finish_download(self, data: bytes):
         if data:
-            event_bus.emit(UPDATE_LOADING_PROGRESS, 1.0)
-        event_bus.emit(STOP_PROGRESS_LOADING)
+            event_bus.emit(Events.UPDATE_LOADING_PROGRESS, 1.0)
+        event_bus.emit(Events.STOP_PROGRESS_LOADING)
         self.downloadFinished.emit(data)
 
 
@@ -243,8 +236,8 @@ def asyncDownload(
     parent=None,
     finished: Optional[Callable[[bytes], None]] = None,
 ) -> DownloadingManager:
-    event_bus.emit(UPDATE_LOADING_PROGRESS, 0)
-    event_bus.emit(START_PROGRESS_LOADING)
+    event_bus.emit(Events.UPDATE_LOADING_PROGRESS, 0)
+    event_bus.emit(Events.START_PROGRESS_LOADING)
     box = DownloadingManager(parent, url, headers, data)
 
     def __finish(data: bytes):
@@ -262,7 +255,7 @@ def asyncTask(
     parent,
     finished: Optional[Callable[[], None]] = None,
 ) -> TaskManager:
-    event_bus.emit(START_INTER_LOADING)
+    event_bus.emit(Events.START_INTER_LOADING)
 
     manager = TaskManager(task, args, parent)
 
@@ -270,7 +263,7 @@ def asyncTask(
         def _apply_finish() -> None:
             if finished:
                 finished()
-            event_bus.emit(STOP_INTER_LOADING)
+            event_bus.emit(Events.STOP_INTER_LOADING)
 
         ctx = getattr(parent, 'ctx', None)
         if ctx is not None:

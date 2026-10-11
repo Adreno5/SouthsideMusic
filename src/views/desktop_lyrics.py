@@ -25,15 +25,7 @@ from core.config import cfg
 from core.i18n import bindText, tr
 from core.lyrics import LyricInfo, YRCLyricInfo
 from core.smooth import EaseInOutTimer, EaseOutTimer, SScrollTimer
-from services.events import LYRICS_LINE_DURATION, event_bus
-from services.events.events import (
-    _200MS_TICK,
-    DESKTOP_LYRICS_ANCHOR_CHANGED,
-    EMIT_DEBUG_INFO,
-    REPAINT,
-    REPAINT_ALWAYS,
-    SECOND_TICK,
-)
+from services.events import Events, event_bus
 from views.lyrics_viewer import LyricsViewer
 from views.playing_page import _artists_text
 
@@ -76,12 +68,14 @@ class DesktopLyricsViewer(LyricsViewer):
         self.move(0, 0)
         self._keepOnTop()
 
-        event_bus.subscribe(SECOND_TICK, self._keepOnTop)
-        event_bus.subscribe(_200MS_TICK, self._checkMouse)
+        event_bus.subscribe(Events.SECOND_TICK, self._keepOnTop)
+        event_bus.subscribe(Events.TICK_200MS, self._checkMouse)
 
-        event_bus.unsubscribe(REPAINT, self._onRepaintTick)
-        event_bus.subscribe(REPAINT_ALWAYS, self._onRepaintTick)
-        event_bus.subscribe(LYRICS_LINE_DURATION, lambda d: self._lyricsLineDuration(d))
+        event_bus.unsubscribe(Events.REPAINT, self._onRepaintTick)
+        event_bus.subscribe(Events.REPAINT_ALWAYS, self._onRepaintTick)
+        event_bus.subscribe(
+            Events.LYRICS_LINE_DURATION, lambda d: self._lyricsLineDuration(d)
+        )
 
         self.scroller = SScrollTimer(use_api='repaint_always')
 
@@ -122,7 +116,7 @@ class DesktopLyricsViewer(LyricsViewer):
 
     def emitDebugInfo(self):
         event_bus.emit(
-            EMIT_DEBUG_INFO,
+            Events.EMIT_DEBUG_INFO,
             'Desktop Lyrics Viewer',
             [
                 f'{len(self._shown_lines)=}',
@@ -333,7 +327,7 @@ class DesktopLyricsViewer(LyricsViewer):
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         self.dragging = False
-        event_bus.emit(DESKTOP_LYRICS_ANCHOR_CHANGED)
+        event_bus.emit(Events.DESKTOP_LYRICS_ANCHOR_CHANGED)
 
     @override
     def paintGL(self) -> None:
@@ -490,7 +484,7 @@ class DesktopLyricsPage(QWidget):
         cfg.desktop_lyrics_anchor = 'normal'
         cfg.desktop_lyrics_x = 0
         cfg.desktop_lyrics_y = 0
-        event_bus.emit(DESKTOP_LYRICS_ANCHOR_CHANGED)
+        event_bus.emit(Events.DESKTOP_LYRICS_ANCHOR_CHANGED)
 
     def setLyricsVisible(self, visible: bool) -> None:
         cfg.enable_desktop_lyrics = visible

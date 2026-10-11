@@ -39,13 +39,7 @@ from core import config
 from core.icons import CachedFluentIcon
 from core.models import AnimatingObject
 from core.smooth import EaseOutTimer, SScrollTimer
-from services.events import (
-    LIST_SCROLLING_DURATION_CHANGED,
-    REFRESH_RATE_CHANGED,
-    REPAINT,
-    event_bus,
-)
-from services.events.events import _16MS_TICK
+from services.events import Events, event_bus
 
 
 def setTransparentBackground(widget: QWidget | None) -> None:
@@ -81,7 +75,7 @@ class SSmoothScrollBar(ScrollBar):
         self._area = parent
         self.duration = config.cfg.scroll_duration
 
-        self._timer = SScrollTimer(self.duration, use_api=REPAINT)
+        self._timer = SScrollTimer(self.duration, use_api=Events.REPAINT)
         self._timer.setParent(self)
         self.refresh_rate = max(60, parent.window().screen().refreshRate() / 2)
         self._logger.info(f'{self.refresh_rate=}')
@@ -90,11 +84,12 @@ class SSmoothScrollBar(ScrollBar):
         self.origin_setValue = self.setValue
         self.setValue = self._patched_setValue
 
-        event_bus.subscribe(REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
+        event_bus.subscribe(Events.REFRESH_RATE_CHANGED, self._onRefreshRateChanged)
         event_bus.subscribe(
-            LIST_SCROLLING_DURATION_CHANGED, lambda v: setattr(self, 'duration', int(v))
+            Events.LIST_SCROLLING_DURATION_CHANGED,
+            lambda v: setattr(self, 'duration', int(v)),
         )
-        event_bus.subscribe(REPAINT, self._tick)
+        event_bus.subscribe(Events.REPAINT, self._tick)
 
     @property
     def animating_objs(self) -> list[AnimatingObject]:
@@ -458,7 +453,7 @@ class SListWidget(ListWidget):
         self.scrollDelegate = SSmoothDelegate(self)
         self.viewport().installEventFilter(self)
 
-        event_bus.subscribe(_16MS_TICK, self._tick)
+        event_bus.subscribe(Events.TICK_16MS, self._tick)
 
     @override
     def setItemWidget(self, item: QListWidgetItem, widget: QWidget) -> None:
@@ -578,7 +573,7 @@ class SScrollArea(SmoothScrollArea):
 
         self.viewport().installEventFilter(self)
 
-        event_bus.subscribe(_16MS_TICK, self._tick)
+        event_bus.subscribe(Events.TICK_16MS, self._tick)
 
     def _create_guide_anim(self, prop: bytes) -> QPropertyAnimation:
         anim = QPropertyAnimation(self, prop)

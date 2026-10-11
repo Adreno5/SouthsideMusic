@@ -14,7 +14,7 @@ from core.llm_tools import KNOWN_TOOLS, LLMToolRunner, llmToolSchemas  # noqa: E
 from core.lyrics import LRCLyricParser, YRCLyricParser  # noqa: E402
 from core.models import ArtistInfo, SongInfo, SongStorable  # noqa: E402
 from services.events.event_bus import event_bus  # noqa: E402
-from services.events.events import PLAYBACK_LYRICS_UPDATED  # noqa: E402
+from services.events import Events  # noqa: E402
 
 LYRIC_TOOLS = (
     'get_current_lyrics',
@@ -93,7 +93,7 @@ def test_set_current_lyrics_stores_translation_and_notifies() -> None:
     )
     notified: list[SongStorable] = []
     listener = notified.append
-    event_bus.subscribe(PLAYBACK_LYRICS_UPDATED, listener)
+    event_bus.subscribe(Events.PLAYBACK_LYRICS_UPDATED, listener)
     try:
         raw = runner.runTool(
             'set_current_lyrics',
@@ -116,7 +116,7 @@ def test_set_current_lyrics_stores_translation_and_notifies() -> None:
             'second line',
         ]
     finally:
-        event_bus.unsubscribe(PLAYBACK_LYRICS_UPDATED, listener)
+        event_bus.unsubscribe(Events.PLAYBACK_LYRICS_UPDATED, listener)
         os.remove(song.getLyricPath())
 
 

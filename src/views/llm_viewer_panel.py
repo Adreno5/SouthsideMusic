@@ -33,8 +33,7 @@ from qfluentwidgets import (
     TransparentPushButton,
     TransparentToolButton,
 )
-from services.events import event_bus
-from services.events.events import _200MS_TICK
+from services.events import Events, event_bus
 from views.animated_layout import SFlowLayout
 from views.chatting_viewer import ChattingViewer
 from views.list_widget import SScrollArea, SSmoothDelegate
@@ -995,9 +994,9 @@ class LLMViewerPanel(QFrame):
             return
         self._scroll_ticking = ticking
         if ticking:
-            event_bus.subscribe(_200MS_TICK, self._scrollLLMChatToBottom)
+            event_bus.subscribe(Events.TICK_200MS, self._scrollLLMChatToBottom)
         else:
-            event_bus.unsubscribe(_200MS_TICK, self._scrollLLMChatToBottom)
+            event_bus.unsubscribe(Events.TICK_200MS, self._scrollLLMChatToBottom)
 
     def _scrollLLMChatToBottom(self) -> None:
         bar = self.llm_chat_scroller.verticalScrollBar()

@@ -3,10 +3,7 @@ from __future__ import annotations
 import logging
 
 from core.models import CurveInfo
-from services.events import (
-    LYRICS_SCROLLING_DURATION_CHANGED,
-    LIST_SCROLLING_DURATION_CHANGED,
-)
+from services.events import Events, event_bus
 
 from typing import TYPE_CHECKING, Callable, cast, override
 
@@ -16,18 +13,6 @@ from PySide6.QtCore import Property, QEasingCurve, QPropertyAnimation, Signal
 from PySide6.QtGui import QPaintEvent, QPainter, Qt
 from qfluentwidgets import InfoBar
 from core.i18n import bindText, hasTranslation, refreshBoundTexts, setBoundText, tr
-from services.events import (
-    BACKGROUND_RATIO_CHANGED,
-    DB_CHANGED,
-    DESKTOP_LYRICS_ANCHOR_CHANGED,
-    LANGUAGE_CHANGED,
-    LUFS_TARGET_CHANGED,
-    POST_THEME_CHANGED,
-    WEBSOCKET_CONNECTED,
-    WEBSOCKET_DISCONNECTED,
-    event_bus,
-)
-from services.events.events import _200MS_TICK
 from PySide6.QtGui import QColor
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
@@ -317,12 +302,14 @@ class SettingPage(QWidget):
 
         self.setLayout(global_layout)
 
-        event_bus.subscribe(WEBSOCKET_CONNECTED, self._onWsConnected)
-        event_bus.subscribe(WEBSOCKET_DISCONNECTED, self._onWsDisconnected)
-        event_bus.subscribe(POST_THEME_CHANGED, self.updateTheme)
-        event_bus.subscribe(LANGUAGE_CHANGED, self.updateLanguage)
-        event_bus.subscribe(DB_CHANGED, self._onVolumeChanged)
-        event_bus.subscribe(DESKTOP_LYRICS_ANCHOR_CHANGED, self._refreshAnchorBox)
+        event_bus.subscribe(Events.WEBSOCKET_CONNECTED, self._onWsConnected)
+        event_bus.subscribe(Events.WEBSOCKET_DISCONNECTED, self._onWsDisconnected)
+        event_bus.subscribe(Events.POST_THEME_CHANGED, self.updateTheme)
+        event_bus.subscribe(Events.LANGUAGE_CHANGED, self.updateLanguage)
+        event_bus.subscribe(Events.DB_CHANGED, self._onVolumeChanged)
+        event_bus.subscribe(
+            Events.DESKTOP_LYRICS_ANCHOR_CHANGED, self._refreshAnchorBox
+        )
 
     @property
     def _dp(self):
@@ -884,7 +871,7 @@ class SettingPage(QWidget):
                 10000,
                 50,
                 'lyrics_scrolling_duration',
-                lambda v: event_bus.emit(LYRICS_SCROLLING_DURATION_CHANGED, v),
+                lambda v: event_bus.emit(Events.LYRICS_SCROLLING_DURATION_CHANGED, v),
                 True,
             )
         )
@@ -898,7 +885,7 @@ class SettingPage(QWidget):
             10000,
             50,
             'scroll_duration',
-            lambda v: event_bus.emit(LIST_SCROLLING_DURATION_CHANGED, v),
+            lambda v: event_bus.emit(Events.LIST_SCROLLING_DURATION_CHANGED, v),
             True,
         )
 
@@ -1171,7 +1158,7 @@ class SettingPage(QWidget):
         self.status_widget.setLayout(status_layout)
         self.addSeparateWidget(self.status_widget, advanced=True)
 
-        event_bus.subscribe(_200MS_TICK, self._updateWsStatuses)
+        event_bus.subscribe(Events.TICK_200MS, self._updateWsStatuses)
 
         self.disconnect_btn = TransparentPushButton('')
         bindText(self.disconnect_btn, 'setting_page.disconnect')
@@ -1479,7 +1466,7 @@ class SettingPage(QWidget):
         self._addOptionWidget(card)
 
     def _onBackgroundRatioChanged(self, v):
-        event_bus.emit(BACKGROUND_RATIO_CHANGED)
+        event_bus.emit(Events.BACKGROUND_RATIO_CHANGED)
 
     def _onWsConnected(self):
         self._refreshConnectionStatus(True)
@@ -1583,7 +1570,7 @@ class SettingPage(QWidget):
         cfg.target_lufs = value
         if hasattr(self, 'target_lufs_viewer'):
             self.target_lufs_viewer.setText(f'{value}')
-        event_bus.emit(LUFS_TARGET_CHANGED, value)
+        event_bus.emit(Events.LUFS_TARGET_CHANGED, value)
 
     def _refreshLanguageBox(self) -> None:
         if not hasattr(self, 'language_box'):
@@ -1604,7 +1591,7 @@ class SettingPage(QWidget):
             return
         setLanguage(cast(Language, code))
         saveConfig()
-        event_bus.emit(LANGUAGE_CHANGED)
+        event_bus.emit(Events.LANGUAGE_CHANGED)
 
     def _refreshPlayMethodBox(self) -> None:
         current = cfg.play_method

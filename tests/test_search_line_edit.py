@@ -12,12 +12,7 @@ from PySide6.QtGui import QPaintEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 
-from services.events import (
-    BACKGROUND_RATIO_CHANGED,
-    POST_THEME_CHANGED,
-    REPAINT,
-    event_bus,
-)
+from services.events import Events, event_bus
 from views.line_edit import SearchLineEdit
 
 
@@ -49,7 +44,7 @@ class SearchLineEditTests(unittest.TestCase):
         self.edit.resize(450, 35)
         self.edit.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.timer = QTimer(self.window)
-        self.timer.timeout.connect(lambda: event_bus.emit(REPAINT, 1.0))
+        self.timer.timeout.connect(lambda: event_bus.emit(Events.REPAINT, 1.0))
         self.timer.start(4)
         self.window.show()
         QTest.qWait(350)
@@ -57,9 +52,11 @@ class SearchLineEditTests(unittest.TestCase):
     @override
     def tearDown(self) -> None:
         self.timer.stop()
-        event_bus.unsubscribe(REPAINT, self.edit._repaintTick)
-        event_bus.unsubscribe(POST_THEME_CHANGED, self.edit._onThemeChanged)
-        event_bus.unsubscribe(BACKGROUND_RATIO_CHANGED, self.edit._onThemeChanged)
+        event_bus.unsubscribe(Events.REPAINT, self.edit._repaintTick)
+        event_bus.unsubscribe(Events.POST_THEME_CHANGED, self.edit._onThemeChanged)
+        event_bus.unsubscribe(
+            Events.BACKGROUND_RATIO_CHANGED, self.edit._onThemeChanged
+        )
         self.window.close()
         self.window.deleteLater()
         cast(QApplication, self._app).processEvents()

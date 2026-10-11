@@ -26,12 +26,7 @@ from core.models import (
 from PySide6.QtCore import QThread
 from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QWidget
 from core.i18n import tr
-from services.events import event_bus
-from services.events.events import (
-    FAVORITES_CHANGED,
-    MWINDOW_REFRESH_FOLDERS,
-    PLAYBACK_LYRICS_UPDATED,
-)
+from services.events import Events, event_bus
 from views.number_viewer import SettableNumberViewer
 
 
@@ -836,7 +831,7 @@ class LLMToolRunner:
             self.ctx.ymgr.parse()
             self.ctx.transmgr.parse()
         saveFavorites()
-        event_bus.emit(PLAYBACK_LYRICS_UPDATED, song)
+        event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song)
 
     def getFolders(self) -> dict[str, Any]:
         local = []
@@ -1038,9 +1033,9 @@ class LLMToolRunner:
 
         def _apply() -> None:
             for folder_name in favorite_folders:
-                event_bus.emit(FAVORITES_CHANGED, folder_name)
+                event_bus.emit(Events.FAVORITES_CHANGED, folder_name)
             if refresh_folders:
-                event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+                event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
             if open_folder is not None:
                 self.ctx.main_window._openFolder(open_folder)
 

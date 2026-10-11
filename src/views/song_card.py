@@ -16,16 +16,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtGui import Qt
 from PySide6.QtWidgets import QSizePolicy, QSpacerItem
 from core.i18n import bindText, tr
-from services.events import (
-    FAVORITES_CHANGED,
-    IMAGE_ASSET_PERSISTED,
-    MWINDOW_REFRESH_FOLDERS,
-    PLAYLIST_CHANGED,
-    PLAY_SONG_AT_INDEX,
-    POST_THEME_CHANGED,
-    STORABLE_COUNT_CHANGED,
-    event_bus,
-)
+from services.events import Events, event_bus
 from PySide6.QtGui import QImage, QMouseEvent, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -337,7 +328,7 @@ class SearchSongCard(QWidget):
                     duration=5000,
                 )
                 return
-            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+            event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
             InfoBar.success(
                 tr('song_card.favorited'),
                 tr(
@@ -387,8 +378,8 @@ class SearchSongCard(QWidget):
             )
             return
 
-        event_bus.emit(FAVORITES_CHANGED, folder_name)
-        event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+        event_bus.emit(Events.FAVORITES_CHANGED, folder_name)
+        event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
 
         InfoBar.success(
             tr('song_card.favorited'),
@@ -550,7 +541,7 @@ class _SongCardItem(QWidget):
 
         self._subscribeStorableCount()
         if self._sortable:
-            event_bus.subscribe(POST_THEME_CHANGED, self._refreshMoveIcons)
+            event_bus.subscribe(Events.POST_THEME_CHANGED, self._refreshMoveIcons)
 
     def _refreshMoveIcons(self) -> None:
         icon_theme: Literal['dark', 'light'] = 'dark' if theme.isDark() else 'light'
@@ -560,13 +551,17 @@ class _SongCardItem(QWidget):
     def _subscribeImageAsset(self) -> None:
         if self._image_event_subscribed:
             return
-        event_bus.subscribe(IMAGE_ASSET_PERSISTED, self._on_image_asset_persisted)
+        event_bus.subscribe(
+            Events.IMAGE_ASSET_PERSISTED, self._on_image_asset_persisted
+        )
         self._image_event_subscribed = True
 
     def _subscribeStorableCount(self) -> None:
         if self._storable_event_subscribed:
             return
-        event_bus.subscribe(STORABLE_COUNT_CHANGED, self._on_storable_count_changed)
+        event_bus.subscribe(
+            Events.STORABLE_COUNT_CHANGED, self._on_storable_count_changed
+        )
         self._storable_event_subscribed = True
 
     def releaseResources(self) -> None:
@@ -576,13 +571,15 @@ class _SongCardItem(QWidget):
         self.load = False
         self._load_image_seq += 1
         if self._sortable:
-            event_bus.unsubscribe(POST_THEME_CHANGED, self._refreshMoveIcons)
+            event_bus.unsubscribe(Events.POST_THEME_CHANGED, self._refreshMoveIcons)
         if self._image_event_subscribed:
-            event_bus.unsubscribe(IMAGE_ASSET_PERSISTED, self._on_image_asset_persisted)
+            event_bus.unsubscribe(
+                Events.IMAGE_ASSET_PERSISTED, self._on_image_asset_persisted
+            )
             self._image_event_subscribed = False
         if self._storable_event_subscribed:
             event_bus.unsubscribe(
-                STORABLE_COUNT_CHANGED, self._on_storable_count_changed
+                Events.STORABLE_COUNT_CHANGED, self._on_storable_count_changed
             )
             self._storable_event_subscribed = False
         try:
@@ -672,10 +669,10 @@ class _SongCardItem(QWidget):
                 return
             if self._mwindow:
                 self._mwindow.ctx.addScheduledTask(
-                    lambda s=storable: event_bus.emit(IMAGE_ASSET_PERSISTED, s)
+                    lambda s=storable: event_bus.emit(Events.IMAGE_ASSET_PERSISTED, s)
                 )
             else:
-                event_bus.emit(IMAGE_ASSET_PERSISTED, storable)
+                event_bus.emit(Events.IMAGE_ASSET_PERSISTED, storable)
         finally:
             lock.release()
 
@@ -777,7 +774,7 @@ class _SongCardItem(QWidget):
             parent=self._mwindow,
             duration=3000,
         )
-        event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+        event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
 
 
 class PlaylistSongCard(_SongCardItem):
@@ -826,11 +823,11 @@ class PlaylistSongCard(_SongCardItem):
                 playlist.remove(playlist[i])
                 break
 
-        event_bus.emit(PLAYLIST_CHANGED)
+        event_bus.emit(Events.PLAYLIST_CHANGED)
 
         if self._dp.cur:
             if self.storable.id == self._dp.cur.storable.id:
-                event_bus.emit(PLAY_SONG_AT_INDEX, self._dp.current_index)
+                event_bus.emit(Events.PLAY_SONG_AT_INDEX, self._dp.current_index)
 
 
 class FavoriteSongCard(_SongCardItem):

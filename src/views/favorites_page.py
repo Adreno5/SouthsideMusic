@@ -13,17 +13,7 @@ from PySide6.QtGui import QPixmap, Qt
 from PySide6.QtWidgets import QLabel
 from qfluentwidgets import FluentIcon, PrimaryPushButton, PushButton
 from core.i18n import bindText, tr
-from services.events import (
-    FAVORITES_CHANGED,
-    MWINDOW_REFRESH_FOLDERS,
-    PLAYLIST_CHANGED,
-    PLAY_PLAYLIST_STORABLE,
-    PLAY_SONG_AT_INDEX,
-    START_INTER_LOADING,
-    STOP_INTER_LOADING,
-    event_bus,
-)
-from services.events.events import _50MS_TICK
+from services.events import Events, event_bus
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation
 from PySide6.QtWidgets import (
     QGraphicsOpacityEffect,
@@ -145,14 +135,14 @@ class FavoritesPage(QWidget):
         self._batch_timer.setSingleShot(True)
         self._batch_timer.timeout.connect(self._appendSongBatch)
         self.song_viewer.verticalScrollBar().valueChanged.connect(self._onScroll)
-        event_bus.subscribe(_50MS_TICK, self._checkVisibleCards)
+        event_bus.subscribe(Events.TICK_50MS, self._checkVisibleCards)
 
         self._cloud_loading = False
         self._batch_mode = False
         self._selected_song_ids: set[str] = set()
         self._favorites_refresh_seq = 0
 
-        event_bus.subscribe(FAVORITES_CHANGED, self._onFavoritesChanged)
+        event_bus.subscribe(Events.FAVORITES_CHANGED, self._onFavoritesChanged)
 
         # self.playall_btn.setFixedSize(self.playall_btn.size() * 2)
 
@@ -167,7 +157,7 @@ class FavoritesPage(QWidget):
             return
         self.refresh()
 
-        event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+        event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
 
     @property
     def _dp(self):
@@ -213,7 +203,7 @@ class FavoritesPage(QWidget):
     def setDisplayFolder(self, folder: LocalFolderInfo | CloudFolderInfo) -> None:
         if self._cloud_loading:
             self._cloud_loading = False
-            event_bus.emit(STOP_INTER_LOADING)
+            event_bus.emit(Events.STOP_INTER_LOADING)
         self.setBatchMode(False)
         self.batch_btn.setChecked(False)
         if isinstance(folder, CloudFolderInfo):
@@ -232,7 +222,7 @@ class FavoritesPage(QWidget):
 
     def _loadCloudTracks(self, folder: CloudFolderInfo) -> None:
         self._cloud_loading = True
-        event_bus.emit(START_INTER_LOADING)
+        event_bus.emit(Events.START_INTER_LOADING)
         result: list[SongStorable] = []
         folder_id = folder.id
         refresh_seq = self._favorites_refresh_seq
@@ -253,7 +243,7 @@ class FavoritesPage(QWidget):
             ):
                 self.curr_cloud_songs = result
                 self.refresh()
-                event_bus.emit(STOP_INTER_LOADING)
+                event_bus.emit(Events.STOP_INTER_LOADING)
 
         threading.Thread(target=_fetch, daemon=True).start()
 
@@ -457,13 +447,13 @@ class FavoritesPage(QWidget):
 
     def _replaceAndPlay(self, song: SongStorable):
         self.playAll(False)
-        event_bus.emit(PLAY_PLAYLIST_STORABLE, song)
+        event_bus.emit(Events.PLAY_PLAYLIST_STORABLE, song)
 
     def _queueAfterCurrent(self, song: SongStorable):
         playlist = self._pm.playlist
         insert_index = self._pm.current_index + 2
         playlist.insert(insert_index, song)
-        event_bus.emit(PLAYLIST_CHANGED)
+        event_bus.emit(Events.PLAYLIST_CHANGED)
         self._animateCoverFly(song)
 
     def _animateCoverFly(self, song: SongStorable):
@@ -619,7 +609,7 @@ class FavoritesPage(QWidget):
             parent=self._mwindow,
         )
 
-        event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+        event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
 
     def deleteCloudSong(self, song_storable: SongStorable):
         if not self.curr_cloud_folder:
@@ -668,7 +658,7 @@ class FavoritesPage(QWidget):
                 parent=self._mwindow,
             )
 
-            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+            event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
 
     def addSelectedToPlaylist(self) -> None:
         selected = self._selectedSongs()
@@ -682,7 +672,7 @@ class FavoritesPage(QWidget):
                 added_count += 1
 
         if added_count > 0:
-            event_bus.emit(PLAYLIST_CHANGED)
+            event_bus.emit(Events.PLAYLIST_CHANGED)
             InfoBar.success(
                 tr('favorites_page.songs_added'),
                 tr(
@@ -735,8 +725,8 @@ class FavoritesPage(QWidget):
                     continue
                 if favorites_manager.addSong(folder_name, song):
                     added_count += 1
-            event_bus.emit(FAVORITES_CHANGED, folder_name)
-            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+            event_bus.emit(Events.FAVORITES_CHANGED, folder_name)
+            event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
             InfoBar.success(
                 tr('favorites_page.songs_added'),
                 tr(
@@ -757,7 +747,7 @@ class FavoritesPage(QWidget):
                     duration=5000,
                 )
                 return
-            event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+            event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
             InfoBar.success(
                 tr('favorites_page.songs_added'),
                 tr(
@@ -827,7 +817,7 @@ class FavoritesPage(QWidget):
                 if str(song.id) not in selected_ids
             ]
             favorites_manager._save()
-            event_bus.emit(FAVORITES_CHANGED, self.curr_folder.folder_name)
+            event_bus.emit(Events.FAVORITES_CHANGED, self.curr_folder.folder_name)
             should_refresh = False
         else:
             return
@@ -840,7 +830,7 @@ class FavoritesPage(QWidget):
             tr('favorites_page.deleted_count_selected_songs', count=len(selected)),
             parent=self._mwindow,
         )
-        event_bus.emit(MWINDOW_REFRESH_FOLDERS)
+        event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
 
     def openRediscovery(self) -> None:
         folder = self.curr_cloud_folder if self.is_cloud else self.curr_folder
@@ -856,7 +846,7 @@ class FavoritesPage(QWidget):
             if self.curr_folder
             else ''
         )
-        event_bus.emit(PLAY_SONG_AT_INDEX, 0)
+        event_bus.emit(Events.PLAY_SONG_AT_INDEX, 0)
         if tip:
             InfoBar.success(
                 tr('favorites_page.playlist_replaced'),
@@ -875,7 +865,7 @@ class FavoritesPage(QWidget):
                 added_count += 1
 
         if added_count > 0:
-            event_bus.emit(PLAYLIST_CHANGED)
+            event_bus.emit(Events.PLAYLIST_CHANGED)
             InfoBar.success(
                 tr('favorites_page.songs_added'),
                 tr(

@@ -21,8 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from core.i18n import tr
-from services.events import PLAYBACK_LYRICS_UPDATED, PLAY_STATE_CHANGED, event_bus
-from services.events.events import _200MS_TICK, _50MS_TICK
+from services.events import Events, event_bus
 from qfluentwidgets import CaptionLabel, InfoBar, PrimaryPushButton, PushButton
 from views.lyrics_viewer import LyricsViewer
 
@@ -160,18 +159,18 @@ class LyricEditorPage(QWidget):
             return
         self._status_ticking = ticking
         if ticking:
-            event_bus.subscribe(_50MS_TICK, self._updateHoldingStatus)
+            event_bus.subscribe(Events.TICK_50MS, self._updateHoldingStatus)
         else:
-            event_bus.unsubscribe(_50MS_TICK, self._updateHoldingStatus)
+            event_bus.unsubscribe(Events.TICK_50MS, self._updateHoldingStatus)
 
     def _setFinishTicking(self, ticking: bool) -> None:
         if ticking == self._finish_ticking:
             return
         self._finish_ticking = ticking
         if ticking:
-            event_bus.subscribe(_200MS_TICK, self._checkBeatFinished)
+            event_bus.subscribe(Events.TICK_200MS, self._checkBeatFinished)
         else:
-            event_bus.unsubscribe(_200MS_TICK, self._checkBeatFinished)
+            event_bus.unsubscribe(Events.TICK_200MS, self._checkBeatFinished)
 
     def openForCurrentSong(self) -> bool:
         song = self._currentSong()
@@ -197,7 +196,7 @@ class LyricEditorPage(QWidget):
             return
         self.ctx.player.setPosition(0)
         self.ctx.player.pause()
-        event_bus.emit(PLAY_STATE_CHANGED, False)
+        event_bus.emit(Events.PLAY_STATE_CHANGED, False)
         self._started_beat = False
         self._finished_beat = False
         self._manual_position = 0.0
@@ -215,7 +214,7 @@ class LyricEditorPage(QWidget):
         self._setStatusTicking(False)
         self._setBeatActionsVisible(False)
         self.ctx.player.pause()
-        event_bus.emit(PLAY_STATE_CHANGED, False)
+        event_bus.emit(Events.PLAY_STATE_CHANGED, False)
         if self.ctx.main_window and getattr(self.ctx.main_window, 'controller', None):
             self.ctx.main_window.controller.showLyrics()
         self.global_layout.setCurrentWidget(self.edit_page)
@@ -436,7 +435,7 @@ class LyricEditorPage(QWidget):
             self._manual_position = 0.0
             self.ctx.player.setPosition(0)
             self.ctx.player.resume()
-            event_bus.emit(PLAY_STATE_CHANGED, True)
+            event_bus.emit(Events.PLAY_STATE_CHANGED, True)
             self._setFinishTicking(True)
         else:
             self._manual_position = max(
@@ -470,7 +469,7 @@ class LyricEditorPage(QWidget):
     def retryBeats(self) -> None:
         self.ctx.player.setPosition(0)
         self.ctx.player.pause()
-        event_bus.emit(PLAY_STATE_CHANGED, False)
+        event_bus.emit(Events.PLAY_STATE_CHANGED, False)
         self._resetBeatState()
         self._setBeatActionsVisible(False)
         self._setStatusText('lyric_editor.beat_ready')
@@ -586,7 +585,7 @@ class LyricEditorPage(QWidget):
         )
         self._refreshLyricsViews()
         if emit_update:
-            event_bus.emit(PLAYBACK_LYRICS_UPDATED, song)
+            event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song)
         return True
 
     def _applyParsedLyricsToContext(

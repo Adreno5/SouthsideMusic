@@ -10,14 +10,7 @@ from typing import TYPE_CHECKING
 
 from core.models import IMAGE_DATA_DIR, SongStorable, TrackDetailInfo
 from PySide6.QtCore import QObject
-from services.events.event_bus import event_bus
-from services.events.events import (
-    PLAY_STATE_CHANGED,
-    PLAY_LAST,
-    PLAY_NEXT,
-    SECOND_TICK,
-    SONG_CHANGED,
-)
+from services.events import Events, event_bus
 from winrt.windows.media import (
     MediaPlaybackStatus,
     MediaPlaybackType,
@@ -111,8 +104,8 @@ class SmtcController(QObject):
         self._smtc: SystemMediaTransportControls | None = None
         self._cover: RandomAccessStreamReference | None = None
         self._ticking = False
-        event_bus.subscribe(SONG_CHANGED, self._onSongChanged)
-        event_bus.subscribe(PLAY_STATE_CHANGED, self._onPlayStateChanged)
+        event_bus.subscribe(Events.SONG_CHANGED, self._onSongChanged)
+        event_bus.subscribe(Events.PLAY_STATE_CHANGED, self._onPlayStateChanged)
 
     def _tick(self) -> None:
         self._updateTimeline()
@@ -138,9 +131,9 @@ class SmtcController(QObject):
             return
         self._ticking = ticking
         if ticking:
-            event_bus.subscribe(SECOND_TICK, self._tick)
+            event_bus.subscribe(Events.SECOND_TICK, self._tick)
         else:
-            event_bus.unsubscribe(SECOND_TICK, self._tick)
+            event_bus.unsubscribe(Events.SECOND_TICK, self._tick)
 
     def _create(self) -> None:
         window = self.ctx.main_window
@@ -273,9 +266,9 @@ class SmtcController(QObject):
         ):
             self._setPlaying(button == SystemMediaTransportControlsButton.PLAY)
         elif button == SystemMediaTransportControlsButton.NEXT:
-            event_bus.emit(PLAY_NEXT)
+            event_bus.emit(Events.PLAY_NEXT)
         elif button == SystemMediaTransportControlsButton.PREVIOUS:
-            event_bus.emit(PLAY_LAST)
+            event_bus.emit(Events.PLAY_LAST)
 
     def _onButtonPressed(
         self,

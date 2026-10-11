@@ -46,35 +46,7 @@ from core.models import (
 )
 from core.rediscovery import recordListening
 from core.weighted_random import AdvancedRandom
-from services.events import REQUEST_BR_CHANGED
-from services.events.event_bus import event_bus
-from services.events.events import (
-    EMIT_DEBUG_INFO,
-    ENDING_NO_SOUND,
-    FINISH_CROSSFADE,
-    IMAGE_ASSET_PERSISTED,
-    PLAY_CONTINUE_LAST_SONG,
-    PLAY_LAST,
-    PLAY_NEXT,
-    PLAY_PLAYLIST_STORABLE,
-    PLAY_SONG_AT_INDEX,
-    PLAY_START_PLAYLIST,
-    PLAY_STATE_CHANGED,
-    PLAY_STORABLE,
-    PLAYBACK_ERROR,
-    PLAYBACK_IMAGE_LOADED,
-    PLAYBACK_LYRICS_UPDATED,
-    PLAYBACK_SONG_LOADING,
-    PLAYLIST_CHANGED,
-    POST_PLAY_STORABLE,
-    SECOND_TICK,
-    SONG_CHANGED,
-    SONG_FINISH,
-    START_CROSSFADE,
-    START_PROGRESS_LOADING,
-    STOP_PROGRESS_LOADING,
-    UPDATE_LOADING_PROGRESS,
-)
+from services.events import Events, event_bus
 
 if TYPE_CHECKING:
     from core.app_context import AppContext
@@ -207,17 +179,17 @@ class PlayingManager(QObject):
         return cfg.play_method
 
     def _bindEvents(self) -> None:
-        event_bus.subscribe(SONG_CHANGED, self._onSongChangedEvent)
-        event_bus.subscribe(SONG_FINISH, self.onSongFinish)
-        event_bus.subscribe(PLAY_NEXT, lambda: self.playNext(True))
-        event_bus.subscribe(PLAY_LAST, self.playLast)
-        event_bus.subscribe(PLAY_STORABLE, self.playStorable)
-        event_bus.subscribe(PLAY_PLAYLIST_STORABLE, self.playPlaylistStorable)
-        event_bus.subscribe(PLAY_SONG_AT_INDEX, self.playSongAtIndex)
-        event_bus.subscribe(PLAY_START_PLAYLIST, self.startPlaylist)
-        event_bus.subscribe(PLAY_CONTINUE_LAST_SONG, self.continueLastSong)
-        event_bus.subscribe(PLAYLIST_CHANGED, self.playlistChanged)
-        event_bus.subscribe(SECOND_TICK, self._recordListening)
+        event_bus.subscribe(Events.SONG_CHANGED, self._onSongChangedEvent)
+        event_bus.subscribe(Events.SONG_FINISH, self.onSongFinish)
+        event_bus.subscribe(Events.PLAY_NEXT, lambda: self.playNext(True))
+        event_bus.subscribe(Events.PLAY_LAST, self.playLast)
+        event_bus.subscribe(Events.PLAY_STORABLE, self.playStorable)
+        event_bus.subscribe(Events.PLAY_PLAYLIST_STORABLE, self.playPlaylistStorable)
+        event_bus.subscribe(Events.PLAY_SONG_AT_INDEX, self.playSongAtIndex)
+        event_bus.subscribe(Events.PLAY_START_PLAYLIST, self.startPlaylist)
+        event_bus.subscribe(Events.PLAY_CONTINUE_LAST_SONG, self.continueLastSong)
+        event_bus.subscribe(Events.PLAYLIST_CHANGED, self.playlistChanged)
+        event_bus.subscribe(Events.SECOND_TICK, self._recordListening)
 
     def _recordListening(self) -> None:
         now = timeLib.monotonic()
@@ -253,7 +225,7 @@ class PlayingManager(QObject):
     def emitDebugInfo(self):
         crossfade_info = self.crossfade_info
         event_bus.emit(
-            EMIT_DEBUG_INFO,
+            Events.EMIT_DEBUG_INFO,
             'PlayingManager',
             [
                 f'playlist_size={len(self.playlist)}',
@@ -280,7 +252,7 @@ class PlayingManager(QObject):
             ],
         )
         event_bus.emit(
-            EMIT_DEBUG_INFO,
+            Events.EMIT_DEBUG_INFO,
             'Crossfade',
             crossfade_info.debugInfo()
             if crossfade_info is not None
@@ -404,7 +376,7 @@ class PlayingManager(QObject):
         )
 
     def _emitError(self, title: str, message: str) -> None:
-        event_bus.emit(PLAYBACK_ERROR, title, message)
+        event_bus.emit(Events.PLAYBACK_ERROR, title, message)
 
     def onSongFinish(self) -> None:
         if self.crossfading:
@@ -561,7 +533,7 @@ class PlayingManager(QObject):
             self.current_index = -1
             self.current_song = None
             self.current_song_audio = None
-        event_bus.emit(PLAYLIST_CHANGED)
+        event_bus.emit(Events.PLAYLIST_CHANGED)
 
     def refreshRandom(self) -> None:
         self._randomer.init(self.playlist)
@@ -608,11 +580,13 @@ class PlayingManager(QObject):
         player.setVolume(1.0)
         self.total_length = self._storableDuration(song)
         self._startLyricSong(song, True)
-        event_bus.emit(STOP_PROGRESS_LOADING)
-        event_bus.emit(PLAYBACK_SONG_LOADING, song)
+        event_bus.emit(Events.STOP_PROGRESS_LOADING)
+        event_bus.emit(Events.PLAYBACK_SONG_LOADING, song)
         if song.imageCached():
             try:
-                event_bus.emit(PLAYBACK_IMAGE_LOADED, song, song.getImageBytes(), None)
+                event_bus.emit(
+                    Events.PLAYBACK_IMAGE_LOADED, song, song.getImageBytes(), None
+                )
             except (FileNotFoundError, PermissionError):
                 self._logger.warning('cached cover unavailable during quality switch')
         self._playDownloadingStorable(
@@ -623,7 +597,7 @@ class PlayingManager(QObject):
             position,
             pause_after_load,
         )
-        event_bus.emit(REQUEST_BR_CHANGED, br)
+        event_bus.emit(Events.REQUEST_BR_CHANGED, br)
 
     def clearReservedNext(self) -> None:
         self._reserved_next = None
@@ -652,7 +626,7 @@ class PlayingManager(QObject):
         self._queued_boundary = None
         self._transition_end = None
         self.crossfading = False
-        event_bus.emit(FINISH_CROSSFADE)
+        event_bus.emit(Events.FINISH_CROSSFADE)
 
     def _seekQueuedPlayback(self, seconds: float) -> None:
         player = self._player
@@ -849,7 +823,7 @@ class PlayingManager(QObject):
 
     def onEndingNoSound(self) -> None:
         if cfg.skip_nosound:
-            event_bus.emit(ENDING_NO_SOUND)
+            event_bus.emit(Events.ENDING_NO_SOUND)
 
     def onPlayerPositionChanged(self, position: float) -> None:
         player = self._player
@@ -859,7 +833,7 @@ class PlayingManager(QObject):
             if player.current_index >= self._transition_end:
                 self._transition_end = None
                 self.crossfading = False
-                event_bus.emit(FINISH_CROSSFADE)
+                event_bus.emit(Events.FINISH_CROSSFADE)
         selection = self._queued_selection
         boundary = self._queued_boundary
         if selection is None or boundary is None:
@@ -897,11 +871,11 @@ class PlayingManager(QObject):
         boundary = player.beginQueuedTrack(boundary[0], frames, gain, boundary[1])
         self.total_length = player.getLength()
         self._startLyricSong(selection.song)
-        event_bus.emit(PLAYBACK_SONG_LOADING, selection.song)
+        event_bus.emit(Events.PLAYBACK_SONG_LOADING, selection.song)
         self.crossfading = boundary[1] > player.current_index
         self._transition_end = boundary[1] if self.crossfading else None
         if self.crossfading:
-            event_bus.emit(START_CROSSFADE)
+            event_bus.emit(Events.START_CROSSFADE)
         result: dict[str, object] = {'audio': audio}
         self._loadPlaybackImage(selection.song, result)
         self._finishPlaybackLoad(
@@ -1598,7 +1572,7 @@ class PlayingManager(QObject):
                     return
                 self.playlist.extend(added)
                 self.refreshRandom()
-                event_bus.emit(PLAYLIST_CHANGED)
+                event_bus.emit(Events.PLAYLIST_CHANGED)
 
             self._schedule(_apply)
 
@@ -1630,7 +1604,7 @@ class PlayingManager(QObject):
                     return
                 self.playlist.extend(added)
                 self.refreshRandom()
-                event_bus.emit(PLAYLIST_CHANGED)
+                event_bus.emit(Events.PLAYLIST_CHANGED)
 
             self._schedule(_apply)
 
@@ -1708,7 +1682,7 @@ class PlayingManager(QObject):
                     self.refreshRandom()
                     self.clearReservedNext()
                     self.current_index = 0
-                    event_bus.emit(PLAYLIST_CHANGED)
+                    event_bus.emit(Events.PLAYLIST_CHANGED)
                     self.playSongAtIndex(0)
 
                 self._schedule(_apply)
@@ -1760,7 +1734,7 @@ class PlayingManager(QObject):
                     self.refreshRandom()
                     self.clearReservedNext()
                     self.current_index = 0
-                    event_bus.emit(PLAYLIST_CHANGED)
+                    event_bus.emit(Events.PLAYLIST_CHANGED)
                     self.playSongAtIndex(0)
 
                 self._schedule(_apply)
@@ -1817,7 +1791,7 @@ class PlayingManager(QObject):
                     self.refreshRandom()
                     self.clearReservedNext()
                     self.current_index = 0
-                    event_bus.emit(PLAYLIST_CHANGED)
+                    event_bus.emit(Events.PLAYLIST_CHANGED)
                     self.playSongAtIndex(0)
 
                 self._schedule(_apply)
@@ -1874,7 +1848,7 @@ class PlayingManager(QObject):
                     self.refreshRandom()
                     self.clearReservedNext()
                     self.current_index = 0
-                    event_bus.emit(PLAYLIST_CHANGED)
+                    event_bus.emit(Events.PLAYLIST_CHANGED)
                     self.playSongAtIndex(0)
 
                 self._schedule(_apply)
@@ -1955,7 +1929,7 @@ class PlayingManager(QObject):
 
                 saveFavorites()
                 if image_just_persisted:
-                    event_bus.emit(IMAGE_ASSET_PERSISTED, song_storable)
+                    event_bus.emit(Events.IMAGE_ASSET_PERSISTED, song_storable)
                 return True
             except Exception:
                 self._logger.exception('failed to persist downloaded storable assets')
@@ -2009,7 +1983,7 @@ class PlayingManager(QObject):
         if player is not None:
             player.stop()
         self.current_song = song_storable
-        event_bus.emit(PLAYBACK_SONG_LOADING, song_storable)
+        event_bus.emit(Events.PLAYBACK_SONG_LOADING, song_storable)
 
         def _play_after_download(success: bool) -> None:
             if not success:
@@ -2052,7 +2026,7 @@ class PlayingManager(QObject):
                     by_user=True,
                     base_index=self.current_index,
                 )
-                event_bus.emit(PLAYBACK_SONG_LOADING, song_storable)
+                event_bus.emit(Events.PLAYBACK_SONG_LOADING, song_storable)
                 return False
             self._downloadMissingStorableAssets(
                 song_storable,
@@ -2133,7 +2107,7 @@ class PlayingManager(QObject):
                         if self.crossfading:
                             if target_br != self._request_br:
                                 self._request_br = target_br
-                                event_bus.emit(REQUEST_BR_CHANGED, target_br)
+                                event_bus.emit(Events.REQUEST_BR_CHANGED, target_br)
                                 self.clearPreload()
                                 self._onSongChangedEvent(song_storable)
                         else:
@@ -2154,23 +2128,23 @@ class PlayingManager(QObject):
             playlist_changed = True
 
         if playlist_changed:
-            event_bus.emit(PLAYLIST_CHANGED)
+            event_bus.emit(Events.PLAYLIST_CHANGED)
         self._show_original_lyrics(song_storable)
         self._compute_gain_async(song_storable, gain_audio, play_seq)
         self._download_update_lyrics(song_storable)
 
-        event_bus.emit(SONG_CHANGED, song_storable)
+        event_bus.emit(Events.SONG_CHANGED, song_storable)
         image_bytes = result.get('image')
         avg_color = result.get('avg_color')
         if isinstance(image_bytes, bytes):
             event_bus.emit(
-                PLAYBACK_IMAGE_LOADED,
+                Events.PLAYBACK_IMAGE_LOADED,
                 song_storable,
                 image_bytes,
                 avg_color,
             )
-        event_bus.emit(PLAY_STATE_CHANGED, not pause_after_load)
-        event_bus.emit(POST_PLAY_STORABLE, song_storable)
+        event_bus.emit(Events.PLAY_STATE_CHANGED, not pause_after_load)
+        event_bus.emit(Events.POST_PLAY_STORABLE, song_storable)
 
         song_storable.incrementCount(1)
 
@@ -2341,11 +2315,11 @@ class PlayingManager(QObject):
 
         def _emit_progress(progress: float) -> None:
             if _is_current():
-                event_bus.emit(UPDATE_LOADING_PROGRESS, progress)
+                event_bus.emit(Events.UPDATE_LOADING_PROGRESS, progress)
 
         def _stop_progress() -> None:
             if _is_current():
-                event_bus.emit(STOP_PROGRESS_LOADING)
+                event_bus.emit(Events.STOP_PROGRESS_LOADING)
 
         def _on_progress(downloaded: int, total_size: int) -> None:
             if total_size > 0:
@@ -2594,7 +2568,7 @@ class PlayingManager(QObject):
 
             if prepared['request_br'] != self._request_br:
                 self._request_br = prepared['request_br']
-                event_bus.emit(REQUEST_BR_CHANGED, self._request_br)
+                event_bus.emit(Events.REQUEST_BR_CHANGED, self._request_br)
 
             if image_missing:
                 image_bytes = prepared.get('image')
@@ -2606,7 +2580,7 @@ class PlayingManager(QObject):
                     return
                 song_storable.cacheImage(image_bytes)
                 saveFavorites()
-                event_bus.emit(IMAGE_ASSET_PERSISTED, song_storable)
+                event_bus.emit(Events.IMAGE_ASSET_PERSISTED, song_storable)
 
             music_url = prepared.get('music_url')
             if not isinstance(music_url, str) or not music_url:
@@ -2622,8 +2596,8 @@ class PlayingManager(QObject):
             )
             os.close(fd)
             temp_path = Path(raw_path)
-            event_bus.emit(START_PROGRESS_LOADING)
-            event_bus.emit(UPDATE_LOADING_PROGRESS, 0.0)
+            event_bus.emit(Events.START_PROGRESS_LOADING)
+            event_bus.emit(Events.UPDATE_LOADING_PROGRESS, 0.0)
             player = self._player
             if player is None:
                 _cleanup(temp_path)
@@ -2716,7 +2690,7 @@ class PlayingManager(QObject):
         self.playlist.insert(insert_index, song_storable)
         self.current_index = insert_index
         self.refreshRandom()
-        event_bus.emit(PLAYLIST_CHANGED)
+        event_bus.emit(Events.PLAYLIST_CHANGED)
         return song_storable
 
     def playStorable(
@@ -2751,8 +2725,8 @@ class PlayingManager(QObject):
             return play_seq == self._play_seq and self.current_song is song_storable
 
         self._startLyricSong(song_storable, restore_position is not None)
-        event_bus.emit(STOP_PROGRESS_LOADING)
-        event_bus.emit(PLAYBACK_SONG_LOADING, song_storable)
+        event_bus.emit(Events.STOP_PROGRESS_LOADING)
+        event_bus.emit(Events.PLAYBACK_SONG_LOADING, song_storable)
         app = self._app
         if app is not None:
             app.processEvents()
@@ -2845,7 +2819,7 @@ class PlayingManager(QObject):
             lyrics['translated_lyric'],
             self.total_length,
         )
-        event_bus.emit(PLAYBACK_LYRICS_UPDATED, song_storable)
+        event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song_storable)
 
     def _compute_gain_async(
         self,
@@ -2911,7 +2885,7 @@ class PlayingManager(QObject):
             candidate.yrc_lyric,
         )
         saveFavorites()
-        event_bus.emit(PLAYBACK_LYRICS_UPDATED, song)
+        event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song)
 
     def _download_update_lyrics(self, song_storable: SongStorable) -> None:
         lyric_target = song_storable
@@ -2923,7 +2897,7 @@ class PlayingManager(QObject):
             lyrics['translated_lyric'],
             'cache',
         )
-        event_bus.emit(PLAYBACK_LYRICS_UPDATED, lyric_target)
+        event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, lyric_target)
 
         if lyrics['yrc_lyric'].strip() and lyrics['translated_lyric'].strip():
             return

@@ -18,6 +18,18 @@ Southside Music 是一款以自研音频引擎为核心的 Windows 专用网易�
 
 ---
 
+## Star(星标) 历史
+
+<a href="https://www.star-history.com/?repos=adreno5%2Fsouthsidemusic&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=adreno5/southsidemusic&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=adreno5/southsidemusic&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=adreno5/southsidemusic&type=date&legend=top-left" />
+ </picture>
+</a>
+
+---
+
 ## 目录
 
 - [项目简介](#项目简介)

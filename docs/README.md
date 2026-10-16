@@ -18,6 +18,18 @@ Southside Music is a Windows-only third-party NetEase CloudMusic desktop client 
 
 ---
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=adreno5%2Fsouthsidemusic&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=adreno5/southsidemusic&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=adreno5/southsidemusic&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=adreno5/southsidemusic&type=date&legend=top-left" />
+ </picture>
+</a>
+
+---
+
 ## Contents
 
 - [Overview](#overview)

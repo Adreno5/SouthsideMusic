@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import ctypes
+import time
 from ctypes import wintypes
-from typing import override
+from typing import cast, override
 
 from PySide6.QtCore import QPoint, QRect, QRectF, QSize
 from PySide6.QtGui import (
@@ -25,7 +26,8 @@ from core.color import mixColor
 from core.config import cfg
 from core.i18n import bindText, tr
 from core.lyrics import LyricInfo, YRCLyricInfo
-from core.smooth import EaseInOutTimer, EaseOutTimer, SScrollTimer
+from core.qt_utils import toQtInt
+from core.smooth import EaseInOutTimer, EaseOutTimer
 from services.events import Events, event_bus
 from views.lyrics_viewer import LyricsViewer
 from views.playing_page import _artists_text
@@ -41,6 +43,12 @@ class DesktopLyricsViewer(LyricsViewer):
 
         self.width_timer = EaseInOutTimer(0.5, 3)
         self.height_timer = EaseOutTimer(0.5, 3)
+        self.slide_timer = EaseInOutTimer(0.5, 3)
+        self._slide_distance: float = 0.0
+        self._outgoing_line: LyricInfo | YRCLyricInfo | None = None
+        self._outgoing_text: str = ''
+        self._outgoing_translation: str = ''
+        self.last_width_animation: float = -1
 
         self._pill_x: float = 0
         self._pill_w: float = 1
@@ -74,10 +82,9 @@ class DesktopLyricsViewer(LyricsViewer):
             Events.LYRICS_LINE_DURATION, lambda d: self._lyricsLineDuration(d)
         )
 
-        self.scroller = SScrollTimer(use_api='repaint_always')
-
     def _lyricsLineDuration(self, d):
         self.width_timer.anim_cycle = d / 1000
+        self.slide_timer.anim_cycle = d / 1000
 
     def _keepOnTop(self) -> None:
         if not self.isVisible():
@@ -237,6 +244,74 @@ class DesktopLyricsViewer(LyricsViewer):
             return self.font_height + self.theight + self.font_height * 0.75
         return self.font_height * 1.85
 
+    def _currentLineChanged(
+        self,
+        lines: list[LyricInfo | YRCLyricInfo],
+        current_index: int,
+    ) -> bool:
+        if not (0 <= current_index < len(lines)):
+            return False
+        if not (0 <= self._view_current_index < len(self._view_lines)):
+            return True
+        return self._view_lines[self._view_current_index] is not lines[current_index]
+
+    def _startLineSlide(self) -> None:
+        self._outgoing_line = None
+        self._outgoing_text = ''
+        self._outgoing_translation = ''
+        if 0 <= self._view_current_index < len(self._view_lines):
+            line = self._view_lines[self._view_current_index]
+            if line.content.strip():
+                self._outgoing_line = line
+                self._outgoing_text = line.content.strip()
+                self._outgoing_translation = self._translationTextForLine(
+                    line, self._view_use_yrc
+                )
+        self.slide_timer.reset()
+        self._slide_distance = max(self._pill_w, self.width_timer.target_value)
+        self.slide_timer.current_value = self._slide_distance
+
+    @override
+    def _updateDrawOffset(
+        self,
+        lines: list[LyricInfo | YRCLyricInfo],
+        current_index: int,
+        multiple_factor: float = 1.0,
+    ) -> None:
+        if self.last_target_draw_offset != self.target_draw_offset:
+            duration = int(self._cfg.lyrics_scrolling_duration)
+            if 0 <= current_index < len(lines) - 1:
+                line_duration = max(
+                    1,
+                    int(
+                        (lines[current_index + 1].time - lines[current_index].time)
+                        * 1000
+                    ),
+                )
+                duration = min(duration, line_duration)
+            event_bus.emit(Events.LYRICS_LINE_DURATION, duration)
+            if self._currentLineChanged(lines, current_index):
+                self._startLineSlide()
+            self.last_target_draw_offset = self.target_draw_offset
+        self.draw_offset = self.target_draw_offset
+        self.target_acc = 0.0
+        self.acc = 0.0
+
+    @override
+    def _renderLinePayload(self, index: int) -> dict[str, object]:
+        payload = super()._renderLinePayload(index)
+        content = self._view_lines[index].content.strip()
+        text_width = self._textWidth(content)
+        if text_width <= self._xScrollClipWidth():
+            payload['x'] = float(toQtInt((self._pill_w - text_width) * 0.5))
+            translation = cast(str, payload['translation'])
+            if translation:
+                translation_width = self.tmetri.horizontalAdvance(translation)
+                payload['translation_x'] = float(
+                    toQtInt((self._pill_w - translation_width) * 0.5)
+                )
+        return payload
+
     @override
     def _contentWidth(self) -> float:
         return self._pill_w
@@ -274,7 +349,7 @@ class DesktopLyricsViewer(LyricsViewer):
         self.x_pad = self._pill_h / 2
 
         tar_width = 10
-        future_line = self._offsetLyricLine(position, self.width_timer.anim_cycle)
+        future_line = self._offsetLyricLine(position, self.width_timer.anim_cycle * 0.5)
         if future_line:
             tar_width = max(
                 10,
@@ -329,6 +404,8 @@ class DesktopLyricsViewer(LyricsViewer):
                 self.move(0, target_y)
 
         super().updateDatas(multiple_factor)
+        if self.slide_timer.is_animating:
+            self.update()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         self.dragging = True
@@ -354,7 +431,10 @@ class DesktopLyricsViewer(LyricsViewer):
 
     @override
     def paintGL(self) -> None:
+        now = time.perf_counter()
         if self.width_timer.is_animating:
+            self.last_width_animation = now
+        if now - self.last_width_animation < 0.2:
             self.draw_x_offset = 0
 
         painter = QPainter(self)
@@ -436,10 +516,61 @@ class DesktopLyricsViewer(LyricsViewer):
                     int(progress_width * self._draw_progress_ratio),
                     1,
                 )
-                self._paintLyrics(painter)
+                slide = self.slide_timer.current_value
+                if slide != 0.0:
+                    painter.save()
+                    painter.setClipPath(path)
+                    painter.translate(slide, 0)
+                    self._paintLyrics(painter)
+                    painter.restore()
+                    self._paintOutgoingLine(painter, slide)
+                else:
+                    painter.save()
+                    painter.setClipPath(path)
+                    self._paintLyrics(painter)
+                    painter.restore()
+                    self._outgoing_line = None
                 painter.restore()
         finally:
             painter.end()
+
+    def _paintOutgoingLine(self, painter: QPainter, slide: float) -> None:
+        if self._outgoing_line is None or not self._outgoing_text:
+            return
+        if self._slide_distance <= 0.0:
+            return
+        if not (0 <= self._view_current_index < len(self._view_y_offsets)):
+            return
+        ratio = max(0.0, min(1.0, slide / self._slide_distance))
+        baseline = toQtInt(
+            self._view_top_offset + self._view_y_offsets[self._view_current_index]
+        )
+        shift = slide - self._slide_distance
+        alpha = int(255 * ratio)
+        painter.setRenderHints(
+            QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing
+        )
+        painter.setFont(self.ft)
+        painter.setPen(self._primaryColorForLine(self._outgoing_line, False, alpha))
+        text_width = self._textWidth(self._outgoing_text)
+        x = (self._pill_w - text_width) * 0.5
+        if text_width > self._xScrollClipWidth():
+            x = self.x_pad
+        painter.drawText(toQtInt(x + shift), baseline, self._outgoing_text)
+        translation_color = self._translationColor(alpha)
+        if self._outgoing_translation and translation_color.alpha() > 0:
+            translation_width = self.tmetri.horizontalAdvance(
+                self._outgoing_translation
+            )
+            translation_x = (self._pill_w - translation_width) * 0.5 + shift
+            translation_y = baseline + self.metri.descent() + 2 + self.tmetri.ascent()
+            painter.setFont(self.tft)
+            painter.setPen(translation_color)
+            painter.drawText(
+                toQtInt(translation_x),
+                toQtInt(translation_y),
+                self._outgoing_translation,
+            )
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         event.ignore()

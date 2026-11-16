@@ -195,9 +195,7 @@ class DesktopLyricsViewer(LyricsViewer):
         return None
 
     def _offsetLyricLine(
-        self,
-        position: float | None = None,
-        offset: float | None = None
+        self, position: float | None = None, offset: float | None = None
     ) -> YRCLyricInfo | LyricInfo | None:
         if position is None:
             position = self.ctx.playing_manager.getDisplayPosition()
@@ -428,9 +426,7 @@ class DesktopLyricsViewer(LyricsViewer):
                 painter.setBrush(
                     mixColor(
                         song_theme,
-                        QColor(125, 125, 125)
-                        if theme.isDark()
-                        else QColor(80, 80, 80),
+                        QColor(125, 125, 125) if theme.isDark() else QColor(80, 80, 80),
                         cfg.background_ratio * 0.5,
                     )
                 )

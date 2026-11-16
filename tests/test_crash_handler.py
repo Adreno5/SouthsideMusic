@@ -111,18 +111,11 @@ class CrashHandlerTest(unittest.TestCase):
     def _stopProcess(self, pid: int) -> None:
         try:
             process = psutil.Process(pid)
-            children = process.children(recursive=True)
+            process.suspend()
+            for child in process.children():
+                self._stopProcess(child.pid)
             process.terminate()
             process.wait(timeout=5)
-            for child in reversed(children):
-                try:
-                    child.terminate()
-                except psutil.NoSuchProcess:
-                    pass
-            _, alive = psutil.wait_procs(children, timeout=5)
-            for child in alive:
-                child.kill()
-            psutil.wait_procs(alive, timeout=5)
         except psutil.NoSuchProcess:
             pass
 
@@ -328,6 +321,20 @@ class CrashReportTest(unittest.TestCase):
             QPushButton,
         )
 
+        if QApplication.instance() is not None:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    __file__,
+                    'CrashReportTest.testWindowCopiesAndExportsReport',
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            return
         self.assertIsNone(QApplication.instance())
         with tempfile.TemporaryDirectory() as directory:
             report_path = writeReport(directory, 0xC0000409)

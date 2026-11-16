@@ -57,6 +57,12 @@ jobs:
       - name: Check formatting
         run: uv run ruff format --check .
 
+      - name: Prepare unit worker
+        run: |
+          $workerPython = uv run --frozen python scripts/test_harness.py prepare-worker
+          if ($LASTEXITCODE -ne 0) { throw 'Unit worker preparation failed' }
+          "SOUTHSIDE_FREE_THREADED_PYTHON=$workerPython" >> $env:GITHUB_ENV
+
       - name: Test
         run: uv run --frozen python scripts/test_harness.py unit --report-dir .harness-results/unit
 

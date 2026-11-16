@@ -255,6 +255,7 @@ when configuring a client.
 `.github/workflows/ci.yml` retains push-to-master, pull-request, and manual
 triggers, and is also reusable through `workflow_call`. Its check job keeps the
 compile, Ruff lint, and formatting checks, then runs the complete `unit` command.
+A free-threaded worker is prepared for the unit suite's worker memory checks.
 A separate Windows harness job installs the frozen dependencies and FFmpeg,
 creates the free-threaded worker in `RUNNER_TEMP`, and runs `core` plus `online`.
 

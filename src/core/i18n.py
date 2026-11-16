@@ -1267,6 +1267,8 @@ TRANSLATIONS: dict[str, list[str]] = {
         'How long recent peak amplitudes are retained for normalization. Longer durations make the display adapt more slowly when the peak level drops.',
         '用于归一化的近期峰值保留时长。时长越长，频谱对峰值下降的适应越慢。',
     ],
+    'setting_page.expand_section': ['Expand section', '展开设置'],
+    'setting_page.collapse_section': ['Collapse section', '收起设置'],
     'setting_page.beat_detection': ['Beat Detection', 'Beat 检测'],
     'setting_page.beat_detection_description': [
         'Enable beat intensity estimation from low-frequency FFT energy',

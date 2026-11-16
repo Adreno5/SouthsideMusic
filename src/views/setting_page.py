@@ -3,7 +3,14 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Callable, cast, override
 
-from PySide6.QtCore import Property, QEasingCurve, QPropertyAnimation, QTimer, Signal
+from PySide6.QtCore import (
+    Property,
+    QEasingCurve,
+    QPropertyAnimation,
+    QSize,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import QColor, QPaintEvent, QPainter, QResizeEvent, Qt
 from PySide6.QtWidgets import (
     QFormLayout,
@@ -31,6 +38,7 @@ from qfluentwidgets import (
     SubtitleLabel,
     TitleLabel,
     TransparentPushButton,
+    TransparentToolButton,
 )
 
 from core import theme
@@ -56,6 +64,7 @@ from core.ws_server import (
 )
 from services.events import Events, event_bus
 from views.eq_editor import EQEditor
+from views.error_popup import ErrorPopupWindow
 from views.list_widget import SScrollArea, setTransparentBackground
 from views.number_viewer import NumberViewer, SettableNumberViewer
 
@@ -123,7 +132,14 @@ class SectionContainer(QWidget):
         desc_l = self.desc_l
         desc_l.setWordWrap(True)
         desc_l.setStyleSheet(f'color: {"#A8A8A8" if theme.isDark() else "#666666"};')
-        header_layout.addWidget(self.title_l)
+        title_layout = QHBoxLayout()
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.addWidget(self.title_l, 1)
+        self.expand_button = TransparentToolButton()
+        self.expand_button.setFixedSize(32, 32)
+        self.expand_button.setIconSize(QSize(24, 24))
+        title_layout.addWidget(self.expand_button)
+        header_layout.addLayout(title_layout)
         header_layout.addWidget(desc_l)
 
         self.content_view = QWidget()
@@ -147,6 +163,8 @@ class SectionContainer(QWidget):
         layout.addWidget(self.header)
         layout.addWidget(self.content_view)
         self.header.mousePressEvent = lambda e: self._onHeaderClicked()
+        self.expand_button.clicked.connect(self._onHeaderClicked)
+        self._refreshExpandButton()
 
     def addWidget(self, widget: QWidget) -> None:
         self.content_layout.addWidget(widget)
@@ -155,6 +173,7 @@ class SectionContainer(QWidget):
         self._syncContentGeometry()
 
     def refreshContentHeight(self) -> None:
+        self._refreshExpandButton()
         self.content_layout.invalidate()
         self.content_layout.activate()
         self.content_widget.adjustSize()
@@ -179,6 +198,7 @@ class SectionContainer(QWidget):
 
     def collapseNow(self) -> None:
         self._expanded = False
+        self._refreshExpandButton()
         self._content_offset = 0
         self.content_view.setFixedHeight(0)
         self.overlay.setGeometry(self.content_view.rect())
@@ -196,6 +216,18 @@ class SectionContainer(QWidget):
         if not self._searching:
             self.toggle()
 
+    def _refreshExpandButton(self) -> None:
+        expanded = self._expanded or self._searching
+        self.expand_button.setEnabled(not self._searching)
+        bindIcon(self.expand_button, 'drop_up' if expanded else 'drop_down')
+        label = tr(
+            'setting_page.collapse_section'
+            if expanded
+            else 'setting_page.expand_section'
+        )
+        self.expand_button.setToolTip(label)
+        self.expand_button.setAccessibleName(f'{self.title_l.text()} · {label}')
+
     def toggle(self) -> None:
         self.setExpanded(not self._expanded)
 
@@ -206,6 +238,7 @@ class SectionContainer(QWidget):
         ):
             return
         self._expanded = expanded
+        self._refreshExpandButton()
         self.expandedChanged.emit(self._title, expanded)
         self._content_height = self._contentHeightHint()
         self.content_view.setFixedHeight(max(0, self.content_view.height()))
@@ -2228,12 +2261,11 @@ class SettingPage(QWidget):
             main_window.refreshLLMModelBox()
 
     def _showLlmError(self, message: str) -> None:
-        InfoBar.error(
-            tr('setting_page.llm_models_refresh_failed'),
+        ErrorPopupWindow(
             message,
-            duration=5000,
             parent=self._mwindow,
-        )
+            title=tr('setting_page.llm_models_refresh_failed'),
+        ).exec()
 
     def _refreshCurrentSectionHeight(self) -> None:
         section = self.llm_section
@@ -2253,12 +2285,7 @@ class SettingPage(QWidget):
             and not str(provider.get('base_url', '')).strip()
         ):
             if not silent:
-                InfoBar.error(
-                    tr('setting_page.llm_models_refresh_failed'),
-                    tr('setting_page.llm_base_url_required'),
-                    duration=5000,
-                    parent=self._mwindow,
-                )
+                self._showLlmError(tr('setting_page.llm_base_url_required'))
             return
         models: list[str] = []
         error: Exception | None = None
@@ -2274,12 +2301,7 @@ class SettingPage(QWidget):
         def _finish() -> None:
             if error is not None:
                 if not silent:
-                    InfoBar.error(
-                        tr('setting_page.llm_models_refresh_failed'),
-                        str(error),
-                        duration=5000,
-                        parent=self._mwindow,
-                    )
+                    self._showLlmError(str(error))
                 return
             if not models:
                 if not silent:

@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import time
+import traceback
 
 from core.app_context import AppContext
 from core.lyrics import LyricInfo, YRCCharInfo, YRCLyricInfo
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
 from core.i18n import tr
 from services.events import Events, event_bus
 from qfluentwidgets import CaptionLabel, InfoBar, PrimaryPushButton, PushButton
+from views.error_popup import ErrorPopupWindow
 from views.lyrics_viewer import LyricsViewer
 
 
@@ -238,12 +240,11 @@ class LyricEditorPage(QWidget):
             )
         except Exception as e:
             self._logger.exception(e)
-            InfoBar.error(
-                tr('lyric_editor.edit_lyrics'),
-                tr('lyric_editor.save_failed'),
+            ErrorPopupWindow(
+                f'{tr("lyric_editor.save_failed")}\n\n{traceback.format_exc()}',
                 parent=self.ctx.main_window,
-                duration=5000,
-            )
+                title=tr('lyric_editor.edit_lyrics'),
+            ).exec()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if (

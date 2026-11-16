@@ -4,6 +4,7 @@ from collections import deque
 import logging
 
 import os
+import traceback
 
 from core import theme
 from core.app_context import AppContext
@@ -56,6 +57,7 @@ from qfluentwidgets import (
     PillToolButton,
     TitleLabel,
 )
+from views.error_popup import ErrorPopupWindow
 from views.lyrics_viewer import LyricsViewer
 from views.image_label import SImageLabel
 from views.quality_dialog import QualityDialog
@@ -751,7 +753,7 @@ class PlayingPage(QWidget):
                 result['path'] = export_path
             except Exception as e:
                 self._logger.exception(e)
-                result['error'] = str(e)
+                result['error'] = traceback.format_exc()
 
         def _final() -> None:
             event_bus.emit(Events.STOP_PROGRESS_LOADING)
@@ -760,12 +762,11 @@ class PlayingPage(QWidget):
                 active_dialog = progress_dialog
             active_dialog.finish(not result.get('error'))
             if result.get('error'):
-                InfoBar.error(
-                    tr('playing_page.export_failed'),
+                ErrorPopupWindow(
                     result['error'],
                     parent=self._mwindow_obj,
-                    duration=8000,
-                )
+                    title=tr('playing_page.export_failed'),
+                ).exec()
                 return
             InfoBar.success(
                 tr('playing_page.export_lyric_video'),
@@ -966,7 +967,7 @@ class PlayingPage(QWidget):
         if title == tr('playing_manager.warning'):
             InfoBar.warning(title, message, parent=self._mwindow_obj)
         else:
-            InfoBar.error(title, message, parent=self._mwindow_obj)
+            ErrorPopupWindow(message, parent=self._mwindow_obj, title=title).exec()
 
     def sendSongCoverAndInfo(self) -> None:
         if not self._ws_handler.is_open:

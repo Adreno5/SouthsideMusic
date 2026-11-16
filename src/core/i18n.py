@@ -167,6 +167,7 @@ TRANSLATIONS: dict[str, list[str]] = {
         "use your CloudMusic app to scan the QRCode and click 'I scanned' button",
         '使用网易云音乐 App 扫描二维码，然后点击“我已扫码”按钮',
     ],
+    'error_popup.copy_details': ['Copy details', '复制详情'],
     'error_popup.copy_details_above_and_paste_it_to_the_issue_page_below': [
         'Copy details above and paste it to the issue page below',
         '复制上方详情并粘贴到下面的问题页面',

@@ -18,6 +18,7 @@ from core.i18n import tr
 from core.models import QualityLevelInfo
 from core import theme as themeModule
 from services.events import Events, event_bus
+from views.error_popup import ErrorPopupWindow
 from views.list_widget import SScrollArea
 from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QSpacerItem, QVBoxLayout
 
@@ -51,7 +52,7 @@ class QualityCard(CardWidget):
         event_bus.subscribe(Events.REQUEST_BR_CHANGED, self._syncQualityLevel)
         self._syncQualityLevel(self.ctx.playing_manager.getCurrentRequestBr())
 
-    def _syncQualityLevel(self, br):
+    def _syncQualityLevel(self, br: int) -> None:
         c = (
             (QColor(255, 255, 255) if themeModule.isDark() else QColor(0, 0, 0))
             if br != self.level.br
@@ -59,18 +60,18 @@ class QualityCard(CardWidget):
         )
         self.tl.setTextColor(c, c)
         self.cl.setTextColor(c, c)
-        if self.has_clicked and br != self.level.br:
-            InfoBar.error(
-                tr('quality_dialog.failed'),
+        has_clicked = self.has_clicked
+        self.has_clicked = False
+        if has_clicked and br != self.level.br:
+            ErrorPopupWindow(
                 tr(
                     'quality_dialog.failed_content',
                     quality=tr(f'quality_display.{self.level.br}'),
                 ),
-                duration=10000,
-                position=InfoBarPosition.TOP,
                 parent=self.ctx.main_window,
-            )
-        elif self.has_clicked and br == self.level.br:
+                title=tr('quality_dialog.failed'),
+            ).exec()
+        elif has_clicked and br == self.level.br:
             InfoBar.success(
                 tr('quality_dialog.success'),
                 tr(
@@ -81,7 +82,6 @@ class QualityCard(CardWidget):
                 position=InfoBarPosition.TOP,
                 parent=self.ctx.main_window,
             )
-        self.has_clicked = False
 
     def _clickedOn(self):
         self.has_clicked = True

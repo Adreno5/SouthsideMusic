@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import traceback
 from typing import TYPE_CHECKING
 
 import requests
@@ -26,6 +27,7 @@ from core.cache_cleanup import touchCacheFile
 from core.downloader import asyncTask
 from core.i18n import tr
 from core.models import SongStorable
+from views.error_popup import ErrorPopupWindow
 
 if TYPE_CHECKING:
     from views.main_window import MainWindow
@@ -186,18 +188,17 @@ def exportSong(
             )
         except Exception as e:
             _logger.exception(e)
-            result['error'] = str(e)
+            result['error'] = traceback.format_exc()
 
     def _final() -> None:
         if progress_dialog is not None:
             progress_dialog.finish(not result.get('error'))
         if result.get('error'):
-            InfoBar.error(
-                tr('playing_page.export_failed'),
+            ErrorPopupWindow(
                 result['error'],
                 parent=mwindow,
-                duration=8000,
-            )
+                title=tr('playing_page.export_failed'),
+            ).exec()
             return
         InfoBar.success(
             tr('song_card.export'),

@@ -69,3 +69,4 @@ node_modules/
 /promo-video/out/
 /promo-video/capture/out/*.log
 /promo-video/capture/out/tree_*.txt
+/.harness-results/

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
@@ -17,8 +18,10 @@ class TranslationLookup:
     _ensureTranslationLookup = LyricsViewer._ensureTranslationLookup
     _translationTimeForLine = LyricsViewer._translationTimeForLine
     _translationTextForLine = LyricsViewer._translationTextForLine
+    _usesHandoff = LyricsViewer._usesHandoff
 
     def __init__(self, original: str, translated: str) -> None:
+        self.ctx = SimpleNamespace(config=SimpleNamespace(enable_lyric_handoff=False))
         self._mgr = LRCLyricParser()
         self._mgr.cur = original
         self._mgr.parse()

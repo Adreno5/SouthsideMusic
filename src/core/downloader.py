@@ -8,6 +8,7 @@ from typing import Callable, Dict, Optional
 from core.config import cfg
 
 from PySide6.QtCore import QObject, Signal
+import shiboken6
 from services.events import Events, event_bus
 import requests
 
@@ -216,7 +217,7 @@ class TaskManager(QObject):
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-    def _run(self):
+    def _run(self) -> None:
         try:
             self.task(*self.args)
         except Exception as e:
@@ -224,7 +225,12 @@ class TaskManager(QObject):
             self._logger.exception(e)
             raise e
         finally:
-            self.taskFinished.emit()
+            try:
+                if shiboken6.isValid(self):
+                    self.taskFinished.emit()
+            except RuntimeError:
+                if shiboken6.isValid(self):
+                    raise
             self.task = lambda: None
             self.args = ()
 

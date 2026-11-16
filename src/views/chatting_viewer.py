@@ -1,26 +1,24 @@
 from __future__ import annotations
 
 import base64
-import math
 import logging
+import math
 import re
 from functools import lru_cache
 from html import escape
-
 from typing import Any, Sequence, override
 
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtGui import QResizeEvent, QTextCursor, QTextOption, Qt
 from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
-from qfluentwidgets import TextBrowser
 from markdown_it import MarkdownIt
+from markdown_it.rules_inline.state_inline import StateInline
 from markdown_it.token import Token
+from qfluentwidgets import TextBrowser
 from ziafont import config as ziafont_config
 from ziamath import Latex
 
 
-_FENCE_PATTERN = re.compile(r'^[ \t]{0,3}(`{3,}|~{3,})')
-_INLINE_CODE_PATTERN = re.compile(r'(?<!\\)(`+)(?:(?!\1)[^\n])*?\1')
 _MATH_PATTERN = re.compile(
     r'(?s)(\$\$.*?\$\$|(?<!\\)\$[^$\n]+?(?<!\\)\$|\\\[.*?\\\]|\\\(.*?\\\))'
 )
@@ -32,51 +30,6 @@ _DEFAULT_FENCE_RENDERER = _MARKDOWN.renderer.rules['fence']
 _LATEX_FENCE_LANGUAGES = frozenset({'latex', 'math', 'tex'})
 logging.getLogger('markdown_it').setLevel(logging.WARNING)
 ziafont_config.svg2 = False
-
-
-def _codeRanges(markdown: str) -> list[tuple[int, int]]:
-    ranges: list[tuple[int, int]] = []
-    lines = markdown.splitlines(keepends=True)
-    offset = 0
-    fence_start: int | None = None
-    fence_char = ''
-    fence_length = 0
-
-    for line in lines:
-        line_text = line.rstrip('\r\n')
-        if fence_start is not None:
-            closing_pattern = re.compile(
-                rf'^[ \t]{{0,3}}{re.escape(fence_char)}{{{fence_length},}}[ \t]*$'
-            )
-            if closing_pattern.match(line_text):
-                ranges.append((fence_start, offset + len(line)))
-                fence_start = None
-            offset += len(line)
-            continue
-
-        fence_match = _FENCE_PATTERN.match(line_text)
-        if fence_match:
-            marker = fence_match.group(1)
-            fence_start = offset
-            fence_char = marker[0]
-            fence_length = len(marker)
-        else:
-            ranges.extend(
-                (offset + match.start(), offset + match.end())
-                for match in _INLINE_CODE_PATTERN.finditer(line_text)
-            )
-        offset += len(line)
-
-    if fence_start is not None:
-        ranges.append((fence_start, len(markdown)))
-    return ranges
-
-
-def _overlapsCode(start: int, end: int, code_ranges: list[tuple[int, int]]) -> bool:
-    return any(
-        start < range_end and end > range_start
-        for range_start, range_end in code_ranges
-    )
 
 
 def _formulaParts(value: str) -> tuple[str, bool]:
@@ -91,31 +44,14 @@ def _formulaParts(value: str) -> tuple[str, bool]:
     return value.strip(), False
 
 
-def _extractMath(markdown: str) -> tuple[str, list[tuple[str, str, bool]]]:
-    code_ranges = _codeRanges(markdown)
-    replacements: list[tuple[int, int, str, bool]] = []
-
-    for match in _MATH_PATTERN.finditer(markdown):
-        if _overlapsCode(match.start(), match.end(), code_ranges):
-            continue
-        formula, is_block = _formulaParts(match.group(0))
-        if formula:
-            replacements.append((match.start(), match.end(), formula, is_block))
-
-    replacements.sort(key=lambda item: item[0])
-    parts: list[str] = []
-    formulas: list[tuple[str, str, bool]] = []
-    offset = 0
-    for start, end, formula, is_block in replacements:
-        if start < offset:
-            continue
-        token = f'SOUTHSIDEMATHTOKEN{len(formulas)}'
-        parts.append(markdown[offset:start])
-        parts.append(token)
-        formulas.append((token, formula, is_block))
-        offset = end
-    parts.append(markdown[offset:])
-    return ''.join(parts), formulas
+def _parseMath(state: StateInline, silent: bool) -> bool:
+    match = _MATH_PATTERN.match(state.src, state.pos, state.posMax)
+    if match is None or not _formulaParts(match.group(0))[0]:
+        return False
+    if not silent:
+        state.push('math', '', 0).content = match.group(0)
+    state.pos = match.end()
+    return True
 
 
 @lru_cache(maxsize=128)
@@ -142,15 +78,29 @@ def _renderLatex(formula: str, is_block: bool, color: str) -> str:
 
 
 def renderMarkdown(markdown: str, math_color: str = '#ffffff') -> str:
-    """Render chat Markdown with tables, fenced code, links, and LaTeX."""
-    protected_markdown, formulas = _extractMath(markdown)
-    rendered = _MARKDOWN.render(protected_markdown)
-    for token, formula, is_block in formulas:
-        rendered = rendered.replace(
-            token,
-            _renderLatex(formula, is_block, math_color),
-        )
-    return rendered
+    return _MARKDOWN.render(markdown, {'math_color': math_color})
+
+
+def _renderMath(
+    tokens: Sequence[Token],
+    idx: int,
+    options: dict[str, Any],
+    env: dict[str, Any],
+) -> str:
+    formula, is_block = _formulaParts(tokens[idx].content)
+    return _renderLatex(formula, is_block, str(env.get('math_color', '#ffffff')))
+
+
+def _renderImage(
+    tokens: Sequence[Token],
+    idx: int,
+    options: dict[str, Any],
+    env: dict[str, Any],
+) -> str:
+    for child in tokens[idx].children or []:
+        if child.type == 'math':
+            child.type = 'text'
+    return _MARKDOWN.renderer.image(tokens, idx, options, env)
 
 
 def _renderFence(
@@ -170,6 +120,9 @@ def _renderFence(
     )
 
 
+_MARKDOWN.inline.ruler.before('escape', 'math', _parseMath)
+_MARKDOWN.renderer.rules['math'] = _renderMath
+_MARKDOWN.renderer.rules['image'] = _renderImage
 _MARKDOWN.renderer.rules['fence'] = _renderFence
 
 
@@ -220,7 +173,6 @@ class ChattingViewer(QWidget):
         self._fitDocument()
 
     def toMarkdown(self) -> str:
-        """Return the original Markdown backing this viewer."""
         return self._markdown
 
     def appendChunk(self, chunk_content: str) -> None:
@@ -288,7 +240,7 @@ class ChattingViewer(QWidget):
 
     def _fitDocument(self) -> None:
         content_width = max(120, self.width())
-        self.browser.setFixedWidth(content_width)
+        self.browser.resize(content_width, self.browser.height())
         viewport_width = max(80, self.browser.viewport().width())
         document = self.browser.document()
         document.setTextWidth(viewport_width)

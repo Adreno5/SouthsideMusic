@@ -5,9 +5,10 @@ on:
     branches: [master]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -49,4 +50,105 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Test
-        run: uv run python -m unittest discover -s tests
+        run: uv run --frozen python scripts/test_harness.py unit --report-dir .harness-results/unit
+
+      - name: Unit summary
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path '.harness-results/unit/unit-summary.md') {
+            Get-Content '.harness-results/unit/unit-summary.md' >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            'Legacy unit reports were not produced; see the failed setup or check step.' >> $env:GITHUB_STEP_SUMMARY
+          }
+
+      - name: Upload unit reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .harness-results/unit/unit-results.json
+            .harness-results/unit/unit-results.xml
+            .harness-results/unit/unit-summary.md
+            .harness-results/unit/unit-logs/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+  harness:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install FFmpeg
+        run: |
+          choco install ffmpeg -y --no-progress
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Prepare free-threaded worker
+        shell: pwsh
+        run: |
+          uv python install 3.14t
+          if ($LASTEXITCODE -ne 0) { throw 'Free-threaded Python installation failed' }
+          $workerRoot = Join-Path $env:RUNNER_TEMP 'southside-harness-worker'
+          uv venv --python 3.14t $workerRoot
+          if ($LASTEXITCODE -ne 0) { throw 'Free-threaded worker environment creation failed' }
+          $workerPython = Join-Path $workerRoot 'Scripts/python.exe'
+          $workerRequirements = @(uv run --frozen python -c "from importlib.metadata import version; print('\n'.join(f'{name}=={version(name)}' for name in ('numpy', 'scipy', 'pillow', 'pydub', 'audioop-lts')))")
+          if ($LASTEXITCODE -ne 0) { throw 'Reading locked worker package versions failed' }
+          uv pip install --python $workerPython @workerRequirements
+          if ($LASTEXITCODE -ne 0) { throw 'Installing locked worker packages failed' }
+          & $workerPython -c "import sys; assert sys._is_gil_enabled() is False"
+          if ($LASTEXITCODE -ne 0) { throw 'Worker Python is not running free-threaded' }
+          "SOUTHSIDE_FREE_THREADED_PYTHON=$workerPython" >> $env:GITHUB_ENV
+
+      - name: Run core and online scenarios
+        run: uv run --frozen python scripts/test_harness.py run --group core --group online --report-dir .harness-results/run
+
+      - name: Harness summary
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path '.harness-results/run/summary.md') {
+            Get-Content '.harness-results/run/summary.md' >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            'Harness reports were not produced; see the failed setup or scenario step.' >> $env:GITHUB_STEP_SUMMARY
+          }
+
+      - name: Upload harness reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: harness-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .harness-results/run/
+            !.harness-results/run/**/worker/**
+            !.harness-results/run/**/.venv/**
+            !.harness-results/run/**/torch_venv/**
+            !.harness-results/run/**/freethreaded_venv/**
+            !.harness-results/run/**/src/**
+            !.harness-results/run/**/tests/**
+            !.harness-results/run/**/scripts/**
+            !.harness-results/run/**/fonts/**
+            !.harness-results/run/**/icons/**
+            !.harness-results/run/**/images/**
+            !.harness-results/run/**/ffmpeg/**
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14

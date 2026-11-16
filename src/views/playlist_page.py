@@ -153,6 +153,9 @@ class PlaylistPage(QWidget):
         ):
             self._pm.playlist.append(self._dp.cur.storable)
 
+        self._pm.current_index = 0 if self._pm.playlist else -1
+        event_bus.emit(Events.PLAYLIST_CHANGED)
+
         self.refreshPlaylistWidget()
 
         InfoBar.success(

@@ -962,6 +962,10 @@ class LLM:
                         if tool_call.function.arguments:
                             part['arguments'] += tool_call.function.arguments
 
+            if cancel_event is not None and cancel_event.is_set():
+                return
+            if finish_reason is None:
+                raise RuntimeError('LLM stream ended before completion')
             if (
                 finish_reason != 'tool_calls'
                 or not tool_call_parts

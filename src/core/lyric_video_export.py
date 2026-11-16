@@ -336,7 +336,7 @@ def _exportLyricVideoSingle(
         raise RuntimeError(
             'FFmpeg failed with code {0}: {1}'.format(
                 returncode,
-                stderr[-2000:] if stderr else 'no error output',
+                stderr if stderr else 'no error output',
             )
         )
 
@@ -373,7 +373,10 @@ def _exportLyricVideoParallel(
     if worker_count <= 1:
         raise _ParallelExportUnavailable('not enough frames for parallel export')
 
-    temp_dir = tempfile.mkdtemp(prefix='southside-lyric-video-')
+    temp_dir = tempfile.mkdtemp(
+        prefix='southside-lyric-video-',
+        dir=os.path.dirname(os.path.abspath(output_path)),
+    )
     processes: list[subprocess.Popen[str]] = []
     reader_threads: list[threading.Thread] = []
     message_queue: queue.Queue[dict[str, Any]] = queue.Queue()
@@ -509,6 +512,13 @@ def _exportLyricVideoParallel(
         for process in processes:
             if process.poll() is None:
                 _terminateTextProcess(process)
+        for reader in reader_threads:
+            reader.join(timeout=0.5)
+        for process in processes:
+            if process.stdout is not None:
+                process.stdout.close()
+            if process.stderr is not None:
+                process.stderr.close()
         shutil.rmtree(temp_dir, ignore_errors=True)
         _clearExportDebugState()
 
@@ -636,9 +646,7 @@ def _workerFailureMessage(
         except Exception:
             stderr = ''
     stderr = stderr.strip()
-    if stderr:
-        stderr = stderr[-2000:]
-    else:
+    if not stderr:
         stderr = 'no error output'
     return f'Lyric video worker {worker_index} failed with code {returncode}: {stderr}'
 
@@ -737,6 +745,11 @@ def _runFfmpegProgressCommand(
     except Exception:
         _terminateTextProcess(process)
         raise
+    finally:
+        if process.stdout is not None:
+            process.stdout.close()
+        if process.stderr is not None:
+            process.stderr.close()
 
     if returncode != 0:
         if os.path.exists(command[-1]):
@@ -748,7 +761,7 @@ def _runFfmpegProgressCommand(
         raise RuntimeError(
             'FFmpeg failed with code {0}: {1}'.format(
                 returncode,
-                stderr[-2000:] if stderr else 'no error output',
+                stderr if stderr else 'no error output',
             )
         )
     if progress_callback is not None:
@@ -1569,7 +1582,7 @@ def _segmentWorkerMain(payload_path: str) -> int:
         raise RuntimeError(
             'FFmpeg segment failed with code {0}: {1}'.format(
                 returncode,
-                stderr[-2000:] if stderr else 'no error output',
+                stderr if stderr else 'no error output',
             )
         )
 
@@ -1860,15 +1873,16 @@ def _writeFrame(
     try:
         stdin.write(_qimageBytes(image))
     except OSError as e:
-        returncode = process.poll()
-        if returncode is None:
-            raise
+        try:
+            returncode = process.wait(timeout=0.5)
+        except subprocess.TimeoutExpired:
+            raise e from None
         stderr = process.stderr.read() if process.stderr is not None else b''
         text = stderr.decode('utf-8', 'ignore').strip()
         raise RuntimeError(
             'FFmpeg exited with code {}: {}'.format(
                 returncode,
-                text[-2000:] if text else 'no error output',
+                text if text else 'no error output',
             )
         ) from e
 

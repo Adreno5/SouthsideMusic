@@ -1,0 +1,380 @@
+{
+ "pages": {
+  "home": {
+   "width": 1920,
+   "height": 1080,
+   "dpr": 3.0,
+   "file": "pages/home.png"
+  },
+  "playing": {
+   "width": 1920,
+   "height": 1080,
+   "dpr": 3.0,
+   "file": "pages/playing.png"
+  },
+  "home_song": {
+   "width": 1920,
+   "height": 1080,
+   "dpr": 3.0,
+   "file": "pages/home_song.png"
+  }
+ },
+ "elements": [
+  {
+   "class": "RediscoveryCard",
+   "objectName": "",
+   "x": 331,
+   "y": 59,
+   "w": 1578,
+   "h": 84,
+   "file": "elements/home/00_RediscoveryCard_.png",
+   "page": "home"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 349,
+   "y": 69,
+   "w": 1438,
+   "h": 30,
+   "file": "elements/home/01_SubtitleLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 349,
+   "y": 103,
+   "w": 1438,
+   "h": 30,
+   "file": "elements/home/02_CaptionLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "AccountWidget",
+   "objectName": "",
+   "x": 446,
+   "y": 149,
+   "w": 732,
+   "h": 60,
+   "file": "elements/home/03_AccountWidget_.png",
+   "page": "home"
+  },
+  {
+   "class": "HeartModeCard",
+   "objectName": "",
+   "x": 331,
+   "y": 215,
+   "w": 386,
+   "h": 802,
+   "file": "elements/home/04_HeartModeCard_.png",
+   "page": "home"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 349,
+   "y": 264,
+   "w": 350,
+   "h": 17,
+   "file": "elements/home/05_QLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 349,
+   "y": 987,
+   "w": 350,
+   "h": 16,
+   "file": "elements/home/06_QLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "PrivateRoamCard",
+   "objectName": "",
+   "x": 729,
+   "y": 215,
+   "w": 385,
+   "h": 802,
+   "file": "elements/home/07_PrivateRoamCard_.png",
+   "page": "home"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 747,
+   "y": 264,
+   "w": 349,
+   "h": 17,
+   "file": "elements/home/08_QLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 747,
+   "y": 987,
+   "w": 349,
+   "h": 16,
+   "file": "elements/home/09_QLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "PrivateRadarCard",
+   "objectName": "",
+   "x": 1126,
+   "y": 215,
+   "w": 386,
+   "h": 802,
+   "file": "elements/home/10_PrivateRadarCard_.png",
+   "page": "home"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1144,
+   "y": 264,
+   "w": 350,
+   "h": 17,
+   "file": "elements/home/11_QLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1144,
+   "y": 987,
+   "w": 350,
+   "h": 16,
+   "file": "elements/home/12_QLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "SimilarSongsCard",
+   "objectName": "",
+   "x": 1524,
+   "y": 215,
+   "w": 385,
+   "h": 802,
+   "file": "elements/home/13_SimilarSongsCard_.png",
+   "page": "home"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1542,
+   "y": 264,
+   "w": 349,
+   "h": 17,
+   "file": "elements/home/14_QLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1542,
+   "y": 987,
+   "w": 349,
+   "h": 16,
+   "file": "elements/home/15_QLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "SImageLabel",
+   "objectName": "",
+   "x": 18,
+   "y": 66,
+   "w": 200,
+   "h": 200,
+   "file": "elements/playing/00_SImageLabel_.png",
+   "page": "playing"
+  },
+  {
+   "class": "TitleLabel",
+   "objectName": "",
+   "x": 27,
+   "y": 281,
+   "w": 182,
+   "h": 38,
+   "file": "elements/playing/01_TitleLabel_.png",
+   "page": "playing"
+  },
+  {
+   "class": "LyricsViewer",
+   "objectName": "",
+   "x": 233,
+   "y": 57,
+   "w": 1678,
+   "h": 962,
+   "file": "elements/playing/02_LyricsViewer_.png",
+   "page": "playing"
+  },
+  {
+   "class": "RediscoveryCard",
+   "objectName": "",
+   "x": 331,
+   "y": 59,
+   "w": 1578,
+   "h": 84,
+   "file": "elements/home_song/00_RediscoveryCard_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 349,
+   "y": 69,
+   "w": 1438,
+   "h": 30,
+   "file": "elements/home_song/01_SubtitleLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 349,
+   "y": 103,
+   "w": 1438,
+   "h": 30,
+   "file": "elements/home_song/02_CaptionLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "AccountWidget",
+   "objectName": "",
+   "x": 446,
+   "y": 149,
+   "w": 732,
+   "h": 60,
+   "file": "elements/home_song/03_AccountWidget_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "HeartModeCard",
+   "objectName": "",
+   "x": 331,
+   "y": 215,
+   "w": 386,
+   "h": 802,
+   "file": "elements/home_song/04_HeartModeCard_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 349,
+   "y": 264,
+   "w": 350,
+   "h": 17,
+   "file": "elements/home_song/05_QLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 349,
+   "y": 987,
+   "w": 350,
+   "h": 16,
+   "file": "elements/home_song/06_QLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "PrivateRoamCard",
+   "objectName": "",
+   "x": 729,
+   "y": 215,
+   "w": 385,
+   "h": 802,
+   "file": "elements/home_song/07_PrivateRoamCard_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 747,
+   "y": 264,
+   "w": 349,
+   "h": 17,
+   "file": "elements/home_song/08_QLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 747,
+   "y": 987,
+   "w": 349,
+   "h": 16,
+   "file": "elements/home_song/09_QLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "PrivateRadarCard",
+   "objectName": "",
+   "x": 1126,
+   "y": 215,
+   "w": 386,
+   "h": 802,
+   "file": "elements/home_song/10_PrivateRadarCard_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1144,
+   "y": 264,
+   "w": 350,
+   "h": 17,
+   "file": "elements/home_song/11_QLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1144,
+   "y": 987,
+   "w": 350,
+   "h": 16,
+   "file": "elements/home_song/12_QLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "SimilarSongsCard",
+   "objectName": "",
+   "x": 1524,
+   "y": 215,
+   "w": 385,
+   "h": 802,
+   "file": "elements/home_song/13_SimilarSongsCard_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1542,
+   "y": 264,
+   "w": 349,
+   "h": 17,
+   "file": "elements/home_song/14_QLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1542,
+   "y": 987,
+   "w": 349,
+   "h": 16,
+   "file": "elements/home_song/15_QLabel_.png",
+   "page": "home_song"
+  }
+ ],
+ "desktop_lyrics": {
+  "x": 0,
+  "y": 0,
+  "w": 853,
+  "h": 65
+ }
+}

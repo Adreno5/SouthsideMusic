@@ -1,0 +1,621 @@
+{
+  "project": "SouthsideMusic 24s 产品宣传片（video-shotcraft）",
+  "generated_at": "2026-10-31T14:27:06.831Z",
+  "source": "Freesound（freesound.org），经 video-shotcraft assets/scripts/sfx-source.py 下载与测量",
+  "clip": {
+    "duration_seconds": 24,
+    "fps": 60,
+    "total_frames": 1440,
+    "bgm": "cat-walk, 130 BPM, 24.0s / 1440f @60fps",
+    "beat_frames": 27.6923,
+    "beat_frames_index": {
+      "b0": 0,
+      "b8": 222,
+      "b12": 332,
+      "b16": 443,
+      "b17": 471,
+      "b20": 554,
+      "b24": 665,
+      "b28": 776,
+      "b30": 831,
+      "b34": 942,
+      "b40": 1108,
+      "b44": 1219,
+      "b46": 1274
+    }
+  },
+  "measurement": {
+    "method": "ffprobe 读容器/流参数；ffmpeg 解码 pcm_s16le（原采样率、原声道）；numpy 计算整文件 sample peak、整文件 RMS、10ms 窗 RMS 包络峰位与 −40dB 活动区间；sha256 对最终文件重算",
+    "peak_dbfs": "所有声道绝对最大值（sample peak，非 true peak）",
+    "rms_dbfs": "整文件 RMS（非 LUFS）",
+    "peak_lag_in_window_frames": "10ms 窗 RMS 峰位相对裁剪窗口起点的帧数（60fps），逐文件、逐窗口实测",
+    "limits": "未试听：本机只有测量能力，没有监听环境。数值不能替代听感，尤其判断不了音色是否「游戏音包」。",
+    "alignment_rule": "Sequence.from = 目标峰值帧 − 音源峰值滞后帧 − 输出音轨偏移帧（sound-design §4.6）",
+    "output_offset_status": "本工程尚未渲染，输出音轨偏移（AAC priming 等）未实测；suggested_sequence_from 只扣了音源峰值滞后。首次渲染后用 2–3 个探针做交叉相关补这一项，不要搬用其他管线的 1.28f，也不要套用 promo-ink 时代的 4f。"
+  },
+  "skipped": [
+    {
+      "category": "keyboard typing",
+      "reason": "24s 版 BGM 报告 §7 的 12 个 cue 里没有打字动作（#4 逐字亮起要的是纸张/玻璃细碎拟音，不是键盘），按「宁可少而准」跳过。"
+    },
+    {
+      "category": "light-clunk（第二件机械拟音）",
+      "reason": "机械/开关类别由 switch-light-clunk 覆盖；备选 fs:815493 Mechanical switch (latch) 02 已实测（1.80s，活动 0.07–0.31s，峰滞后 9.9f，CC0）但未收录，避免同类重复。"
+    },
+    {
+      "category": "riser（备选）",
+      "reason": "fs:376576 Riser Quick 2（CC BY 3.0，4.0s，峰 3.625s，RMS −27.2）实测更轻更「恐怖片」，且来自商业包预告；选 CC0 且低频更厚的 Cinematic Riser #3。"
+    }
+  ],
+  "assets": [
+    {
+      "id": "fs:859482",
+      "local_file": "sfx/riser-dark-swell.mp3",
+      "name": "Cinematic Riser #3 subtle",
+      "author": "BeaconStudio",
+      "source_page": "https://freesound.org/people/BeaconStudio/sounds/859482/",
+      "license": "CC0 1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_note": "CC0，无署名义务；仍列入来源清单",
+      "file_kind": "freesound HQ MP3 preview（有损，非上传者原始 WAV）",
+      "is_preview": true,
+      "codec": "mp3",
+      "duration_seconds": 3,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_dbfs": -2,
+      "rms_dbfs": -19.67,
+      "energy_peak_seconds": 2.28,
+      "peak_lag_frames_60": 136.8,
+      "active_seconds": [
+        0.33,
+        2.35
+      ],
+      "bytes": 48095,
+      "sha256": "5425022716bdc5a8a8ce9ceb534ce2fc1d0b81ad3bf8aa5a03dbd03c085ee927",
+      "freesound": {
+        "preview_url": "https://cdn.freesound.org/previews/859/859482_18689440-hq.mp3",
+        "downloads": 582,
+        "rating": 4.8,
+        "rating_count": 6,
+        "description": "A short and subtle FX riser created and processed in-studio. The sample was created by taking several different low frequency sounds and combining and processing them."
+      },
+      "use": "§7 #5 频谱/节拍可视化点亮 —— 品牌/爬升段的低频铺底 riser，峰落 f554（b20），起于 f471（b17）附近",
+      "cues": [
+        {
+          "action": "频谱/节拍可视化点亮（riser 峰落 b20）",
+          "target_frame": 554,
+          "beat": "b20",
+          "window_seconds": [
+            0.95,
+            3
+          ],
+          "window_frames": 123,
+          "peak_lag_in_window_frames": 79.8,
+          "suggested_sequence_from": 474,
+          "residual_frames": -0.2
+        }
+      ],
+      "trim": "源 0.95s 起、取 2.05s（f474–f577，123f）",
+      "suggested_volume": 0.5,
+      "notes": "3.0s 源，能量 0.33–2.35s；裁掉前 0.95s 后为 2.05s，符合 1.5–2.5s。暗色低频合成、无 EDM 高音 sweep。整文件峰值滞后 136.8f，裁剪窗口内 79.8f。也可作品牌开场 f0–f120 低频铺底，但 f0 已被 impact 占位，勿同拍叠两条长尾。",
+      "changes": []
+    },
+    {
+      "id": "fs:377303",
+      "local_file": "sfx/impact-deep-hit.mp3",
+      "name": "Deep Cinematic Impact",
+      "author": "MeijstroAudio",
+      "source_page": "https://freesound.org/people/MeijstroAudio/sounds/377303/",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_note": "署名必需（见 FREESOUND-CREDITS.md）；成片发布页或片尾需出现",
+      "file_kind": "freesound HQ MP3 preview（有损，非上传者原始 WAV）",
+      "is_preview": true,
+      "codec": "mp3",
+      "duration_seconds": 2,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_dbfs": -0.27,
+      "rms_dbfs": -21.85,
+      "energy_peak_seconds": 0.03,
+      "peak_lag_frames_60": 1.8,
+      "active_seconds": [
+        0,
+        1.58
+      ],
+      "bytes": 47174,
+      "sha256": "a62e83c3bed3f07f532340c7b3cc3d8d4b298115cec5ddc9359158eb524c0773",
+      "freesound": {
+        "preview_url": "https://cdn.freesound.org/previews/377/377303_3513022-hq.mp3",
+        "downloads": 6967,
+        "rating": 4.5,
+        "rating_count": 55,
+        "description": "A typical deep impact cinematic sound effect. Created in Cubase 7 by adding reverb and EQ on a pre recorded punch sound. Be sure to also visit us on Youtube"
+      },
+      "use": "§7 #1 开场 drop 落地（字标砸下）f0（b0）；同一文件复用于 §7 #12 收尾字标 f1274（b46）",
+      "cues": [
+        {
+          "action": "开场字标砸下",
+          "target_frame": 0,
+          "beat": "b0",
+          "window_seconds": [
+            0,
+            2
+          ],
+          "window_frames": 120,
+          "peak_lag_in_window_frames": 1.8,
+          "suggested_sequence_from": 0,
+          "residual_frames": 1.8
+        },
+        {
+          "action": "收尾字标",
+          "target_frame": 1274,
+          "beat": "b46",
+          "window_seconds": [
+            0,
+            2
+          ],
+          "window_frames": 120,
+          "peak_lag_in_window_frames": 1.8,
+          "suggested_sequence_from": 1272,
+          "residual_frames": -0.2
+        }
+      ],
+      "trim": "无需裁剪；自然混响 1.58s 尾巴可越过收尾",
+      "suggested_volume": 0.55,
+      "notes": "峰值滞后 1.8f（0.03s）。f0 无法负补偿：from=0 时峰落在 f1.8（约 30ms 晚），即报告 §7「正片重音别放前 2 帧」的残余；要零残差只能前移整条 BGM 或换 0 滞后素材。",
+      "changes": []
+    },
+    {
+      "id": "fs:812750",
+      "local_file": "sfx/impact-tight-slam.mp3",
+      "name": "Sound Design Elements Impact SFX PS 084",
+      "author": "AudioPapkin",
+      "source_page": "https://freesound.org/people/AudioPapkin/sounds/812750/",
+      "license": "CC0 1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_note": "CC0，无署名义务；仍列入来源清单",
+      "file_kind": "freesound HQ MP3 preview（有损，非上传者原始 WAV）",
+      "is_preview": true,
+      "codec": "mp3",
+      "duration_seconds": 1.76,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_dbfs": -0.18,
+      "rms_dbfs": -14.44,
+      "energy_peak_seconds": 0.17,
+      "peak_lag_frames_60": 10.2,
+      "active_seconds": [
+        0.06,
+        1.38
+      ],
+      "bytes": 50352,
+      "sha256": "4419e3f489917da2627a108936042fb17d5868e0e1bbe0d49a8009de2934333a",
+      "freesound": {
+        "preview_url": "https://cdn.freesound.org/previews/812/812750_8698658-hq.mp3",
+        "downloads": 160,
+        "rating": 5,
+        "rating_count": 6,
+        "description": "Support me buy me coffee : https://ko-fi.com/audiopapkin Support me buy me coffee : https://buymeacoffee.com/audiopapkin Sound Design Elements Impact SFX ,is perfect for cinematic uses,video games. Effects recorded from the field. Recording gear-Tascam Portacapture x8 and Microphone - RØDE NTG5 Native Instruments Kontakt 8 REAPER DAW - audio processing My YouTube channel: https://www.youtube.com/channel/UC3LZ6GTrLwgmpXbLLQnS0lw"
+      },
+      "use": "§7 #10 break 回归 slam f942（b34），与 #1 的深冲击刻意区分音色",
+      "cues": [
+        {
+          "action": "break 回归 slam（更短更硬）",
+          "target_frame": 942,
+          "beat": "b34",
+          "window_seconds": [
+            0,
+            1.4
+          ],
+          "window_frames": 84,
+          "peak_lag_in_window_frames": 10.2,
+          "suggested_sequence_from": 932,
+          "residual_frames": 0.2
+        }
+      ],
+      "trim": "取 0.0–1.40s（84f），1.38s 后已到 −40dB",
+      "suggested_volume": 0.6,
+      "notes": "峰值滞后 10.2f（0.17s），必须补偿。RMS −14.4 dBFS，比 Deep Cinematic Impact 热约 7dB，先降 volume 再对齐。",
+      "changes": []
+    },
+    {
+      "id": "fs:742905",
+      "local_file": "sfx/whoosh-camera-pass.mp3",
+      "name": "Woosh - Plastic perforated steak spatula 6",
+      "author": "Sadiquecat",
+      "source_page": "https://freesound.org/people/Sadiquecat/sounds/742905/",
+      "license": "CC0 1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_note": "CC0，无署名义务；仍列入来源清单",
+      "file_kind": "freesound HQ MP3 preview（有损，非上传者原始 WAV）",
+      "is_preview": true,
+      "codec": "mp3",
+      "duration_seconds": 1.059146,
+      "sample_rate": 48000,
+      "channels": 1,
+      "peak_dbfs": -0.28,
+      "rms_dbfs": -18.11,
+      "energy_peak_seconds": 0.34,
+      "peak_lag_frames_60": 20.4,
+      "active_seconds": [
+        0.26,
+        0.53
+      ],
+      "bytes": 26208,
+      "sha256": "6a40bcba73b1e79727b0f1f90c1153a8ac7342925a9e9fb5a561af757eb233ed",
+      "freesound": {
+        "preview_url": "https://cdn.freesound.org/previews/742/742905_5287430-hq.mp3",
+        "downloads": 381,
+        "rating": 4,
+        "rating_count": 5,
+        "description": "More in pack! Subject : Swinging a plastic steak spatula (with 3 oval holes). Date : 2024 06 22 Location : France indoor Notes : To me, this sounds like someone attacking while wearing fabric/clothing. Hardware : Zoom H5 as recorder with a Rode NT5 mono mic. WS8 Windshield. Processing : Trim, denoise by 8db ish, around +20db gain, using Audacity 2.1.3 Tips : Slow down the sample for a smoother more cinematic whoosh! Attribution is greatly appreciated but not required. Recommendation : X sound by Sadiquecat on Freesound.org in CC0 licence. Hope you enjoy :) PS: Id love to hear how you use this sound, feel free to link your creations or share how/why you listen to this :)"
+      },
+      "use": "§7 #2 镜头推入播放器主界面 f222（b8）",
+      "cues": [
+        {
+          "action": "镜头推入主界面（运镜 whoosh）",
+          "target_frame": 222,
+          "beat": "b8",
+          "window_seconds": [
+            0.18,
+            0.62
+          ],
+          "window_frames": 26,
+          "peak_lag_in_window_frames": 9.6,
+          "suggested_sequence_from": 212,
+          "residual_frames": -0.4
+        }
+      ],
+      "trim": "取源 0.18–0.62s（0.44s / 26f），干、无长尾",
+      "suggested_volume": 0.45,
+      "notes": "真实物件拟音（塑料铲挥动，Zoom H5 + Rode NT5 单声道），非 EDM sweep。活动区 0.26–0.53s，整文件峰滞后 20.4f、裁剪窗口内 9.6f。",
+      "changes": []
+    },
+    {
+      "id": "fs:614169",
+      "local_file": "sfx/transition-soft-swish.mp3",
+      "name": "Swishes_9_hill_curve_stronger.wav",
+      "author": "videofueralle",
+      "source_page": "https://freesound.org/people/videofueralle/sounds/614169/",
+      "license": "CC0 1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_note": "CC0，无署名义务；仍列入来源清单",
+      "file_kind": "freesound HQ MP3 preview（有损，非上传者原始 WAV）",
+      "is_preview": true,
+      "codec": "mp3",
+      "duration_seconds": 1.2695,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_dbfs": -14.22,
+      "rms_dbfs": -28.53,
+      "energy_peak_seconds": 0.66,
+      "peak_lag_frames_60": 39.6,
+      "active_seconds": [
+        0.06,
+        1.26
+      ],
+      "bytes": 32064,
+      "sha256": "407a8ecab0b76ebd5e9e614359935a98114a7d3df05e3f3b67fb995a19494254",
+      "freesound": {
+        "preview_url": "https://cdn.freesound.org/previews/614/614169_1130120-hq.mp3",
+        "downloads": 790,
+        "rating": 5,
+        "rating_count": 12,
+        "description": "I did some swishes myself using a spiral hose; I needed them for specific situations in video editing and the bamboo swishes I found here on freesound were too fast and strong. The flexible spiral hose made for some nice and slower swishes; Some of the 16 sounds build up a little, some are very fast and strong, some soft and gentle. A whole pack for you to use. Recorded with a tascam DR-05 stereo (the movement always went from left to right); a little noise reduction in Audacity."
+      },
+      "use": "§7 #7 智能交叉淡化 f776（b28）；也可作字卡落定的软化层",
+      "cues": [
+        {
+          "action": "智能交叉淡化（软转场 swish）",
+          "target_frame": 776,
+          "beat": "b28",
+          "window_seconds": [
+            0.3,
+            1.1
+          ],
+          "window_frames": 48,
+          "peak_lag_in_window_frames": 21.6,
+          "suggested_sequence_from": 754,
+          "residual_frames": -0.4
+        }
+      ],
+      "trim": "取源 0.30–1.10s（0.80s / 48f）",
+      "suggested_volume": 0.7,
+      "notes": "峰值仅 −14.2 dBFS（低于 sound-design §4.1 的 −12dB 参考线）：需 volume ≈1.8–2.2 或先归一化，抬音量会一起抬底噪。真实软管挥动、hill-curve 慢起慢收，克制无长尾。",
+      "changes": []
+    },
+    {
+      "id": "fs:65480",
+      "local_file": "sfx/sparkle-glass-point.mp3",
+      "name": "Bottle Cling.wav",
+      "author": "Angel_Perez_Grandi",
+      "source_page": "https://freesound.org/people/Angel_Perez_Grandi/sounds/65480/",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_note": "署名必需（见 FREESOUND-CREDITS.md）；成片发布页或片尾需出现",
+      "file_kind": "freesound HQ MP3 preview（有损，非上传者原始 WAV）",
+      "is_preview": true,
+      "codec": "mp3",
+      "duration_seconds": 0.330667,
+      "sample_rate": 48000,
+      "channels": 1,
+      "peak_dbfs": -0.17,
+      "rms_dbfs": -18.31,
+      "energy_peak_seconds": 0.02,
+      "peak_lag_frames_60": 1.2,
+      "active_seconds": [
+        0.01,
+        0.24
+      ],
+      "bytes": 9456,
+      "sha256": "26fc9917d2475a673124d2045e47781201cfdd29df788d5ac37d7d818aab849f",
+      "freesound": {
+        "preview_url": "https://cdn.freesound.org/previews/65/65480_309509-hq.mp3",
+        "downloads": 3391,
+        "rating": 4.3,
+        "rating_count": 39,
+        "description": "Wine bottles cling together, single hit. Rode NT5 in Digi003"
+      },
+      "use": "§7 #3 封面取色渐变铺开 f332（b12）单点光效；复用于 §7 #12 桌面歌词浮出 f1219（b44）",
+      "cues": [
+        {
+          "action": "封面取色 / 单点光效",
+          "target_frame": 332,
+          "beat": "b12",
+          "window_seconds": [
+            0,
+            0.33
+          ],
+          "window_frames": 20,
+          "peak_lag_in_window_frames": 1.2,
+          "suggested_sequence_from": 331,
+          "residual_frames": 0.2
+        },
+        {
+          "action": "桌面歌词浮出",
+          "target_frame": 1219,
+          "beat": "b44",
+          "window_seconds": [
+            0,
+            0.33
+          ],
+          "window_frames": 20,
+          "peak_lag_in_window_frames": 1.2,
+          "suggested_sequence_from": 1218,
+          "residual_frames": 0.2
+        }
+      ],
+      "trim": "整文件 0.33s（20f）直接用，不要循环",
+      "suggested_volume": 0.3,
+      "notes": "真实玻璃碰响（Rode NT5），单次、0.33s，峰在 0.02s（滞后 1.2f）。RMS −18.3 dBFS 偏热，volume 从 0.3 起调；玻璃 clink 不是铃声/notification，也符合「不要群发 sparkle」。",
+      "changes": []
+    },
+    {
+      "id": "fs:348224",
+      "local_file": "sfx/switch-light-clunk.mp3",
+      "name": "Switch Light 06.wav",
+      "author": "tbrook",
+      "source_page": "https://freesound.org/people/tbrook/sounds/348224/",
+      "license": "CC0 1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_note": "CC0，无署名义务；仍列入来源清单",
+      "file_kind": "freesound HQ MP3 preview（有损，非上传者原始 WAV）",
+      "is_preview": true,
+      "codec": "mp3",
+      "duration_seconds": 0.122104,
+      "sample_rate": 48000,
+      "channels": 1,
+      "peak_dbfs": -0.24,
+      "rms_dbfs": -28.08,
+      "energy_peak_seconds": 0.01,
+      "peak_lag_frames_60": 0.6,
+      "active_seconds": [
+        0,
+        0.04
+      ],
+      "bytes": 3360,
+      "sha256": "96423b69ab2ef101b11cdfb4055010fc1833ad701ef4e11a598b14eb01b76719",
+      "freesound": {
+        "preview_url": "https://cdn.freesound.org/previews/348/348224_482507-hq.mp3",
+        "downloads": 2153,
+        "rating": 4.4,
+        "rating_count": 24,
+        "description": "Light switch sound 24bit 48 kHz Wave"
+      },
+      "use": "§7 #6 EQ / 响度旋钮调节 f665（b24）；同一声源适合「开灯」类 UI 开关动作",
+      "cues": [
+        {
+          "action": "EQ / 响度旋钮到位（真实开关拟音）",
+          "target_frame": 665,
+          "beat": "b24",
+          "window_seconds": [
+            0,
+            0.12
+          ],
+          "window_frames": 7,
+          "peak_lag_in_window_frames": 0.6,
+          "suggested_sequence_from": 664,
+          "residual_frames": -0.4
+        }
+      ],
+      "trim": "整文件 0.12s（7f）直接用",
+      "suggested_volume": 0.4,
+      "notes": "真实电灯开关（24bit/48k），0.12s 极短，峰在 0.01s（滞后 0.6f）。峰值 −0.24 dBFS、RMS −28.1。若听感太「墙壁开关」而非「旋钮」，备选 fs:815493 Mechanical switch (latch) 02（实测 1.80s、活动 0.07–0.31s、峰滞后 9.9f），未收录。",
+      "changes": []
+    },
+    {
+      "id": "fs:787405",
+      "local_file": "sfx/paper-card-deal.mp3",
+      "name": "Card Deal",
+      "author": "RealSquink",
+      "source_page": "https://freesound.org/people/RealSquink/sounds/787405/",
+      "license": "CC0 1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_note": "CC0，无署名义务；仍列入来源清单",
+      "file_kind": "freesound HQ MP3 preview（有损，非上传者原始 WAV）",
+      "is_preview": true,
+      "codec": "mp3",
+      "duration_seconds": 0.779021,
+      "sample_rate": 48000,
+      "channels": 1,
+      "peak_dbfs": -0.28,
+      "rms_dbfs": -28.93,
+      "energy_peak_seconds": 0.37,
+      "peak_lag_frames_60": 22.2,
+      "active_seconds": [
+        0.13,
+        0.57
+      ],
+      "bytes": 19392,
+      "sha256": "9d7e4c806cb725517d4502f4ef8a7b2033c00b473ba92e3e08caa712705f5a06",
+      "freesound": {
+        "preview_url": "https://cdn.freesound.org/previews/787/787405_12262933-hq.mp3",
+        "downloads": 495,
+        "rating": 4.7,
+        "rating_count": 6,
+        "description": "Dealing a card. Recorded with a Zoom H2n, using only the mid microphone (single cardioid condenser)"
+      },
+      "use": "§7 #9 呼吸字卡落纸 f831（b30）；复用于 §7 #11 重新发现收藏卡片翻出 f1108（b40）",
+      "cues": [
+        {
+          "action": "呼吸字卡落纸（干燥纸卡滑动）",
+          "target_frame": 831,
+          "beat": "b30",
+          "window_seconds": [
+            0.1,
+            0.65
+          ],
+          "window_frames": 33,
+          "peak_lag_in_window_frames": 16.2,
+          "suggested_sequence_from": 815,
+          "residual_frames": 0.2
+        },
+        {
+          "action": "卡片翻出",
+          "target_frame": 1108,
+          "beat": "b40",
+          "window_seconds": [
+            0.26,
+            0.6
+          ],
+          "window_frames": 20,
+          "peak_lag_in_window_frames": 6.6,
+          "suggested_sequence_from": 1101,
+          "residual_frames": -0.4
+        }
+      ],
+      "trim": "两种窗口：#9 取 0.10–0.65s（33f）；#11 取 0.26–0.60s（20f）",
+      "suggested_volume": 0.45,
+      "notes": "真实纸张（Zoom H2n 中置单声卡）。整文件峰滞后 22.2f —— 按文件头对齐会晚约 0.37s，必须用窗口内滞后（#9 16.2f / #11 6.6f）。单次动作、无长尾，不与 2·4 拍 snare 抢位。",
+      "changes": []
+    },
+    {
+      "id": "fs:520954",
+      "local_file": "sfx/snap-case-click.mp3",
+      "name": "Snapping-Closed an Airpods Case",
+      "author": "redpanda69",
+      "source_page": "https://freesound.org/people/redpanda69/sounds/520954/",
+      "license": "CC0 1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_note": "CC0，无署名义务；仍列入来源清单",
+      "file_kind": "freesound HQ MP3 preview（有损，非上传者原始 WAV）",
+      "is_preview": true,
+      "codec": "mp3",
+      "duration_seconds": 0.614943,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_dbfs": -0.11,
+      "rms_dbfs": -31.9,
+      "energy_peak_seconds": 0.17,
+      "peak_lag_frames_60": 10.2,
+      "active_seconds": [
+        0.14,
+        0.27
+      ],
+      "bytes": 15421,
+      "sha256": "74ba28d631813d267f9bf1dd690c1a2aac8ca9bd6c77cce2838f15f6d6db082f",
+      "freesound": {
+        "preview_url": "https://cdn.freesound.org/previews/520/520954_11130549-hq.mp3",
+        "downloads": 481,
+        "rating": null,
+        "rating_count": null,
+        "description": "Snapping an open case for airpods closed. Makes a satisfying \"snap!\" sound."
+      },
+      "use": "§7 #11 重新发现收藏（卡片翻出）f1108（b40）机械到位声；与 paper-card-deal 二选一",
+      "cues": [
+        {
+          "action": "卡片翻出 / 机械到位",
+          "target_frame": 1108,
+          "beat": "b40",
+          "window_seconds": [
+            0.1,
+            0.45
+          ],
+          "window_frames": 21,
+          "peak_lag_in_window_frames": 4.2,
+          "suggested_sequence_from": 1104,
+          "residual_frames": 0.2
+        }
+      ],
+      "trim": "取源 0.10–0.45s（0.35s / 21f）",
+      "suggested_volume": 0.4,
+      "notes": "真实磁吸盒扣合，非合成 UI 提示音；整文件峰滞后 10.2f、窗口内 4.2f。RMS −31.9 dBFS（安静）、峰值 −0.11：短促、干净，但需要较多增益才听得出位置。",
+      "changes": []
+    },
+    {
+      "id": "fs:140700",
+      "local_file": "sfx/air-suck-vacuum.mp3",
+      "name": "Packaging Paper Tube Air Suck.wav",
+      "author": "afleetingspeck",
+      "source_page": "https://freesound.org/people/afleetingspeck/sounds/140700/",
+      "license": "CC0 1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "license_note": "CC0，无署名义务；仍列入来源清单",
+      "file_kind": "freesound HQ MP3 preview（有损，非上传者原始 WAV）",
+      "is_preview": true,
+      "codec": "mp3",
+      "duration_seconds": 2.5,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_dbfs": -10.18,
+      "rms_dbfs": -30.47,
+      "energy_peak_seconds": 1.5,
+      "peak_lag_frames_60": 90,
+      "active_seconds": [
+        0,
+        2.36
+      ],
+      "bytes": 58848,
+      "sha256": "53d2390a0865cf8dbd31f71b915e0785e569dc12ed5fbee6a056cf75f6cafc9a",
+      "freesound": {
+        "preview_url": "https://cdn.freesound.org/previews/140/140700_2522406-hq.mp3",
+        "downloads": 538,
+        "rating": 4.6,
+        "rating_count": 7,
+        "description": "Sound made by sucking air from one end of the hollow part of a packaging paper tube / roll and the sound recorded from the other open end of the tube. Sounds like something going in reverse, maybe could be distorted or modified to sound similar to an engine revving in reverse. Recorded using the sampler in Redrum in Propellerhead Reason 5. Equalizing used to get rid of noise and harsh frequencies and maximizer used to make sound audible. Recorded on 3 Jan 2012."
+      },
+      "use": "§7 #8 break 前「抽真空」f776→f831，必须收干净、尾巴不进 break",
+      "cues": [
+        {
+          "action": "break 前抽真空（吸气/反向感）",
+          "target_frame": 831,
+          "beat": "b30",
+          "window_seconds": [
+            1.36,
+            2.36
+          ],
+          "window_frames": 60,
+          "peak_lag_in_window_frames": 8.4,
+          "suggested_sequence_from": 823,
+          "residual_frames": 0.4
+        }
+      ],
+      "trim": "取源 1.36–2.36s（1.0s / 60f）收在 f831",
+      "suggested_volume": 0.55,
+      "notes": "真实纸筒吸气（非合成 reverse cymbal）。能量峰 1.50s，active 到 2.36s；窗尾裁在 2.36s 才能保证 break（f831–942）接近无声。",
+      "changes": []
+    }
+  ]
+}

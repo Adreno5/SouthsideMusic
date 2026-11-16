@@ -1,0 +1,2600 @@
+{
+ "pages": {
+  "home": {
+   "width": 1920,
+   "height": 1080,
+   "dpr": 3,
+   "file": "pages/home.png"
+  },
+  "playing": {
+   "width": 1920,
+   "height": 1080,
+   "dpr": 3,
+   "file": "pages/playing.png"
+  },
+  "home_song": {
+   "width": 1920,
+   "height": 1080,
+   "dpr": 3,
+   "file": "pages/home_song.png"
+  },
+  "playing_405599119": {
+   "width": 1920,
+   "height": 1080,
+   "dpr": 3,
+   "file": "pages/playing_405599119.png"
+  },
+  "playing_515453363": {
+   "width": 1920,
+   "height": 1080,
+   "dpr": 3,
+   "file": "pages/playing_515453363.png"
+  },
+  "playing_26060065": {
+   "width": 1920,
+   "height": 1080,
+   "dpr": 3,
+   "file": "pages/playing_26060065.png"
+  },
+  "playing_1992859765": {
+   "width": 1920,
+   "height": 1080,
+   "dpr": 3,
+   "file": "pages/playing_1992859765.png"
+  },
+  "favorites": {
+   "width": 1920,
+   "height": 1080,
+   "dpr": 3,
+   "file": "pages/favorites.png"
+  },
+  "rediscovery": {
+   "width": 1920,
+   "height": 1080,
+   "dpr": 3,
+   "file": "pages/rediscovery.png"
+  },
+  "settings_top": {
+   "width": 1920,
+   "height": 1080,
+   "dpr": 3,
+   "file": "pages/settings_top.png"
+  },
+  "settings_eq": {
+   "width": 1920,
+   "height": 1080,
+   "dpr": 3,
+   "file": "pages/settings_eq.png"
+  },
+  "settings_crossfade": {
+   "width": 1920,
+   "height": 1080,
+   "dpr": 3,
+   "file": "pages/settings_crossfade.png"
+  },
+  "playlist": {
+   "width": 1920,
+   "height": 1080,
+   "dpr": 3,
+   "file": "pages/playlist.png"
+  }
+ },
+ "elements": [
+  {
+   "class": "RediscoveryCard",
+   "objectName": "",
+   "x": 331,
+   "y": 59,
+   "w": 1578,
+   "h": 84,
+   "file": "elements/home/00_RediscoveryCard_.png",
+   "page": "home"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 349,
+   "y": 69,
+   "w": 1438,
+   "h": 30,
+   "file": "elements/home/01_SubtitleLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 349,
+   "y": 103,
+   "w": 1438,
+   "h": 30,
+   "file": "elements/home/02_CaptionLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "AccountWidget",
+   "objectName": "",
+   "x": 446,
+   "y": 149,
+   "w": 732,
+   "h": 60,
+   "file": "elements/home/03_AccountWidget_.png",
+   "page": "home"
+  },
+  {
+   "class": "HeartModeCard",
+   "objectName": "",
+   "x": 331,
+   "y": 215,
+   "w": 386,
+   "h": 802,
+   "file": "elements/home/04_HeartModeCard_.png",
+   "page": "home"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 349,
+   "y": 264,
+   "w": 350,
+   "h": 17,
+   "file": "elements/home/05_QLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 349,
+   "y": 987,
+   "w": 350,
+   "h": 16,
+   "file": "elements/home/06_QLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "PrivateRoamCard",
+   "objectName": "",
+   "x": 729,
+   "y": 215,
+   "w": 385,
+   "h": 802,
+   "file": "elements/home/07_PrivateRoamCard_.png",
+   "page": "home"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 747,
+   "y": 264,
+   "w": 349,
+   "h": 17,
+   "file": "elements/home/08_QLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 747,
+   "y": 987,
+   "w": 349,
+   "h": 16,
+   "file": "elements/home/09_QLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "PrivateRadarCard",
+   "objectName": "",
+   "x": 1126,
+   "y": 215,
+   "w": 386,
+   "h": 802,
+   "file": "elements/home/10_PrivateRadarCard_.png",
+   "page": "home"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1144,
+   "y": 264,
+   "w": 350,
+   "h": 17,
+   "file": "elements/home/11_QLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1144,
+   "y": 987,
+   "w": 350,
+   "h": 16,
+   "file": "elements/home/12_QLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "SimilarSongsCard",
+   "objectName": "",
+   "x": 1524,
+   "y": 215,
+   "w": 385,
+   "h": 802,
+   "file": "elements/home/13_SimilarSongsCard_.png",
+   "page": "home"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1542,
+   "y": 264,
+   "w": 349,
+   "h": 17,
+   "file": "elements/home/14_QLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1542,
+   "y": 987,
+   "w": 349,
+   "h": 16,
+   "file": "elements/home/15_QLabel_.png",
+   "page": "home"
+  },
+  {
+   "class": "SImageLabel",
+   "objectName": "",
+   "x": 18,
+   "y": 66,
+   "w": 200,
+   "h": 200,
+   "file": "elements/playing/00_SImageLabel_.png",
+   "page": "playing"
+  },
+  {
+   "class": "TitleLabel",
+   "objectName": "",
+   "x": 27,
+   "y": 281,
+   "w": 182,
+   "h": 38,
+   "file": "elements/playing/01_TitleLabel_.png",
+   "page": "playing"
+  },
+  {
+   "class": "LyricsViewer",
+   "objectName": "",
+   "x": 233,
+   "y": 57,
+   "w": 1678,
+   "h": 962,
+   "file": "elements/playing/02_LyricsViewer_.png",
+   "page": "playing"
+  },
+  {
+   "class": "RediscoveryCard",
+   "objectName": "",
+   "x": 331,
+   "y": 59,
+   "w": 1578,
+   "h": 84,
+   "file": "elements/home_song/00_RediscoveryCard_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 349,
+   "y": 69,
+   "w": 1438,
+   "h": 30,
+   "file": "elements/home_song/01_SubtitleLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 349,
+   "y": 103,
+   "w": 1438,
+   "h": 30,
+   "file": "elements/home_song/02_CaptionLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "AccountWidget",
+   "objectName": "",
+   "x": 446,
+   "y": 149,
+   "w": 732,
+   "h": 60,
+   "file": "elements/home_song/03_AccountWidget_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "HeartModeCard",
+   "objectName": "",
+   "x": 331,
+   "y": 215,
+   "w": 386,
+   "h": 802,
+   "file": "elements/home_song/04_HeartModeCard_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 349,
+   "y": 264,
+   "w": 350,
+   "h": 17,
+   "file": "elements/home_song/05_QLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 349,
+   "y": 987,
+   "w": 350,
+   "h": 16,
+   "file": "elements/home_song/06_QLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "PrivateRoamCard",
+   "objectName": "",
+   "x": 729,
+   "y": 215,
+   "w": 385,
+   "h": 802,
+   "file": "elements/home_song/07_PrivateRoamCard_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 747,
+   "y": 264,
+   "w": 349,
+   "h": 17,
+   "file": "elements/home_song/08_QLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 747,
+   "y": 987,
+   "w": 349,
+   "h": 16,
+   "file": "elements/home_song/09_QLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "PrivateRadarCard",
+   "objectName": "",
+   "x": 1126,
+   "y": 215,
+   "w": 386,
+   "h": 802,
+   "file": "elements/home_song/10_PrivateRadarCard_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1144,
+   "y": 264,
+   "w": 350,
+   "h": 17,
+   "file": "elements/home_song/11_QLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1144,
+   "y": 987,
+   "w": 350,
+   "h": 16,
+   "file": "elements/home_song/12_QLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "SimilarSongsCard",
+   "objectName": "",
+   "x": 1524,
+   "y": 215,
+   "w": 385,
+   "h": 802,
+   "file": "elements/home_song/13_SimilarSongsCard_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1542,
+   "y": 264,
+   "w": 349,
+   "h": 17,
+   "file": "elements/home_song/14_QLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1542,
+   "y": 987,
+   "w": 349,
+   "h": 16,
+   "file": "elements/home_song/15_QLabel_.png",
+   "page": "home_song"
+  },
+  {
+   "class": "SImageLabel",
+   "objectName": "",
+   "x": 18,
+   "y": 66,
+   "w": 200,
+   "h": 200,
+   "file": "elements/playing_405599119/00_SImageLabel_.png",
+   "page": "playing_405599119"
+  },
+  {
+   "class": "TitleLabel",
+   "objectName": "",
+   "x": 27,
+   "y": 281,
+   "w": 182,
+   "h": 38,
+   "file": "elements/playing_405599119/01_TitleLabel_.png",
+   "page": "playing_405599119"
+  },
+  {
+   "class": "LyricsViewer",
+   "objectName": "",
+   "x": 233,
+   "y": 57,
+   "w": 1678,
+   "h": 962,
+   "file": "elements/playing_405599119/02_LyricsViewer_.png",
+   "page": "playing_405599119"
+  },
+  {
+   "class": "SImageLabel",
+   "objectName": "",
+   "x": 18,
+   "y": 66,
+   "w": 200,
+   "h": 200,
+   "file": "elements/playing_515453363/00_SImageLabel_.png",
+   "page": "playing_515453363"
+  },
+  {
+   "class": "TitleLabel",
+   "objectName": "",
+   "x": 27,
+   "y": 281,
+   "w": 182,
+   "h": 38,
+   "file": "elements/playing_515453363/01_TitleLabel_.png",
+   "page": "playing_515453363"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 27,
+   "y": 325,
+   "w": 182,
+   "h": 48,
+   "file": "elements/playing_515453363/02_QLabel_.png",
+   "page": "playing_515453363"
+  },
+  {
+   "class": "LyricsViewer",
+   "objectName": "",
+   "x": 233,
+   "y": 57,
+   "w": 1678,
+   "h": 962,
+   "file": "elements/playing_515453363/03_LyricsViewer_.png",
+   "page": "playing_515453363"
+  },
+  {
+   "class": "SImageLabel",
+   "objectName": "",
+   "x": 18,
+   "y": 66,
+   "w": 200,
+   "h": 200,
+   "file": "elements/playing_26060065/00_SImageLabel_.png",
+   "page": "playing_26060065"
+  },
+  {
+   "class": "TitleLabel",
+   "objectName": "",
+   "x": 27,
+   "y": 281,
+   "w": 182,
+   "h": 76,
+   "file": "elements/playing_26060065/01_TitleLabel_.png",
+   "page": "playing_26060065"
+  },
+  {
+   "class": "LyricsViewer",
+   "objectName": "",
+   "x": 233,
+   "y": 57,
+   "w": 1678,
+   "h": 962,
+   "file": "elements/playing_26060065/02_LyricsViewer_.png",
+   "page": "playing_26060065"
+  },
+  {
+   "class": "SImageLabel",
+   "objectName": "",
+   "x": 18,
+   "y": 66,
+   "w": 200,
+   "h": 200,
+   "file": "elements/playing_1992859765/00_SImageLabel_.png",
+   "page": "playing_1992859765"
+  },
+  {
+   "class": "TitleLabel",
+   "objectName": "",
+   "x": 27,
+   "y": 281,
+   "w": 182,
+   "h": 38,
+   "file": "elements/playing_1992859765/01_TitleLabel_.png",
+   "page": "playing_1992859765"
+  },
+  {
+   "class": "LyricsViewer",
+   "objectName": "",
+   "x": 233,
+   "y": 57,
+   "w": 1678,
+   "h": 962,
+   "file": "elements/playing_1992859765/02_LyricsViewer_.png",
+   "page": "playing_1992859765"
+  },
+  {
+   "class": "TitleLabel",
+   "objectName": "",
+   "x": 329,
+   "y": 57,
+   "w": 1582,
+   "h": 38,
+   "file": "elements/favorites/00_TitleLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "SListWidget",
+   "objectName": "",
+   "x": 329,
+   "y": 139,
+   "w": 1582,
+   "h": 880,
+   "file": "elements/favorites/01_SListWidget_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 148,
+   "w": 1417,
+   "h": 27,
+   "file": "elements/favorites/02_SubtitleLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 177,
+   "w": 1417,
+   "h": 16,
+   "file": "elements/favorites/03_QLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 210,
+   "w": 1406,
+   "h": 27,
+   "file": "elements/favorites/04_SubtitleLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 239,
+   "w": 1406,
+   "h": 16,
+   "file": "elements/favorites/05_QLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 272,
+   "w": 1407,
+   "h": 27,
+   "file": "elements/favorites/06_SubtitleLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 301,
+   "w": 1407,
+   "h": 16,
+   "file": "elements/favorites/07_QLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 334,
+   "w": 1409,
+   "h": 27,
+   "file": "elements/favorites/08_SubtitleLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 363,
+   "w": 1409,
+   "h": 16,
+   "file": "elements/favorites/09_QLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 396,
+   "w": 1412,
+   "h": 27,
+   "file": "elements/favorites/10_SubtitleLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 425,
+   "w": 1412,
+   "h": 16,
+   "file": "elements/favorites/11_QLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 458,
+   "w": 1409,
+   "h": 27,
+   "file": "elements/favorites/12_SubtitleLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 487,
+   "w": 1409,
+   "h": 16,
+   "file": "elements/favorites/13_QLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 520,
+   "w": 1409,
+   "h": 27,
+   "file": "elements/favorites/14_SubtitleLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 549,
+   "w": 1409,
+   "h": 16,
+   "file": "elements/favorites/15_QLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 582,
+   "w": 1412,
+   "h": 27,
+   "file": "elements/favorites/16_SubtitleLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 611,
+   "w": 1412,
+   "h": 16,
+   "file": "elements/favorites/17_QLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 644,
+   "w": 1417,
+   "h": 27,
+   "file": "elements/favorites/18_SubtitleLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 673,
+   "w": 1417,
+   "h": 16,
+   "file": "elements/favorites/19_QLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 706,
+   "w": 1417,
+   "h": 27,
+   "file": "elements/favorites/20_SubtitleLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 735,
+   "w": 1417,
+   "h": 16,
+   "file": "elements/favorites/21_QLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 768,
+   "w": 1417,
+   "h": 27,
+   "file": "elements/favorites/22_SubtitleLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 435,
+   "y": 797,
+   "w": 1417,
+   "h": 16,
+   "file": "elements/favorites/23_QLabel_.png",
+   "page": "favorites"
+  },
+  {
+   "class": "TitleLabel",
+   "objectName": "",
+   "x": 386,
+   "y": 66,
+   "w": 1510,
+   "h": 38,
+   "file": "elements/rediscovery/00_TitleLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 344,
+   "y": 114,
+   "w": 1552,
+   "h": 17,
+   "file": "elements/rediscovery/01_CaptionLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "ComboBox",
+   "objectName": "",
+   "x": 344,
+   "y": 170,
+   "w": 130,
+   "h": 32,
+   "file": "elements/rediscovery/02_ComboBox_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "SListWidget",
+   "objectName": "",
+   "x": 344,
+   "y": 212,
+   "w": 1552,
+   "h": 777,
+   "file": "elements/rediscovery/03_SListWidget_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 225,
+   "w": 1295,
+   "h": 27,
+   "file": "elements/rediscovery/04_SubtitleLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 254,
+   "w": 1295,
+   "h": 16,
+   "file": "elements/rediscovery/05_QLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 1754,
+   "y": 218,
+   "w": 130,
+   "h": 58,
+   "file": "elements/rediscovery/06_CaptionLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 295,
+   "w": 1292,
+   "h": 27,
+   "file": "elements/rediscovery/07_SubtitleLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 324,
+   "w": 1292,
+   "h": 16,
+   "file": "elements/rediscovery/08_QLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 1754,
+   "y": 288,
+   "w": 130,
+   "h": 58,
+   "file": "elements/rediscovery/09_CaptionLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 365,
+   "w": 1292,
+   "h": 27,
+   "file": "elements/rediscovery/10_SubtitleLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 394,
+   "w": 1292,
+   "h": 16,
+   "file": "elements/rediscovery/11_QLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 1754,
+   "y": 358,
+   "w": 130,
+   "h": 58,
+   "file": "elements/rediscovery/12_CaptionLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 435,
+   "w": 1295,
+   "h": 27,
+   "file": "elements/rediscovery/13_SubtitleLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 464,
+   "w": 1295,
+   "h": 16,
+   "file": "elements/rediscovery/14_QLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 1754,
+   "y": 428,
+   "w": 130,
+   "h": 58,
+   "file": "elements/rediscovery/15_CaptionLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 505,
+   "w": 1295,
+   "h": 27,
+   "file": "elements/rediscovery/16_SubtitleLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 534,
+   "w": 1295,
+   "h": 16,
+   "file": "elements/rediscovery/17_QLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 1754,
+   "y": 498,
+   "w": 130,
+   "h": 58,
+   "file": "elements/rediscovery/18_CaptionLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 575,
+   "w": 1295,
+   "h": 27,
+   "file": "elements/rediscovery/19_SubtitleLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 604,
+   "w": 1295,
+   "h": 16,
+   "file": "elements/rediscovery/20_QLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 1754,
+   "y": 568,
+   "w": 130,
+   "h": 58,
+   "file": "elements/rediscovery/21_CaptionLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 645,
+   "w": 1292,
+   "h": 27,
+   "file": "elements/rediscovery/22_SubtitleLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 674,
+   "w": 1292,
+   "h": 16,
+   "file": "elements/rediscovery/23_QLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 1754,
+   "y": 638,
+   "w": 130,
+   "h": 58,
+   "file": "elements/rediscovery/24_CaptionLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 715,
+   "w": 1295,
+   "h": 27,
+   "file": "elements/rediscovery/25_SubtitleLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 744,
+   "w": 1295,
+   "h": 16,
+   "file": "elements/rediscovery/26_QLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 1754,
+   "y": 708,
+   "w": 130,
+   "h": 58,
+   "file": "elements/rediscovery/27_CaptionLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 785,
+   "w": 1295,
+   "h": 27,
+   "file": "elements/rediscovery/28_SubtitleLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 814,
+   "w": 1295,
+   "h": 16,
+   "file": "elements/rediscovery/29_QLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 1754,
+   "y": 778,
+   "w": 130,
+   "h": 58,
+   "file": "elements/rediscovery/30_CaptionLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 855,
+   "w": 1295,
+   "h": 27,
+   "file": "elements/rediscovery/31_SubtitleLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 884,
+   "w": 1295,
+   "h": 16,
+   "file": "elements/rediscovery/32_QLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 1754,
+   "y": 848,
+   "w": 130,
+   "h": 58,
+   "file": "elements/rediscovery/33_CaptionLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 925,
+   "w": 1295,
+   "h": 27,
+   "file": "elements/rediscovery/34_SubtitleLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 954,
+   "w": 1295,
+   "h": 16,
+   "file": "elements/rediscovery/35_QLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 1754,
+   "y": 918,
+   "w": 130,
+   "h": 58,
+   "file": "elements/rediscovery/36_CaptionLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 995,
+   "w": 1295,
+   "h": 27,
+   "file": "elements/rediscovery/37_SubtitleLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 420,
+   "y": 1024,
+   "w": 1295,
+   "h": 16,
+   "file": "elements/rediscovery/38_QLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 1754,
+   "y": 988,
+   "w": 130,
+   "h": 58,
+   "file": "elements/rediscovery/39_CaptionLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "CaptionLabel",
+   "objectName": "",
+   "x": 344,
+   "y": 999,
+   "w": 1552,
+   "h": 17,
+   "file": "elements/rediscovery/40_CaptionLabel_.png",
+   "page": "rediscovery"
+  },
+  {
+   "class": "SScrollArea",
+   "objectName": "",
+   "x": 329,
+   "y": 57,
+   "w": 1582,
+   "h": 962,
+   "file": "elements/settings_top/00_SScrollArea_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 83,
+   "w": 1530,
+   "h": 60,
+   "file": "elements/settings_top/01_CardWidget_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 95,
+   "w": 1353,
+   "h": 16,
+   "file": "elements/settings_top/02_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 115,
+   "w": 1353,
+   "h": 16,
+   "file": "elements/settings_top/03_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "SectionContainer",
+   "objectName": "",
+   "x": 355,
+   "y": 153,
+   "w": 1530,
+   "h": 398,
+   "file": "elements/settings_top/04_SectionContainer_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "TitleLabel",
+   "objectName": "",
+   "x": 355,
+   "y": 153,
+   "w": 1530,
+   "h": 38,
+   "file": "elements/settings_top/05_TitleLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 355,
+   "y": 193,
+   "w": 1530,
+   "h": 16,
+   "file": "elements/settings_top/06_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 217,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_top/07_CardWidget_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 229,
+   "w": 1380,
+   "h": 24,
+   "file": "elements/settings_top/08_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 257,
+   "w": 1380,
+   "h": 24,
+   "file": "elements/settings_top/09_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 303,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_top/10_CardWidget_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 315,
+   "w": 1383,
+   "h": 24,
+   "file": "elements/settings_top/11_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 343,
+   "w": 1383,
+   "h": 24,
+   "file": "elements/settings_top/12_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 389,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_top/13_CardWidget_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 401,
+   "w": 1395,
+   "h": 24,
+   "file": "elements/settings_top/14_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 429,
+   "w": 1395,
+   "h": 24,
+   "file": "elements/settings_top/15_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 475,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_top/16_CardWidget_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 487,
+   "w": 1431,
+   "h": 24,
+   "file": "elements/settings_top/17_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 515,
+   "w": 1431,
+   "h": 24,
+   "file": "elements/settings_top/18_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "SectionContainer",
+   "objectName": "",
+   "x": 355,
+   "y": 583,
+   "w": 1530,
+   "h": 140,
+   "file": "elements/settings_top/19_SectionContainer_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "TitleLabel",
+   "objectName": "",
+   "x": 355,
+   "y": 583,
+   "w": 1530,
+   "h": 38,
+   "file": "elements/settings_top/20_TitleLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 355,
+   "y": 623,
+   "w": 1530,
+   "h": 16,
+   "file": "elements/settings_top/21_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 647,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_top/22_CardWidget_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 659,
+   "w": 1424,
+   "h": 24,
+   "file": "elements/settings_top/23_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 687,
+   "w": 1424,
+   "h": 24,
+   "file": "elements/settings_top/24_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "TitleLabel",
+   "objectName": "",
+   "x": 355,
+   "y": 755,
+   "w": 1530,
+   "h": 38,
+   "file": "elements/settings_top/25_TitleLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 355,
+   "y": 795,
+   "w": 1530,
+   "h": 16,
+   "file": "elements/settings_top/26_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 819,
+   "w": 1530,
+   "h": 65,
+   "file": "elements/settings_top/27_CardWidget_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 831,
+   "w": 1380,
+   "h": 19,
+   "file": "elements/settings_top/28_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 854,
+   "w": 1380,
+   "h": 18,
+   "file": "elements/settings_top/29_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 894,
+   "w": 1530,
+   "h": 65,
+   "file": "elements/settings_top/30_CardWidget_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 906,
+   "w": 1231,
+   "h": 19,
+   "file": "elements/settings_top/31_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 929,
+   "w": 1231,
+   "h": 18,
+   "file": "elements/settings_top/32_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "ComboBox",
+   "objectName": "",
+   "x": 1620,
+   "y": 910,
+   "w": 249,
+   "h": 32,
+   "file": "elements/settings_top/33_ComboBox_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 969,
+   "w": 1530,
+   "h": 64,
+   "file": "elements/settings_top/34_CardWidget_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 981,
+   "w": 1441,
+   "h": 18,
+   "file": "elements/settings_top/35_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 1003,
+   "w": 1441,
+   "h": 18,
+   "file": "elements/settings_top/36_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 1055,
+   "w": 1441,
+   "h": 19,
+   "file": "elements/settings_top/37_QLabel_.png",
+   "page": "settings_top"
+  },
+  {
+   "class": "SScrollArea",
+   "objectName": "",
+   "x": 329,
+   "y": 57,
+   "w": 1582,
+   "h": 962,
+   "file": "elements/settings_eq/00_SScrollArea_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 9,
+   "w": 1530,
+   "h": 60,
+   "file": "elements/settings_eq/01_CardWidget_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 21,
+   "w": 1395,
+   "h": 16,
+   "file": "elements/settings_eq/02_QLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 41,
+   "w": 1395,
+   "h": 16,
+   "file": "elements/settings_eq/03_QLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 79,
+   "w": 1530,
+   "h": 62,
+   "file": "elements/settings_eq/04_CardWidget_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 91,
+   "w": 1424,
+   "h": 17,
+   "file": "elements/settings_eq/05_QLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 112,
+   "w": 1424,
+   "h": 17,
+   "file": "elements/settings_eq/06_QLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "SectionSeparator",
+   "objectName": "",
+   "x": 355,
+   "y": 151,
+   "w": 1530,
+   "h": 27,
+   "file": "elements/settings_eq/07_SectionSeparator_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 355,
+   "y": 188,
+   "w": 1530,
+   "h": 41,
+   "file": "elements/settings_eq/08_SubtitleLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "EQEditor",
+   "objectName": "",
+   "x": 355,
+   "y": 239,
+   "w": 1530,
+   "h": 200,
+   "file": "elements/settings_eq/09_EQEditor_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "PushButton",
+   "objectName": "",
+   "x": 355,
+   "y": 449,
+   "w": 1530,
+   "h": 32,
+   "file": "elements/settings_eq/10_PushButton_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "SectionContainer",
+   "objectName": "",
+   "x": 355,
+   "y": 513,
+   "w": 1530,
+   "h": 312,
+   "file": "elements/settings_eq/11_SectionContainer_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "TitleLabel",
+   "objectName": "",
+   "x": 355,
+   "y": 513,
+   "w": 1530,
+   "h": 38,
+   "file": "elements/settings_eq/12_TitleLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 355,
+   "y": 553,
+   "w": 1530,
+   "h": 16,
+   "file": "elements/settings_eq/13_QLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 577,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_eq/14_CardWidget_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 589,
+   "w": 1367,
+   "h": 24,
+   "file": "elements/settings_eq/15_QLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 617,
+   "w": 1367,
+   "h": 24,
+   "file": "elements/settings_eq/16_QLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 663,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_eq/17_CardWidget_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 675,
+   "w": 1352,
+   "h": 24,
+   "file": "elements/settings_eq/18_QLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 703,
+   "w": 1352,
+   "h": 24,
+   "file": "elements/settings_eq/19_QLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "ComboBox",
+   "objectName": "",
+   "x": 1741,
+   "y": 685,
+   "w": 128,
+   "h": 32,
+   "file": "elements/settings_eq/20_ComboBox_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 749,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_eq/21_CardWidget_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 761,
+   "w": 1374,
+   "h": 24,
+   "file": "elements/settings_eq/22_QLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 789,
+   "w": 1374,
+   "h": 24,
+   "file": "elements/settings_eq/23_QLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "TitleLabel",
+   "objectName": "",
+   "x": 355,
+   "y": 857,
+   "w": 1530,
+   "h": 38,
+   "file": "elements/settings_eq/24_TitleLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 355,
+   "y": 897,
+   "w": 1530,
+   "h": 16,
+   "file": "elements/settings_eq/25_QLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 921,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_eq/26_CardWidget_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 933,
+   "w": 1339,
+   "h": 24,
+   "file": "elements/settings_eq/27_QLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 961,
+   "w": 1339,
+   "h": 24,
+   "file": "elements/settings_eq/28_QLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 1019,
+   "w": 1447,
+   "h": 24,
+   "file": "elements/settings_eq/29_QLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 1047,
+   "w": 1447,
+   "h": 24,
+   "file": "elements/settings_eq/30_QLabel_.png",
+   "page": "settings_eq"
+  },
+  {
+   "class": "SScrollArea",
+   "objectName": "",
+   "x": 329,
+   "y": 57,
+   "w": 1582,
+   "h": 962,
+   "file": "elements/settings_crossfade/00_SScrollArea_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 36,
+   "w": 1530,
+   "h": 65,
+   "file": "elements/settings_crossfade/01_CardWidget_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 48,
+   "w": 1367,
+   "h": 19,
+   "file": "elements/settings_crossfade/02_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 71,
+   "w": 1367,
+   "h": 18,
+   "file": "elements/settings_crossfade/03_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1756,
+   "y": 48,
+   "w": 113,
+   "h": 41,
+   "file": "elements/settings_crossfade/04_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "SectionContainer",
+   "objectName": "",
+   "x": 355,
+   "y": 133,
+   "w": 1530,
+   "h": 902,
+   "file": "elements/settings_crossfade/05_SectionContainer_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "TitleLabel",
+   "objectName": "",
+   "x": 355,
+   "y": 133,
+   "w": 1530,
+   "h": 38,
+   "file": "elements/settings_crossfade/06_TitleLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 355,
+   "y": 173,
+   "w": 1530,
+   "h": 16,
+   "file": "elements/settings_crossfade/07_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 197,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_crossfade/08_CardWidget_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 209,
+   "w": 1367,
+   "h": 24,
+   "file": "elements/settings_crossfade/09_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 237,
+   "w": 1367,
+   "h": 24,
+   "file": "elements/settings_crossfade/10_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 283,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_crossfade/11_CardWidget_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 295,
+   "w": 1424,
+   "h": 24,
+   "file": "elements/settings_crossfade/12_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 323,
+   "w": 1424,
+   "h": 24,
+   "file": "elements/settings_crossfade/13_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "SectionSeparator",
+   "objectName": "",
+   "x": 355,
+   "y": 369,
+   "w": 1530,
+   "h": 27,
+   "file": "elements/settings_crossfade/14_SectionSeparator_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 406,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_crossfade/15_CardWidget_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 418,
+   "w": 1441,
+   "h": 24,
+   "file": "elements/settings_crossfade/16_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 446,
+   "w": 1441,
+   "h": 24,
+   "file": "elements/settings_crossfade/17_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 492,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_crossfade/18_CardWidget_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 504,
+   "w": 1401,
+   "h": 24,
+   "file": "elements/settings_crossfade/19_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 532,
+   "w": 1401,
+   "h": 24,
+   "file": "elements/settings_crossfade/20_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 578,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_crossfade/21_CardWidget_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 590,
+   "w": 1447,
+   "h": 24,
+   "file": "elements/settings_crossfade/22_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 618,
+   "w": 1447,
+   "h": 24,
+   "file": "elements/settings_crossfade/23_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 664,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_crossfade/24_CardWidget_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 676,
+   "w": 1339,
+   "h": 24,
+   "file": "elements/settings_crossfade/25_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 704,
+   "w": 1339,
+   "h": 24,
+   "file": "elements/settings_crossfade/26_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 750,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_crossfade/27_CardWidget_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 762,
+   "w": 1367,
+   "h": 24,
+   "file": "elements/settings_crossfade/28_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 790,
+   "w": 1367,
+   "h": 24,
+   "file": "elements/settings_crossfade/29_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 836,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_crossfade/30_CardWidget_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 848,
+   "w": 1339,
+   "h": 24,
+   "file": "elements/settings_crossfade/31_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 876,
+   "w": 1339,
+   "h": 24,
+   "file": "elements/settings_crossfade/32_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "SectionSeparator",
+   "objectName": "",
+   "x": 355,
+   "y": 922,
+   "w": 1530,
+   "h": 27,
+   "file": "elements/settings_crossfade/33_SectionSeparator_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "CardWidget",
+   "objectName": "",
+   "x": 355,
+   "y": 959,
+   "w": 1530,
+   "h": 76,
+   "file": "elements/settings_crossfade/34_CardWidget_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 971,
+   "w": 1395,
+   "h": 24,
+   "file": "elements/settings_crossfade/35_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 371,
+   "y": 999,
+   "w": 1395,
+   "h": 24,
+   "file": "elements/settings_crossfade/36_QLabel_.png",
+   "page": "settings_crossfade"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 71,
+   "w": 681,
+   "h": 27,
+   "file": "elements/playlist/00_SubtitleLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 100,
+   "w": 681,
+   "h": 16,
+   "file": "elements/playlist/01_QLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 133,
+   "w": 670,
+   "h": 27,
+   "file": "elements/playlist/02_SubtitleLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 162,
+   "w": 670,
+   "h": 16,
+   "file": "elements/playlist/03_QLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 195,
+   "w": 671,
+   "h": 27,
+   "file": "elements/playlist/04_SubtitleLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 224,
+   "w": 671,
+   "h": 16,
+   "file": "elements/playlist/05_QLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 257,
+   "w": 673,
+   "h": 27,
+   "file": "elements/playlist/06_SubtitleLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 286,
+   "w": 673,
+   "h": 16,
+   "file": "elements/playlist/07_QLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 319,
+   "w": 676,
+   "h": 27,
+   "file": "elements/playlist/08_SubtitleLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 348,
+   "w": 676,
+   "h": 16,
+   "file": "elements/playlist/09_QLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 381,
+   "w": 673,
+   "h": 27,
+   "file": "elements/playlist/10_SubtitleLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 410,
+   "w": 673,
+   "h": 16,
+   "file": "elements/playlist/11_QLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 443,
+   "w": 673,
+   "h": 27,
+   "file": "elements/playlist/12_SubtitleLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 472,
+   "w": 673,
+   "h": 16,
+   "file": "elements/playlist/13_QLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 505,
+   "w": 676,
+   "h": 27,
+   "file": "elements/playlist/14_SubtitleLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 534,
+   "w": 676,
+   "h": 16,
+   "file": "elements/playlist/15_QLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 567,
+   "w": 681,
+   "h": 27,
+   "file": "elements/playlist/16_SubtitleLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 596,
+   "w": 681,
+   "h": 16,
+   "file": "elements/playlist/17_QLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 629,
+   "w": 681,
+   "h": 27,
+   "file": "elements/playlist/18_SubtitleLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 658,
+   "w": 681,
+   "h": 16,
+   "file": "elements/playlist/19_QLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 691,
+   "w": 681,
+   "h": 27,
+   "file": "elements/playlist/20_SubtitleLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 720,
+   "w": 681,
+   "h": 16,
+   "file": "elements/playlist/21_QLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 753,
+   "w": 681,
+   "h": 27,
+   "file": "elements/playlist/22_SubtitleLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 782,
+   "w": 681,
+   "h": 16,
+   "file": "elements/playlist/23_QLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 815,
+   "w": 681,
+   "h": 27,
+   "file": "elements/playlist/24_SubtitleLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 844,
+   "w": 681,
+   "h": 16,
+   "file": "elements/playlist/25_QLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 877,
+   "w": 681,
+   "h": 27,
+   "file": "elements/playlist/26_SubtitleLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 906,
+   "w": 681,
+   "h": 16,
+   "file": "elements/playlist/27_QLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 939,
+   "w": 681,
+   "h": 27,
+   "file": "elements/playlist/28_SubtitleLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 968,
+   "w": 681,
+   "h": 16,
+   "file": "elements/playlist/29_QLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "SubtitleLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 1001,
+   "w": 681,
+   "h": 27,
+   "file": "elements/playlist/30_SubtitleLabel_.png",
+   "page": "playlist"
+  },
+  {
+   "class": "QLabel",
+   "objectName": "",
+   "x": 1190,
+   "y": 1030,
+   "w": 681,
+   "h": 16,
+   "file": "elements/playlist/31_QLabel_.png",
+   "page": "playlist"
+  }
+ ],
+ "desktop_lyrics": {
+  "x": 0,
+  "y": 0,
+  "w": 853,
+  "h": 65
+ }
+}

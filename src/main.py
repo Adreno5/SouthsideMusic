@@ -1,12 +1,12 @@
 from __future__ import annotations
 import json
+import logging
 import math
 import subprocess
 import sys
 import os
-import traceback
-from pathlib import Path
 import atexit
+from importlib import import_module
 
 _SRC_DIR = os.path.abspath(os.path.dirname(__file__))
 if _SRC_DIR in sys.path:
@@ -16,7 +16,20 @@ sys.path.append(os.path.join(_SRC_DIR, 'utils'))
 sys.path.append(os.path.join(_SRC_DIR, 'views'))
 sys.path.append(os.path.join(_SRC_DIR, 'services'))
 
+from core.crash_handler import installCrashHandler, installQtMessageHandler
+
+installCrashHandler()
+
+for _scipy_module in ('scipy.signal', 'scipy.fft', 'scipy.ndimage'):
+    try:
+        import_module(_scipy_module)
+    except ImportError:
+        logging.getLogger(__name__).exception('failed to import %s', _scipy_module)
+
 from PySide6.QtCore import Qt
+
+installQtMessageHandler()
+
 from core.app_context import AppContext
 from services.events import Events, event_bus
 from PySide6.QtWidgets import QApplication
@@ -62,14 +75,12 @@ from views.home_page import HomePage
 from views.comments_page import CommentsPage
 
 from core.lyrics import LyricManager
-import logging
 
 from views.playlist_page import PlaylistPage
 from views.setting_page import SettingPage
 
 import threading
 import time
-from types import TracebackType
 import glob
 
 from services.services import EventsServices
@@ -95,17 +106,14 @@ from views.playing_page import PlayingPage
 from views.desktop_lyrics import DesktopLyricsPage
 from views.favorites_page import FavoritesPage
 from views.main_window import LLM_WINDOW_WIDTH_DELTA, MainWindow
-from views.error_popup import ErrorPopupWindow
 from services.update import startUpdateCheck
 
 terminal_thread = threading.Thread(target=terminalSizeListen, daemon=True)
 terminal_thread.start()
 
 logging_handler = LogHandler()
-logging.basicConfig(
-    level=logging.DEBUG if cfg.debug_mode else logging.INFO,
-    handlers=[logging_handler],
-)
+logging.getLogger().setLevel(logging.DEBUG if cfg.debug_mode else logging.INFO)
+logging.getLogger().addHandler(logging_handler)
 hijackStreams()
 
 _logger = logging.getLogger('main')
@@ -155,86 +163,6 @@ def atExitListener() -> None:
 atexit.register(atExitListener)
 app.aboutToQuit.connect(atExitListener)
 
-
-def patchedExceptHook(
-    exc_type: type[BaseException],
-    exc_value: BaseException,
-    exc_traceback: TracebackType | None,
-):
-    global mwindow, launchwindow, app
-
-    inf: list[str] = []
-
-    _logger.error('| Unhandled Exception occurred |')
-    _logger.error(f'Caused by {exc_type.__name__}')
-    _logger.error('Traceback:')
-    inf.append('| Unhandled Exception occurred |')
-    inf.append(f'Caused by {exc_type.__name__}')
-    inf.append('Traceback:')
-    if exc_traceback:
-        stack_frames = traceback.extract_tb(exc_traceback)
-        for frame in stack_frames:
-            _logger.error(
-                f'    at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}'
-            )
-            inf.append(
-                f'    at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}'
-            )
-    _logger.error('Exception chain:')
-    inf.append('Exception chain:')
-    current_exc = exc_value
-    _logger.error(f'    caused by {type(current_exc).__name__}({current_exc}) #0')
-    inf.append(f'    caused by {type(current_exc).__name__}({current_exc}) #0')
-    if current_exc.__traceback__:
-        root_frames = traceback.extract_tb(current_exc.__traceback__)
-        for frame in root_frames:
-            _logger.error(
-                f'      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}'
-            )
-            inf.append(
-                f'      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}'
-            )
-    chain_level = 1
-    while True:
-        next_exc = current_exc.__cause__ or current_exc.__context__
-        if not next_exc or next_exc is current_exc:
-            break
-        _logger.error(
-            f'    caused by {type(next_exc).__name__}({next_exc}) #{chain_level}'
-        )
-        inf.append(
-            f'    caused by {type(next_exc).__name__}({next_exc}) #{chain_level}'
-        )
-        if next_exc.__traceback__:
-            root_frames = traceback.extract_tb(next_exc.__traceback__)
-            for frame in root_frames:
-                _logger.error(
-                    f'      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}'
-                )
-                inf.append(
-                    f'      at {Path(frame.filename).resolve().as_posix()}:{frame.lineno}|{frame.name}'
-                )
-        current_exc = next_exc
-        chain_level += 1
-    _logger.error(f'Raised {exc_type.__name__}({exc_value})')
-    inf.append(f'Raised {exc_type.__name__}({exc_value})')
-
-    if exc_type is KeyboardInterrupt:
-        _logger.info('quit by KeyboardInterrupt')
-        sys.exit()
-
-    txt = '\n'.join(inf)
-    if launchwindow is not None and shiboken6.isValid(launchwindow):
-        launchwindow.close()
-        launchwindow.deleteLater()
-
-    popup = ErrorPopupWindow(txt)
-    popup.exec()
-
-    saveConfig()
-
-
-sys.excepthook = patchedExceptHook
 
 original_popen = subprocess.Popen
 original_call = subprocess.call

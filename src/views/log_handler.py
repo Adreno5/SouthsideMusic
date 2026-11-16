@@ -8,6 +8,7 @@ import shutil
 import re
 import sys
 import threading
+from core.crash_handler import nativeLogActive
 from services.events import Events, event_bus
 from typing import TextIO, Optional
 import ctypes
@@ -150,7 +151,8 @@ class LogHandler(logging.Handler):
                 )
                 final = f'{prefix}{line}{" " * spaces}{colored_suffix}'
                 rendered_lines.append(final)
-        assert sys.__stdout__ is not None
+        if sys.__stdout__ is None:
+            return
         output = '\n'.join(rendered_lines) + '\n'
         try:
             sys.__stdout__.write(output)
@@ -256,9 +258,11 @@ class StderrRedirector:
             self._thread.join(timeout=1.0)
 
 
-def hijackStreams():
-    stderr_redirector = StderrRedirector()
-    stderr_redirector.start()
+def hijackStreams() -> tuple[TextIO | None, TextIO | None, StderrRedirector | None]:
+    stderr_redirector = None
+    if not nativeLogActive():
+        stderr_redirector = StderrRedirector()
+        stderr_redirector.start()
 
     original_stdout = sys.stdout
     original_stderr = sys.stderr

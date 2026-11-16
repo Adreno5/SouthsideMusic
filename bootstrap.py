@@ -11,6 +11,7 @@ import random
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -26,6 +27,12 @@ from urllib.error import URLError
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
+if __name__ == '__main__':
+    sys.path.insert(0, str(Path(__file__).resolve().parent / 'src'))
+    from core.crash_handler import installCrashHandler, installQtMessageHandler
+
+    installCrashHandler()
+
 from PySide6.QtCore import (
     QEasingCurve,
     QLocale,
@@ -38,6 +45,10 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
+
+if __name__ == '__main__':
+    installQtMessageHandler()
+
 from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -319,12 +330,14 @@ for package_name, module_name in module_map.items():
 print(json.dumps(missing))
 """
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    datefmt='%H:%M:%S',
-    handlers=[logging.StreamHandler()],
+logging.getLogger().setLevel(logging.DEBUG)
+_bootstrap_log_handler = logging.StreamHandler()
+_bootstrap_log_handler.setFormatter(
+    logging.Formatter(
+        '%(asctime)s [%(levelname)s] %(name)s: %(message)s', datefmt='%H:%M:%S'
+    )
 )
+logging.getLogger().addHandler(_bootstrap_log_handler)
 _logger = logging.getLogger('bootstrap')
 
 MIRRORS: dict[str, str] = {

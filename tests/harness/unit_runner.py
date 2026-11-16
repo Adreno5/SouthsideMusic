@@ -278,7 +278,7 @@ def runUnitSuite(root: Path, report_dir: Path) -> int:
     if files:
         try:
             with tempfile.TemporaryDirectory(prefix='southside-unit-') as directory:
-                staged = Path(directory)
+                staged = Path(directory).resolve()
                 _stageRoot(root, staged)
                 for path in files:
                     result = _runFile(staged, path.relative_to(root), report_dir)

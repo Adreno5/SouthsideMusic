@@ -150,7 +150,7 @@ class Sandbox:
                 'uv run python scripts/test_harness.py prepare-worker'
             )
         self._temporary = tempfile.TemporaryDirectory(prefix='southside-harness-')
-        self.root = Path(self._temporary.name)
+        self.root = Path(self._temporary.name).resolve()
         self.environment = os.environ.copy()
         try:
             for name in ('src', 'icons', 'images', 'fonts'):

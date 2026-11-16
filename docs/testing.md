@@ -117,7 +117,9 @@ successful skipped run.
 
 Install FFmpeg and FFprobe and put their executable directory on `PATH`, or use
 the application's existing `ffmpeg/bin` directory. The scenario sandbox stages
-those binaries. Prepare a separate Python 3.14 free-threaded worker using the same
+those binaries. With Chocolatey, use the actual package binary directory instead
+of `chocolatey/bin` shims; CI adds that directory to `PATH` automatically.
+Prepare a separate Python 3.14 free-threaded worker using the same
 installed versions as the frozen normal environment:
 
 ```powershell

@@ -34,8 +34,16 @@ jobs:
       - name: Install FFmpeg
         run: |
           choco install ffmpeg -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'FFmpeg installation failed' }
+          $ffmpegPackage = Join-Path $env:ChocolateyInstall 'lib/ffmpeg/tools'
+          $ffmpegBinary = Get-ChildItem -LiteralPath $ffmpegPackage -Recurse -File -Filter ffmpeg.exe | Select-Object -First 1
+          if (-not $ffmpegBinary) { throw 'FFmpeg binary was not installed' }
+          $ffmpegBinary.DirectoryName >> $env:GITHUB_PATH
+          $env:PATH = "$($ffmpegBinary.DirectoryName);$env:PATH"
           ffmpeg -version
+          if ($LASTEXITCODE -ne 0) { throw 'FFmpeg verification failed' }
           ffprobe -version
+          if ($LASTEXITCODE -ne 0) { throw 'FFprobe verification failed' }
 
       - name: Install dependencies
         run: uv sync --frozen
@@ -95,8 +103,16 @@ jobs:
       - name: Install FFmpeg
         run: |
           choco install ffmpeg -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'FFmpeg installation failed' }
+          $ffmpegPackage = Join-Path $env:ChocolateyInstall 'lib/ffmpeg/tools'
+          $ffmpegBinary = Get-ChildItem -LiteralPath $ffmpegPackage -Recurse -File -Filter ffmpeg.exe | Select-Object -First 1
+          if (-not $ffmpegBinary) { throw 'FFmpeg binary was not installed' }
+          $ffmpegBinary.DirectoryName >> $env:GITHUB_PATH
+          $env:PATH = "$($ffmpegBinary.DirectoryName);$env:PATH"
           ffmpeg -version
+          if ($LASTEXITCODE -ne 0) { throw 'FFmpeg verification failed' }
           ffprobe -version
+          if ($LASTEXITCODE -ne 0) { throw 'FFprobe verification failed' }
 
       - name: Install dependencies
         run: uv sync --frozen

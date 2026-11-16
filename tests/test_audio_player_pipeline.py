@@ -81,6 +81,17 @@ def checkSpectrum() -> None:
     analyzer.reset()
     _, silent = analyzer.process(np.empty(0, np.float32), 4096, 48000)
     np.testing.assert_array_equal(silent, 0.0)
+    for reset in (False, True):
+        for rate in (44100, 48000, 48000, 96000, 44100):
+            if reset:
+                analyzer.reset()
+            frequencies, magnitudes = analyzer.process(
+                np.zeros(4096, dtype=np.float32), 4096, rate
+            )
+            np.testing.assert_array_equal(
+                frequencies, np.fft.rfftfreq(4096, 1.0 / rate)
+            )
+            np.testing.assert_array_equal(magnitudes, 0.0)
 
 
 def checkCallback(player: AudioPlayer) -> None:
@@ -265,6 +276,20 @@ def checkAnalysisWorker(app: QApplication) -> None:
             ))
             waitUntil(lambda: bool(beats), app)
             assert all(intensity == 0.0 for intensity in beats)
+        with patch.object(player._logger, 'exception') as errors:
+            for sequence, rate in enumerate((48000, 48000, 96000, 44100), start=4):
+                spectra.clear()
+                player.fft_queue.put((
+                    player._analysis_generation,
+                    sequence,
+                    rate,
+                    time.perf_counter(),
+                    source.mean(axis=1),
+                    source,
+                    source.mean(axis=1),
+                ))
+                waitUntil(lambda: bool(spectra), app)
+            errors.assert_not_called()
     finally:
         player.shutdown()
         app.processEvents()

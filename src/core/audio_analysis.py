@@ -24,8 +24,6 @@ class SpectrumAnalyzer:
         size = max(1, int(size))
         size_changed = size != len(self._history)
         if size_changed:
-            from scipy.fft import rfftfreq
-
             previous = np.concatenate((
                 self._history[self._write_index :],
                 self._history[: self._write_index],
@@ -39,6 +37,8 @@ class SpectrumAnalyzer:
             self._window = np.hanning(size)
             self._input = np.empty(size, dtype=np.float64)
         if size_changed or sample_rate != self._sample_rate:
+            from scipy.fft import rfftfreq
+
             self._frequencies = rfftfreq(size, 1.0 / sample_rate)
             self._frequencies.flags.writeable = False
             self._sample_rate = sample_rate

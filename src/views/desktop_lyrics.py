@@ -12,6 +12,7 @@ from PySide6.QtGui import (
     QPainter,
     QPainterPath,
     QRegion,
+    QShowEvent,
     Qt,
     QWheelEvent,
 )
@@ -28,9 +29,6 @@ from core.smooth import EaseInOutTimer, EaseOutTimer, SScrollTimer
 from services.events import Events, event_bus
 from views.lyrics_viewer import LyricsViewer
 from views.playing_page import _artists_text
-
-_GWL_EXSTYLE = -20
-_WS_EX_TOPMOST = 0x00000008
 
 
 class DesktopLyricsViewer(LyricsViewer):
@@ -66,7 +64,6 @@ class DesktopLyricsViewer(LyricsViewer):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedSize(self.scr_size.width(), 65)
         self.move(0, 0)
-        self._keepOnTop()
 
         event_bus.subscribe(Events.SECOND_TICK, self._keepOnTop)
         event_bus.subscribe(Events.TICK_200MS, self._checkMouse)
@@ -83,19 +80,24 @@ class DesktopLyricsViewer(LyricsViewer):
         self.width_timer.anim_cycle = d / 1000
 
     def _keepOnTop(self) -> None:
+        if not self.isVisible():
+            return
         hwnd = int(self.winId())
         user32 = ctypes.windll.user32
-        if user32.GetWindowLongW(wintypes.HWND(hwnd), _GWL_EXSTYLE) & _WS_EX_TOPMOST:
-            return
         user32.SetWindowPos(
             wintypes.HWND(hwnd),
-            wintypes.HWND(-1) if ctypes.sizeof(wintypes.HWND) == 8 else -1,
+            wintypes.HWND(-1),
             0,
             0,
             0,
             0,
             0x0002 | 0x0001 | 0x0010,
         )
+
+    @override
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        self._keepOnTop()
 
     def _pillOffsetY(self) -> float:
         return self.indentation_y if cfg.desktop_lyrics_anchor == 'top-center' else 0.0
@@ -192,6 +194,28 @@ class DesktopLyricsViewer(LyricsViewer):
             return line
         return None
 
+    def _offsetLyricLine(
+        self,
+        position: float | None = None,
+        offset: float | None = None
+    ) -> YRCLyricInfo | LyricInfo | None:
+        if position is None:
+            position = self.ctx.playing_manager.getDisplayPosition()
+        title = self._titleLine(position + offset)
+        if title is not None:
+            return title
+        if self._ymgr.hasYrcTiming():
+            line = self._ymgr.getCurrentLyric(position + offset)
+            if line.content.strip():
+                self.last_lyric = line
+            return line
+        if self._mgr.parsed:
+            line = self._mgr.getCurrentLyric(position + offset)
+            if line.content.strip():
+                self.last_lyric = line
+            return line
+        return None
+
     def _hasCurrentLineTranslation(
         self,
         line: YRCLyricInfo | LyricInfo | None = None,
@@ -252,10 +276,11 @@ class DesktopLyricsViewer(LyricsViewer):
         self.x_pad = self._pill_h / 2
 
         tar_width = 10
-        if cur_line:
+        future_line = self._offsetLyricLine(position, self.width_timer.anim_cycle)
+        if future_line:
             tar_width = max(
                 10,
-                int(self._textWidth(cur_line.content)),
+                int(self._textWidth(future_line.content)),
             )
         if self.ctx.config.show_translation and cur_line:
             translation = self._translationTextForLine(
@@ -331,6 +356,9 @@ class DesktopLyricsViewer(LyricsViewer):
 
     @override
     def paintGL(self) -> None:
+        if self.width_timer.is_animating:
+            self.draw_x_offset = 0
+
         painter = QPainter(self)
         try:
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
@@ -360,79 +388,60 @@ class DesktopLyricsViewer(LyricsViewer):
                 )
             )
 
+            path = QPainterPath()
+            progress_x = 0
+            progress_width = 0
             if cfg.desktop_lyrics_anchor == 'normal':
                 radius = int(height * 0.5)
-                painter.drawRoundedRect(draw_rect, radius, radius)
-                if self._dp.total_length > 0:
-                    painter.save()
-                    painter.setBrush(
-                        mixColor(
-                            song_theme,
-                            QColor(125, 125, 125)
-                            if theme.isDark()
-                            else QColor(80, 80, 80),
-                            cfg.background_ratio * 0.5,
-                        )
-                    )
-                    painter.drawRect(
-                        height // 2,
-                        0,
-                        int((width - height) * self._draw_progress_ratio),
-                        1,
-                    )
-                    painter.restore()
+                path.addRoundedRect(
+                    QRectF(draw_rect).normalized(),
+                    abs(draw_rect.width()) * 0.5 if draw_rect.width() < 0 else radius,
+                    radius,
+                )
+                progress_x = height // 2
+                progress_width = width - height
             elif cfg.desktop_lyrics_anchor == 'top-center':
-                painter.drawRoundedRect(draw_rect, 20, 20)
+                path.setFillRule(Qt.FillRule.WindingFill)
+                path.addRoundedRect(
+                    QRectF(draw_rect).normalized(),
+                    abs(draw_rect.width()) * 0.5 if draw_rect.width() < 0 else 20,
+                    20,
+                )
+                path.moveTo(12, 0)
+                path.lineTo(36, 0)
+                path.lineTo(12, 16)
+                path.closeSubpath()
+                path.moveTo(width - 12, 0)
+                path.lineTo(width - 12, 16)
+                path.lineTo(width - 36, 0)
+                path.closeSubpath()
+                progress_x = 12
+                progress_width = width - 24
 
-                draw_path = QPainterPath()
-                draw_path.moveTo(4, 0)
-                draw_path.lineTo(36, 0)
-                draw_path.lineTo(12, 16)
-                draw_path.closeSubpath()
-
-                exclude_path = QPainterPath()
-                exclude_path.addRect(0, 0, 12, 25)
-
-                clip_path = draw_path - exclude_path
+            painter.save()
+            if cfg.desktop_lyrics_anchor == 'top-center':
+                painter.setClipping(False)
+            painter.drawPath(path)
+            painter.restore()
+            if self._dp.total_length > 0 and not path.isEmpty():
                 painter.save()
-                painter.setClipPath(clip_path)
-                painter.drawPath(draw_path)
-                painter.restore()
-
-                draw_path_r = QPainterPath()
-                draw_path_r.moveTo(width - 4, 0)
-                draw_path_r.lineTo(width - 36, 0)
-                draw_path_r.lineTo(width - 12, 16)
-                draw_path_r.closeSubpath()
-
-                exclude_path_r = QPainterPath()
-                exclude_path_r.addRect(width - 12, 0, 12, 25)
-
-                clip_path_r = draw_path_r - exclude_path_r
-                painter.save()
-                painter.setClipPath(clip_path_r)
-                painter.drawPath(draw_path_r)
-                painter.restore()
-
-                if self._dp.total_length > 0:
-                    painter.save()
-                    painter.setBrush(
-                        mixColor(
-                            song_theme,
-                            QColor(125, 125, 125)
-                            if theme.isDark()
-                            else QColor(80, 80, 80),
-                            cfg.background_ratio * 0.5,
-                        )
+                painter.setBrush(
+                    mixColor(
+                        song_theme,
+                        QColor(125, 125, 125)
+                        if theme.isDark()
+                        else QColor(80, 80, 80),
+                        cfg.background_ratio * 0.5,
                     )
-                    painter.drawRect(
-                        12,
-                        0,
-                        int((width - 24) * self._draw_progress_ratio),
-                        1,
-                    )
-                    painter.restore()
-            self._paintLyrics(painter)
+                )
+                painter.drawRect(
+                    progress_x,
+                    0,
+                    int(progress_width * self._draw_progress_ratio),
+                    1,
+                )
+                self._paintLyrics(painter)
+                painter.restore()
         finally:
             painter.end()
 

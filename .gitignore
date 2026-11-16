@@ -51,7 +51,7 @@ api-reference/
 *.mp4
 
 # 个人
-index.js
+/index.js
 .codex/
 .vscode/
 .kagent/
@@ -60,3 +60,12 @@ index.js
 /refrence/
 /.codebuddy/
 /images/avatar.png
+.pytest_cache/
+node_modules/
+/_head_pc.py
+/debug.log
+/sessions/
+/promo-video/.tmp*/
+/promo-video/out/
+/promo-video/capture/out/*.log
+/promo-video/capture/out/tree_*.txt

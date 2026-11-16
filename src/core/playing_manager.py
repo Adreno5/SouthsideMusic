@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import threading
 import time as timeLib
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict
@@ -46,6 +47,12 @@ from core.models import (
 )
 from core.rediscovery import recordListening
 from core.weighted_random import AdvancedRandom
+from core.whisper_lyrics import (
+    getWhisperModel,
+    hasWhisperLyrics,
+    isWhisperReady,
+    transcribeWhisper,
+)
 from services.events import Events, event_bus
 
 if TYPE_CHECKING:
@@ -127,6 +134,12 @@ class PlayingManager(QObject):
         self._stream_process_lock = threading.Lock()
         self._stream_analysis_tail: np.ndarray | None = None
         self._workers_shutdown = False
+        self._whisper_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix='southside-whisper'
+        )
+        self._whisper_jobs: dict[tuple[str, str], Future[dict[str, str] | None]] = {}
+        self._whisper_generation = 0
+        self._whisper_next_song: SongStorable | None = None
         self.crossfading = False
         self._play_storable_time: float = timeLib.time()
         self._last_storable: SongStorable | None = None
@@ -282,6 +295,7 @@ class PlayingManager(QObject):
         self.refreshLyricPreview()
 
     def _startLyricSong(self, song: SongStorable, restart: bool = False) -> None:
+        self._whisper_next_song = None
         self._lyric_preview_seq += 1
         self._lyric_preview_selection = None
         self.ctx.lyrics_manager.startSong(
@@ -296,6 +310,12 @@ class PlayingManager(QObject):
         )
 
     def refreshLyricPreview(self) -> None:
+        if cfg.whisper_enabled and self.current_song is not None:
+            self._whisper_next_song = self.getNextSong(self.play_mode, reserve=True)
+            if self._whisper_next_song is not None:
+                self._queueWhisperLyrics(self._whisper_next_song)
+        else:
+            self._whisper_next_song = None
         if not cfg.enable_lyric_handoff or self.current_song is None:
             self._lyric_preview_seq += 1
             self._lyric_preview_selection = None
@@ -312,6 +332,8 @@ class PlayingManager(QObject):
         song = selection.song
         lyrics = song.getLyrics()
         self.ctx.lyrics_manager.setPreview(song, self._storableDuration(song), lyrics)
+        if cfg.whisper_enabled:
+            return
         if lyrics['yrc_lyric'].strip() and lyrics['translated_lyric'].strip():
             return
         play_seq = self._play_seq
@@ -352,7 +374,8 @@ class PlayingManager(QObject):
         candidate: LyricCandidate,
     ) -> None:
         if (
-            not cfg.enable_lyric_handoff
+            cfg.whisper_enabled
+            or not cfg.enable_lyric_handoff
             or play_seq != self._play_seq
             or preview_seq != self._lyric_preview_seq
             or selection != self._lyric_preview_selection
@@ -390,6 +413,8 @@ class PlayingManager(QObject):
         if self._workers_shutdown:
             return
         self._workers_shutdown = True
+        self._whisper_generation += 1
+        self._whisper_executor.shutdown(wait=False, cancel_futures=True)
         self._logger.info('shutting down workers')
         self._play_seq += 1
         self._preload_download_seq += 1
@@ -1406,6 +1431,8 @@ class PlayingManager(QObject):
 
                 self.next_song_selection = selection
                 self.preloaded = True
+                if cfg.whisper_enabled:
+                    self._schedule(self._queueWhisperLyrics, next_song)
                 self._schedule(self._queuePreloadedSong, selection)
 
                 if self._pending_play_selection:
@@ -2502,6 +2529,8 @@ class PlayingManager(QObject):
                         song_storable,
                         player.getLength(),
                     )
+                    if cfg.whisper_enabled:
+                        self._download_update_lyrics(song_storable)
                 else:
                     _try_start_playback(path)
                 threading.Thread(
@@ -2868,6 +2897,8 @@ class PlayingManager(QObject):
         return True
 
     def _applyLyricUpdate(self, song: SongStorable, candidate: LyricCandidate) -> None:
+        if cfg.whisper_enabled:
+            return
         if not self._applyLyricTexts(
             song,
             candidate.lyric,
@@ -2886,6 +2917,9 @@ class PlayingManager(QObject):
         event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song)
 
     def _download_update_lyrics(self, song_storable: SongStorable) -> None:
+        if cfg.whisper_enabled:
+            self._queueWhisperLyrics(song_storable)
+            return
         lyric_target = song_storable
         lyrics = lyric_target.getLyrics()
         self._applyLyricTexts(
@@ -2921,6 +2955,135 @@ class PlayingManager(QObject):
                 )
 
         asyncTask(_download, (), self._mwindow_obj, None)
+
+    def updateWhisperLyrics(self) -> None:
+        self._whisper_generation += 1
+        for future in list(self._whisper_jobs.values()):
+            future.cancel()
+        self._whisper_jobs.clear()
+        self._lyric_preview_selection = None
+        if self.current_song is not None:
+            self._startLyricSong(self.current_song)
+            self._show_original_lyrics(self.current_song)
+            self._download_update_lyrics(self.current_song)
+        self.refreshLyricPreview()
+
+    def _queueWhisperLyrics(self, song: SongStorable) -> None:
+        if not cfg.whisper_enabled or self._workers_shutdown:
+            return
+        model_name = getWhisperModel().name
+        if not isWhisperReady(model_name) or hasWhisperLyrics(song, model_name):
+            return
+        if (
+            song is not self.current_song
+            and self.current_song is not None
+            and not hasWhisperLyrics(self.current_song, model_name)
+        ):
+            return
+        try:
+            song.getMusicPath()
+        except (FileNotFoundError, PermissionError):
+            return
+        key = (model_name, str(song.id))
+        if key in self._whisper_jobs:
+            return
+        generation = self._whisper_generation
+        audio_hash = song.content_cache_hash
+
+        def _cancelled() -> bool:
+            return (
+                self._workers_shutdown
+                or generation != self._whisper_generation
+                or not cfg.whisper_enabled
+                or model_name != getWhisperModel().name
+                or song.content_cache_hash != audio_hash
+                or (
+                    song is not self.current_song
+                    and song is not self._whisper_next_song
+                )
+            )
+
+        def _onUpdate(lyrics: dict[str, str]) -> None:
+            if not _cancelled():
+                self._schedule(
+                    self._applyWhisperLyrics,
+                    song,
+                    model_name,
+                    generation,
+                    audio_hash,
+                    lyrics,
+                )
+
+        future = self._whisper_executor.submit(
+            transcribeWhisper, song, model_name, _cancelled, _onUpdate
+        )
+        self._whisper_jobs[key] = future
+
+        def _finished(result: Future[dict[str, str] | None]) -> None:
+            if not self._workers_shutdown:
+                self._schedule(
+                    self._finishWhisperLyrics, song, model_name, generation, result
+                )
+
+        future.add_done_callback(_finished)
+
+    def _applyWhisperLyrics(
+        self,
+        song: SongStorable,
+        model_name: str,
+        generation: int,
+        audio_hash: str,
+        lyrics: dict[str, str],
+    ) -> None:
+        if (
+            self._workers_shutdown
+            or not cfg.whisper_enabled
+            or generation != self._whisper_generation
+            or model_name != getWhisperModel().name
+            or song.content_cache_hash != audio_hash
+            or self.current_song is not song
+        ):
+            return
+        if self._applyLyricTexts(
+            song,
+            lyrics['lyric'],
+            lyrics['yrc_lyric'],
+            lyrics['translated_lyric'],
+            'Whisper',
+        ):
+            event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song)
+
+    def _finishWhisperLyrics(
+        self,
+        song: SongStorable,
+        model_name: str,
+        generation: int,
+        future: Future[dict[str, str] | None],
+    ) -> None:
+        key = (model_name, str(song.id))
+        if self._whisper_jobs.get(key) is future:
+            self._whisper_jobs.pop(key)
+        if (
+            self._workers_shutdown
+            or not cfg.whisper_enabled
+            or generation != self._whisper_generation
+            or model_name != getWhisperModel().name
+            or future.cancelled()
+        ):
+            return
+        try:
+            result = future.result()
+        except Exception as error:
+            self._logger.exception('Whisper lyric recognition failed for %s', song.name)
+            if self.current_song is song:
+                self._emitError('Whisper', str(error))
+            return
+        if result is None:
+            if self.current_song is song:
+                self._queueWhisperLyrics(song)
+            return
+        self._lyric_preview_selection = None
+        self.refreshLyricPreview()
 
     def loadMusicFromBase64(self, content_base64: str, gain: float) -> None:
         self.loadMusicFromBytes(self._decodeBase64(content_base64), gain)

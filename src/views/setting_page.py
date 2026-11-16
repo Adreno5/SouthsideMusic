@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Callable, cast, override
 
+import shiboken6
 from PySide6.QtCore import (
     Property,
     QEasingCurve,
@@ -32,6 +33,7 @@ from qfluentwidgets import (
     InfoBar,
     LineEdit,
     PasswordLineEdit,
+    ProgressBar,
     PushButton,
     SearchLineEdit,
     Slider,
@@ -58,6 +60,13 @@ from core.i18n import (
 from core.icons import bindIcon
 from core.llm import LLM
 from core.models import CurveInfo
+from core.whisper_lyrics import (
+    WHISPER_MODELS,
+    getWhisperHardware,
+    getWhisperModel,
+    installWhisper,
+    isWhisperReady,
+)
 from core.ws_server import (
     WebSocketServer,
     QObjectHandler,
@@ -306,6 +315,9 @@ class SectionContainer(QWidget):
 
 
 class SettingPage(QWidget):
+    whisperInstallProgress = Signal(str, float)
+    whisperInstallFinished = Signal(str)
+
     def __init__(
         self,
         ctx: AppContext,
@@ -368,7 +380,9 @@ class SettingPage(QWidget):
         self.no_results_label.hide()
         self._initOptions()
         for section in self._sections:
-            if cfg.setting_section_expanded.get(section.title, False):
+            if section is self.whisper_section or cfg.setting_section_expanded.get(
+                section.title, False
+            ):
                 continue
             section.collapseNow()
         self._syncSectionExpandedConfig()
@@ -437,6 +451,8 @@ class SettingPage(QWidget):
         self._refreshPlayMethodBox()
         self._refreshConnectionStatus()
         self._refreshAnchorBox()
+        self._refreshWhisperModels()
+        self._refreshWhisperState()
         if hasattr(self, 'target_lufs_label'):
             self.target_lufs_label.setText(tr('setting_page.target_lufs_value'))
         self.search_input.setPlaceholderText(tr('setting_page.search_placeholder'))
@@ -500,6 +516,7 @@ class SettingPage(QWidget):
         self._addGroup(
             'setting_page.group_experimental', 'setting_page.group_experimental_desc'
         )
+        self._addWhisperSection()
         if lw:
             lw.subtitle('Setting up beat detection options...')
         self._addBeatSection()
@@ -1124,6 +1141,248 @@ class SettingPage(QWidget):
             'sfft_multiple',
             advanced=True,
         )
+
+    def _addWhisperSection(self) -> None:
+        self._whisper_installing = False
+        self._whisper_install_error = ''
+        self._whisper_hardware = getWhisperHardware()
+        self.whisper_section = self.addSection(
+            'setting_page.whisper', 'setting_page.whisper_description'
+        )
+        self.whisper_enabled_box = CheckBox()
+        bindText(self.whisper_enabled_box, 'setting_page.whisper_enabled')
+        self.addSetting(
+            'setting_page.whisper_enabled',
+            'setting_page.whisper_enabled_description',
+            self.whisper_enabled_box,
+        )
+
+        self.whisper_card = self._createTransparentCard()
+        layout = QVBoxLayout(self.whisper_card)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(12)
+        title = QLabel()
+        bindText(title, 'setting_page.whisper_installation')
+        title.setStyleSheet('font-weight: bold;')
+        layout.addWidget(title)
+        self.whisper_hardware_label = QLabel()
+        self.whisper_hardware_label.setWordWrap(True)
+        self.whisper_runtime_label = QLabel()
+        self.whisper_runtime_label.setWordWrap(True)
+        layout.addWidget(self.whisper_hardware_label)
+        layout.addWidget(self.whisper_runtime_label)
+
+        model_layout = QHBoxLayout()
+        model_label = QLabel()
+        bindText(model_label, 'setting_page.whisper_model')
+        self.whisper_model_box = ComboBox()
+        self._refreshWhisperModels()
+        model_layout.addWidget(model_label)
+        model_layout.addStretch(1)
+        model_layout.addWidget(self.whisper_model_box)
+        layout.addLayout(model_layout)
+        self.whisper_model_info = QLabel()
+        self.whisper_model_info.setWordWrap(True)
+        self.whisper_status_label = QLabel()
+        self.whisper_status_label.setWordWrap(True)
+        layout.addWidget(self.whisper_model_info)
+        layout.addWidget(self.whisper_status_label)
+        self._subtitle_labels.extend([
+            self.whisper_hardware_label,
+            self.whisper_runtime_label,
+            self.whisper_model_info,
+            self.whisper_status_label,
+        ])
+        self.whisper_progress_bar = ProgressBar(useAni=False)
+        self.whisper_progress_bar.setRange(0, 1000)
+        self.whisper_progress_bar.setValue(0)
+        self.whisper_progress_bar.hide()
+        layout.addWidget(self.whisper_progress_bar)
+        self.whisper_install_button = PushButton()
+        layout.addWidget(self.whisper_install_button, 0, Qt.AlignmentFlag.AlignRight)
+        self.addSeparateWidget(
+            self.whisper_card,
+            search_keys=(
+                'setting_page.whisper_installation',
+                'setting_page.whisper_enabled_description',
+                'setting_page.whisper_hardware',
+                'setting_page.whisper_runtime',
+                'setting_page.whisper_model',
+                'setting_page.whisper_install',
+                *(model.name for model in WHISPER_MODELS),
+                *(model.label for model in WHISPER_MODELS),
+            ),
+        )
+        if cfg.whisper_enabled and not isWhisperReady():
+            cfg.whisper_enabled = False
+            saveConfig()
+            if self.ctx.playing_manager is not None:
+                self.ctx.playing_manager.updateWhisperLyrics()
+        self._refreshWhisperState()
+        self.whisper_enabled_box.toggled.connect(self._onWhisperEnabledChanged)
+        self.whisper_model_box.currentIndexChanged.connect(self._onWhisperModelChanged)
+        self.whisper_install_button.clicked.connect(self._installWhisper)
+        self.whisperInstallProgress.connect(
+            self._onWhisperInstallProgress, Qt.ConnectionType.QueuedConnection
+        )
+        self.whisperInstallFinished.connect(
+            self._onWhisperInstallFinished, Qt.ConnectionType.QueuedConnection
+        )
+
+    def _refreshWhisperModels(self) -> None:
+        self.whisper_model_box.blockSignals(True)
+        self.whisper_model_box.clear()
+        recommended_model = getWhisperModel('auto')
+        label = tr('setting_page.whisper_model_auto', model=recommended_model.label)
+        if isWhisperReady(recommended_model.name):
+            label = tr('setting_page.whisper_model_installed', model=label)
+        self.whisper_model_box.addItem(label, userData='auto')
+        for model in WHISPER_MODELS:
+            label = (
+                tr('setting_page.whisper_model_installed', model=model.label)
+                if isWhisperReady(model.name)
+                else model.label
+            )
+            self.whisper_model_box.addItem(label, userData=model.name)
+        self.whisper_model_box.setCurrentIndex(
+            max(0, self.whisper_model_box.findData(cfg.whisper_model))
+        )
+        self.whisper_model_box.blockSignals(False)
+
+    def _refreshWhisperState(self) -> None:
+        model = getWhisperModel(cfg.whisper_model)
+        ready = isWhisperReady(model.name)
+        setBoundText(
+            self.whisper_hardware_label,
+            'setting_page.whisper_hardware_value',
+            description=self._whisper_hardware.description,
+        )
+        setBoundText(
+            self.whisper_runtime_label,
+            'setting_page.whisper_runtime_value',
+            runtime=self._whisper_hardware.runtime_label,
+        )
+        setBoundText(
+            self.whisper_model_info,
+            'setting_page.whisper_model_size',
+            model=model.label,
+            size=model.size_mb,
+            ram=model.ram_gb,
+        )
+        self.whisper_enabled_box.blockSignals(True)
+        self.whisper_enabled_box.setChecked(cfg.whisper_enabled and ready)
+        self.whisper_enabled_box.blockSignals(False)
+        self.whisper_enabled_box.setEnabled(ready and not self._whisper_installing)
+        self.whisper_enabled_box.setToolTip(
+            tr('setting_page.whisper_enabled_description')
+            if not ready or self._whisper_installing
+            else ''
+        )
+        self.whisper_model_box.setEnabled(not self._whisper_installing)
+        self.whisper_install_button.setEnabled(
+            not ready and not self._whisper_installing
+        )
+        if self._whisper_installing:
+            button_key = 'setting_page.whisper_installing'
+        elif self._whisper_install_error:
+            button_key = 'setting_page.whisper_retry'
+            setBoundText(
+                self.whisper_status_label,
+                'setting_page.whisper_install_failed',
+                error=tr(self._whisper_install_error),
+            )
+        elif ready:
+            button_key = 'setting_page.whisper_installed'
+            setBoundText(self.whisper_status_label, 'setting_page.whisper_ready')
+        else:
+            button_key = 'setting_page.whisper_install'
+            setBoundText(
+                self.whisper_status_label, 'setting_page.whisper_install_required'
+            )
+        setBoundText(self.whisper_install_button, button_key)
+        self.whisper_section.refreshContentHeight()
+
+    def _onWhisperEnabledChanged(self, enabled: bool) -> None:
+        cfg.whisper_enabled = enabled and isWhisperReady(cfg.whisper_model)
+        self._refreshWhisperState()
+        saveConfig()
+        self.ctx.playing_manager.updateWhisperLyrics()
+
+    def _onWhisperModelChanged(self, _index: int) -> None:
+        cfg.whisper_model = str(self.whisper_model_box.currentData())
+        cfg.whisper_enabled = cfg.whisper_enabled and isWhisperReady(cfg.whisper_model)
+        self._whisper_install_error = ''
+        self.whisper_progress_bar.hide()
+        self._refreshWhisperState()
+        saveConfig()
+        self.ctx.playing_manager.updateWhisperLyrics()
+
+    def _installWhisper(self) -> None:
+        if self._whisper_installing or isWhisperReady(cfg.whisper_model):
+            return
+        model_name = getWhisperModel(cfg.whisper_model).name
+        self._whisper_installing = True
+        self._whisper_install_error = ''
+        self.whisper_progress_bar.setValue(0)
+        self.whisper_progress_bar.show()
+        setBoundText(self.whisper_status_label, 'setting_page.whisper_installing')
+        self._refreshWhisperState()
+
+        def _progress(message: str, fraction: float) -> None:
+            if shiboken6.isValid(self):
+                self.whisperInstallProgress.emit(message, fraction)
+
+        def _install() -> None:
+            error = ''
+            try:
+                installWhisper(model_name, _progress)
+            except Exception as e:
+                self._logger.exception(e)
+                error = str(e) or type(e).__name__
+            if shiboken6.isValid(self):
+                self.whisperInstallFinished.emit(error)
+
+        asyncTask(_install, (), self._mwindow)
+
+    def _onWhisperInstallProgress(self, message: str, fraction: float) -> None:
+        if not self._whisper_installing:
+            return
+        fraction = max(0.0, min(1.0, fraction))
+        self.whisper_progress_bar.setValue(round(fraction * 1000))
+        key = {
+            'Downloading runtime installer': 'setting_page.whisper_progress_runtime_download',
+            'Installing ONNX Runtime and Whisper dependencies': 'setting_page.whisper_progress_dependencies',
+            'Checking local runtime': 'setting_page.whisper_progress_runtime_check',
+            'Checking Whisper model': 'setting_page.whisper_progress_model_check',
+            'Whisper is ready': 'setting_page.whisper_progress_ready',
+        }.get(message)
+        values: dict[str, str | int] = {'percent': round(fraction * 100)}
+        if message.startswith('Downloading Whisper '):
+            model, separator, filename = message.removeprefix(
+                'Downloading Whisper '
+            ).partition(': ')
+            values['model'] = model
+            if separator:
+                key = 'setting_page.whisper_progress_model_file'
+                values['filename'] = filename
+            else:
+                key = 'setting_page.whisper_progress_model_download'
+        elif key is None:
+            key = 'setting_page.whisper_progress'
+            values['message'] = message
+        setBoundText(self.whisper_status_label, key, **values)
+        self.whisper_section.refreshContentHeight()
+
+    def _onWhisperInstallFinished(self, error: str) -> None:
+        self._whisper_installing = False
+        self._whisper_install_error = error
+        if not error:
+            if isWhisperReady(cfg.whisper_model):
+                self.whisper_progress_bar.setValue(1000)
+                self._refreshWhisperModels()
+            else:
+                self._whisper_install_error = 'setting_page.whisper_install_incomplete'
+        self._refreshWhisperState()
 
     def _addBeatSection(self) -> None:
         self.addSection(

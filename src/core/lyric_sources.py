@@ -1149,6 +1149,10 @@ def iterLyricUpdates(
     duration_ms: int,
     cached: Mapping[str, str] | None = None,
 ) -> Iterator[LyricCandidate]:
+    from core.config import cfg
+
+    if cfg.whisper_enabled:
+        return
     artists = tuple(artist.split(', ')) if isinstance(artist, str) else tuple(artist)
     tasks = _tasks(_Track(title, artists, duration_ms), netease_id)
     cancel = threading.Event()
@@ -1165,6 +1169,8 @@ def iterLyricUpdates(
         }
         pending = set(futures)
         while pending:
+            if cfg.whisper_enabled:
+                return
             done, pending = wait(pending, return_when=FIRST_COMPLETED)
             for future in done:
                 name = futures[future]

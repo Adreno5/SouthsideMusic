@@ -1269,6 +1269,86 @@ TRANSLATIONS: dict[str, list[str]] = {
     ],
     'setting_page.expand_section': ['Expand section', '展开设置'],
     'setting_page.collapse_section': ['Collapse section', '收起设置'],
+    'setting_page.whisper': ['Whisper lyrics recognition', 'Whisper歌词识别'],
+    'setting_page.whisper_description': [
+        'Recognize word-by-word lyrics locally with Whisper.',
+        '使用 Whisper 在本地识别逐字歌词。',
+    ],
+    'setting_page.whisper_enabled': ['Enable Whisper lyrics', '启用 Whisper 歌词'],
+    'setting_page.whisper_enabled_description': [
+        'Install the runtime and selected model first. Recognition runs locally and replaces online lyrics while enabled.',
+        '请先安装运行时和所选模型。启用后在本地识别歌词，替代在线歌词。',
+    ],
+    'setting_page.whisper_installation': ['Local installation', '本地安装'],
+    'setting_page.whisper_hardware': ['Hardware information', '硬件信息'],
+    'setting_page.whisper_hardware_value': [
+        'Hardware information: {description}',
+        '硬件信息：{description}',
+    ],
+    'setting_page.whisper_runtime': ['Recommended ONNX runtime', '推荐 ONNX 运行时'],
+    'setting_page.whisper_runtime_value': [
+        'Recommended ONNX runtime: {runtime}',
+        '推荐 ONNX 运行时：{runtime}',
+    ],
+    'setting_page.whisper_model': ['Whisper model', 'Whisper 模型'],
+    'setting_page.whisper_model_auto': [
+        'Auto (recommended: {model})',
+        '自动（推荐：{model}）',
+    ],
+    'setting_page.whisper_model_installed': ['{model} · Installed', '{model} · 已安装'],
+    'setting_page.whisper_model_size': [
+        '{model} · Download: {size} MB · Recommended RAM: {ram} GB',
+        '{model} · 下载大小：{size} MB · 推荐内存：{ram} GB',
+    ],
+    'setting_page.whisper_install_required': [
+        'The runtime or selected model is not installed yet.',
+        '运行时或所选模型尚未安装。',
+    ],
+    'setting_page.whisper_install': ['Install runtime and model', '安装运行时和模型'],
+    'setting_page.whisper_installing': ['Installing…', '正在安装…'],
+    'setting_page.whisper_installed': ['Installed', '已安装'],
+    'setting_page.whisper_ready': ['Whisper is ready', 'Whisper 已就绪'],
+    'setting_page.whisper_retry': ['Retry installation', '重试安装'],
+    'setting_page.whisper_install_failed': [
+        'Installation failed: {error}',
+        '安装失败：{error}',
+    ],
+    'setting_page.whisper_install_incomplete': [
+        'Runtime or model validation did not complete. Retry installation.',
+        '运行时或模型校验未完成，请重试安装。',
+    ],
+    'setting_page.whisper_progress': [
+        '{message} · {percent}%',
+        '{message} · {percent}%',
+    ],
+    'setting_page.whisper_progress_runtime_download': [
+        'Downloading runtime installer · {percent}%',
+        '正在下载运行时安装程序 · {percent}%',
+    ],
+    'setting_page.whisper_progress_dependencies': [
+        'Installing ONNX Runtime and Whisper dependencies · {percent}%',
+        '正在安装 ONNX 运行时和 Whisper 依赖 · {percent}%',
+    ],
+    'setting_page.whisper_progress_runtime_check': [
+        'Checking local runtime · {percent}%',
+        '正在检查本地运行时 · {percent}%',
+    ],
+    'setting_page.whisper_progress_model_check': [
+        'Checking Whisper model · {percent}%',
+        '正在检查 Whisper 模型 · {percent}%',
+    ],
+    'setting_page.whisper_progress_ready': [
+        'Whisper is ready · {percent}%',
+        'Whisper 已就绪 · {percent}%',
+    ],
+    'setting_page.whisper_progress_model_download': [
+        'Downloading Whisper {model} · {percent}%',
+        '正在下载 Whisper {model} · {percent}%',
+    ],
+    'setting_page.whisper_progress_model_file': [
+        'Downloading Whisper {model}: {filename} · {percent}%',
+        '正在下载 Whisper {model}：{filename} · {percent}%',
+    ],
     'setting_page.beat_detection': ['Beat Detection', 'Beat 检测'],
     'setting_page.beat_detection_description': [
         'Enable beat intensity estimation from low-frequency FFT energy',

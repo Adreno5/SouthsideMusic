@@ -413,6 +413,12 @@ class SongStorable:
         return os.path.join(LYRIC_DATA_DIR, cache_name)
 
     def getLyrics(self) -> dict[str, str]:
+        from core.config import cfg
+
+        if cfg.whisper_enabled:
+            from core.whisper_lyrics import readWhisperLyrics
+
+            return readWhisperLyrics(self)
         self._ensureCacheFields()
         path = self.getLyricPath()
         if not os.path.exists(path):

@@ -96,6 +96,9 @@ class Config:
     beat_detection_visual_flash: bool = True
     beat_detection_visual_lyrics: bool = True
 
+    whisper_enabled: bool = False
+    whisper_model: str = 'auto'
+
     target_lufs: int = -16
 
     session: str | None = None

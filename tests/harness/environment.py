@@ -16,6 +16,33 @@ import psutil
 from PIL import Image
 
 
+def _isRunning(process: psutil.Process) -> bool:
+    try:
+        return process.is_running()
+    except psutil.Error:
+        return False
+
+
+def _waitSurvivors(
+    processes: list[psutil.Process], timeout: float
+) -> list[psutil.Process]:
+    pending = set(processes)
+    deadline = time.monotonic() + max(0.0, timeout)
+    while pending:
+        for process in list(pending):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return list(pending)
+            try:
+                process.wait(timeout=max(remaining / len(pending), 0.001))
+            except psutil.TimeoutExpired:
+                continue
+            except (psutil.Error, OSError):
+                pass
+            pending.discard(process)
+    return []
+
+
 def stopProcessTree(
     process: subprocess.Popen[Any],
     descendants: list[psutil.Process] | None = None,
@@ -25,7 +52,7 @@ def stopProcessTree(
     try:
         parent = psutil.Process(process.pid)
         children.update(parent.children(recursive=True))
-    except psutil.NoSuchProcess:
+    except psutil.Error:
         parent = None
     if process.poll() is None:
         try:
@@ -37,35 +64,36 @@ def stopProcessTree(
         except ProcessLookupError:
             process.wait(timeout=5)
     deadline = time.monotonic() + min(timeout, 1)
-    alive = list(children)
     while True:
         for child in [*children, *([parent] if parent else [])]:
             try:
                 children.update(child.children(recursive=True))
-            except psutil.NoSuchProcess:
+            except psutil.Error:
                 pass
-        _, alive = psutil.wait_procs(
-            list(children), timeout=min(0.05, max(0, deadline - time.monotonic()))
-        )
+        alive = _waitSurvivors(list(children), min(0.05, deadline - time.monotonic()))
         if not alive or time.monotonic() >= deadline:
             break
     for child in alive:
+        if not _isRunning(child):
+            continue
         try:
             child.terminate()
-        except psutil.NoSuchProcess:
+        except psutil.Error:
             pass
-    _, alive = psutil.wait_procs(alive, timeout=timeout)
+    alive = _waitSurvivors(alive, timeout)
     for child in [*children, *([parent] if parent else [])]:
         try:
             alive.extend(child.children(recursive=True))
-        except psutil.NoSuchProcess:
+        except psutil.Error:
             pass
     for child in set(alive):
+        if not _isRunning(child):
+            continue
         try:
             child.kill()
-        except psutil.NoSuchProcess:
+        except psutil.Error:
             pass
-    _, survivors = psutil.wait_procs(list(set(alive)), timeout=5)
+    survivors = _waitSurvivors([child for child in set(alive) if _isRunning(child)], 5)
     if survivors:
         raise RuntimeError(
             'Application descendants survived cleanup: '

@@ -338,14 +338,53 @@ class HarnessEnvironmentTests(unittest.TestCase):
                 side_effect=psutil.NoSuchProcess(123),
             ),
             patch(
-                'harness.environment.psutil.wait_procs',
-                side_effect=[([], [child]), ([], [child]), ([child], [])],
+                'harness.environment._waitSurvivors',
+                side_effect=[[child], [child], []],
             ) as wait,
         ):
             environment.stopProcessTree(process, [child], timeout=0)
         child.terminate.assert_called_once()
         child.kill.assert_called_once()
         self.assertGreaterEqual(wait.call_count, 3)
+
+    def testStopProcessTreeForgetsDescendantsThatDenyAccess(self) -> None:
+        process = Mock()
+        process.pid = 123
+        process.poll.return_value = 0
+        child = Mock(spec=psutil.Process)
+        child.pid = 321
+        child.children.side_effect = psutil.AccessDenied(321)
+        child.wait.side_effect = psutil.AccessDenied(321)
+        with patch(
+            'harness.environment.psutil.Process',
+            side_effect=psutil.NoSuchProcess(123),
+        ):
+            environment.stopProcessTree(process, [child], timeout=0.5)
+        child.terminate.assert_not_called()
+        child.kill.assert_not_called()
+
+    def testStopProcessTreeIgnoresDescendantsWhosePidWasReused(self) -> None:
+        process = Mock()
+        process.pid = 123
+        process.poll.return_value = 0
+        child = Mock(spec=psutil.Process)
+        child.pid = 321
+        child.children.return_value = []
+        child.is_running.return_value = False
+        with (
+            patch(
+                'harness.environment.psutil.Process',
+                side_effect=psutil.NoSuchProcess(123),
+            ),
+            patch(
+                'harness.environment._waitSurvivors',
+                side_effect=[[child], [child], []],
+            ) as wait,
+        ):
+            environment.stopProcessTree(process, [child], timeout=0)
+        child.terminate.assert_not_called()
+        child.kill.assert_not_called()
+        self.assertEqual(wait.call_args.args[0], [])
 
     def testShutdownCollectsLateCrashViewerAndPreservesReport(self) -> None:
         monitor = dedent("""

@@ -181,6 +181,7 @@ class ApplicationSession:
     def close(self) -> None:
         if self._closed:
             return
+        self._closed = True
         errors: list[Exception] = []
         if self.process is not None:
             if self.process.poll() is None and self.ready:
@@ -246,4 +247,3 @@ class ApplicationSession:
                     errors.append(error)
         if errors:
             raise ExceptionGroup('Application cleanup failed', errors)
-        self._closed = True

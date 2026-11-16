@@ -1,0 +1,24 @@
+{
+ "comp": "D:\\PythonProjects\\SouthsideMusic\\motion\\handover-17s\\comp.html",
+ "fps": 60,
+ "scale": 2,
+ "size": [
+  3840,
+  2160
+ ],
+ "shutter": 180.0,
+ "samples": "adaptive",
+ "gap_px": 24.0,
+ "samples_per_moving_frame": {
+  "4": 898,
+  "5": 2,
+  "7": 1
+ },
+ "workers": 8,
+ "frames": 1178,
+ "still_frames": 277,
+ "cut_frames": 9,
+ "captures": 4163,
+ "seconds": 312.2,
+ "final": true
+}

@@ -1,0 +1,20 @@
+{
+  "name": "stencil",
+  "from": "made for this film — SouthsideMusic smart crossfade",
+  "mood": "bone stock, a vermilion field against a cobalt one, black stencils and hard shadows, one acid lime signal",
+  "color": {
+    "ground": "#EDE7DA",
+    "deep": "#D5CCB7",
+    "card": "#FBF7EE",
+    "line": "#0E0E0C",
+    "mute": "#6C6659",
+    "ink": "#0E0E0C",
+    "accent": "#D8FF00",
+    "accent2": "#FF3B12"
+  },
+  "type": {
+    "display": { "face": "Archivo Condensed", "weight": 900, "tracking": -0.005 },
+    "text": { "face": "Archivo", "weight": 700, "tracking": -0.01 },
+    "mono": { "face": "Geist Mono", "weight": 600, "tracking": 0.12 }
+  }
+}

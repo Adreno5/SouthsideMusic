@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>HANDOVER — SouthsideMusic smart crossfade</title>
+<style>
+html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#EDE7DA}
+#stage{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;background:#EDE7DA}
+canvas{position:absolute;left:0;top:0;width:1920px;height:1080px;display:block}
+#hud{position:absolute;right:14px;bottom:10px;font:13px monospace;color:#d00;display:none;z-index:9;background:#fff;padding:2px 6px}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="cv"></canvas></div>
+<div id="hud"></div>
+<script src="motion.js"></script>
+<script src="look.js"></script>
+<script>
+(() => {
+const {clamp, lerp, sstep, ssstep, spline} = OM;
+const cv = document.getElementById('cv');
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+cv.width = 1920 * DPR; cv.height = 1080 * DPR;
+const c = cv.getContext('2d', {alpha: false});
+
+const C = {
+  bone:'#EDE7DA', boneHi:'#FBF7EE', ink:'#0E0E0C',
+  a:'#FF3B12', b:'#2226DE', lime:'#D8FF00', mute:'#6C6659', deep:'#D5CCB7'
+};
+
+const SEAM = 1180;
+const STRIP_T = 330, STRIP_B = 790;
+const TICK_Y = 352, TICK_H = 58;
+const TAPE_MID = 560, TAPE_H = 520, TAPE_L = SEAM - 60;
+const RAIL_Y = 850, RAIL_H = 46;
+const KNOB_W = 400, KNOB_H = 148, KNOB_Y = RAIL_Y + RAIL_H - KNOB_H;
+const ODO = {x: SEAM + 180, y: 112, w: 320, h: 152};
+
+const FREEZE = [[3.42, 0.58], [5.20, 0.55], [6.72, 0.45], [7.95, 0.40], [10.55, 0.95], [14.30, 0.45]];
+const END_U = 16.25;
+const DUR = END_U + FREEZE.reduce((acc, f) => acc + f[1], 0);
+
+function U(t) {
+  let acc = 0;
+  for (const [u, d] of FREEZE) {
+    const r = u + acc;
+    if (t <= r) return t - acc;
+    if (t <= r + d) return u;
+    acc += d;
+  }
+  return t - acc;
+}
+function R(u) {
+  let acc = 0;
+  for (const [s, d] of FREEZE) if (u > s) acc += d;
+  return u + acc;
+}
+
+function pk(u, k) {
+  if (u <= k[0][0]) return k[0][1];
+  for (let i = 1; i < k.length; i++) {
+    const [t1, v1, e1] = k[i], t0 = k[i - 1][0];
+    if (u <= t1) {
+      const f = clamp((u - t0) / Math.max(t1 - t0, 1e-6), 0, 1);
+      return lerp(k[i - 1][1], v1, e1 ? e1(f) : OM.ease.sineInOut(f));
+    }
+  }
+  return k[k.length - 1][1];
+}
+
+const SNAPS = [2.42, 2.62, 2.84, 3.06, 3.30];
+const B = {
+  land: 0.55, reveal: 1.05, revealEnd: 2.30,
+  tempo: 2.30, tempoEnd: 3.55,
+  bars: 3.72, detent: 5.02, stamp: 5.10,
+  keyPush: [5.55, 6.10], discRise: [5.45, 6.00], markMove: [6.00, 6.62],
+  lock: 6.62, teeth: [6.60, 7.02], sink: [7.06, 7.48],
+  tilt: [7.20, 7.90], grip: 7.62, drag: 7.85,
+  twang: 10.10, clunk: 11.95, lift: [12.30, 12.80],
+  retract0: 12.62, retract1: 13.60, swell: [13.05, 13.72],
+  lime: [13.55, 14.05], markIn: 14.05, markSettle: 14.45
+};
+
+const P_KNOTS = [[0,0],[7.85,0],[8.95,0.34,OM.ease.sineOut],[9.95,0.52,OM.ease.sineInOut],
+                 [10.55,0.57,OM.ease.sineInOut],[11.88,1.0,OM.ease.cubicIn],[16.0,1.0]];
+const W_KNOTS = [[0,0],[3.72,0],[3.76,90,OM.ease.sineOut],[4.10,120,OM.ease.sineOut],[4.92,430,OM.ease.sineIn],[5.02,900,OM.ease.cubicOut],
+                 [5.22,914,OM.ease.quadOut],[5.42,900,OM.ease.sineInOut],[16.0,900]];
+
+const HITS = [
+  [0.30,4,16],[2.42,3,16],[2.62,3,16],[2.84,4,16],[3.06,4,16],[3.30,6,14],
+  [5.02,11,10],[5.10,6,13],[6.62,5,14],[10.10,15,7],[11.95,12,8],[12.62,4,14],
+  [12.92,4,14],[13.24,4,14],[13.56,5,14],[14.05,11,8]
+];
+
+const KEYS = [
+  {t:0.00, x:SEAM-40,  y:700, zoom:2.20},
+  {t:0.55, x:SEAM-40,  y:700, zoom:2.20},
+  {t:1.05, x:SEAM-40,  y:640, zoom:1.90, curve:OM.ease.sineInOut},
+  {t:2.30, x:SEAM-150, y:560, zoom:1.00, curve:OM.ease.quintInOut},
+  {t:3.40, x:SEAM-320, y:520, zoom:1.30, curve:OM.ease.sineInOut},
+  {t:4.90, x:SEAM+230, y:530, zoom:1.02, curve:OM.ease.sineInOut},
+  {t:5.55, x:SEAM+40,  y:575, zoom:1.34, curve:OM.ease.cubicInOut},
+  {t:6.70, x:SEAM+10,  y:575, zoom:1.48, curve:OM.ease.sineInOut},
+  {t:7.30, x:SEAM+10,  y:575, zoom:1.40, curve:OM.ease.sineInOut},
+  {t:7.95, x:SEAM+40,  y:600, zoom:1.26, curve:OM.ease.sineInOut},
+  {t:9.10, x:SEAM+140, y:585, zoom:1.28, curve:OM.ease.sineInOut},
+  {t:10.10,x:SEAM+260, y:585, zoom:1.26, curve:OM.ease.sineInOut},
+  {t:10.55,x:SEAM+300, y:585, zoom:1.23},
+  {t:11.30,x:SEAM+430, y:600, zoom:1.14, curve:OM.ease.sineInOut},
+  {t:11.95,x:SEAM+520, y:615, zoom:1.08, curve:OM.ease.sineInOut},
+  {t:12.62,x:SEAM+560, y:620, zoom:1.00, curve:OM.ease.cubicOut},
+  {t:13.72,x:SEAM+600, y:600, zoom:0.95, curve:OM.ease.sineInOut},
+  {t:14.45,x:SEAM+600, y:590, zoom:0.94},
+  {t:16.00,x:SEAM+600, y:590, zoom:0.94}
+];
+
+let CAM = {x:960,y:540,zoom:1,rot:0};
+
+function handEnv(u) { return sstep(0.95, 1.10, u) * (1 - sstep(14.55, 15.05, u)); }
+function camAt(u) {
+  const k = OM.camera(u, KEYS);
+  const e = handEnv(u) * 4.0 / k.zoom;
+  let x = k.x + e * (Math.sin(1.7 * u) + 0.6 * Math.sin(2.9 * u + 1));
+  let y = k.y + e * (Math.sin(1.3 * u + 2) + 0.5 * Math.sin(3.3 * u));
+  let rot = k.rot;
+  for (const [th, amp, decay] of HITS) {
+    const s = OM.shake(u, th, {amp, decay, seed: Math.round(th * 100) + 7});
+    x += s.x / k.zoom; y += s.y / k.zoom; rot += s.rot;
+  }
+  return {x, y, zoom: k.zoom, rot};
+}
+
+const BAYER = [0,8,2,10, 12,4,14,6, 3,11,1,9, 15,7,13,5].map(v => (v + 0.5) / 16);
+
+function rr(x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
+
+function plate(fill, path, lw, sh) {
+  if (sh) { c.save(); c.translate(sh[0], sh[1]); path(); c.fillStyle = C.ink; c.fill(); c.restore(); }
+  c.save(); path(); c.fillStyle = fill; c.fill();
+  if (lw) { c.lineWidth = lw; c.strokeStyle = C.ink; c.lineJoin = 'round'; c.stroke(); }
+  c.restore();
+}
+
+function rules(x0, y0, x1, y1, base, angle, period, duty, phase, cx, cy, alpha) {
+  c.save();
+  c.beginPath(); c.rect(x0, y0, x1 - x0, y1 - y0); c.clip();
+  c.fillStyle = base; c.fillRect(x0, y0, x1 - x0, y1 - y0);
+  if (alpha === undefined) alpha = 1;
+  if (alpha <= 0.01) { c.restore(); return; }
+  c.globalAlpha = alpha;
+  c.translate(cx, cy); c.rotate(angle);
+  const R2 = Math.hypot(x1 - x0, y1 - y0) + 2200;
+  c.fillStyle = C.ink;
+  const s = period * duty;
+  for (let k = Math.floor((-R2 - phase) / period); k <= Math.ceil((R2 - phase) / period); k++) {
+    c.fillRect(-R2, k * period + phase, 2 * R2, s);
+  }
+  c.restore();
+}
+
+function txt(str, x, y, o) {
+  o = o || {};
+  c.save();
+  c.font = o.font || LOOK.font('mono', 26);
+  c.letterSpacing = (o.track !== undefined ? o.track : 0) + 'px';
+  c.textAlign = o.align || 'left';
+  c.textBaseline = o.base || 'alphabetic';
+  if (o.shadow) { c.fillStyle = C.ink; c.fillText(str, x + o.shadow[0], y + o.shadow[1]); }
+  c.fillStyle = o.color || C.ink;
+  c.fillText(str, x, y);
+  if (o.bold) { c.lineWidth = o.bold; c.strokeStyle = o.color || C.ink; c.lineJoin = 'round'; c.strokeText(str, x, y); }
+  c.restore();
+}
+
+function cover(v, depth) { return 1 - depth * 4 * v * (1 - v); }
+
+function cellRand(gx, gy) {
+  let h = Math.imul(gx, 374761393) + Math.imul(gy, 668265263) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+function tapePath(inset, w, depth, mid, hh) {
+  const n = 90, h = hh - inset;
+  c.beginPath();
+  for (let i = 0; i <= n; i++) {
+    const v = i / n, x = TAPE_L + v * w, y = mid - h * cover(v, depth);
+    i ? c.lineTo(x, y) : c.moveTo(x, y);
+  }
+  for (let i = n; i >= 0; i--) {
+    const v = i / n, x = TAPE_L + v * w, y = mid + h * cover(v, depth);
+    c.lineTo(x, y);
+  }
+  c.closePath();
+}
+
+function drawStrip(st) {
+  const t = lerp(STRIP_T, -300, st.swell), b = lerp(STRIP_B, 1400, st.swell);
+  const ret = st.retract;
+  c.save();
+  c.beginPath(); c.rect(-1200, t, 5400, b - t); c.clip();
+  c.fillStyle = C.b; c.fillRect(-1200, t, 5400, b - t);
+  if (ret < 1) {
+    const off = ret * 1800;
+    rules(-1200 - off, t, SEAM + 1 - off, b, C.a, 0, 150, 0.32, 0, TAPE_MID, TAPE_MID);
+    rules(SEAM, t, 4200, b, C.b, st.bAngle, st.bPeriod, 0.32, st.bPhase, TAPE_MID, TAPE_MID, 1 - st.bandOut);
+  }
+  if (st.swell < 1) {
+    c.globalAlpha = 1 - st.swell;
+    c.fillStyle = C.ink;
+    c.fillRect(-1200, t - 16, 5400, 16);
+    c.fillRect(-1200, b, 5400, 16);
+    c.globalAlpha = 1;
+  }
+  c.restore();
+}
+
+function drawTicks(st) {
+  const base = 1 - st.tickOut;
+  if (base <= 0.02) return;
+  c.save(); c.globalAlpha = base;
+  c.translate(0, 110 * st.tickOut);
+  for (let x = TAPE_L - 1600; x <= TAPE_L - 14; x += 132) bar(x, false);
+  for (let j = 0; j < 12; j++) {
+    const x = TAPE_L + st.bPhase + j * st.bPeriod;
+    if (x > TAPE_L + 2100) break;
+    bar(x, true, j);
+  }
+  c.restore();
+  function bar(x, isB, j) {
+    c.fillStyle = C.ink;
+    c.fillRect(x - 13, TICK_Y, 26, TICK_H);
+    if (isB && st.cap[j]) {
+      c.fillStyle = C.lime;
+      c.fillRect(x - 15, TICK_Y - 6, 30, 18 * st.cap[j]);
+    }
+  }
+}
+
+function drawSeam(st) {
+  const a = (1 - sstep(3.40, 3.95, st.u)) * (1 - st.retract);
+  if (a <= 0.01) return;
+  c.save(); c.globalAlpha = a;
+  c.fillStyle = C.ink; c.fillRect(SEAM - 7, STRIP_T, 14, STRIP_B - STRIP_T);
+  c.restore();
+}
+
+function drawTape(st) {
+  if (st.tapeW < 6) return;
+  const fade = 1 - sstep(13.55, 13.95, st.u);
+  if (fade <= 0.01) return;
+  const w = st.tapeW, d = st.depth, mid = TAPE_MID, hh = TAPE_H / 2;
+  c.save(); c.globalAlpha = fade;
+  plate(C.boneHi, () => tapePath(0, w, d, mid, hh), 16, [14, 18]);
+  c.save();
+  tapePath(30, w, d, mid, hh);
+  c.clip();
+  c.fillStyle = C.a; c.fillRect(TAPE_L - 20, mid - hh - 20, w + 40, hh * 2 + 40);
+  const cs = 22;
+  for (let gy = -13; gy < 13; gy++) {
+    for (let gx = 0; gx < Math.ceil(w / cs) + 1; gx++) {
+      if (cellRand(gx, gy) < st.p) {
+        c.fillStyle = C.b;
+        c.fillRect(TAPE_L + gx * cs, mid + gy * cs, cs + 1, cs + 1);
+      }
+    }
+  }
+  c.restore();
+  c.save(); tapePath(30, w, d, mid, hh); c.strokeStyle = C.ink; c.lineWidth = 4; c.stroke(); c.restore();
+  if (st.sealed > 0.01) {
+    c.save(); c.globalAlpha = fade * st.sealed;
+    tapePath(40, w, d, mid, hh);
+    c.strokeStyle = C.lime; c.lineWidth = 7; c.stroke();
+    c.restore();
+  }
+  c.restore();
+}
+
+function drawOdo(st) {
+  const vis = sstep(3.74, 4.04, st.u) * (1 - sstep(5.52, 5.88, st.u));
+  if (vis <= 0.01) return;
+  const {x, y, w, h} = ODO;
+  c.save(); c.globalAlpha = vis;
+  c.fillStyle = C.ink; c.fillRect(x + w / 2 - 8, y + h, 16, STRIP_T - y - h + 10);
+  plate(C.boneHi, () => rr(x, y, w, h, 6), 12, [10, 14]);
+  const v = st.tapeW / 225;
+  for (let i = 0; i < 2; i++) {
+    const bx = x + 14 + i * 78;
+    c.fillStyle = C.ink; c.fillRect(bx, y + 12, 66, 130);
+    c.fillStyle = C.boneHi; c.fillRect(bx + 5, y + 17, 56, 120);
+    c.save(); c.beginPath(); c.rect(bx + 5, y + 17, 56, 120); c.clip();
+    const val = i === 1 ? v % 10 : Math.floor(v / 10) % 10;
+    const d0 = Math.floor(val), f = val - d0;
+    c.font = LOOK.font('display', 76); c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillStyle = C.ink;
+    c.fillText(String(d0), bx + 33, y + 79 - f * 108);
+    c.fillText(String((d0 + 1) % 10), bx + 33, y + 79 + (1 - f) * 108);
+    c.restore();
+  }
+  txt('小节', x + 186, y + 62, {font: LOOK.font('mono', 26), color: C.ink, track: 3});
+  txt('BARS', x + 186, y + 96, {font: LOOK.font('mono', 18), color: C.mute, track: 3});
+  c.restore();
+}
+
+function drawStamp(st) {
+  const k = pk(st.u, [[5.10, 0], [5.17, 1, OM.ease.expoOut]]);
+  if (k <= 0 || st.u > 6.4) return;
+  const out = sstep(5.82, 6.14, st.u);
+  const x = TAPE_L + 470, y = TAPE_MID - 176;
+  c.save();
+  c.globalAlpha = 1 - out;
+  const s = 1.75 - 0.75 * k;
+  c.translate(x, y); c.rotate(-0.07); c.scale(s, s);
+  plate(C.lime, () => rr(0, 0, 330, 132, 4), 14, [11, 13]);
+  txt('4 BARS', 22, 84, {font: LOOK.font('display', 76), color: C.ink, track: 3});
+  txt('整小节', 26, 118, {font: LOOK.font('mono', 26), color: C.ink, track: 3});
+  c.restore();
+}
+
+function drawDisc(st) {
+  const rise = pk(st.u, [[5.45, 0], [6.00, 1, OM.ease.backOut]]);
+  const sink = pk(st.u, [[7.06, 0], [7.48, 1, OM.ease.cubicIn]]);
+  if (st.u < 5.45 || st.u > 7.50 || rise <= 0 || sink >= 1) return;
+  const cy = TAPE_MID + (1 - rise) * 620 + sink * 760;
+  const r = 252;
+  c.save(); c.translate(SEAM, cy);
+  c.save(); c.translate(9, 13); c.beginPath(); c.arc(0, 0, r, 0, 6.2832); c.fillStyle = C.ink; c.fill(); c.restore();
+  c.beginPath(); c.arc(0, 0, r, 0, 6.2832); c.fillStyle = C.boneHi; c.fill();
+  c.lineWidth = 14; c.strokeStyle = C.ink; c.stroke();
+  for (let i = 0; i < 12; i++) {
+    const a0 = i / 12 * 6.2832 + 0.03, a1 = (i + 1) / 12 * 6.2832 - 0.03;
+    c.beginPath(); c.arc(0, 0, r - 24, a0, a1); c.arc(0, 0, r - 88, a1, a0, true); c.closePath();
+    c.fillStyle = i % 2 ? C.ink : C.deep; c.fill();
+    c.lineWidth = 5; c.strokeStyle = C.ink; c.stroke();
+  }
+  c.beginPath(); c.arc(0, 0, r - 92, 0, 6.2832); c.fillStyle = C.boneHi; c.fill();
+  c.lineWidth = 10; c.strokeStyle = C.ink; c.stroke();
+  for (let i = 0; i < 12; i++) {
+    c.save(); c.rotate(i / 12 * 6.2832);
+    c.fillStyle = C.ink; c.fillRect(-6, -r + 106, 12, 40);
+    c.restore();
+  }
+  const m = pk(st.u, [[6.00, 0], [6.62, 1, OM.ease.cubicInOut]]);
+  const aA = lerp(-1.72, -0.17, m), aB = lerp(2.34, 0.35, m);
+  const locked = st.u >= B.lock;
+  if (locked) {
+    c.beginPath(); c.arc(0, 0, r - 56, aA, aB);
+    c.lineWidth = 18; c.strokeStyle = C.lime; c.stroke();
+  }
+  marker(aA, C.a); marker(aB, C.b);
+  function marker(a, col) {
+    c.save(); c.rotate(a + 1.5708); c.translate(0, -(r - 56));
+    c.fillStyle = C.ink; c.fillRect(-36, -36, 72, 72);
+    c.fillStyle = col; c.fillRect(-27, -27, 54, 54);
+    if (locked) { c.fillStyle = C.lime; c.fillRect(-11, -11, 22, 22); }
+    c.restore();
+  }
+  c.fillStyle = C.ink; c.beginPath(); c.arc(0, 0, 40, 0, 6.2832); c.fill();
+  txt('调性', 0, 11, {font: LOOK.font('mono', 26), color: C.boneHi, align: 'center', track: 3});
+  c.restore();
+}
+
+function drawRail(st) {
+  const ret = st.railOut;
+  const x0 = TAPE_L - 1700, x1 = TAPE_L + 2200;
+  c.save();
+  c.translate(0, RAIL_Y + RAIL_H / 2); c.scale(1, Math.max(0.001, 1 - ret)); c.translate(0, -(RAIL_Y + RAIL_H / 2));
+  c.fillStyle = C.ink; c.fillRect(x0 - ret * 400, RAIL_Y, x1 - x0 + ret * 900, RAIL_H);
+  c.fillStyle = C.bone;
+  for (let x = x0; x < x1; x += 64) c.fillRect(x, RAIL_Y + 11, 30, 8);
+  c.fillStyle = C.ink; c.fillRect(TAPE_L + 900, RAIL_Y - 30, 36, RAIL_H + 60);
+  c.fillStyle = C.lime; c.fillRect(TAPE_L + 907, RAIL_Y - 24, 22, 22);
+  c.restore();
+}
+
+function drawKnob(st) {
+  const kx = st.knobX, ky = KNOB_Y + 470 * st.knobOut, out = st.knobOut;
+  if (out >= 1) return;
+  c.save(); c.globalAlpha = Math.min(1, 1.6 - out * 1.6);
+  c.save(); c.translate(12, 16); rr(kx, ky, KNOB_W, KNOB_H, 10); c.fillStyle = C.ink; c.fill(); c.restore();
+  rr(kx, ky, KNOB_W, KNOB_H, 10);
+  c.fillStyle = C.ink; c.fill();
+  c.lineWidth = 12; c.strokeStyle = C.boneHi; c.stroke();
+  c.fillStyle = C.boneHi;
+  c.fillRect(kx + 48, ky + 52, 168, 15);
+  c.fillRect(kx + 48, ky + 84, 104, 15);
+  c.fillStyle = C.lime; c.fillRect(kx + KNOB_W - 66, ky + 48, 16, 52);
+  const nx = kx + 186;
+  c.beginPath();
+  c.moveTo(nx - 26, ky + 2); c.lineTo(nx + 26, ky + 2); c.lineTo(nx, ky - 46);
+  c.closePath(); c.fillStyle = C.lime; c.fill();
+  c.strokeStyle = C.ink; c.lineWidth = 7; c.lineJoin = 'miter'; c.stroke();
+  c.restore();
+}
+
+function drawHand(st) {
+  const kx = st.knobX, ky = KNOB_Y;
+  if (st.grip <= 0.01 || st.handOut <= 0.01) return;
+  const hop = (1 - st.grip) * 540;
+  c.save();
+  c.globalAlpha = st.handOut;
+  c.translate(kx + 392, ky + 150 + hop);
+  c.rotate(0.05 + Math.sin(st.u * 2.1) * 0.014);
+  c.scale(0.62, 0.62);
+  const wrist = () => { c.save(); c.translate(46, 190); rr(-42, 0, 250, 440, 34); c.restore(); };
+  const palm = () => rr(-118, -134, 330, 344, 98);
+  const fingers = [0, 1, 2].map(k => {
+    const y = -116 + k * 92;
+    return [
+      () => { c.save(); c.translate(-292, y + 42); c.rotate(0.72); rr(-108, -38, 118, 76, 38); c.restore(); },
+      () => rr(-306, y, 250, 84, 42)
+    ];
+  });
+  const thumb = () => { c.save(); c.translate(-150, 262); c.rotate(-0.86); rr(-52, -150, 104, 300, 52); c.restore(); };
+  const all = [wrist, ...fingers.flat(), palm, thumb];
+  c.save(); c.translate(15, 19);
+  for (const s of all) { s(); c.fillStyle = C.ink; c.fill(); }
+  c.restore();
+  for (const s of all) {
+    s();
+    c.fillStyle = C.boneHi; c.fill();
+    c.strokeStyle = C.ink; c.lineWidth = 11; c.lineJoin = 'round'; c.stroke();
+  }
+  c.strokeStyle = C.ink; c.lineWidth = 10; c.lineCap = 'round';
+  for (let k = 0; k < 2; k++) {
+    const y = -116 + k * 92 + 88;
+    c.beginPath(); c.moveTo(-96, y); c.lineTo(-14, y); c.stroke();
+  }
+  thumb();
+  c.fillStyle = C.boneHi; c.fill(); c.strokeStyle = C.ink; c.lineWidth = 11; c.stroke();
+  c.restore();
+}
+
+function drawLime(st) {
+  const u = st.u;
+  if (u < B.twang) return;
+  const grow = sstep(B.twang - 0.02, B.twang + 0.22, u);
+  const half = st.tapeW / 2 * grow;
+  const cxw = TAPE_L + st.tapeW / 2;
+  const y = TAPE_MID;
+  if (st.lift <= 0) {
+    c.save(); c.fillStyle = C.lime; c.fillRect(cxw - half, y - 6, half * 2, 12); c.restore();
+    return;
+  }
+  const p0 = OM.project(OM.view(CAM), cxw - half, y), p1 = OM.project(OM.view(CAM), cxw + half, y);
+  c.save(); c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const ax = lerp(p0[0], 512, st.lift), ay = lerp(p0[1], 748, st.lift);
+  const bx = lerp(p1[0], 1408, st.lift), by = lerp(p1[1], 748, st.lift);
+  c.fillStyle = C.ink; c.fillRect(ax + 12, ay + 14, bx - ax, 18);
+  c.fillStyle = C.lime; c.fillRect(ax, ay, bx - ax, 18);
+  c.restore();
+}
+
+function drawMark(st) {
+  const k = pk(st.u, [[B.markIn, 0], [B.markIn + 0.10, 1, OM.ease.expoOut]]);
+  if (k <= 0) return;
+  c.save();
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const s = 1.16 - 0.16 * k;
+  const sh = 36 - 26 * k;
+  c.globalAlpha = clamp(k * 1.8, 0, 1);
+  c.translate(960, 640); c.scale(s, s); c.translate(-960, -640);
+  txt('CROSSFADE', 960, 706, {font: LOOK.font('display', 196), color: C.boneHi, align: 'center', track: 4, shadow: [sh, sh]});
+  const t2 = pk(st.u, [[B.markIn + 0.14, 0], [B.markIn + 0.30, 1, OM.ease.expoOut]]);
+  if (t2 > 0) {
+    c.globalAlpha = t2;
+    txt('交叉淡化 — 两首歌之间的一道缝', 960, 814, {font: LOOK.font('mono', 38), color: C.boneHi, align: 'center', track: 4, bold: 2});
+    txt('SOUTHSIDE MUSIC', 960, 452, {font: LOOK.font('mono', 30), color: C.lime, align: 'center', track: 12});
+  }
+  c.restore();
+}
+
+let grainPatt = null;
+function makeGrain() {
+  const g = document.createElement('canvas'); g.width = g.height = 128;
+  const gc = g.getContext('2d');
+  let s = 1337;
+  const img = gc.createImageData(128, 128);
+  for (let i = 0; i < 128 * 128; i++) {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    const v = 128 + ((s >> 8) % 34) - 17;
+    img.data[i * 4] = v; img.data[i * 4 + 1] = v; img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 24;
+  }
+  gc.putImageData(img, 0, 0);
+  grainPatt = c.createPattern(g, 'repeat');
+}
+
+function state(u) {
+  const p = clamp(pk(u, P_KNOTS), 0, 1);
+  const tapeW = pk(u, W_KNOTS);
+  const lock = clamp(pk(u, [[SNAPS[0] - 0.05, 0], [SNAPS[0], 0.2, OM.ease.expoOut],
+    [SNAPS[1], 0.2], [SNAPS[1] + 0.05, 0.4, OM.ease.expoOut],
+    [SNAPS[2], 0.4], [SNAPS[2] + 0.05, 0.6, OM.ease.expoOut],
+    [SNAPS[3], 0.6], [SNAPS[3] + 0.05, 0.8, OM.ease.expoOut],
+    [SNAPS[4], 0.8], [SNAPS[4] + 0.06, 1, OM.ease.expoOut], [16, 1]]), 0, 1);
+  const fix = clamp(OM.spring(u - B.twang, 0.55, 17), 0, 1.4);
+  const depth = 0.60 * Math.sin(Math.PI * p) * Math.max(0, 1 - fix);
+  const teeth = clamp(pk(u, [[6.60, 0], [7.02, 1, OM.ease.sineInOut]]), 0, 1);
+  const retract = clamp(pk(u, [[12.70, 0], [13.40, 1, OM.ease.cubicInOut]]), 0, 1);
+  const swell = clamp(pk(u, [[13.20, 0], [13.90, 1, OM.ease.cubicInOut]]), 0, 1);
+  const lift = clamp(pk(u, [[13.55, 0], [14.05, 1, OM.ease.cubicInOut]]), 0, 1);
+  const cap = {};
+  SNAPS.forEach((s, i) => {
+    cap[i + 1] = clamp((u - s) / 0.07, 0, 1) * (1 - clamp((u - s - 0.13) / 0.06, 0, 1));
+  });
+  const bounce = u > B.clunk ? 16 * Math.exp(-(u - B.clunk) * 9) * Math.sin((u - B.clunk) * 55) : 0;
+  return {
+    u, p, tapeW, lock, depth, teeth, retract, swell, lift, cap,
+    sealed: clamp(pk(u, [[6.62, 0], [6.96, 1, OM.ease.sineInOut]]), 0, 1),
+    bandOut: clamp(pk(u, [[13.05, 0], [13.44, 1, OM.ease.sineInOut]]), 0, 1),
+    railOut: clamp(pk(u, [[12.62, 0], [12.88, 1, OM.ease.cubicIn]]), 0, 1),
+    tickOut: clamp(pk(u, [[12.90, 0], [13.16, 1, OM.ease.cubicIn]]), 0, 1),
+    bPeriod: lerp(96, 132, lock), bPhase: lerp(37, 0, lock), bAngle: lerp(Math.PI / 2, 0, lock),
+    knobX: TAPE_L + p * tapeW + bounce,
+    grip: clamp(pk(u, [[0, 1], [12.28, 1], [12.58, 0, OM.ease.cubicIn]]), 0, 1),
+    knobOut: clamp(pk(u, [[12.58, 0], [12.90, 1, OM.ease.cubicIn]]), 0, 1),
+    handOut: clamp(pk(u, [[12.28, 1], [12.62, 0, OM.ease.cubicIn]]), 0, 1)
+  };
+}
+
+function seek(t) {
+  const u = U(t);
+  CAM = camAt(u);
+  const st = state(u);
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  c.fillStyle = C.bone; c.fillRect(0, 0, 1920, 1080);
+
+  c.save();
+  c.transform(...OM.view(CAM));
+  drawStrip(st);
+  drawTicks(st);
+  drawSeam(st);
+  drawTape(st);
+  drawOdo(st);
+  drawStamp(st);
+  drawDisc(st);
+  drawRail(st);
+  drawLime(st);
+  drawKnob(st);
+  drawHand(st);
+  c.restore();
+
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (grainPatt) { c.globalAlpha = 0.6; c.fillStyle = grainPatt; c.fillRect(0, 0, 1920, 1080); c.globalAlpha = 1; }
+  drawMark(st);
+  document.getElementById('hud').textContent = 't=' + t.toFixed(3) + ' u=' + u.toFixed(3);
+  return true;
+}
+
+window.__seek = async t => { seek(t); return true; };
+window.__meta = {
+  dur: DUR, fps: 30, cuts: [],
+  inFrame: { knob: [0.75, 12.35], mark: [14.25, 16.85, 'whole'] }
+};
+
+function boxAt(b) { return OM.projectBox(OM.view(CAM), b); }
+window.__track = t => {
+  const st = state(U(t));
+  const o = {
+    tape: boxAt({x: TAPE_L, y: TAPE_MID - TAPE_H / 2, w: st.tapeW, h: TAPE_H}),
+    knob: boxAt({x: st.knobX, y: KNOB_Y, w: KNOB_W, h: KNOB_H}),
+    hand: boxAt({x: st.knobX + 60, y: KNOB_Y - 140, w: 480, h: 520})
+  };
+  if (U(t) > 13.9) o.mark = {x: 500, y: 500, w: 920, h: 340, op: 1};
+  return o;
+};
+window.__motion = (t0, t1) => {
+  const c0 = camAt(U(t0)), c1 = camAt(U(t1)), cm = camAt(U((t0 + t1) / 2));
+  let far = OM.screenTravel(c0, c1, cm);
+  const a = window.__track(t0), b = window.__track(t1);
+  for (const k of Object.keys(a)) {
+    if (!b[k]) continue;
+    const d = Math.max(Math.abs(a[k].x - b[k].x), Math.abs(a[k].y - b[k].y),
+                       Math.abs(a[k].x + a[k].w - b[k].x - b[k].w), Math.abs(a[k].y + a[k].h - b[k].y - b[k].h));
+    far = Math.max(far, d);
+  }
+  return far;
+};
+
+const HITLIST = [
+  {u:0.30, k:'grip'}, {u:1.05, k:'creep'},
+  {u:2.42, k:'snap'}, {u:2.62, k:'snap'}, {u:2.84, k:'snap'}, {u:3.06, k:'snap'}, {u:3.30, k:'snap'},
+  {u:3.72, k:'unroll'}, {u:5.02, k:'detent'}, {u:5.10, k:'stamp'},
+  {u:5.45, k:'disc'}, {u:6.00, k:'slide'}, {u:6.62, k:'lock'}, {u:7.06, k:'sink'},
+  {u:7.62, k:'grip'}, {u:7.85, k:'drag'}, {u:8.30, k:'strain'}, {u:10.10, k:'twang'},
+  {u:11.95, k:'clunk'}, {u:12.30, k:'release'},
+  {u:12.62, k:'retract'}, {u:12.92, k:'retract'}, {u:13.24, k:'retract'}, {u:13.56, k:'retract'},
+  {u:13.72, k:'swell'}, {u:14.05, k:'mark'}
+];
+window.__events = () => HITLIST.map(e => ({t: R(e.u), u: e.u, kind: e.k, amp: 1, pan: 0}));
+window.__score = () => ({
+  hit: window.__events(),
+  aPeriod: 0.545,
+  bSeg: [[1.05, 0.404], [2.42, 0.436], [2.62, 0.468], [2.84, 0.500], [3.06, 0.522], [3.30, 0.545]],
+  freezes: FREEZE.map(([u, d]) => [R(u), d]),
+  quiet: [[0, R(1.00)], ...FREEZE.map(([u, d]) => [R(u), R(u) + d])],
+  shots: [0, 1.05, 2.30, 3.72, 5.10, 5.55, 6.62, 7.85, 10.10, 10.55, 11.95, 12.62, 13.20, 14.05].map(R),
+  dur: DUR
+});
+
+window.__ready = (LOOK.ready || document.fonts.ready).then(() => {
+  makeGrain(); seek(0); return true;
+});
+
+const q = new URLSearchParams(location.search);
+if (q.has('t')) window.__ready.then(() => seek(parseFloat(q.get('t'))));
+if (q.has('hud')) document.getElementById('hud').style.display = 'block';
+if (q.has('play')) window.__ready.then(() => {
+  const t0 = performance.now();
+  (function loop() { seek(((performance.now() - t0) / 1000) % DUR); requestAnimationFrame(loop); })();
+});
+})();
+</script>
+</body>
+</html>

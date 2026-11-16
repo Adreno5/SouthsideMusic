@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from math import gcd, isfinite
 
 import numpy as np
-from scipy.signal import firwin, firwin2, minimum_phase, oaconvolve, resample_poly
 
 from core.pcm_buffer import PcmBuffer
 from core.pcm_timeline import PcmTimeline
@@ -30,6 +29,8 @@ def _resampleWindow(max_rate: int) -> np.ndarray:
     if window is None:
         if len(_resample_windows) >= _RESAMPLE_WINDOW_CACHE_LIMIT:
             _resample_windows.clear()
+        from scipy.signal import firwin
+
         window = firwin(
             _RESAMPLE_HALF_LENGTH_FACTOR * max_rate * 2 + 1,
             1.0 / max_rate,
@@ -99,6 +100,8 @@ def buildEqualizerKernel(
         return None
     if np.ptp(gains) <= _EQ_FLAT_GAIN:
         return np.array([10.0 ** (gains[0] / 20.0)], dtype=np.float32)
+    from scipy.signal import firwin2, minimum_phase
+
     kernel = firwin2(size + 1, frequencies, 10.0 ** (gains / 20.0), fs=sample_rate)
     return minimum_phase(kernel, n_fft=size * 16, half=False).astype(np.float32)
 
@@ -110,6 +113,8 @@ def applyEqualizer(
         return chunk, state
     if len(kernel) == 1:
         return chunk * kernel[0], None
+    from scipy.signal import oaconvolve
+
     filtered = oaconvolve(chunk, kernel[:, None], axes=0)
     if state is not None and state.shape == (len(kernel) - 1, chunk.shape[1]):
         filtered[: len(state)] += state
@@ -264,6 +269,8 @@ class AudioProcessor:
         up = frames // factor
         down = len(chunk) // factor
         window = _resampleWindow(max(up, down))
+        from scipy.signal import resample_poly
+
         out = resample_poly(
             chunk, up, down, axis=0, window=window.copy(), padtype='line'
         ).astype(np.float32, copy=False)

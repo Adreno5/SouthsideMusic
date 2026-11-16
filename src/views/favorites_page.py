@@ -28,6 +28,7 @@ from qfluentwidgets import (
     InfoBar,
     MessageBox,
     PillToolButton,
+    SearchLineEdit,
     TitleLabel,
 )
 from views.list_widget import SListWidget
@@ -121,6 +122,12 @@ class FavoritesPage(QWidget):
         self.batch_widget.hide()
         global_layout.addWidget(self.batch_widget)
 
+        self.search_input = SearchLineEdit(self)
+        self.search_input.setPlaceholderText(tr('favorites_page.search_placeholder'))
+        self.search_input.setFixedHeight(33)
+        self.search_input.textChanged.connect(self._onSearchTextChanged)
+        global_layout.addWidget(self.search_input)
+
         self.song_viewer = SListWidget()
         self.song_viewer.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         global_layout.addWidget(self.song_viewer, 1)
@@ -143,8 +150,15 @@ class FavoritesPage(QWidget):
         self._favorites_refresh_seq = 0
 
         event_bus.subscribe(Events.FAVORITES_CHANGED, self._onFavoritesChanged)
+        event_bus.subscribe(Events.LANGUAGE_CHANGED, self._refreshSearchPlaceholder)
 
         # self.playall_btn.setFixedSize(self.playall_btn.size() * 2)
+
+    def _refreshSearchPlaceholder(self) -> None:
+        self.search_input.setPlaceholderText(tr('favorites_page.search_placeholder'))
+
+    def _onSearchTextChanged(self, _text: str) -> None:
+        self.refresh()
 
     def _onFavoritesChanged(self, folder_name=None):
         if self.is_cloud:
@@ -206,6 +220,9 @@ class FavoritesPage(QWidget):
             event_bus.emit(Events.STOP_INTER_LOADING)
         self.setBatchMode(False)
         self.batch_btn.setChecked(False)
+        self.search_input.blockSignals(True)
+        self.search_input.clear()
+        self.search_input.blockSignals(False)
         if isinstance(folder, CloudFolderInfo):
             self.displayEmpty()
             self.is_cloud = True
@@ -347,6 +364,14 @@ class FavoritesPage(QWidget):
         self.rediscovery_button.setEnabled(bool(songs))
         self._selected_song_ids.intersection_update(str(song.id) for song in songs)
         self._syncBatchButtons()
+        keyword = self.search_input.text().strip().lower()
+        if keyword:
+            songs = [
+                song
+                for song in songs
+                if keyword in song.name.lower()
+                or any(keyword in artist.name.lower() for artist in song.artists)
+            ]
         self._batch_songs = songs
         self._appendSongBatch()
 
@@ -421,7 +446,9 @@ class FavoritesPage(QWidget):
 
     def _selectedSongs(self) -> list[SongStorable]:
         return [
-            song for song in self._songs() if str(song.id) in self._selected_song_ids
+            song
+            for song in self._batch_songs
+            if str(song.id) in self._selected_song_ids
         ]
 
     def _syncBatchButtons(self) -> None:
@@ -434,7 +461,7 @@ class FavoritesPage(QWidget):
         self.selectall_btn.setEnabled(bool(self._songs()))
 
     def selectAllSongs(self) -> None:
-        self._selected_song_ids = {str(song.id) for song in self._songs()}
+        self._selected_song_ids = {str(song.id) for song in self._batch_songs}
         for card in self._validSongCards():
             card.setSelected(True)
         self._syncBatchButtons()

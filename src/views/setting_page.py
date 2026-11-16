@@ -1,22 +1,13 @@
 from __future__ import annotations
 
 import logging
-
-from core.models import CurveInfo
-from services.events import Events, event_bus
-
 from typing import TYPE_CHECKING, Callable, cast, override
 
-from core.app_context import AppContext
-
-from PySide6.QtCore import Property, QEasingCurve, QPropertyAnimation, Signal
-from PySide6.QtGui import QPaintEvent, QPainter, Qt
-from qfluentwidgets import InfoBar
-from core.i18n import bindText, hasTranslation, refreshBoundTexts, setBoundText, tr
-from PySide6.QtGui import QColor
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Property, QEasingCurve, QPropertyAnimation, QTimer, Signal
+from PySide6.QtGui import QColor, QPaintEvent, QPainter, QResizeEvent, Qt
 from PySide6.QtWidgets import (
     QFormLayout,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QLayout,
@@ -31,28 +22,40 @@ from qfluentwidgets import (
     CheckBox,
     ComboBox,
     FluentIcon,
+    InfoBar,
     LineEdit,
     PasswordLineEdit,
     PushButton,
+    SearchLineEdit,
     Slider,
     SubtitleLabel,
     TitleLabel,
     TransparentPushButton,
 )
 
-from core.icons import bindIcon
 from core import theme
+from core.app_context import AppContext
 from core.audio_player import getAudioDevices
 from core.config import cfg, decryptSecret, encryptSecret, saveConfig
 from core.downloader import asyncTask
-from core.i18n import Language, setLanguage
+from core.i18n import (
+    Language,
+    bindText,
+    hasTranslation,
+    refreshBoundTexts,
+    setBoundText,
+    setLanguage,
+    tr,
+)
+from core.icons import bindIcon
 from core.llm import LLM
+from core.models import CurveInfo
 from core.ws_server import (
     WebSocketServer,
     QObjectHandler,
 )
+from services.events import Events, event_bus
 from views.eq_editor import EQEditor
-
 from views.list_widget import SScrollArea, setTransparentBackground
 from views.number_viewer import NumberViewer, SettableNumberViewer
 
@@ -93,6 +96,7 @@ class SectionContainer(QWidget):
         super().__init__(parent)
         self._title = title
         self._expanded = True
+        self._searching = False
         self._content_height = 0
         self._content_offset = 0
         self._height_from = 0
@@ -112,7 +116,7 @@ class SectionContainer(QWidget):
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(2)
 
-        self.title_l = TitleLabel()
+        self.title_l = SubtitleLabel()
         self.desc_l = QLabel()
         bindText(self.title_l, title)
         bindText(self.desc_l, description)
@@ -151,12 +155,27 @@ class SectionContainer(QWidget):
         self._syncContentGeometry()
 
     def refreshContentHeight(self) -> None:
+        self.content_layout.invalidate()
+        self.content_layout.activate()
         self.content_widget.adjustSize()
         self._content_height = self._contentHeightHint()
-        if self._expanded:
-            self.content_view.setFixedHeight(self._content_height)
+        self.content_view.setFixedHeight(
+            self._content_height if self._expanded or self._searching else 0
+        )
         self._syncContentGeometry()
         self.updateGeometry()
+
+    def setSearching(self, searching: bool) -> None:
+        self.anim.stop()
+        self._searching = searching
+        self._content_offset = 0
+        self.header.setCursor(
+            Qt.CursorShape.ArrowCursor
+            if searching
+            else Qt.CursorShape.PointingHandCursor
+        )
+        self.overlay.hide()
+        self.refreshContentHeight()
 
     def collapseNow(self) -> None:
         self._expanded = False
@@ -174,7 +193,8 @@ class SectionContainer(QWidget):
         return self._title
 
     def _onHeaderClicked(self) -> None:
-        self.toggle()
+        if not self._searching:
+            self.toggle()
 
     def toggle(self) -> None:
         self.setExpanded(not self._expanded)
@@ -204,7 +224,8 @@ class SectionContainer(QWidget):
         self.anim.setEndValue(self._height_to)
         self.anim.start()
 
-    def resizeEvent(self, event) -> None:
+    @override
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self._syncContentGeometry()
 
@@ -255,7 +276,7 @@ class SettingPage(QWidget):
     def __init__(
         self,
         ctx: AppContext,
-    ):
+    ) -> None:
         super().__init__()
         self.now_volume = QLabel(tr('setting_page.current_volume_db_value', value=0))
 
@@ -266,41 +287,68 @@ class SettingPage(QWidget):
         self._ws_handler: QObjectHandler = ctx.ws_handler  # type: ignore
         self._app = ctx.app
 
-        global_layout = QVBoxLayout()
+        global_layout = QVBoxLayout(self)
+        global_layout.setContentsMargins(0, 0, 0, 0)
 
         self.scroller = SScrollArea()
 
         self.setObjectName('SettingPage')
         self._separators: list[SectionSeparator] = []
-        self.updateTheme()
+        self._subtitle_labels: list[QLabel] = []
+        self._groups: list[QWidget] = []
+        self._current_group_layout: QVBoxLayout | None = None
+        self._search_widgets: list[
+            tuple[QWidget, SectionContainer | None, tuple[str, ...]]
+        ] = []
+        self.lyrics_physics_boxes: list[CardWidget] = []
+        self.lyrics_scrolling_boxes: list[CardWidget] = []
+
+        self.search_input = SearchLineEdit(self)
+        self.search_input.setObjectName('SettingSearchInput')
+        self.search_input.setPlaceholderText(tr('setting_page.search_placeholder'))
+        self.search_input.setAccessibleName(tr('setting_page.search_placeholder'))
+        self.search_input.setFixedHeight(44)
+        shadow = QGraphicsDropShadowEffect(self.search_input)
+        shadow.setBlurRadius(24)
+        shadow.setOffset(0, 4)
+        shadow.setColor(QColor(0, 0, 0, 65))
+        self.search_input.setGraphicsEffect(shadow)
+
         self.options_layout = QVBoxLayout()
-        self.options_layout.setContentsMargins(24, 24, 24, 24)
-        self.options_layout.setSpacing(10)
+        self.options_layout.setContentsMargins(24, 84, 24, 24)
+        self.options_layout.setSpacing(24)
         self.options_layout.setVerticalSizeConstraint(
             QLayout.SizeConstraint.SetFixedSize
         )
-        self._section_count = 0
         self._current_section: SectionContainer | None = None
         self._sections: list[SectionContainer] = []
         self._advanced_widgets: list[QWidget] = []
         self._easy_text_widgets: list[QWidget] = []
         self.options_widget = QWidget()
         self.options_widget.setLayout(self.options_layout)
+        self.no_results_label = QLabel()
+        bindText(self.no_results_label, 'setting_page.search_no_results')
+        self.no_results_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.no_results_label.setWordWrap(True)
+        self.no_results_label.setContentsMargins(16, 32, 16, 32)
+        self._subtitle_labels.append(self.no_results_label)
+        self.no_results_label.hide()
         self._initOptions()
         for section in self._sections:
             if cfg.setting_section_expanded.get(section.title, False):
                 continue
             section.collapseNow()
         self._syncSectionExpandedConfig()
-        self._applyAdvancedSettingsVisibility()
-        self.options_layout.addStretch(1)
+        self.options_layout.addWidget(self.no_results_label)
 
         self.scroller.setWidget(self.options_widget)
         self.scroller.setWidgetResizable(True)
 
         global_layout.addWidget(self.scroller)
-
-        self.setLayout(global_layout)
+        self._applyAdvancedSettingsVisibility()
+        self.search_input.raise_()
+        self.search_input.textChanged.connect(self._filterSettings)
+        self.updateTheme()
 
         event_bus.subscribe(Events.WEBSOCKET_CONNECTED, self._onWsConnected)
         event_bus.subscribe(Events.WEBSOCKET_DISCONNECTED, self._onWsDisconnected)
@@ -328,10 +376,27 @@ class SettingPage(QWidget):
         return self.ctx.desktop_lyrics_page
 
     def updateTheme(self) -> None:
-        self.setStyleSheet('')
+        self.setStyleSheet(
+            f'QLabel {{ color: {"white" if theme.isDark() else "black"}; }}'
+        )
         setTransparentBackground(self)
         for separator in self._separators:
             separator.update()
+        for label in self._subtitle_labels:
+            label.setStyleSheet(f'color: {"#a8a8a8" if theme.isDark() else "#666666"};')
+        self.search_input.setStyleSheet(
+            'SearchLineEdit#SettingSearchInput {'
+            f'background: {"rgba(36, 36, 36, 245)" if theme.isDark() else "rgba(255, 255, 255, 245)"};'
+            f'color: {"white" if theme.isDark() else "black"};'
+            f'border: 1px solid {"rgba(255, 255, 255, 28)" if theme.isDark() else "rgba(0, 0, 0, 28)"};'
+            'border-radius: 22px; padding-left: 16px; padding-right: 48px;}'
+        )
+
+    @override
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        width = min(680, max(0, self.width() - 64))
+        self.search_input.setGeometry((self.width() - width) // 2, 16, width, 44)
 
     def updateLanguage(self) -> None:
         refreshBoundTexts()
@@ -341,7 +406,9 @@ class SettingPage(QWidget):
         self._refreshAnchorBox()
         if hasattr(self, 'target_lufs_label'):
             self.target_lufs_label.setText(tr('setting_page.target_lufs_value'))
-        self.reloadAllLayouts()
+        self.search_input.setPlaceholderText(tr('setting_page.search_placeholder'))
+        self.search_input.setAccessibleName(tr('setting_page.search_placeholder'))
+        self._filterSettings()
 
     def _initOptions(self) -> None:
         lw = self._launchwindow
@@ -360,47 +427,49 @@ class SettingPage(QWidget):
             self.advanced_settings_box,
         )
 
+        self._addGroup('setting_page.group_general', 'setting_page.group_general_desc')
         self._addAppSection()
-        self._addAppearanceSection()
-        self._addPlaybackSection()
-        self._addCrossfadeSection()
-        self._addEffectsSection()
-
-        if lw:
-            lw.subtitle('Setting up Desktop lyrics options...')
-        self._addDesktopLyricsSection()
-
         if lw:
             lw.subtitle('Setting up storage options...')
         self._addStorageSection()
 
+        self._addGroup('setting_page.group_audio', 'setting_page.group_audio_desc')
+        self._addPlaybackSection()
+        self._addCrossfadeSection()
+        self._addEffectsSection()
         if lw:
             lw.subtitle('Setting up loudness balance...')
         self._addLoudnessSection()
 
+        self._addGroup('setting_page.group_visuals', 'setting_page.group_visuals_desc')
+        self._addAppearanceSection()
+        self._addLyricsSection()
         if lw:
             lw.subtitle('Setting up animations options...')
         self._addAnimationsSection()
-
         if lw:
-            lw.subtitle('Setting up lyrics options...')
-        self._addLyricsSection()
-
+            lw.subtitle('Setting up Desktop lyrics options...')
+        self._addDesktopLyricsSection()
         if lw:
             lw.subtitle('Setting up FFT options...')
         self._addFftSection()
 
-        if lw:
-            lw.subtitle('Setting up beat detection options...')
-        self._addBeatSection()
-
+        self._addGroup(
+            'setting_page.group_services', 'setting_page.group_services_desc'
+        )
         if lw:
             lw.subtitle('Setting up LLM options...')
         self._addLlmSection()
-
         if lw:
             lw.subtitle('Setting up connection options...')
         self._addConnectionSection()
+
+        self._addGroup(
+            'setting_page.group_experimental', 'setting_page.group_experimental_desc'
+        )
+        if lw:
+            lw.subtitle('Setting up beat detection options...')
+        self._addBeatSection()
 
         for slider in self.findChildren(QSlider):
             slider.wheelEvent = lambda e: e.ignore()  # type: ignore[method-assign]
@@ -666,19 +735,21 @@ class SettingPage(QWidget):
 
         self.eq_label = SubtitleLabel()
         bindText(self.eq_label, 'setting_page.EQ')
-        self._addOptionWidget(self.eq_label)
+        self._addOptionWidget(self.eq_label, ('setting_page.EQ',))
 
         self.eq_edit = EQEditor()
         self.eq_edit.setBands(cfg.eq_bands)
         self._player.equalizerFFTDataReady.connect(self.eq_edit.updateFFTData)
         self._player.beatDataReset.connect(self.eq_edit._resetFFT)
         self.eq_edit.edited.connect(self._onEQEdited)
-        self._addOptionWidget(self.eq_edit)
+        self._addOptionWidget(self.eq_edit, ('setting_page.EQ',))
 
         self.eq_reset_btn = PushButton(FluentIcon.SYNC, '')
         bindText(self.eq_reset_btn, 'setting_page.reset_eq_curve')
         self.eq_reset_btn.clicked.connect(self._onEQReset)
-        self._addOptionWidget(self.eq_reset_btn)
+        self._addOptionWidget(
+            self.eq_reset_btn, ('setting_page.EQ', 'setting_page.reset_eq_curve')
+        )
 
     def _onEQEdited(self, _info: CurveInfo) -> None:
         self._saveEQBands()
@@ -814,7 +885,14 @@ class SettingPage(QWidget):
         )
         middle_layout.setSpacing(8)
         middle_widget.setLayout(middle_layout)
-        self.addSeparateWidget(middle_widget, advanced=True)
+        self.addSeparateWidget(
+            middle_widget,
+            advanced=True,
+            search_keys=(
+                'setting_page.target_lufs',
+                'setting_page.apply_loudness_desc',
+            ),
+        )
 
         self.addInfoBlock(
             'setting_page.reference',
@@ -908,13 +986,13 @@ class SettingPage(QWidget):
             advanced=False,
         )
 
-    def _onLyricsAnimationTypeChanged(self, selected: str, reload: bool = True):
+    def _onLyricsAnimationTypeChanged(self, selected: str, reload: bool = True) -> None:
         for b in self.lyrics_physics_boxes:
             b.setVisible(selected == 'physics')
         for b in self.lyrics_scrolling_boxes:
             b.setVisible(selected == 'scrolling')
         if reload:
-            self.reloadAllLayouts()
+            self._filterSettings()
 
     def _addFftSection(self) -> None:
         self.addSection(
@@ -1121,7 +1199,23 @@ class SettingPage(QWidget):
         self.llm_provider_list_layout.setSpacing(6)
         self.llm_provider_list_widget.setLayout(self.llm_provider_list_layout)
         self._refreshLlmProvidersView()
-        self.addSeparateWidget(self.llm_provider_list_widget, advanced=True)
+        self.addSeparateWidget(
+            self.llm_provider_list_widget,
+            advanced=True,
+            search_keys=(
+                'setting_page.llm_provider_model_and_authentication',
+                'setting_page.add_provider',
+                'setting_page.provider_name',
+                'setting_page.api_format',
+                'setting_page.llm_api_key',
+                'setting_page.llm_base_url',
+                'setting_page.add_model_mapping',
+                'setting_page.fetch_models',
+                'setting_page.model_id',
+                'setting_page.display_name',
+                '1m context',
+            ),
+        )
 
     def _addConnectionSection(self) -> None:
         self.addSection(
@@ -1131,7 +1225,11 @@ class SettingPage(QWidget):
         )
 
         self.southsideclient_status_label = SubtitleLabel()
-        self.addSeparateWidget(self.southsideclient_status_label, advanced=True)
+        self.addSeparateWidget(
+            self.southsideclient_status_label,
+            advanced=True,
+            search_keys=('setting_page.connection',),
+        )
 
         self.sent_label = NumberViewer(self.ctx.harmony_font_family, self.ctx)
         self.received_label = NumberViewer(self.ctx.harmony_font_family, self.ctx)
@@ -1156,7 +1254,15 @@ class SettingPage(QWidget):
                 )
             )
         self.status_widget.setLayout(status_layout)
-        self.addSeparateWidget(self.status_widget, advanced=True)
+        self.addSeparateWidget(
+            self.status_widget,
+            advanced=True,
+            search_keys=(
+                'setting_page.sent_size',
+                'setting_page.received_size',
+                'setting_page.latency',
+            ),
+        )
 
         event_bus.subscribe(Events.TICK_200MS, self._updateWsStatuses)
 
@@ -1177,7 +1283,11 @@ class SettingPage(QWidget):
         connection_layout.addWidget(self.connect_btn)
         connection_layout.addStretch(1)
         connection_buttons.setLayout(connection_layout)
-        self.addSeparateWidget(connection_buttons, advanced=True)
+        self.addSeparateWidget(
+            connection_buttons,
+            advanced=True,
+            search_keys=('setting_page.disconnect', 'setting_page.try_connect'),
+        )
         self._refreshConnectionStatus()
 
         self.addSpliter()
@@ -1267,13 +1377,58 @@ class SettingPage(QWidget):
             self._advanced_widgets.append(widget)
 
     def _applyAdvancedSettingsVisibility(self) -> None:
-        show_advanced = cfg.show_advanced_settings
-        for widget in self._advanced_widgets:
-            widget.setVisible(show_advanced)
         self._refreshEasySettingTexts()
+        self._filterSettings()
+
+    def _filterSettings(self, text: str | None = None) -> None:
+        terms = self.search_input.text().casefold().split()
+        has_results = False
+        for widget, section, keys in self._search_widgets:
+            visible = cfg.show_advanced_settings or (
+                widget not in self._advanced_widgets
+                and section not in self._advanced_widgets
+            )
+            if widget in self.lyrics_physics_boxes:
+                visible = visible and cfg.lyrics_animation_type == 'physics'
+            if widget in self.lyrics_scrolling_boxes:
+                visible = visible and cfg.lyrics_animation_type == 'scrolling'
+            if widget is self.status_widget:
+                visible = visible and self._ws_connected
+            if terms:
+                context_keys = keys
+                if section is not None:
+                    context_keys += (section.title,)
+                    group = section.parentWidget()
+                    if group is not None:
+                        context_keys += (group.objectName(),)
+                search_text = ' '.join(
+                    f'{tr(key)} {tr(self._easyTextKey(key))}' for key in context_keys
+                ).casefold()
+                visible = (
+                    visible
+                    and bool(keys)
+                    and all(term in search_text for term in terms)
+                )
+            widget.setVisible(visible)
+            has_results = has_results or (visible and bool(keys))
         for section in self._sections:
-            section.refreshContentHeight()
-        self.options_widget.adjustSize()
+            section.setVisible(
+                any(
+                    not widget.isHidden() and not isinstance(widget, SectionSeparator)
+                    for widget, owner, _keys in self._search_widgets
+                    if owner is section
+                )
+            )
+            section.setSearching(bool(terms))
+        for group in self._groups:
+            group.setVisible(
+                any(not s.isHidden() for s in group.findChildren(SectionContainer))
+            )
+        self.no_results_label.setVisible(bool(terms) and not has_results)
+        self.reloadAllLayouts()
+        if text is not None:
+            self.scroller.delegate.vScrollBar.animating_objs.clear()
+            self.scroller.verticalScrollBar().setValue(0)
 
     def reloadAllLayouts(self) -> None:
         for section in self._sections:
@@ -1361,27 +1516,50 @@ class SettingPage(QWidget):
         self.addSetting(title, description, box, advanced=advanced)
         return box
 
+    def _addGroup(self, title: str, description: str) -> None:
+        group = QWidget()
+        group.setObjectName(title)
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(16)
+        header = QWidget()
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(4)
+        title_label = TitleLabel()
+        bindText(title_label, title)
+        description_label = QLabel()
+        bindText(description_label, description)
+        description_label.setWordWrap(True)
+        self._subtitle_labels.append(description_label)
+        header_layout.addWidget(title_label)
+        header_layout.addWidget(description_label)
+        layout.addWidget(header)
+        self.options_layout.addWidget(group)
+        self._groups.append(group)
+        self._current_group_layout = layout
+        self._current_section = None
+
     def addSection(
         self,
         title: str,
         description: str,
         advanced: bool = False,
     ) -> SectionContainer:
-        if self._section_count:
-            spacer = QWidget()
-            spacer.setFixedHeight(12)
-            self._trackAdvancedWidget(spacer, advanced)
-            self.options_layout.addWidget(spacer)
         section = SectionContainer(title, description)
         self._bindSettingText(section.title_l, title, not advanced)
         self._bindSettingText(section.desc_l, description, not advanced)
         self._easy_text_widgets.extend([section.title_l, section.desc_l])
+        self._subtitle_labels.append(section.desc_l)
         self._trackAdvancedWidget(section, advanced)
         section.expandedChanged.connect(self._onSectionExpandedChanged)
-        self.options_layout.addWidget(section)
+        if self._current_group_layout is None:
+            self.options_layout.addWidget(section)
+        else:
+            cast(QVBoxLayout, section.layout()).setContentsMargins(12, 0, 0, 0)
+            self._current_group_layout.addWidget(section)
         self._current_section = section
         self._sections.append(section)
-        self._section_count += 1
         return section
 
     def _onSectionExpandedChanged(self, title: str, expanded: bool) -> None:
@@ -1392,7 +1570,10 @@ class SettingPage(QWidget):
             section.title: section.isExpanded() for section in self._sections
         }
 
-    def _addOptionWidget(self, widget: QWidget) -> None:
+    def _addOptionWidget(
+        self, widget: QWidget, search_keys: tuple[str, ...] = ()
+    ) -> None:
+        self._search_widgets.append((widget, self._current_section, search_keys))
         if self._current_section is None:
             self.options_layout.addWidget(widget)
             return
@@ -1431,6 +1612,7 @@ class SettingPage(QWidget):
         desc_l.setWordWrap(True)
         desc_l.setStyleSheet(f'color: {"#A8A8A8" if theme.isDark() else "#666666"};')
         self._easy_text_widgets.extend([name_l, desc_l])
+        self._subtitle_labels.append(desc_l)
         text_layout.addWidget(name_l)
         text_layout.addWidget(desc_l)
         global_layout.addLayout(text_layout, 1)
@@ -1439,7 +1621,7 @@ class SettingPage(QWidget):
         else:
             global_layout.addWidget(widget, 0, Qt.AlignmentFlag.AlignRight)
         card.setLayout(global_layout)
-        self._addOptionWidget(card)
+        self._addOptionWidget(card, (name, description))
         return card
 
     def addInfoBlock(
@@ -1460,19 +1642,22 @@ class SettingPage(QWidget):
         body_l.setWordWrap(True)
         body_l.setStyleSheet(f'color: {"#A8A8A8" if theme.isDark() else "#666666"};')
         self._easy_text_widgets.extend([title_l, body_l])
+        self._subtitle_labels.append(body_l)
         layout.addWidget(title_l)
         layout.addWidget(body_l)
         card.setLayout(layout)
-        self._addOptionWidget(card)
+        self._addOptionWidget(card, (title, text))
 
     def _onBackgroundRatioChanged(self, v):
         event_bus.emit(Events.BACKGROUND_RATIO_CHANGED)
 
-    def _onWsConnected(self):
+    def _onWsConnected(self) -> None:
         self._refreshConnectionStatus(True)
+        self._filterSettings()
 
-    def _onWsDisconnected(self):
+    def _onWsDisconnected(self) -> None:
         self._refreshConnectionStatus(False)
+        self._filterSettings()
 
     def _onVolumeChanged(self, player: AudioPlayer, volume: float) -> None:
         if player is not self.ctx.player:
@@ -1539,9 +1724,14 @@ class SettingPage(QWidget):
         painter.drawRoundedRect(rect, r, r)
         painter.end()
 
-    def addSeparateWidget(self, widget: QWidget, advanced: bool = False) -> None:
+    def addSeparateWidget(
+        self,
+        widget: QWidget,
+        advanced: bool = False,
+        search_keys: tuple[str, ...] = (),
+    ) -> None:
         self._trackAdvancedWidget(widget, advanced)
-        self._addOptionWidget(widget)
+        self._addOptionWidget(widget, search_keys)
 
     def addSpliter(self, advanced: bool = False) -> None:
         separator = SectionSeparator()
@@ -2131,6 +2321,7 @@ class SettingPage(QWidget):
     def _refreshConnectionStatus(self, connected: bool | None = None) -> None:
         if connected is None:
             connected = self._ws_handler.is_open
+        self._ws_connected = connected
         status = (
             tr('setting_page.connected')
             if connected
@@ -2146,4 +2337,3 @@ class SettingPage(QWidget):
                 status=status,
             )
         )
-        self.status_widget.setVisible(connected)

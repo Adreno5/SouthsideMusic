@@ -6,8 +6,6 @@ from itertools import pairwise
 from math import ceil, exp, pi, sqrt
 
 import numpy as np
-from scipy.fft import rfft, rfftfreq
-from scipy.ndimage import maximum_filter1d, median_filter
 
 _WINDOW_SECONDS = 0.046
 _HISTORY_SECONDS = 6.0
@@ -168,6 +166,8 @@ class BeatDetector:
         duration = self._hop / sample_rate
         self._tempo_history = deque(maxlen=max(60, ceil(_HISTORY_SECONDS / duration)))
         self._meter_history = deque(maxlen=self._tempo_history.maxlen)
+        from scipy.fft import rfftfreq
+
         freqs = rfftfreq(size, 1.0 / sample_rate)
         low, high = limits
         middle = max(450.0, high + 250.0)
@@ -178,6 +178,9 @@ class BeatDetector:
         ]
 
     def _onsetStrength(self, frame: np.ndarray) -> float:
+        from scipy.fft import rfft
+        from scipy.ndimage import maximum_filter1d, median_filter
+
         self._meter_attack = 0.0
         spectra = np.abs(rfft(frame * self._window[:, None], axis=0))
         spectrum = np.sqrt(np.mean(spectra**2, axis=1)) * (

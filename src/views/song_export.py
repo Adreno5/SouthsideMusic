@@ -26,7 +26,6 @@ from core.cache_cleanup import touchCacheFile
 from core.downloader import asyncTask
 from core.i18n import tr
 from core.models import SongStorable
-from core.soundfile import getSongFormat, saveSongWithInformation
 
 if TYPE_CHECKING:
     from views.main_window import MainWindow
@@ -147,6 +146,8 @@ def exportSong(
 
     def _export() -> None:
         try:
+            from core.soundfile import getSongFormat, saveSongWithInformation
+
             detail = getBackend().getTrackDetail(storable.id)
             image_bytes = requests.get(detail.cover_url).content
 

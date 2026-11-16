@@ -299,6 +299,7 @@ TRANSLATIONS: dict[str, list[str]] = {
     'favorites_page.remove': ['Remove', '移除'],
     'favorites_page.play_all': ['Play', '播放全部'],
     'favorites_page.select_all': ['Select All', '全选'],
+    'favorites_page.search_placeholder': ['Search songs', '搜索歌单歌曲'],
     'favorites_page.session_expired': ['Session expired', '会话已过期'],
     'favorites_page.song_deleted': ['Song deleted', '歌曲已删除'],
     'favorites_page.song_song_name_deleted': [
@@ -762,6 +763,39 @@ TRANSLATIONS: dict[str, list[str]] = {
     'setting_page.enable_advanced_settings_description': [
         'show every setting, including options for tuning audio, model providers and client links',
         '显示全部设置，包括音效调节、模型服务和客户端连接等高级选项',
+    ],
+    'setting_page.search_placeholder': [
+        'Search settings by name or description',
+        '搜索设置名称或说明',
+    ],
+    'setting_page.search_no_results': [
+        'No matching settings. Try another keyword or enable advanced settings.',
+        '没有找到匹配的设置。试试其他关键词，或启用高级设置项。',
+    ],
+    'setting_page.group_general': ['General', '通用'],
+    'setting_page.group_general_desc': [
+        'App preferences, system integration, and cache storage.',
+        '应用偏好、系统媒体联动与缓存管理。',
+    ],
+    'setting_page.group_audio': ['Playback & Audio', '播放与音频'],
+    'setting_page.group_audio_desc': [
+        'Playback controls, song transitions, effects, and loudness.',
+        '播放控制、歌曲交接、音效与响度调节。',
+    ],
+    'setting_page.group_visuals': ['Interface & Lyrics', '界面与歌词'],
+    'setting_page.group_visuals_desc': [
+        'Window appearance, lyrics, animations, and spectrum visualization.',
+        '窗口外观、歌词排版、动画与频谱可视化。',
+    ],
+    'setting_page.group_services': ['Services & Connections', '服务与连接'],
+    'setting_page.group_services_desc': [
+        'AI model providers and the SouthsideClient music bridge.',
+        'AI 模型服务与 SouthsideClient 音乐联动。',
+    ],
+    'setting_page.group_experimental': ['Experimental', '实验性'],
+    'setting_page.group_experimental_desc': [
+        'Features in development, including beat detection and visual reactions.',
+        '仍在打磨中的功能，包括节拍检测与视觉响应。',
     ],
     'setting_page.debug_mode': ['Debug mode', '调试模式'],
     'setting_page.debug_mode_description': [

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from json import dumps
 
+from .. import getCurrentSession
 from . import eapi
 
 
@@ -57,15 +58,24 @@ def getUserPlaylists(user_id, offset=0, limit=1001) -> dict:
 
 
 def setWeblog(log: dict) -> dict:
-    """send user behavior log (pc client api).
+    """send user behavior log (pc client log domain, plain form body).
 
     Args:
-        logs: operation record dict.
+        log: operation record dict.
 
     Returns:
         dict
     """
-    return eapi('/api/feedback/weblog', {'logs': dumps([log])})
+    rsp = getCurrentSession().request(
+        'POST',
+        'https://clientlogdep.music.163.com/api/feedback/weblog',
+        headers={'MG-Product-Name': 'music'},
+        data={'logs': dumps([log])},
+    )
+    try:
+        return rsp.json()
+    except ValueError:
+        return {}
 
 
 def getDailyRecommend() -> dict:

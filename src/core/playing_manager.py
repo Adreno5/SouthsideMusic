@@ -2146,18 +2146,16 @@ class PlayingManager(QObject):
         event_bus.emit(Events.PLAY_STATE_CHANGED, not pause_after_load)
         event_bus.emit(Events.POST_PLAY_STORABLE, song_storable)
 
-        song_storable.incrementCount(1)
-
         def _logAction():
             backend = getBackend()
-            if self._last_storable:
-                backend.recordPlayed(
-                    self._last_storable.id,
-                    self._last_storable.name,
-                    timeLib.time() - self._play_storable_time,
-                )
-                self._logger.info(f'logged playback action id={self._last_storable.id}')
-            backend.recordPlay(song_storable.id)
+            previous = self._last_storable
+            if previous is not None:
+                played = timeLib.time() - self._play_storable_time
+                if played >= 30:
+                    previous.incrementCount(1)
+                backend.recordPlayed(previous, played)
+                self._logger.info(f'logged playback action id={previous.id}')
+            backend.recordPlay(song_storable)
             self._logger.info(f'logged start play action id={song_storable.id}')
 
             self._play_storable_time = timeLib.time()

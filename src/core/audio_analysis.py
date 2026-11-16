@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import numpy as np
-from scipy.fft import rfft, rfftfreq
 
 
 class SpectrumAnalyzer:
@@ -25,6 +24,8 @@ class SpectrumAnalyzer:
         size = max(1, int(size))
         size_changed = size != len(self._history)
         if size_changed:
+            from scipy.fft import rfftfreq
+
             previous = np.concatenate((
                 self._history[self._write_index :],
                 self._history[: self._write_index],
@@ -56,6 +57,8 @@ class SpectrumAnalyzer:
                 self._history[:remaining] = samples[first:]
             self._write_index = (index + count) % size
             self._count = min(size, self._count + count)
+
+        from scipy.fft import rfft
 
         index = self._write_index
         first = size - index

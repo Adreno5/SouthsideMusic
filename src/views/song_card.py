@@ -57,7 +57,6 @@ from core.icons import bindIcon, getQIcon
 from core.downloader import (
     asyncTask,
 )
-from core.soundfile import getSongFormat
 import requests
 from core.favorites import favorites_manager
 from core.backend import getBackend
@@ -800,6 +799,8 @@ class PlaylistSongCard(_SongCardItem):
         menu.exec(event.globalPos(), aniType=MenuAnimationType.DROP_DOWN)
 
     def _exportSong(self):
+        from core.soundfile import getSongFormat
+
         if not self._dp.playing_manager.ensureAssets(self.storable):
             return
         cache_path = os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash)
@@ -877,6 +878,8 @@ class FavoriteSongCard(_SongCardItem):
             self._remove_callback()
 
     def _exportSong(self):
+        from core.soundfile import getSongFormat
+
         if not self._dp.playing_manager.ensureAssets(self.storable):
             return
         cache_path = os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash)
@@ -934,6 +937,8 @@ class CloudFavoriteSongCard(_SongCardItem):
             self._remove_callback()
 
     def _exportSong(self):
+        from core.soundfile import getSongFormat
+
         if not self._dp.playing_manager.ensureAssets(self.storable):
             return
         cache_path = os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash)

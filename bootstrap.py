@@ -287,11 +287,19 @@ SIMPLE_INDEX_ACCEPT = (
 INSTALLED_PACKAGES_SCRIPT = r"""
 import importlib.metadata as metadata
 import json
+import sys
 
+requested = None
+if len(sys.argv) > 1:
+    requested = {
+        name.lower().replace('_', '-').replace('.', '-')
+        for name in json.loads(sys.argv[1])
+    }
 packages = []
 for distribution in metadata.distributions():
     name = distribution.metadata.get('Name') or getattr(distribution, 'name', '')
-    if name:
+    normalized = name.lower().replace('_', '-').replace('.', '-') if name else ''
+    if name and (requested is None or normalized in requested):
         packages.append({'name': name, 'version': distribution.version})
 print(json.dumps(packages))
 """
@@ -2029,25 +2037,19 @@ def parseWheelPackageName(path_text: str) -> str:
 def getInstalledPackages(
     python_exe: Path = PYTHON_EXE,
     env: dict[str, str] | None = None,
+    names: list[str] | None = None,
 ) -> list[RequirementInfo]:
-    result = []
-    completed = subprocess.run(
-        [str(python_exe), '-c', INSTALLED_PACKAGES_SCRIPT],
-        cwd=str(SCRIPT_DIR),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-        env=getPipEnv(env),
+    requested = (
+        {normalizePackageName(name) for name in names} if names is not None else None
     )
-    if completed.returncode != 0:
-        _logger.warning(
-            'importlib metadata check failed for %s: %s',
-            python_exe,
-            completed.stdout.strip(),
-        )
+    site_packages = python_exe.parent / 'Lib' / 'site-packages'
+    if not site_packages.is_dir():
+        _logger.warning('site-packages not found for %s', python_exe)
+        script_args = [str(python_exe), '-c', INSTALLED_PACKAGES_SCRIPT]
+        if requested is not None:
+            script_args.append(json.dumps(sorted(requested)))
         completed = subprocess.run(
-            [str(python_exe), '-m', 'pip', 'list', '--format', 'json'],
+            script_args,
             cwd=str(SCRIPT_DIR),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -2055,22 +2057,89 @@ def getInstalledPackages(
             bufsize=1,
             env=getPipEnv(env),
         )
-    if completed.returncode != 0:
-        _logger.warning(
-            'pip list failed for %s: %s',
-            python_exe,
-            completed.stdout.strip(),
-        )
-        return result
+        if completed.returncode != 0:
+            _logger.warning(
+                'importlib metadata check failed for %s: %s',
+                python_exe,
+                completed.stdout.strip(),
+            )
+            completed = subprocess.run(
+                [str(python_exe), '-m', 'pip', 'list', '--format', 'json'],
+                cwd=str(SCRIPT_DIR),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                env=getPipEnv(env),
+            )
+        if completed.returncode != 0:
+            _logger.warning(
+                'pip list failed for %s: %s',
+                python_exe,
+                completed.stdout.strip(),
+            )
+            return []
+        try:
+            parsed = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            _logger.warning('package list returned invalid JSON for %s', python_exe)
+            return []
+        return [
+            RequirementInfo(name=data['name'], version=data['version'])
+            for data in parsed
+            if normalizePackageName(data['name']) != 'pip'
+            and (requested is None or normalizePackageName(data['name']) in requested)
+        ]
+
+    result = []
     try:
-        parsed = json.loads(completed.stdout)
-    except json.JSONDecodeError:
-        _logger.warning('package list returned invalid JSON for %s', python_exe)
-        return result
-    for data in parsed:
-        if normalizePackageName(data['name']) == 'pip':
-            continue
-        result.append(RequirementInfo(name=data['name'], version=data['version']))
+        entries = site_packages.iterdir()
+        for entry in entries:
+            name = entry.name
+            if not name.endswith(('.dist-info', '.egg-info')):
+                continue
+            if requested is not None and name.endswith('.dist-info'):
+                stem = name[: -len('.dist-info')].rsplit('-', 1)[0]
+                if normalizePackageName(stem) not in requested:
+                    continue
+
+            try:
+                metadata_path = (
+                    entry / ('METADATA' if name.endswith('.dist-info') else 'PKG-INFO')
+                    if entry.is_dir()
+                    else entry
+                )
+                package_name = ''
+                version = ''
+                with metadata_path.open(
+                    'r', encoding='utf-8', errors='replace'
+                ) as metadata_file:
+                    for line in metadata_file:
+                        header, separator, value = line.partition(':')
+                        if not separator:
+                            continue
+                        if header.lower() == 'name':
+                            package_name = value.strip()
+                        elif header.lower() == 'version':
+                            version = value.strip()
+                        if package_name and version:
+                            break
+            except (OSError, UnicodeError):
+                _logger.warning('invalid package metadata: %s', entry)
+                continue
+            if (
+                not package_name
+                or not version
+                or normalizePackageName(package_name) == 'pip'
+            ):
+                continue
+            if requested is not None and (
+                normalizePackageName(package_name) not in requested
+            ):
+                continue
+            result.append(RequirementInfo(name=package_name, version=version))
+    except OSError as e:
+        _logger.warning('could not scan packages for %s: %s', python_exe, e)
     return result
 
 
@@ -2130,14 +2199,19 @@ def getMissingImports(
     required: list[RequirementInfo],
     import_checks: dict[str, str],
     env: dict[str, str] | None = None,
+    already_unsatisfied: list[RequirementInfo] | None = None,
 ) -> list[RequirementInfo]:
     requirement_map = {
         normalizePackageName(requirement.name): requirement for requirement in required
     }
+    known_unsatisfied = {
+        normalizePackageName(requirement.name)
+        for requirement in already_unsatisfied or []
+    }
     module_map = {
         normalized: module_name
         for normalized, module_name in import_checks.items()
-        if normalized in requirement_map
+        if normalized in requirement_map and normalized not in known_unsatisfied
     }
     if not module_map:
         return []
@@ -3181,7 +3255,11 @@ class BootstrapWindow(QWidget):
                 5,
                 self._text('checking_runtime', runtime=runtime_name),
             )
-            installed = getInstalledPackages(python_exe, env=env)
+            installed = getInstalledPackages(
+                python_exe,
+                env=env,
+                names=[requirement.name for requirement in required],
+            )
         if unsatisfied is None:
             unsatisfied = getUnsatisfiedRequirements(installed, required)
         if import_checks is not None and not prechecked_unsatisfied:
@@ -3373,14 +3451,20 @@ class BootstrapWindow(QWidget):
         return True
 
     def getMissingRuntimeRequirements(self) -> list[RequirementInfo]:
+        required = getRequirements()
         missing = getUnsatisfiedRequirements(
-            getInstalledPackages(PYTHON_EXE), getRequirements()
+            getInstalledPackages(
+                PYTHON_EXE, names=[requirement.name for requirement in required]
+            ),
+            required,
         )
         if self._ft_runtime_ok:
             ft_required = getFreeThreadedRequirements()
             ft_missing = getUnsatisfiedRequirements(
                 getInstalledPackages(
-                    FREE_THREADED_PYTHON_EXE, env=getFreeThreadedEnv()
+                    FREE_THREADED_PYTHON_EXE,
+                    env=getFreeThreadedEnv(),
+                    names=[requirement.name for requirement in ft_required],
                 ),
                 ft_required,
             )
@@ -4750,8 +4834,10 @@ class BootstrapWindow(QWidget):
             self._text('checking_runtime', runtime='GIL Python'),
         )
         self.mwindow.reportParallel(0, 2)
-        installed = getInstalledPackages(PYTHON_EXE)
         required = getRequirements()
+        installed = getInstalledPackages(
+            PYTHON_EXE, names=[requirement.name for requirement in required]
+        )
         unsatisfied = getUnsatisfiedRequirements(installed, required)
         pyside_incomplete = not isFullPySideInstalled()
         self._gil_installed = installed
@@ -4767,11 +4853,12 @@ class BootstrapWindow(QWidget):
             )
             if isFreeThreadedPython(FREE_THREADED_PYTHON_EXE):
                 self._ft_runtime_ok = True
+                ft_required = getFreeThreadedRequirements()
                 ft_installed = getInstalledPackages(
                     FREE_THREADED_PYTHON_EXE,
                     env=getFreeThreadedEnv(),
+                    names=[requirement.name for requirement in ft_required],
                 )
-                ft_required = getFreeThreadedRequirements()
                 ft_unsatisfied = getUnsatisfiedRequirements(ft_installed, ft_required)
                 self.progressChanged.emit(
                     80,
@@ -4784,6 +4871,7 @@ class BootstrapWindow(QWidget):
                         ft_required,
                         FREE_THREADED_IMPORT_CHECKS,
                         env=getFreeThreadedEnv(),
+                        already_unsatisfied=ft_unsatisfied,
                     )
                 )
                 self._ft_installed = ft_installed

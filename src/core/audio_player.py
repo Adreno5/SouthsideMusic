@@ -26,7 +26,6 @@ from PySide6.QtCore import (
     Slot,
 )
 from qfluentwidgets import MessageBox
-from scipy.signal import resample_poly
 
 from core.audio_analysis import SpectrumAnalyzer
 from core.audio_decode import (
@@ -457,6 +456,9 @@ class AudioPlayer(QObject):
             up, down = sample_rate // factor, prepared.sample_rate // factor
             size = max(down, 65536 // down * down)
             halo = ((10 * max(up, down) + up - 1) // up + down - 1) // down * down
+            if up != down:
+                from scipy.signal import resample_poly
+
             for start in range(0, len(samples), size):
                 stop = min(start + size, len(samples))
                 left, right = max(0, start - halo), min(len(samples), stop + halo)
@@ -473,6 +475,8 @@ class AudioPlayer(QObject):
                 converted.append(chunk)
             return PreparedAudioBuffer(converted, sample_rate, channels)
         if prepared.sample_rate != sample_rate and len(samples):
+            from scipy.signal import resample_poly
+
             factor = gcd(prepared.sample_rate, sample_rate)
             samples = resample_poly(
                 samples, sample_rate // factor, prepared.sample_rate // factor, axis=0

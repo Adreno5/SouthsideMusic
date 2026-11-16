@@ -151,7 +151,15 @@ class LogHandler(logging.Handler):
                 final = f'{prefix}{line}{" " * spaces}{colored_suffix}'
                 rendered_lines.append(final)
         assert sys.__stdout__ is not None
-        sys.__stdout__.write('\n'.join(rendered_lines) + '\n')
+        output = '\n'.join(rendered_lines) + '\n'
+        try:
+            sys.__stdout__.write(output)
+        except UnicodeEncodeError as error:
+            sys.__stdout__.write(
+                output.encode(error.encoding, errors='backslashreplace').decode(
+                    error.encoding
+                )
+            )
         sys.__stdout__.flush()
 
 

@@ -647,35 +647,39 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
                     result.append(song)
             return result
 
-    def recordPlayed(self, song_id: str, song_name: str, time: float) -> None:
+    def recordPlayed(self, song: SongStorable, played: float) -> None:
+        seconds = int(played)
         apis.user.setWeblog({
-            'action': 'play',
-            'json': {
-                'content': '',
-                'download': 0,
-                'end': 'ui',
-                'id': int(song_id),
-                'mainsite': '1',
-                'mainsiteWeb': '1',
-                'source': 'search',
-                'sourceId': song_name,
-                'time': int(time),
-                'type': 'song',
-                'wifi': 0,
+            'action': '_pld',
+            'json': self._playLogPayload(song)
+            | {
+                'end': 'playend',
+                'realtime': seconds,
+                'time': seconds,
             },
         })
 
-    def recordPlay(self, song_id: str) -> None:
+    def recordPlay(self, song: SongStorable) -> None:
         apis.user.setWeblog({
-            'action': 'startplay',
-            'json': {
-                'content': '',
-                'id': int(song_id),
-                'mainsite': '1',
-                'mainsiteWeb': '1',
-                'type': 'song',
-            },
+            'action': '_plv',
+            'json': self._playLogPayload(song),
         })
+
+    def _playLogPayload(self, song: SongStorable) -> dict:
+        return {
+            'app_mode': 2,
+            'download': 0,
+            'file': 4,
+            'id': int(song.id),
+            'is_listentogether': 0,
+            'resource_time': song.duration // 1000,
+            'source': '',
+            'sourceId': '',
+            'sourcetype': '',
+            'status': 'front',
+            'type': 'song',
+            'vipType': self.getUserVipType(),
+        }
 
     def getComments(
         self,

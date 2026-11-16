@@ -6,7 +6,6 @@ from textwrap import dedent
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
-import scipy.signal
 
 from core.audio_decode import FileAudioSegment
 
@@ -159,7 +158,9 @@ class IirFilter(object):
 
     def applyFilter(self, data):
         """apply the iir filter to the input signal."""
-        return self.passband_gain * scipy.signal.lfilter(self.b, self.a, data)  # type: ignore
+        from scipy.signal import lfilter
+
+        return self.passband_gain * lfilter(self.b, self.a, data)  # type: ignore
 
     @property
     def a(self):
@@ -218,6 +219,8 @@ class Meter(object):
 
         starts = [int(T_g * (j * step) * self.rate) for j in j_range]
         stops = [int(T_g * (j * step + 1) * self.rate) for j in j_range]
+        from scipy.signal import lfilter
+
         states = {
             (name, ch): np.zeros(max(len(stage.a), len(stage.b)) - 1)
             for name, stage in self._filters.items()
@@ -230,7 +233,7 @@ class Meter(object):
         for chunk in chunks:
             for name, stage in self._filters.items():
                 for ch in range(numChannels):
-                    filtered, states[name, ch] = scipy.signal.lfilter(
+                    filtered, states[name, ch] = lfilter(
                         stage.b, stage.a, chunk[:, ch], zi=states[name, ch]
                     )
                     chunk[:, ch] = stage.passband_gain * filtered

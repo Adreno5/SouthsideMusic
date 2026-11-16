@@ -4,7 +4,7 @@ import json
 import logging
 import math
 import threading
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from core import theme
 from core.app_context import AppContext
@@ -35,9 +35,11 @@ from qfluentwidgets import (
 )
 from services.events import Events, event_bus
 from views.animated_layout import SFlowLayout
-from views.chatting_viewer import ChattingViewer
 from views.list_widget import SScrollArea, SSmoothDelegate
 from views.number_viewer import NumberViewer
+
+if TYPE_CHECKING:
+    from views.chatting_viewer import ChattingViewer
 
 
 LLM_VIEWER_WIDTH = 475
@@ -741,6 +743,8 @@ class LLMViewerPanel(QFrame):
                 self._clearLayout(child_layout)
 
     def copyLLMMarkdown(self) -> None:
+        from views.chatting_viewer import ChattingViewer
+
         parts: list[str] = []
         for viewer in self.llm_chat_widget.findChildren(ChattingViewer):
             markdown = viewer.toMarkdown().strip()
@@ -932,6 +936,8 @@ class LLMViewerPanel(QFrame):
         if not self._isCurrentLLMGeneration(generation):
             return
         if self.llm_stream_viewer is None:
+            from views.chatting_viewer import ChattingViewer
+
             self.llm_stream_viewer = ChattingViewer()
             self.llm_stream_viewer.charReceived.connect(
                 lambda length: setattr(self, 'llm_chars', self.llm_chars + length)

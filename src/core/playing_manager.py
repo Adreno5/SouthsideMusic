@@ -1303,9 +1303,15 @@ class PlayingManager(QObject):
             next_song = selection.song
             self._logger.debug(next_song)
             play_seq = self._play_seq
+            self._preload_download_seq += 1
+            preload_seq = self._preload_download_seq
 
             def _is_preload_current() -> bool:
-                return play_seq == self._play_seq and self.isSelectionCurrent(selection)
+                return (
+                    play_seq == self._play_seq
+                    and preload_seq == self._preload_download_seq
+                    and self.isSelectionCurrent(selection)
+                )
 
             def _start_preload(redownload_on_failure: bool = True) -> None:
                 threading.Thread(
@@ -1321,12 +1327,10 @@ class PlayingManager(QObject):
                 self.next_song_gain = None
                 self.next_song_selection = None
 
-                self._preload_download_seq += 1
-                download_seq = self._preload_download_seq
                 self._preload_download_song_id = str(next_song.id)
 
                 def _after_download(success: bool) -> None:
-                    if download_seq != self._preload_download_seq:
+                    if not _is_preload_current():
                         self._logger.info('discarding stale preload download')
                         return
                     self._preload_download_song_id = None
@@ -1372,75 +1376,92 @@ class PlayingManager(QObject):
                         if cache_key:
                             cacheDecodedAudio(cache_key, audio)
                 except Exception as e:
-                    next_song.content_cache_hash = ''
-                    saveFavorites()
-                    self.next_song_audio = None
-                    self.next_song_gain = None
-                    self.crossfade_info = None
-                    self.next_song_selection = None
-                    self._logger.warning(
-                        f'skipping preload because cached audio is invalid: {e}'
-                    )
-                    if redownload_on_failure:
-                        self._schedule(self.preloadNextSong)
+
+                    def _apply_failure(error: Exception) -> None:
+                        if not _is_preload_current():
+                            return
+                        next_song.content_cache_hash = ''
+                        saveFavorites()
+                        self.next_song_audio = None
+                        self.next_song_gain = None
+                        self.crossfade_info = None
+                        self.next_song_selection = None
+                        self._logger.warning(
+                            f'skipping preload because cached audio is invalid: {error}'
+                        )
+                        if redownload_on_failure:
+                            self._schedule(self.preloadNextSong)
+
+                    if _is_preload_current():
+                        self._schedule(_apply_failure, e)
                     return
 
                 if not _is_preload_current():
                     self._logger.info('discarding stale preload')
                     return
 
-                self.next_song_audio = audio  # type: ignore
-                if not self._hasLoadedLoudnessGain(next_song):
-                    gain = self._computeLoudnessGain(
-                        cfg.target_lufs,
-                        self.next_song_audio,  # type: ignore[arg-type]
-                    )
-                    self._setStorableLoudness(next_song, cfg.target_lufs, gain)
+                target_lufs = cfg.target_lufs
+                has_loaded_gain = self._hasLoadedLoudnessGain(next_song)
+                if not has_loaded_gain:
+                    gain = self._computeLoudnessGain(target_lufs, audio)
                 else:
                     gain = next_song.loudness_gain
-                self.next_song_gain = gain
+                current_audio = self.current_song_audio
+                current_song = self.current_song
+                player = self._player
+                current_gain = player.loudness_gain if player is not None else 1.0
                 current_id = (
-                    self.current_song.content_cache_hash
-                    if self.current_song is not None
+                    current_song.content_cache_hash
+                    if current_song is not None
                     else None
                 )
-                self.crossfade_info = self._computeCrossfadeInfo(
-                    self.current_song_audio,
-                    self.next_song_audio,  # type: ignore
+                crossfade_info = self._computeCrossfadeInfo(
+                    current_audio,
+                    audio,
                     current_song_id=current_id or None,
                     next_song_id=next_song.content_cache_hash or None,
-                    current_gain=(
-                        self._player.loudness_gain if self._player is not None else 1.0
-                    ),
+                    current_gain=current_gain,
                     next_gain=gain,
                 )
 
-                next_buffer = AudioPlayer.prepareBuffer(audio)  # type: ignore
+                next_buffer = AudioPlayer.prepareBuffer(audio)
                 if not _is_preload_current():
                     self._logger.info('discarding stale prepared crossfade buffers')
                     return
-                self._next_song_buffer = next_buffer
 
-                self._logger.debug(
-                    f'preload -> gain {self.next_song_gain} {cfg.target_lufs=}'
-                )
-                self._logger.info('preloaded')
-                self._logger.debug(
-                    f'(Types) {type(self.next_song_audio)=} {type(self.next_song_gain)=}'
-                )
+                def _apply_preload() -> None:
+                    if not _is_preload_current():
+                        self._logger.info('discarding stale prepared crossfade buffers')
+                        return
+                    if not has_loaded_gain:
+                        self._setStorableLoudness(next_song, target_lufs, gain)
+                    self.next_song_audio = audio
+                    self.next_song_gain = gain
+                    self.crossfade_info = crossfade_info
+                    self._next_song_buffer = next_buffer
+                    self.next_song_selection = selection
+                    self.preloaded = True
 
-                self.next_song_selection = selection
-                self.preloaded = True
-                if cfg.whisper_enabled:
-                    self._schedule(self._queueWhisperLyrics, next_song)
-                self._schedule(self._queuePreloadedSong, selection)
+                    self._logger.debug(
+                        f'preload -> gain {self.next_song_gain} {cfg.target_lufs=}'
+                    )
+                    self._logger.info('preloaded')
+                    self._logger.debug(
+                        f'(Types) {type(self.next_song_audio)=} '
+                        f'{type(self.next_song_gain)=}'
+                    )
+                    if cfg.whisper_enabled:
+                        self._queueWhisperLyrics(next_song)
+                    self._queuePreloadedSong(selection)
 
-                if self._pending_play_selection:
-                    sel = self._pending_play_selection
-                    self._pending_play_selection = None
-                    self.current_index = sel.index
-                    self.clearReservedNext()
-                    self._schedule(self.playPreloadedSong, sel)
+                    if self._pending_play_selection:
+                        sel = self._pending_play_selection
+                        self._pending_play_selection = None
+                        self.current_index = sel.index
+                        self.clearReservedNext()
+                        self.playPreloadedSong(sel)
+
+                self._schedule(_apply_preload)
 
             image_missing, music_missing = self._storable_asset_missing(next_song)
             if image_missing or music_missing:

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Element entrance",
+    "description": "New elements fly in along the line from their parent group's visual centre, grow slightly before landing and settle with a spring; removed elements leave as fixed ghosts. Compositor-only animation: the layout never moves."
+  }
+}

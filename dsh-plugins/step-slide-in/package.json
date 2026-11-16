@@ -1,0 +1,42 @@
+{
+  "name": "dsh-step-slide-in",
+  "version": "1.9.0",
+  "description": "New elements fly in along the line from their parent group visual centre, over-scale before landing and settle with a spring; removed elements become fixed ghosts. Compositor-only and stateless: no inline styles, so content can never be left hidden. A density setting picks whether the element, its parent or its grandparent carries the animation. An optional Swarm Cursors mode instead sends a flock of cursors to draw a selection box around each new element before it appears; exits are unchanged.",
+  "type": "module",
+  "author": "Adreno",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "chat",
+    "animation"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "scripts": {
+    "test": "node test/swarm.test.mjs"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "license": "MIT"
+}

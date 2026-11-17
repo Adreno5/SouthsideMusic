@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ctypes
-import time
 from ctypes import wintypes
 from typing import cast, override
 

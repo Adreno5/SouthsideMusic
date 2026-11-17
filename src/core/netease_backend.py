@@ -66,7 +66,7 @@ class NeteaseCloudMusicBackend(MusicServiceBackend):
                     bool(charge['chargeType']),
                     table.get(charge['rate'], '未知音质'),
                 )
-                for charge in result['chargeInfoList']
+                for charge in result['chargeInfoList'] or []
             ],
         )
 

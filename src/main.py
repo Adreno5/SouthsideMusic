@@ -6,6 +6,7 @@ import subprocess
 import sys
 import os
 import atexit
+import signal
 from importlib import import_module
 
 _SRC_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -26,7 +27,7 @@ for _scipy_module in ('scipy.signal', 'scipy.fft', 'scipy.ndimage'):
     except ImportError:
         logging.getLogger(__name__).exception('failed to import %s', _scipy_module)
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 installQtMessageHandler()
 
@@ -44,6 +45,7 @@ QApplication.setAttribute(Qt.ApplicationAttribute.AA_CompressHighFrequencyEvents
 
 app = ProfiledApplication(sys.argv)
 QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseOpenGLES)
+signal.signal(signal.SIGINT, lambda *_: QTimer.singleShot(0, app.quit))
 
 from core.smtc import SmtcController, initAppIdentity
 
@@ -85,7 +87,6 @@ import glob
 
 from services.services import EventsServices
 
-from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFontDatabase
 from qfluentwidgets import setTheme, Theme
 import shiboken6

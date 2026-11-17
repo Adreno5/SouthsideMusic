@@ -302,7 +302,7 @@ class DesktopLyricsViewer(LyricsViewer):
         payload = super()._renderLinePayload(index)
         content = self._view_lines[index].content.strip()
         text_width = self._textWidth(content)
-        if text_width <= self._xScrollClipWidth():
+        if text_width <= self._xScrollClipWidth() or self.width_timer.is_animating:
             payload['x'] = float(toQtInt((self._pill_w - text_width) * 0.5))
             translation = cast(str, payload['translation'])
             if translation:
@@ -563,7 +563,7 @@ class DesktopLyricsViewer(LyricsViewer):
         painter.setPen(self._primaryColorForLine(self._outgoing_line, False, alpha))
         text_width = self._textWidth(self._outgoing_text)
         x = (self._pill_w - text_width) * 0.5
-        if text_width > self._xScrollClipWidth():
+        if text_width > self._xScrollClipWidth() and not self.width_timer.is_animating:
             x = self.x_pad
         painter.drawText(toQtInt(x + shift), baseline, self._outgoing_text)
         translation_color = self._translationColor(alpha)

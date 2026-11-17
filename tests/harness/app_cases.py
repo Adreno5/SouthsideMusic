@@ -102,7 +102,8 @@ def performAction(ctx: Any, operation: str, data: dict[str, Any], backend: Any) 
         button = panel.llm_confirm_buttons[int(data.get('cancel', False))]
         panel.llm_chat_scroller.ensureWidgetVisible(button)
         waitUntil(
-            lambda: button.isVisible() and button.isEnabled(), 'confirmation button'
+            lambda: button.isVisible() and button.isEnabled() and button.height() > 0,
+            'confirmation button',
         )
         QTest.qWait(450)
         from PySide6.QtTest import QSignalSpy

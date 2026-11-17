@@ -313,6 +313,19 @@ class DesktopLyricsViewer(LyricsViewer):
         return payload
 
     @override
+    def _updateXScroll(
+        self,
+        lines: list[LyricInfo | YRCLyricInfo],
+        current_index: int,
+        position: float,
+    ) -> None:
+        if self.width_timer.is_animating:
+            self.draw_x_offset = 0.0
+            self.x_scroll_timer.reset()
+            return
+        super()._updateXScroll(lines, current_index, position)
+
+    @override
     def _contentWidth(self) -> float:
         return self._pill_w
 
@@ -349,7 +362,7 @@ class DesktopLyricsViewer(LyricsViewer):
         self.x_pad = self._pill_h / 2
 
         tar_width = 10
-        future_line = self._offsetLyricLine(position, self.width_timer.anim_cycle * 0.5)
+        future_line = self._offsetLyricLine(position, self.width_timer.anim_cycle)
         if future_line:
             tar_width = max(
                 10,
@@ -431,11 +444,7 @@ class DesktopLyricsViewer(LyricsViewer):
 
     @override
     def paintGL(self) -> None:
-        if self.width_timer.is_animating:
-            self.slide_timer.enabled = False
-            self.draw_x_offset = 0
-        else:
-            self.slide_timer.enabled = True
+        self.slide_timer.enabled = not self.width_timer.is_animating
 
         painter = QPainter(self)
         try:

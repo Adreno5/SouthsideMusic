@@ -155,14 +155,17 @@ class LogHandler(logging.Handler):
             return
         output = '\n'.join(rendered_lines) + '\n'
         try:
-            sys.__stdout__.write(output)
-        except UnicodeEncodeError as error:
-            sys.__stdout__.write(
-                output.encode(error.encoding, errors='backslashreplace').decode(
-                    error.encoding
+            try:
+                sys.__stdout__.write(output)
+            except UnicodeEncodeError as error:
+                sys.__stdout__.write(
+                    output.encode(error.encoding, errors='backslashreplace').decode(
+                        error.encoding
+                    )
                 )
-            )
-        sys.__stdout__.flush()
+            sys.__stdout__.flush()
+        except (OSError, ValueError):
+            return
 
 
 class LoggingStream:

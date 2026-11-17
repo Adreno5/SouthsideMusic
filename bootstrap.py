@@ -379,7 +379,14 @@ def runMain() -> None:
         bwindow.task.emit(app.quit)
         return
     for line in proc.stdout:
-        print(line.strip())
+        stream = sys.stdout
+        if stream is None:
+            continue
+        try:
+            stream.write(line.strip() + '\n')
+            stream.flush()
+        except (OSError, ValueError):
+            pass
     proc.wait()
     if proc.returncode != 0:
         _logger.error('main.py exited with code %d', proc.returncode)
@@ -4942,3 +4949,12 @@ if __name__ == '__main__':
     bwindow.allDone.connect(runMain)
     QTimer.singleShot(0, bwindow.startTestLatency)
     app.exec()
+    for name in ('stdout', '__stdout__', 'stderr', '__stderr__'):
+        stream = getattr(sys, name, None)
+        if stream is None:
+            continue
+        try:
+            stream.flush()
+        except (OSError, ValueError):
+            pass
+        setattr(sys, name, None)

@@ -31,6 +31,7 @@ _exception_lock = threading.Lock()
 
 STD_ERROR_HANDLE = -12
 SEM_NOGPFAULTERRORBOX = 0x0002
+EXIT_FINALIZE_FAILED = 120
 
 _EXIT_REASONS = {
     3: 'C/C++ runtime abort',
@@ -344,7 +345,11 @@ def _watchProcess(pid: int, session_dir: str) -> None:
                 exception_size = 0
             pending = exception_size != last_exception_size
             last_exception_size = exception_size
-            crashed = exited and exit_code.value not in (0, 0xC000013A)
+            crashed = exited and exit_code.value not in (
+                0,
+                EXIT_FINALIZE_FAILED,
+                0xC000013A,
+            )
             if pending or crashed:
                 writeReport(session_dir, exit_code.value if crashed else None)
                 if viewer is None or viewer.poll() is not None:

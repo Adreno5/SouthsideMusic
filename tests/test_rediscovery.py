@@ -195,6 +195,7 @@ class RediscoveryTests(unittest.TestCase):
         self.count_path.write_text('{"1": 180}', encoding='utf-8')
         self.history({'2': 40})
         recordListening(self.song(1))
+        self.assertTrue(flushDeferredWrites())
         self.assertEqual(
             getListeningHistory(), {'1': self.now, '2': self.now - 40 * 86400}
         )

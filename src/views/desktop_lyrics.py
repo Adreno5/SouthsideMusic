@@ -431,11 +431,11 @@ class DesktopLyricsViewer(LyricsViewer):
 
     @override
     def paintGL(self) -> None:
-        now = time.perf_counter()
         if self.width_timer.is_animating:
-            self.last_width_animation = now
-        if now - self.last_width_animation < 0.2:
+            self.slide_timer.enabled = False
             self.draw_x_offset = 0
+        else:
+            self.slide_timer.enabled = True
 
         painter = QPainter(self)
         try:

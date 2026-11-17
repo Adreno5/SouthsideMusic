@@ -20,6 +20,7 @@ class _BaseSmoothTimer:
         self._last_update = perf_counter_ns()
         self.anim_cycle = animation_time
         self.power_number = power_number
+        self.enabled = True
 
     def getDebugInfo(self) -> list[str]:
         return [
@@ -111,6 +112,8 @@ class _BaseSmoothTimer:
             return self._target_value
 
         progress = elapsed / actual
+        if not self.enabled:
+            return self._current_value
         return self._current_value + self._difference * self._ease_progress(progress)
 
     def _ease_progress(self, progress: float) -> float:

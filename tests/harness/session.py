@@ -117,18 +117,21 @@ class ApplicationSession:
 
     def _trackProcesses(self) -> None:
         while not self._stop_tracking.is_set():
-            with self._children_lock:
-                parents = list(self._children)
-            if self._parent is not None:
-                parents.append(self._parent)
-            for parent in parents:
-                try:
-                    children = parent.children(recursive=True)
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-                with self._children_lock:
-                    self._children.update(children)
+            self._refreshChildren()
             self._stop_tracking.wait(0.05)
+
+    def _refreshChildren(self) -> None:
+        with self._children_lock:
+            parents = list(self._children)
+        if self._parent is not None:
+            parents.append(self._parent)
+        for parent in parents:
+            try:
+                children = parent.children(recursive=True)
+            except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+                continue
+            with self._children_lock:
+                self._children.update(children)
 
     def _receive(self, timeout: float = 90) -> dict[str, Any]:
         assert self.connection is not None
@@ -185,6 +188,7 @@ class ApplicationSession:
         errors: list[Exception] = []
         if self.process is not None:
             if self.process.poll() is None and self.ready:
+                self._refreshChildren()
                 try:
                     self.request('shutdown', timeout=10)
                     self.process.wait(timeout=10)
@@ -240,7 +244,7 @@ class ApplicationSession:
                     shutil.copy2(source, target)
             except Exception as error:
                 errors.append(error)
-            if self._owns_sandbox and not errors:
+            if self._owns_sandbox:
                 try:
                     self.sandbox.close()
                 except Exception as error:

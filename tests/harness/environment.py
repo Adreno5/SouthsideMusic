@@ -19,7 +19,7 @@ from PIL import Image
 def _isRunning(process: psutil.Process) -> bool:
     try:
         return process.is_running()
-    except psutil.Error:
+    except (psutil.Error, OSError):
         return False
 
 
@@ -43,17 +43,63 @@ def _waitSurvivors(
     return []
 
 
+def _expand(known: dict[int, psutil.Process], roots: set[int]) -> None:
+    mapping = getattr(psutil, '_ppid_map', None)
+    if mapping is None:
+        for parent in list(known.values()):
+            try:
+                for child in parent.children(recursive=True):
+                    known.setdefault(child.pid, child)
+            except (psutil.Error, OSError):
+                pass
+        return
+    children: dict[int, list[int]] = {}
+    for pid, ppid in mapping().items():
+        children.setdefault(ppid, []).append(pid)
+    stack = list(roots)
+    visited: set[int] = set()
+    while stack:
+        pid = stack.pop()
+        if pid in visited:
+            continue
+        visited.add(pid)
+        for child in children.get(pid, []):
+            if child not in known:
+                try:
+                    known[child] = psutil.Process(child)
+                except (psutil.Error, OSError):
+                    pass
+            stack.append(child)
+
+
+def _terminate(process: psutil.Process) -> None:
+    if not _isRunning(process):
+        return
+    try:
+        process.terminate()
+    except (psutil.Error, OSError):
+        pass
+
+
+def _kill(process: psutil.Process) -> None:
+    if not _isRunning(process):
+        return
+    try:
+        process.kill()
+    except (psutil.Error, OSError):
+        pass
+
+
 def stopProcessTree(
     process: subprocess.Popen[Any],
     descendants: list[psutil.Process] | None = None,
     timeout: float = 3,
 ) -> None:
-    children = set(descendants or [])
-    try:
-        parent = psutil.Process(process.pid)
-        children.update(parent.children(recursive=True))
-    except psutil.Error:
-        parent = None
+    known: dict[int, psutil.Process] = {}
+    for child in descendants or []:
+        known[child.pid] = child
+    roots = {process.pid} | set(known)
+    _expand(known, roots)
     if process.poll() is None:
         try:
             process.terminate()
@@ -64,36 +110,22 @@ def stopProcessTree(
         except ProcessLookupError:
             process.wait(timeout=5)
     deadline = time.monotonic() + min(timeout, 1)
+    alive: list[psutil.Process] = []
     while True:
-        for child in [*children, *([parent] if parent else [])]:
-            try:
-                children.update(child.children(recursive=True))
-            except psutil.Error:
-                pass
-        alive = _waitSurvivors(list(children), min(0.05, deadline - time.monotonic()))
+        _expand(known, roots)
+        alive = _waitSurvivors(
+            list(known.values()),
+            min(0.05, max(0.0, deadline - time.monotonic())),
+        )
         if not alive or time.monotonic() >= deadline:
             break
     for child in alive:
-        if not _isRunning(child):
-            continue
-        try:
-            child.terminate()
-        except psutil.Error:
-            pass
-    alive = _waitSurvivors(alive, timeout)
-    for child in [*children, *([parent] if parent else [])]:
-        try:
-            alive.extend(child.children(recursive=True))
-        except psutil.Error:
-            pass
-    for child in set(alive):
-        if not _isRunning(child):
-            continue
-        try:
-            child.kill()
-        except psutil.Error:
-            pass
-    survivors = _waitSurvivors([child for child in set(alive) if _isRunning(child)], 5)
+        _terminate(child)
+    _expand(known, roots)
+    alive = _waitSurvivors(list(known.values()), timeout)
+    for child in alive:
+        _kill(child)
+    survivors = _waitSurvivors([child for child in alive if _isRunning(child)], 5)
     if survivors:
         raise RuntimeError(
             'Application descendants survived cleanup: '
@@ -281,4 +313,11 @@ class Sandbox:
             )
 
     def close(self) -> None:
-        self._temporary.cleanup()
+        for attempt in range(5):
+            try:
+                self._temporary.cleanup()
+                return
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.2)

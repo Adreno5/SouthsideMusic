@@ -386,6 +386,40 @@ class HarnessEnvironmentTests(unittest.TestCase):
         child.kill.assert_not_called()
         self.assertEqual(wait.call_args.args[0], [])
 
+    def testStopProcessTreeFindsDescendantsBehindDeadParents(self) -> None:
+        script = (
+            'import os, subprocess, sys, time\n'
+            'print(os.getpid(), flush=True)\n'
+            'time.sleep(1)\n'
+            'child = subprocess.Popen('
+            '[sys.executable, "-c", "import time; time.sleep(60)"])\n'
+            'print(child.pid, flush=True)\n'
+            'time.sleep(60)\n'
+        )
+        temporary = tempfile.TemporaryDirectory(prefix='harness-tree-test-')
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        (root / 'child.py').write_text(script, encoding='utf-8')
+        process = subprocess.Popen(
+            [sys.executable, str(root / 'child.py')],
+            cwd=root,
+            stdout=subprocess.PIPE,
+            text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        self.addCleanup(process.kill)
+        self.addCleanup(process.stdout.close)
+        intermediate = int(process.stdout.readline().strip())
+        snapshot = [psutil.Process(intermediate)]
+        grandchild = int(process.stdout.readline().strip())
+        snapshot[0].kill()
+        process.wait(timeout=30)
+        time.sleep(0.3)
+        environment.stopProcessTree(process, snapshot)
+        self._assertDead(grandchild)
+        (root / 'child.py').unlink()
+        root.rmdir()
+
     def testShutdownCollectsLateCrashViewerAndPreservesReport(self) -> None:
         monitor = dedent("""
             import json, os, subprocess, sys, time

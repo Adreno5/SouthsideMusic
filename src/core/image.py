@@ -1,6 +1,7 @@
 from functools import lru_cache
 
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtCore import QBuffer, QIODevice, QSize
+from PySide6.QtGui import QImage, QPixmap, Qt
 import numpy as np
 
 
@@ -22,6 +23,35 @@ def getAverageColorFromBytes(image_bytes: bytes) -> list[float]:
     if qimg.isNull():
         return [128, 128, 128]
     return _avg_color_from_qimage(qimg)
+
+
+def loadImageFromBytes(image_bytes: bytes, target: QSize | None = None) -> QImage:
+    image = QImage.fromData(image_bytes)
+    if image.isNull() or target is None or not target.isValid():
+        return image
+    return image.scaled(
+        target,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+
+
+def loadImageFromPath(path: str, target: QSize | None = None) -> QImage:
+    with open(path, 'rb') as stream:
+        return loadImageFromBytes(stream.read(), target)
+
+
+def encodePng(image: QImage) -> bytes:
+    if image.isNull():
+        return b''
+    buffer = QBuffer()
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    try:
+        if not image.save(buffer, 'PNG'):
+            return b''
+        return bytes(buffer.data())
+    finally:
+        buffer.close()
 
 
 def _avg_color_from_qimage(image: QImage) -> list[float]:

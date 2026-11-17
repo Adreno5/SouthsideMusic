@@ -23,6 +23,7 @@ from PySide6.QtWidgets import QWidget
 
 from core import theme
 from core.app_context import AppContext
+from core.downloader import asyncTask
 from core.lyric_video_export import (
     lyricVideoExportDebugInfo,
     lyricVideoExportDebugProcessPids,
@@ -72,6 +73,8 @@ class DebugOverlay(QOpenGLWidget):
         self.tracked_pids: dict[str, set[int]] = {}
 
         self.process_cache: dict[int, psutil.Process] = {}
+        self._sampling = False
+        self._sampling_pending = False
 
         self.offset_timer = EaseOutTimer(0.3, 2)
 
@@ -127,12 +130,27 @@ class DebugOverlay(QOpenGLWidget):
     def updateDatas(self) -> None:
         if not self.ctx.debugging:
             return
-        pids = self._activeProcessPids()
-        self._clearStaleProcessData(pids)
-        self.updateMemories(pids)
-        if time.perf_counter() - self.last_update_cpu >= 0.2:
-            self.updateCpus(pids)
-            self.last_update_cpu = time.perf_counter()
+        if self._sampling:
+            self._sampling_pending = True
+            return
+        self._sampling = True
+
+        def _sample() -> None:
+            pids = self._activeProcessPids()
+            self._clearStaleProcessData(pids)
+            self.updateMemories(pids)
+            if time.perf_counter() - self.last_update_cpu >= 0.2:
+                self.updateCpus(pids)
+                self.last_update_cpu = time.perf_counter()
+
+        def _finish() -> None:
+            self._sampling = False
+            self.update()
+            if self._sampling_pending:
+                self._sampling_pending = False
+                self.updateDatas()
+
+        asyncTask(_sample, (), self, _finish)
 
     def _processPids(self) -> dict[str, int]:
         pids = dict(self.ctx.process_pids)

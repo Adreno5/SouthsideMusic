@@ -9,47 +9,89 @@ import threading
 import time
 from typing import Literal
 
+from core.deferred_writes import getDeferredWriter
 from core.models import DATA_DIR, SongStorable, _load_count
 
 RediscoveryMode = Literal['balanced', 'rare', 'forgotten']
 
 LISTENING_HISTORY_FILE = os.path.join(DATA_DIR, 'listening_history.json')
-_history_lock = threading.Lock()
+_history_lock = threading.RLock()
 _logger = logging.getLogger(__name__)
+_history_cache: dict[str, float] | None = None
+_history_cache_key: tuple[str, int, int] | None = None
+_history_writer = getDeferredWriter('listening-history')
 
 
 def getListeningHistory() -> dict[str, float]:
+    global _history_cache, _history_cache_key
+    key = _fileKey(LISTENING_HISTORY_FILE)
+    with _history_lock:
+        if _history_cache is not None and key == _history_cache_key:
+            return dict(_history_cache)
     try:
         with open(LISTENING_HISTORY_FILE, 'r', encoding='utf-8') as stream:
             data = json.load(stream)
     except FileNotFoundError:
+        with _history_lock:
+            _history_cache = {}
+            _history_cache_key = None
         return {}
     except (OSError, ValueError):
         _logger.exception('Failed to load listening history')
         return {}
     if not isinstance(data, dict):
+        with _history_lock:
+            _history_cache = {}
+            _history_cache_key = key
         return {}
-    return {
+    history = {
         str(song_id): float(timestamp)
         for song_id, timestamp in data.items()
         if isinstance(timestamp, (int, float))
         and math.isfinite(timestamp)
         and timestamp > 0
     }
+    with _history_lock:
+        _history_cache = dict(history)
+        _history_cache_key = key
+    return history
 
 
 def recordListening(song: SongStorable) -> None:
+    global _history_cache
     with _history_lock:
         history = getListeningHistory()
         history[str(song.id)] = time.time()
-        temporary_path = LISTENING_HISTORY_FILE + '.tmp'
-        try:
-            os.makedirs(os.path.dirname(LISTENING_HISTORY_FILE), exist_ok=True)
-            with open(temporary_path, 'w', encoding='utf-8') as stream:
-                json.dump(history, stream, ensure_ascii=False, indent=2)
-            os.replace(temporary_path, LISTENING_HISTORY_FILE)
-        except OSError:
-            _logger.exception('Failed to save listening history')
+        _history_cache = dict(history)
+        path = LISTENING_HISTORY_FILE
+        _history_writer.submit(
+            lambda data=dict(history), target=path: _writeHistory(data, target)
+        )
+
+
+def _writeHistory(
+    history: dict[str, float], path: str = LISTENING_HISTORY_FILE
+) -> None:
+    global _history_cache, _history_cache_key
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temporary_path = path + '.tmp'
+    try:
+        with open(temporary_path, 'w', encoding='utf-8') as stream:
+            json.dump(history, stream, ensure_ascii=False, indent=2)
+        os.replace(temporary_path, path)
+        with _history_lock:
+            _history_cache = dict(history)
+            _history_cache_key = _fileKey(path)
+    except OSError:
+        _logger.exception('Failed to save listening history')
+
+
+def _fileKey(path: str) -> tuple[str, int, int] | None:
+    try:
+        stat_result = os.stat(path)
+    except OSError:
+        return None
+    return path, stat_result.st_mtime_ns, stat_result.st_size
 
 
 def getRediscoverySongs(

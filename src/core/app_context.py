@@ -4,7 +4,7 @@ import logging
 import threading
 from typing import TYPE_CHECKING, Any, Callable, cast
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 from views.comments_page import CommentsPage
 
 if TYPE_CHECKING:
@@ -56,16 +56,18 @@ class _ScheduledTaskRunner(QObject):
         self.scheduledTaskRequested.emit()
 
     def _runScheduledTasks(self) -> None:
-        while True:
-            with self._scheduled_tasks_lock:
-                if not self._scheduled_tasks:
-                    return
-                task, args, kwargs = self._scheduled_tasks.pop(0)
-            try:
-                task(*args, **kwargs)
-            except Exception as e:
-                self._logger.exception('scheduled task failed')
-                raise e
+        with self._scheduled_tasks_lock:
+            if not self._scheduled_tasks:
+                return
+            task, args, kwargs = self._scheduled_tasks.pop(0)
+            has_more = bool(self._scheduled_tasks)
+        try:
+            task(*args, **kwargs)
+        except Exception as e:
+            self._logger.exception('scheduled task failed')
+            self._logger.debug(e)
+        if has_more:
+            QTimer.singleShot(0, self.scheduledTaskRequested.emit)
 
 
 class AppContext:

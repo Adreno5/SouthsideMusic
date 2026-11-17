@@ -9,7 +9,7 @@ import shiboken6
 from core.app_context import AppContext
 from core.qt_utils import clearListWidget
 from PySide6.QtCore import QPoint, QTimer
-from PySide6.QtGui import QPixmap, Qt
+from PySide6.QtGui import Qt
 from PySide6.QtWidgets import QLabel
 from qfluentwidgets import FluentIcon, PrimaryPushButton, PushButton
 from core.i18n import bindText, tr
@@ -36,6 +36,7 @@ from views.list_widget import SListWidget
 from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable
 from core.favorites import favorites_manager
 from core.backend import getBackend
+from core.downloader import asyncTask
 from core.icons import bindIcon
 
 from views.song_card import (
@@ -496,20 +497,8 @@ class FavoritesPage(QWidget):
 
         pixmap = card.img_label.pixmap()
         if not pixmap or pixmap.isNull():
-            try:
-                image_bytes = song.getImageBytes()
-                pixmap = QPixmap()
-                pixmap.loadFromData(image_bytes)
-                if pixmap.isNull():
-                    return
-            except Exception:
-                return
-            scaled = pixmap.scaled(
-                50,
-                50,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
+            card.loadImage()
+            return
         else:
             scaled = pixmap
 
@@ -662,30 +651,38 @@ class FavoritesPage(QWidget):
         dialog.cancelButton.setText(tr('favorites_page.cancel'))
         dialog.yesButton.setText(tr('favorites_page.delete'))
         if dialog.exec():
-            if not getBackend().editPlaylist(
-                'del', [song_storable.id], self.curr_cloud_folder.id
-            ):
-                InfoBar.warning(
-                    tr('favorites_page.session_expired'),
-                    tr('favorites_page.please_re_login_to_perform_this_action'),
-                    parent=self._mwindow,
-                    duration=5000,
-                )
-                return
-            self.curr_cloud_songs = [
-                s for s in self.curr_cloud_songs if s.id != song_storable.id
-            ]
-            self.refresh()
-            InfoBar.success(
-                tr('favorites_page.song_deleted'),
-                tr(
-                    'favorites_page.song_song_name_removed_from_cloud_folder',
-                    song_name=song_name,
-                ),
-                parent=self._mwindow,
-            )
+            folder_id = self.curr_cloud_folder.id
+            result: dict[str, bool] = {}
 
-            event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
+            def _delete() -> None:
+                result['removed'] = getBackend().editPlaylist(
+                    'del', [song_storable.id], folder_id
+                )
+
+            def _finish() -> None:
+                if not result.get('removed', False):
+                    InfoBar.warning(
+                        tr('favorites_page.session_expired'),
+                        tr('favorites_page.please_re_login_to_perform_this_action'),
+                        parent=self._mwindow,
+                        duration=5000,
+                    )
+                    return
+                self.curr_cloud_songs = [
+                    s for s in self.curr_cloud_songs if s.id != song_storable.id
+                ]
+                self.refresh()
+                InfoBar.success(
+                    tr('favorites_page.song_deleted'),
+                    tr(
+                        'favorites_page.song_song_name_removed_from_cloud_folder',
+                        song_name=song_name,
+                    ),
+                    parent=self._mwindow,
+                )
+                event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
+
+            asyncTask(_delete, (), self, _finish)
 
     def addSelectedToPlaylist(self) -> None:
         selected = self._selectedSongs()
@@ -764,26 +761,33 @@ class FavoritesPage(QWidget):
                 parent=self._mwindow,
             )
         elif folder_type == 'cloud' and cloud_id:
-            if not getBackend().editPlaylist(
-                'add', [str(song.id) for song in reversed(selected)], cloud_id
-            ):
-                InfoBar.warning(
-                    tr('favorites_page.session_expired'),
-                    tr('favorites_page.please_re_login_to_perform_this_action'),
+            song_ids = [str(song.id) for song in reversed(selected)]
+            result: dict[str, bool] = {}
+
+            def _addCloud() -> None:
+                result['added'] = getBackend().editPlaylist('add', song_ids, cloud_id)
+
+            def _finishCloud() -> None:
+                if not result.get('added', False):
+                    InfoBar.warning(
+                        tr('favorites_page.session_expired'),
+                        tr('favorites_page.please_re_login_to_perform_this_action'),
+                        parent=self._mwindow,
+                        duration=5000,
+                    )
+                    return
+                event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
+                InfoBar.success(
+                    tr('favorites_page.songs_added'),
+                    tr(
+                        'favorites_page.added_count_selected_songs_to_folder_name',
+                        count=len(selected),
+                        folder_name=folder_name,
+                    ),
                     parent=self._mwindow,
-                    duration=5000,
                 )
-                return
-            event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
-            InfoBar.success(
-                tr('favorites_page.songs_added'),
-                tr(
-                    'favorites_page.added_count_selected_songs_to_folder_name',
-                    count=len(selected),
-                    folder_name=folder_name,
-                ),
-                parent=self._mwindow,
-            )
+
+            asyncTask(_addCloud, (), self, _finishCloud)
 
     def removeSelectedSongs(self) -> None:
         selected = self._selectedSongs()
@@ -818,40 +822,57 @@ class FavoritesPage(QWidget):
             return
 
         selected_ids = {str(song.id) for song in selected}
-        should_refresh = True
         if self.is_cloud:
             if not self.curr_cloud_folder:
                 return
-            if not getBackend().editPlaylist(
-                'del', list(selected_ids), self.curr_cloud_folder.id
-            ):
-                InfoBar.warning(
-                    tr('favorites_page.session_expired'),
-                    tr('favorites_page.please_re_login_to_perform_this_action'),
-                    parent=self._mwindow,
-                    duration=5000,
+            folder_id = self.curr_cloud_folder.id
+            result: dict[str, bool] = {}
+
+            def _deleteCloud() -> None:
+                result['removed'] = getBackend().editPlaylist(
+                    'del', list(selected_ids), folder_id
                 )
-                return
-            self.curr_cloud_songs = [
-                song
-                for song in self.curr_cloud_songs
-                if str(song.id) not in selected_ids
-            ]
-        elif self.curr_folder:
+
+            def _finishCloud() -> None:
+                if not result.get('removed', False):
+                    InfoBar.warning(
+                        tr('favorites_page.session_expired'),
+                        tr('favorites_page.please_re_login_to_perform_this_action'),
+                        parent=self._mwindow,
+                        duration=5000,
+                    )
+                    return
+                self.curr_cloud_songs = [
+                    song
+                    for song in self.curr_cloud_songs
+                    if str(song.id) not in selected_ids
+                ]
+                self._selected_song_ids.clear()
+                self.refresh()
+                InfoBar.success(
+                    tr('favorites_page.songs_deleted'),
+                    tr(
+                        'favorites_page.deleted_count_selected_songs',
+                        count=len(selected),
+                    ),
+                    parent=self._mwindow,
+                )
+                event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
+
+            asyncTask(_deleteCloud, (), self, _finishCloud)
+            return
+        if self.curr_folder:
             self.curr_folder.songs = [
                 song
                 for song in self.curr_folder.songs
                 if str(song.id) not in selected_ids
             ]
-            favorites_manager._save()
+            favorites_manager._saveAsync()
             event_bus.emit(Events.FAVORITES_CHANGED, self.curr_folder.folder_name)
-            should_refresh = False
         else:
             return
 
         self._selected_song_ids.clear()
-        if should_refresh:
-            self.refresh()
         InfoBar.success(
             tr('favorites_page.songs_deleted'),
             tr('favorites_page.deleted_count_selected_songs', count=len(selected)),

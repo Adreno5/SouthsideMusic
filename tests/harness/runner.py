@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 import traceback
 from pathlib import Path
 from typing import Any
+
+import psutil
 
 from harness.catalog import CASES, scenarioFor
 from harness.reports import writeReports
@@ -25,6 +28,25 @@ def selectCases(
     if names:
         return [case for case in CASES if case['id'] in names]
     return [case for case in CASES if case['group'] in (groups or ['core'])]
+
+
+def sourceAppRunning(root: Path) -> bool:
+    target = str(root.resolve()).lower()
+    for process in psutil.process_iter(['pid', 'cmdline', 'cwd']):
+        if process.pid == os.getpid():
+            continue
+        try:
+            cwd = process.cwd()
+            command = process.cmdline()
+        except (psutil.Error, OSError):
+            continue
+        if cwd.lower() != target:
+            continue
+        if any(
+            argument == 'main' or argument.endswith('main.py') for argument in command
+        ):
+            return True
+    return False
 
 
 def checkGateway(case_id: str, gateway: Any) -> None:
@@ -88,6 +110,7 @@ def runSuite(root: Path, directory: Path, cases: list[dict[str, str]]) -> int:
     from harness.session import ApplicationSession
 
     results: list[dict[str, Any]] = []
+    source_in_use = sourceAppRunning(root)
     before = userFingerprint(root)
     session = None
     gateway = None
@@ -151,14 +174,31 @@ def runSuite(root: Path, directory: Path, cases: list[dict[str, str]]) -> int:
                 })
         if gateway:
             gateway.stop()
-        if before != userFingerprint(root):
-            results.append({
-                'id': 'user_data_isolation',
-                'group': 'harness',
-                'status': 'failed',
-                'duration': 0,
-                'detail': 'Source workspace config/favorites/data changed',
-            })
+        after = userFingerprint(root)
+        if before != after:
+            changed = sorted(
+                key
+                for key in set(before) | set(after)
+                if before.get(key) != after.get(key)
+            )
+            if source_in_use or sourceAppRunning(root):
+                results.append({
+                    'id': 'user_data_isolation',
+                    'group': 'harness',
+                    'status': 'skipped',
+                    'duration': 0,
+                    'detail': 'Source workspace is in use by a running app: '
+                    + ', '.join(changed),
+                })
+            else:
+                results.append({
+                    'id': 'user_data_isolation',
+                    'group': 'harness',
+                    'status': 'failed',
+                    'duration': 0,
+                    'detail': 'Source workspace config/favorites/data changed: '
+                    + ', '.join(changed),
+                })
         writeReports(directory, results)
     return int(any(result['status'] == 'failed' for result in results))
 

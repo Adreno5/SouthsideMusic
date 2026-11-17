@@ -22,6 +22,7 @@ from PySide6.QtCore import (
     QObject,
     QPropertyAnimation,
     QTimer,
+    Qt,
     Signal,
     Slot,
 )
@@ -41,9 +42,9 @@ from core.audio_processing import (
     AudioProcessingSettings,
     AudioProcessor,
     applyEqualizer,
-    buildEqualizerKernel,
 )
 from core.beat import BeatDetector, BeatFrame
+from core.compute_worker import callCompute
 from core.config import cfg
 from core.pcm_buffer import PcmBuffer, PcmFile
 from core.pcm_timeline import PcmTimeline
@@ -141,6 +142,7 @@ class AudioPlayer(QObject):
     beatDataReset = Signal()
     _beatFramesReady = Signal(int, object)
     _spectrumReady = Signal(int, object, object, object)
+    _equalizerKernelReady = Signal(int, int, object)
 
     def __init__(
         self, parent: QObject | None = None, devices: list[DevicesInfo] | None = None
@@ -189,6 +191,11 @@ class AudioPlayer(QObject):
         self.play_pitch = cfg.play_pitch
         self._eq_kernel: np.ndarray | None = None
         self._eq_state: np.ndarray | None = None
+        self._eq_generation = 0
+        self._equalizerKernelReady.connect(
+            self._applyEqualizerKernel,
+            Qt.ConnectionType.QueuedConnection,
+        )
 
         self._BLOCK_SIZE = 2048
 
@@ -252,11 +259,45 @@ class AudioPlayer(QObject):
 
     def setEqualizer(self) -> None:
         sample_rate = self.sample_rate
-        kernel = buildEqualizerKernel(list(cfg.eq_bands), sample_rate)
+        bands = [[float(frequency), float(gain)] for frequency, gain in cfg.eq_bands]
+        self._eq_generation += 1
+        generation = self._eq_generation
+
+        def _compute() -> None:
+            kernel: np.ndarray | None = None
+            try:
+                result = callCompute(
+                    'build_equalizer_kernel',
+                    {'bands': bands, 'sample_rate': sample_rate},
+                    timeout=60.0,
+                )
+                if isinstance(result, dict) and result.get('kernel') is not None:
+                    kernel = np.frombuffer(
+                        result['kernel'],
+                        dtype=np.dtype(str(result.get('dtype', 'float32'))),
+                    ).copy()
+            except Exception as error:
+                _logger.exception(error)
+            try:
+                self._equalizerKernelReady.emit(generation, sample_rate, kernel)
+            except RuntimeError:
+                return
+
+        threading.Thread(target=_compute, daemon=True).start()
+
+    @Slot(int, int, object)
+    def _applyEqualizerKernel(
+        self,
+        generation: int,
+        sample_rate: int,
+        kernel: object,
+    ) -> None:
+        if generation != self._eq_generation or sample_rate != self.sample_rate:
+            return
         with self._lock:
             if sample_rate != self.sample_rate:
                 return
-            self._eq_kernel = kernel
+            self._eq_kernel = kernel if isinstance(kernel, np.ndarray) else None
             self._eq_state = None
 
     def _equalize(self, chunk: np.ndarray) -> np.ndarray:

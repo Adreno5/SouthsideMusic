@@ -4,6 +4,7 @@ import datetime
 import logging
 
 import os
+import queue
 import shutil
 import re
 import sys
@@ -70,8 +71,15 @@ class LogHandler(logging.Handler):
     def __init__(self, level: int | str = 0) -> None:
         super().__init__(level)
         self.buffer: str = ''
-
         self.terminal_width = shutil.get_terminal_size().columns
+        self._queue: queue.Queue[logging.LogRecord | None] = queue.Queue(maxsize=1000)
+        self._closed = False
+        self._worker = threading.Thread(
+            target=self._run,
+            daemon=True,
+            name='southside-log-writer',
+        )
+        self._worker.start()
 
         event_bus.subscribe(Events.TERMINAL_SIZE_CHANGED, self._refreshTerminalWidth)
         event_bus.subscribe(Events.SECOND_TICK, self._refreshTerminalWidth)
@@ -80,6 +88,8 @@ class LogHandler(logging.Handler):
         self.terminal_width = shutil.get_terminal_size().columns
 
     def emit(self, record: logging.LogRecord) -> None:
+        if self._closed:
+            return
         if record.name in (
             'openai._base_client',
             'anthropic._base_client',
@@ -89,7 +99,24 @@ class LogHandler(logging.Handler):
             'views.log_handler',
         ):
             return
+        try:
+            self._queue.put_nowait(logging.makeLogRecord(record.__dict__))
+        except queue.Full:
+            return
 
+    def _run(self) -> None:
+        while True:
+            record = self._queue.get()
+            try:
+                if record is None:
+                    return
+                output = self._formatRecord(record)
+                if output:
+                    self._writeOutput(output)
+            finally:
+                self._queue.task_done()
+
+    def _formatRecord(self, record: logging.LogRecord) -> str | None:
         message = record.getMessage()
         message = maskMediaUrls(message)
 
@@ -97,7 +124,7 @@ class LogHandler(logging.Handler):
             'QFluentWidgets' in message
             or '"QColor::setAlpha": invalid value' in message
         ):
-            return
+            return None
 
         color = {
             'DEBUG': Fore.LIGHTBLACK_EX,
@@ -152,8 +179,11 @@ class LogHandler(logging.Handler):
                 final = f'{prefix}{line}{" " * spaces}{colored_suffix}'
                 rendered_lines.append(final)
         if sys.__stdout__ is None:
-            return
+            return None
         output = '\n'.join(rendered_lines) + '\n'
+        return output
+
+    def _writeOutput(self, output: str) -> None:
         try:
             try:
                 sys.__stdout__.write(output)
@@ -166,6 +196,17 @@ class LogHandler(logging.Handler):
             sys.__stdout__.flush()
         except (OSError, ValueError):
             return
+
+    def flush(self) -> None:
+        self._queue.join()
+
+    def close(self) -> None:
+        self._closed = True
+        if self._worker.is_alive():
+            self._queue.put(None)
+            self._queue.join()
+            self._worker.join(timeout=1.0)
+        super().close()
 
 
 class LoggingStream:

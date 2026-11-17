@@ -7,6 +7,7 @@ import threading
 
 import requests
 
+from core.deferred_writes import getDeferredWriter
 from core.models import (
     DATA_DIR,
     LocalFolderInfo,
@@ -24,6 +25,7 @@ from views.list_widget import SListWidget
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QVBoxLayout
 
 _logger = logging.getLogger(__name__)
+_favorites_writer = getDeferredWriter('favorites')
 
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 _FAVORITES_PATH = os.path.join(_PROJECT_ROOT, 'favorites.json')
@@ -75,11 +77,14 @@ class FavoritesManager:
                 data.append({'folder_name': folder.folder_name, 'songs': songs})
             _write_raw(data)
 
+    def _saveAsync(self) -> None:
+        _favorites_writer.submit(self._save)
+
     def addFolder(self, folder_name: str) -> LocalFolderInfo:
         with self._lock:
             folder = LocalFolderInfo(folder_name=folder_name, songs=[])
             self.folders.append(folder)
-            self._save()
+            self._saveAsync()
             return folder
 
     def removeFolder(self, folder_name: str) -> bool:
@@ -87,7 +92,7 @@ class FavoritesManager:
             for i, f in enumerate(self.folders):
                 if f.folder_name == folder_name:
                     self.folders.pop(i)
-                    self._save()
+                    self._saveAsync()
                     return True
         return False
 
@@ -96,7 +101,7 @@ class FavoritesManager:
             for f in self.folders:
                 if f.folder_name == old_name:
                     f.folder_name = new_name
-                    self._save()
+                    self._saveAsync()
                     return True
         return False
 
@@ -105,7 +110,7 @@ class FavoritesManager:
             for f in self.folders:
                 if f.folder_name == folder_name:
                     f.songs.insert(0, song)
-                    self._save()
+                    self._saveAsync()
                     self.ensureFolderFirstImage(f)
                     return True
         return False
@@ -114,9 +119,6 @@ class FavoritesManager:
         if not folder.songs:
             return
         storable = folder.songs[0]
-        if storable.imageCached():
-            return
-
         thread = threading.Thread(
             target=self._downloadFirstImage,
             args=(folder.folder_name, storable),
@@ -138,7 +140,7 @@ class FavoritesManager:
                 from core.backend import getBackend
 
                 detail = getBackend().getTrackDetail(storable.id)
-                image_bytes = requests.get(detail.cover_url).content
+                image_bytes = requests.get(detail.cover_url, timeout=(3.05, 8)).content
             except Exception:
                 _logger.exception(
                     "Failed to auto-download first image for folder '%s'",
@@ -149,8 +151,8 @@ class FavoritesManager:
             if not image_bytes:
                 return
             storable._writeCache(image_bytes, IMAGE_DATA_DIR, 'image_cache_hash')
-            self._save()
-            event_bus.emit(Events.IMAGE_ASSET_PERSISTED, storable)
+            self._saveAsync()
+            event_bus.emitInMainThread(Events.IMAGE_ASSET_PERSISTED, storable)
         finally:
             lock.release()
 
@@ -164,7 +166,7 @@ class FavoritesManager:
                     changed = True
                     self.ensureFolderFirstImage(f)
             if changed:
-                self._save()
+                self._saveAsync()
 
     def moveSong(self, folder_name: str, song: SongStorable, delta: int) -> bool:
         with self._lock:
@@ -181,7 +183,7 @@ class FavoritesManager:
                         f.songs[new_idx],
                         f.songs[idx],
                     )
-                    self._save()
+                    self._saveAsync()
                     self.ensureFolderFirstImage(f)
                     return True
         return False
@@ -204,7 +206,7 @@ class FavoritesManager:
                         if s.target_lufs != target_lufs:
                             s.loaded_loudness_gain = False
                         s.target_lufs = target_lufs
-                        self._save()
+                        self._saveAsync()
                         return True
         return False
 
@@ -220,6 +222,11 @@ def loadFavorites() -> list[LocalFolderInfo]:
 def saveFavorites() -> None:
     if favorites_manager.folders:
         favorites_manager._save()
+
+
+def scheduleFavoritesSave() -> None:
+    if favorites_manager.folders:
+        favorites_manager._saveAsync()
 
 
 def _ensure_dirs() -> None:
@@ -286,8 +293,10 @@ def _restore_old_format() -> list[dict]:
 def _write_raw(data: list[dict]) -> None:
     if os.path.exists(_FAVORITES_PATH):
         os.chmod(_FAVORITES_PATH, stat.S_IWRITE)
-    with open(_FAVORITES_PATH, 'w', encoding='utf-8') as f:
+    temporary = _FAVORITES_PATH + '.tmp'
+    with open(temporary, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+    os.replace(temporary, _FAVORITES_PATH)
 
 
 class FavoriteSelectionDialog(MessageBoxBase):

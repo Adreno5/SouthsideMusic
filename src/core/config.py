@@ -4,14 +4,18 @@ import json
 import logging
 import math
 import os
+import threading
 
 from typing import Any, Literal, cast
 
 import win32crypt
 
+from core.deferred_writes import getDeferredWriter
 from core.models import SongStorable
 
 _logger = logging.getLogger(__name__)
+_config_save_lock = threading.Lock()
+_config_writer = getDeferredWriter('config')
 
 cfg_cache: dict[str, Any] = {}
 
@@ -40,8 +44,23 @@ def _configToJsonObject() -> dict[str, Any]:
 def saveConfig() -> None:
     if _instance is None:
         return
-    with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
-        json.dump(_configToJsonObject(), f, ensure_ascii=False, indent=2)
+    data = _configToJsonObject()
+    _writeConfigData(data)
+
+
+def scheduleConfigSave() -> None:
+    if _instance is None:
+        return
+    data = _configToJsonObject()
+    _config_writer.submit(lambda: _writeConfigData(data))
+
+
+def _writeConfigData(data: dict[str, Any]) -> None:
+    temporary = CONFIG_PATH + '.tmp'
+    with _config_save_lock:
+        with open(temporary, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(temporary, CONFIG_PATH)
 
 
 @dataclass

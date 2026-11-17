@@ -59,6 +59,21 @@ def snapshotState(ctx: Any) -> dict[str, Any]:
 
 
 def performAction(ctx: Any, operation: str, data: dict[str, Any], backend: Any) -> Any:
+    if operation == 'performance':
+        from core.frame_profiler import frame_profiler
+        from views.performances import PerformanceOverlay
+
+        performAction(ctx, 'play', {}, backend)
+        overlay = PerformanceOverlay(ctx, ctx.main_window)
+        QTest.qWait(2500)
+        frame_profiler.setPerformanceEnabled(True)
+        frame_profiler.startCapture()
+        QTest.qWait(10000)
+        frames = frame_profiler.finishCapture()
+        frame_profiler.setPerformanceEnabled(False)
+        context = overlay._performanceReportContext(frames)
+        return {'path': overlay._savePerformanceReport(frames, context)}
+
     if operation == 'play':
         ctx.playing_manager.setPlaylist(backend.songs[:3])
         ctx.playing_manager.playSongAtIndex(int(data.get('index', 0)))
@@ -153,6 +168,11 @@ def runCase(
             viewer.appendChunk(source[offset : offset + 7])
         viewer.finishStream()
         waitUntil(lambda: viewer.toMarkdown() == source, 'Markdown stream', 20)
+        waitUntil(
+            lambda: not viewer._render_finish and not viewer._render_running,
+            'Markdown render',
+            20,
+        )
         rendered = renderMarkdown(source)
         for fragment in case['html_contains']:
             assert fragment in rendered, fragment
@@ -271,6 +291,7 @@ def runCase(
             editor = ctx.lyric_editor_page
             editor.openForCurrentSong()
             ctx.main_window.contents_widget.setCurrentWidget(editor)
+            waitUntil(lambda: editor.next_button.isEnabled(), 'lyric editor loaded')
             enterText(editor.editor, 'Alpha beta\nGamma delta')
             QTest.mouseClick(editor.next_button, Qt.MouseButton.LeftButton)
             assert editor.global_layout.currentWidget() is editor.beat_page
@@ -280,6 +301,13 @@ def runCase(
                 QTest.keyRelease(editor.beat_page, Qt.Key.Key_Space)
                 QTest.qWait(40)
             QTest.mouseClick(editor.save_button, Qt.MouseButton.LeftButton)
+            waitUntil(
+                lambda: (
+                    'Alpha beta' in pm.current_song.getLyrics()['lyric']
+                    and len(ctx.ymgr.parsed) == 2
+                ),
+                'saved lyrics',
+            )
             saved = pm.current_song.getLyrics()
             assert 'Alpha beta' in saved['lyric'] and 'Gamma delta' in saved['lyric']
             assert saved['yrc_lyric'] and len(ctx.ymgr.parsed) == 2

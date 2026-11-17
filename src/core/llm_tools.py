@@ -9,9 +9,10 @@ from typing import Any, Callable, cast
 
 from core.app_context import AppContext
 from core.backend import getBackend
-from core.config import cfg, encryptSecret, saveConfig
+from core.compute_worker import callCompute
+from core.config import cfg, encryptSecret, scheduleConfigSave
 from core.downloader import asyncTask
-from core.favorites import favorites_manager, saveFavorites
+from core.favorites import favorites_manager, scheduleFavoritesSave
 from core.i18n import language
 from core.llm import LLM, TOOL_USAGE, getToolUsage
 from core.lyric_sources import iterLyricUpdates
@@ -742,9 +743,7 @@ class LLMToolRunner:
     ) -> dict[str, Any]:
         if not lyric.strip():
             return {'error': 'lyric is required'}
-        return self._run_main_thread(
-            lambda: self._set_current_lyrics(lyric, translated_lyric, yrc_lyric)
-        )
+        return self._set_current_lyrics(lyric, translated_lyric, yrc_lyric)
 
     def _set_current_lyrics(
         self,
@@ -757,16 +756,29 @@ class LLMToolRunner:
         if song is None:
             return {'error': 'no song is loaded'}
         stored = song.getLyrics()
-        self._write_lyrics(
-            song,
-            lyric,
-            translated_lyric or stored['translated_lyric'],
-            yrc_lyric or stored['yrc_lyric'],
+        translated = translated_lyric or stored['translated_lyric']
+        yrc = yrc_lyric or stored['yrc_lyric']
+        song.writeLyrics(lyric, translated, yrc)
+        payload = callCompute(
+            'parse_lyrics',
+            {
+                'lyric': lyric,
+                'yrc_lyric': yrc,
+                'translated_lyric': translated,
+            },
         )
+
+        def _apply() -> None:
+            if pm.current_song is song and isinstance(payload, dict):
+                self._apply_parsed_lyrics(payload)
+            scheduleFavoritesSave()
+            event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song)
+
+        self.ctx.addScheduledTask(_apply)
         return {
             'updated': True,
             'title': song.name,
-            'has_translation': bool(song.getLyrics()['translated_lyric']),
+            'has_translation': bool(translated),
             'translation_enabled': bool(cfg.show_translation),
         }
 
@@ -785,32 +797,35 @@ class LLMToolRunner:
         song = pm.current_song if pm else None
         if song is None:
             return {'error': 'no song is loaded'}
-        stored = song.getLyrics()
         artists = [artist.name for artist in song.artists if artist.name]
 
         def _download() -> None:
-            for candidate in iterLyricUpdates(
-                song.name,
-                artists,
-                str(song.id),
-                song.duration,
-                cached=stored,
-            ):
-                if pm.current_song is not song:
-                    return
-                self.ctx.addScheduledTask(
-                    self._write_lyrics,
-                    song,
-                    candidate.lyric,
-                    candidate.translated_lyric,
-                    candidate.yrc_lyric,
-                )
+            try:
+                cached = song.getLyrics()
+                for candidate in iterLyricUpdates(
+                    song.name,
+                    artists,
+                    str(song.id),
+                    song.duration,
+                    cached=cached,
+                ):
+                    if pm.current_song is not song:
+                        return
+                    self.ctx.addScheduledTask(
+                        self._write_lyrics,
+                        song,
+                        candidate.lyric,
+                        candidate.translated_lyric,
+                        candidate.yrc_lyric,
+                    )
+            except Exception:
+                return
 
         asyncTask(_download, (), self.ctx.main_window, None)
         return {
             'started': True,
             'title': song.name,
-            'has_translation': bool(stored['translated_lyric']),
+            'has_translation': bool(self.ctx.transmgr.parsed),
             'translation_enabled': bool(cfg.show_translation),
         }
 
@@ -821,17 +836,51 @@ class LLMToolRunner:
         translated_lyric: str,
         yrc_lyric: str,
     ) -> None:
-        song.writeLyrics(lyric, translated_lyric, yrc_lyric)
-        pm = self.ctx.playing_manager
-        if pm is not None and pm.current_song is song:
-            self.ctx.mgr.cur = lyric or yrc_lyric or '[00:00.000]'
-            self.ctx.ymgr.cur = yrc_lyric
-            self.ctx.transmgr.cur = translated_lyric or '[00:00.000]'
-            self.ctx.mgr.parse()
-            self.ctx.ymgr.parse()
-            self.ctx.transmgr.parse()
-        saveFavorites()
-        event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song)
+        result: dict[str, object] = {}
+
+        def _write() -> None:
+            try:
+                song.writeLyrics(lyric, translated_lyric, yrc_lyric)
+                result['payload'] = callCompute(
+                    'parse_lyrics',
+                    {
+                        'lyric': lyric,
+                        'yrc_lyric': yrc_lyric,
+                        'translated_lyric': translated_lyric,
+                    },
+                )
+            except Exception as error:
+                result['error'] = error
+
+        def _apply() -> None:
+            pm = self.ctx.playing_manager
+            payload = result.get('payload')
+            if isinstance(payload, dict) and pm is not None and pm.current_song is song:
+                self._apply_parsed_lyrics(payload)
+            scheduleFavoritesSave()
+            event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song)
+
+        asyncTask(_write, (), self.ctx.main_window, _apply)
+
+    def _apply_parsed_lyrics(self, payload: dict[str, object]) -> None:
+        self.ctx.mgr.setParsed(
+            payload['lrc_parsed'],  # type: ignore[arg-type]
+            cur=str(payload.get('lrc_cur', '')),
+            empty_times=payload['lrc_empty_times'],  # type: ignore[arg-type]
+        )
+        self.ctx.ymgr.setParsed(
+            payload['yrc_parsed'],  # type: ignore[arg-type]
+            cur=str(payload.get('yrc_cur', '')),
+            has_yrc_timing=bool(payload.get('yrc_has_timing', False)),
+        )
+        self.ctx.transmgr.setParsed(
+            payload['translated_parsed'],  # type: ignore[arg-type]
+            cur=str(payload.get('translated_cur', '')),
+            empty_times=payload['translated_empty_times'],  # type: ignore[arg-type]
+        )
+        manager = getattr(self.ctx, 'lyrics_manager', None)
+        if manager is not None:
+            manager.syncParsed()
 
     def getFolders(self) -> dict[str, Any]:
         local = []
@@ -1143,7 +1192,7 @@ class LLMToolRunner:
             cfg.desktop_lyrics_x = 0
             cfg.desktop_lyrics_y = 0
             cfg.desktop_lyrics_anchor = 'normal'
-            saveConfig()
+            scheduleConfigSave()
 
         self._run_main_thread(_reset)
         return {
@@ -1154,7 +1203,7 @@ class LLMToolRunner:
         }
 
     def getNickname(self) -> dict[str, Any]:
-        return self._run_main_thread(self._get_nickname)
+        return self._get_nickname()
 
     def _get_nickname(self) -> dict[str, Any]:
         account = getBackend().getAccountInfo()
@@ -1260,7 +1309,7 @@ class LLMToolRunner:
             cfg.llm_current_provider = name
             cfg.llm_current_model = str(models[0]['id'])
         self.ctx.setting_page._syncLegacyLlmConfig()
-        saveConfig()
+        scheduleConfigSave()
         self.ctx.setting_page._refreshLlmProvidersView()
         self.ctx.setting_page._refreshMainWindowLlmModels()
         return {
@@ -1291,7 +1340,7 @@ class LLMToolRunner:
             cfg.llm_current_provider = provider
             cfg.llm_current_model = model
             self.ctx.setting_page._syncLegacyLlmConfig()
-            saveConfig()
+            scheduleConfigSave()
             self.ctx.setting_page._refreshMainWindowLlmModels()
             return {'provider': provider, 'model': model, 'selected': True}
         return {'error': f'provider not found: {provider}'}

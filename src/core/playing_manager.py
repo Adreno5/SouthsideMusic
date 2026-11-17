@@ -17,7 +17,8 @@ import numpy as np
 import requests
 import sounddevice as sd
 from pydub.utils import get_prober_name
-from PySide6.QtCore import QObject, QTimer
+from PySide6.QtCore import QObject, QSize, QTimer
+from PySide6.QtGui import QImage
 
 from core.audio_decode import FileAudioSegment
 from core.audio_player import (
@@ -32,12 +33,13 @@ from core.audio_player import (
 )
 from core.backend import getBackend
 from core.config import cfg
+from core.compute_worker import callCompute
 from core.crossfade import CrossFadeInfo, getCrossfade
 from core.downloader import asyncDownload, asyncTask
-from core.favorites import saveFavorites
+from core.favorites import scheduleFavoritesSave
 from core.free_threaded_worker import FreeThreadedJsonSender
 from core.i18n import tr
-from core.image import getAverageColorFromBytes
+from core.image import encodePng, getAverageColorFromBytes, loadImageFromBytes
 from core.loudness import getAdjustedGainFactor
 from core.lyric_sources import LyricCandidate, iterLyricUpdates
 from core.models import (
@@ -120,6 +122,7 @@ class PlayingManager(QObject):
         self._preload_download_seq = 0
         self._preload_download_song_id: str | None = None
         self._lyric_preview_seq = 0
+        self._lyrics_parse_seq = 0
         self._lyric_preview_selection: PlaySelection | None = None
         self._pending_play_selection: PlaySelection | None = None
         self._pending_crossfade_selection: PlaySelection | None = None
@@ -280,19 +283,40 @@ class PlayingManager(QObject):
 
     def updateLyricHandoff(self) -> None:
         self._lyric_preview_seq += 1
+        sequence = self._lyric_preview_seq
         self._lyric_preview_selection = None
         song = self.current_song
         if song is None:
             return
         self.ctx.lyrics_manager.startSong(song, self.total_length, False)
-        lyrics = song.getLyrics()
-        self.ctx.lyrics_manager.applyLyrics(
-            lyrics['lyric'],
-            lyrics['yrc_lyric'],
-            lyrics['translated_lyric'],
-            self.total_length,
-        )
-        self.refreshLyricPreview()
+        result: dict[str, object] = {}
+
+        def _load() -> None:
+            try:
+                lyrics = song.getLyrics()
+                result['payload'] = callCompute(
+                    'parse_lyrics',
+                    {
+                        'lyric': lyrics['lyric'],
+                        'yrc_lyric': lyrics['yrc_lyric'],
+                        'translated_lyric': lyrics['translated_lyric'],
+                    },
+                )
+            except Exception as error:
+                self._logger.exception(error)
+
+        def _apply() -> None:
+            payload = result.get('payload')
+            if (
+                sequence != self._lyric_preview_seq
+                or self.current_song is not song
+                or not isinstance(payload, dict)
+            ):
+                return
+            self.ctx.lyrics_manager.applyParsedLyrics(payload, self.total_length)
+            self.refreshLyricPreview()
+
+        asyncTask(_load, (), self._mwindow_obj, _apply)
 
     def _startLyricSong(self, song: SongStorable, restart: bool = False) -> None:
         self._whisper_next_song = None
@@ -300,13 +324,6 @@ class PlayingManager(QObject):
         self._lyric_preview_selection = None
         self.ctx.lyrics_manager.startSong(
             song, self.total_length, cfg.enable_lyric_handoff, restart
-        )
-        lyrics = song.getLyrics()
-        self.ctx.lyrics_manager.applyLyrics(
-            lyrics['lyric'],
-            lyrics['yrc_lyric'],
-            lyrics['translated_lyric'],
-            self.total_length,
         )
 
     def refreshLyricPreview(self) -> None:
@@ -330,41 +347,77 @@ class PlayingManager(QObject):
             self.ctx.lyrics_manager.setPreview(None, 0, {})
             return
         song = selection.song
-        lyrics = song.getLyrics()
-        self.ctx.lyrics_manager.setPreview(song, self._storableDuration(song), lyrics)
-        if cfg.whisper_enabled:
-            return
-        if lyrics['yrc_lyric'].strip() and lyrics['translated_lyric'].strip():
-            return
+        duration = self._storableDuration(song)
         play_seq = self._play_seq
         preview_seq = self._lyric_preview_seq
+        result: dict[str, object] = {}
 
-        def _download() -> None:
+        def _load() -> None:
             try:
-                for candidate in iterLyricUpdates(
-                    song.name,
-                    [artist.name for artist in song.artists],
-                    song.id,
-                    song.duration,
-                    cached=lyrics,
-                ):
-                    if (
-                        not cfg.enable_lyric_handoff
-                        or play_seq != self._play_seq
-                        or preview_seq != self._lyric_preview_seq
-                    ):
-                        return
-                    self._schedule(
-                        self._applyPreviewLyrics,
-                        selection,
-                        play_seq,
-                        preview_seq,
-                        candidate,
-                    )
-            except Exception:
-                self._logger.exception('failed to load next-song lyrics')
+                lyrics = song.getLyrics()
+                result['lyrics'] = lyrics
+                result['payload'] = callCompute(
+                    'parse_lyrics',
+                    {
+                        'lyric': lyrics['lyric'],
+                        'yrc_lyric': lyrics['yrc_lyric'],
+                        'translated_lyric': lyrics['translated_lyric'],
+                    },
+                )
+            except Exception as error:
+                self._logger.exception(error)
 
-        asyncTask(_download, (), self._mwindow_obj)
+        def _downloadPrepared(lyrics: dict[str, str]) -> None:
+            def _download() -> None:
+                try:
+                    for candidate in iterLyricUpdates(
+                        song.name,
+                        [artist.name for artist in song.artists],
+                        song.id,
+                        song.duration,
+                        cached=lyrics,
+                    ):
+                        if (
+                            not cfg.enable_lyric_handoff
+                            or play_seq != self._play_seq
+                            or preview_seq != self._lyric_preview_seq
+                        ):
+                            return
+                        self._schedule(
+                            self._applyPreviewLyrics,
+                            selection,
+                            play_seq,
+                            preview_seq,
+                            candidate,
+                        )
+                except Exception:
+                    self._logger.exception('failed to load next-song lyrics')
+
+            asyncTask(_download, (), self._mwindow_obj)
+
+        def _apply() -> None:
+            if (
+                not cfg.enable_lyric_handoff
+                or play_seq != self._play_seq
+                or preview_seq != self._lyric_preview_seq
+                or selection != self._lyric_preview_selection
+                or selection.mode != self.play_mode
+                or not self.isSelectionCurrent(selection)
+            ):
+                return
+            payload = result.get('payload')
+            if isinstance(payload, dict):
+                self.ctx.lyrics_manager.applyPreviewParsed(song, duration, payload)
+            if cfg.whisper_enabled:
+                return
+            lyrics = result.get('lyrics')
+            if not isinstance(lyrics, dict):
+                return
+            if lyrics['yrc_lyric'].strip() and lyrics['translated_lyric'].strip():
+                return
+            _downloadPrepared(lyrics)
+
+        asyncTask(_load, (), self._mwindow_obj, _apply)
 
     def _applyPreviewLyrics(
         self,
@@ -373,30 +426,49 @@ class PlayingManager(QObject):
         preview_seq: int,
         candidate: LyricCandidate,
     ) -> None:
-        if (
-            cfg.whisper_enabled
-            or not cfg.enable_lyric_handoff
-            or play_seq != self._play_seq
-            or preview_seq != self._lyric_preview_seq
-            or selection != self._lyric_preview_selection
-            or selection.mode != self.play_mode
-            or not self.isSelectionCurrent(selection)
-        ):
+        def _current() -> bool:
+            return not (
+                cfg.whisper_enabled
+                or not cfg.enable_lyric_handoff
+                or play_seq != self._play_seq
+                or preview_seq != self._lyric_preview_seq
+                or selection != self._lyric_preview_selection
+                or selection.mode != self.play_mode
+                or not self.isSelectionCurrent(selection)
+            )
+
+        if not _current():
             return
         song = selection.song
-        song.writeLyrics(
-            candidate.lyric, candidate.translated_lyric, candidate.yrc_lyric
-        )
-        saveFavorites()
-        self.ctx.lyrics_manager.setPreview(
-            song,
-            self._storableDuration(song),
-            {
-                'lyric': candidate.lyric,
-                'yrc_lyric': candidate.yrc_lyric,
-                'translated_lyric': candidate.translated_lyric,
-            },
-        )
+        duration = self._storableDuration(song)
+        result: dict[str, object] = {}
+
+        def _load() -> None:
+            try:
+                song.writeLyrics(
+                    candidate.lyric,
+                    candidate.translated_lyric,
+                    candidate.yrc_lyric,
+                )
+                result['payload'] = callCompute(
+                    'parse_lyrics',
+                    {
+                        'lyric': candidate.lyric,
+                        'yrc_lyric': candidate.yrc_lyric,
+                        'translated_lyric': candidate.translated_lyric,
+                    },
+                )
+            except Exception as error:
+                self._logger.exception(error)
+
+        def _finish() -> None:
+            payload = result.get('payload')
+            if not _current() or not isinstance(payload, dict):
+                return
+            scheduleFavoritesSave()
+            self.ctx.lyrics_manager.applyPreviewParsed(song, duration, payload)
+
+        asyncTask(_load, (), self._mwindow_obj, _finish)
 
     def _emitError(self, title: str, message: str) -> None:
         event_bus.emit(Events.PLAYBACK_ERROR, title, message)
@@ -607,13 +679,6 @@ class PlayingManager(QObject):
         self._startLyricSong(song, True)
         event_bus.emit(Events.STOP_PROGRESS_LOADING)
         event_bus.emit(Events.PLAYBACK_SONG_LOADING, song)
-        if song.imageCached():
-            try:
-                event_bus.emit(
-                    Events.PLAYBACK_IMAGE_LOADED, song, song.getImageBytes(), None
-                )
-            except (FileNotFoundError, PermissionError):
-                self._logger.warning('cached cover unavailable during quality switch')
         self._playDownloadingStorable(
             song,
             not song.imageCached(),
@@ -693,7 +758,11 @@ class PlayingManager(QObject):
                     player.loadPrepared(prepared)
                     player.setGain(gain)
                     if was_playing:
-                        player.playFromPosition(position)
+                        threading.Thread(
+                            target=player.playFromPosition,
+                            args=(position,),
+                            daemon=True,
+                        ).start()
                     else:
                         player.setPosition(position)
                         player.is_paused = True
@@ -902,10 +971,10 @@ class PlayingManager(QObject):
         if self.crossfading:
             event_bus.emit(Events.START_CROSSFADE)
         result: dict[str, object] = {'audio': audio}
-        self._loadPlaybackImage(selection.song, result)
         self._finishPlaybackLoad(
             selection.song, self._play_seq, result, player.is_paused, False, audio
         )
+        self._loadPlaybackImageAsync(selection.song, self._play_seq)
 
     def _computeCrossfadeInfo(
         self,
@@ -1232,7 +1301,7 @@ class PlayingManager(QObject):
         song_storable.loaded_loudness_gain = True
 
         if favorites_changed:
-            saveFavorites()
+            scheduleFavoritesSave()
 
     @staticmethod
     def _hasLoadedLoudnessGain(song_storable: SongStorable) -> bool:
@@ -1381,7 +1450,7 @@ class PlayingManager(QObject):
                         if not _is_preload_current():
                             return
                         next_song.content_cache_hash = ''
-                        saveFavorites()
+                        scheduleFavoritesSave()
                         self.next_song_audio = None
                         self.next_song_gain = None
                         self.crossfade_info = None
@@ -1975,7 +2044,7 @@ class PlayingManager(QObject):
                         music_bytes, MUSIC_DATA_DIR, 'content_cache_hash'
                     )
 
-                saveFavorites()
+                scheduleFavoritesSave()
                 if image_just_persisted:
                     event_bus.emit(Events.IMAGE_ASSET_PERSISTED, song_storable)
                 return True
@@ -2116,15 +2185,54 @@ class PlayingManager(QObject):
         self,
         song_storable: SongStorable,
         result: dict[str, object],
+        target: QSize | None = None,
     ) -> None:
         try:
             image_bytes = song_storable.getImageBytes()
             result['image'] = image_bytes
+            image = loadImageFromBytes(image_bytes, target)
+            result['image_qimage'] = image
+            result['image_png'] = encodePng(image)
             result['avg_color'] = self._averageColorFromBytes(image_bytes)
         except FileNotFoundError as e:
             self._logger.warning('skipping missing playback image: %s', e)
         except Exception:
             self._logger.exception('failed to load image bytes for playback')
+
+    def _coverTargetSize(self) -> QSize | None:
+        page = getattr(self.ctx, 'playing_page', None)
+        label = getattr(page, 'img_label', None)
+        if label is None:
+            return None
+        return QSize(label.size())
+
+    def _loadPlaybackImageAsync(
+        self, song_storable: SongStorable, play_seq: int
+    ) -> None:
+        target = self._coverTargetSize()
+        result: dict[str, object] = {}
+
+        def _load() -> None:
+            self._loadPlaybackImage(song_storable, result, target)
+
+        def _apply() -> None:
+            if play_seq != self._play_seq or self.current_song is not song_storable:
+                return
+            image_bytes = result.get('image')
+            image = result.get('image_qimage')
+            image_png = result.get('image_png')
+            avg_color = result.get('avg_color')
+            if isinstance(image_bytes, bytes) and isinstance(image, QImage):
+                event_bus.emit(
+                    Events.PLAYBACK_IMAGE_LOADED,
+                    song_storable,
+                    image_bytes,
+                    avg_color,
+                    image,
+                    image_png if isinstance(image_png, bytes) else b'',
+                )
+
+        asyncTask(_load, (), self._mwindow_obj, _apply)
 
     def _finishPlaybackLoad(
         self,
@@ -2183,13 +2291,17 @@ class PlayingManager(QObject):
 
         event_bus.emit(Events.SONG_CHANGED, song_storable)
         image_bytes = result.get('image')
+        image = result.get('image_qimage')
+        image_png = result.get('image_png')
         avg_color = result.get('avg_color')
-        if isinstance(image_bytes, bytes):
+        if isinstance(image_bytes, bytes) and isinstance(image, QImage):
             event_bus.emit(
                 Events.PLAYBACK_IMAGE_LOADED,
                 song_storable,
                 image_bytes,
                 avg_color,
+                image,
+                image_png if isinstance(image_png, bytes) else b'',
             )
         event_bus.emit(Events.PLAY_STATE_CHANGED, not pause_after_load)
         event_bus.emit(Events.POST_PLAY_STORABLE, song_storable)
@@ -2342,8 +2454,11 @@ class PlayingManager(QObject):
                     player.setPosition(position)
                     player.is_paused = True
                 else:
-                    player.playFromPosition(position)
-            self._loadPlaybackImage(song_storable, result)
+                    threading.Thread(
+                        target=player.playFromPosition,
+                        args=(position,),
+                        daemon=True,
+                    ).start()
             self._finishPlaybackLoad(
                 song_storable,
                 play_seq,
@@ -2352,6 +2467,7 @@ class PlayingManager(QObject):
                 mark_loaded,
                 None,
             )
+            self._loadPlaybackImageAsync(song_storable, play_seq)
 
         def _schedule_start(path: Path) -> None:
             if state['started'] or state['starting']:
@@ -2490,7 +2606,7 @@ class PlayingManager(QObject):
                             success = False
                             return
                         song_storable.cacheAudio(music_bytes)
-                        saveFavorites()
+                        scheduleFavoritesSave()
                     except Exception:
                         self._logger.exception(
                             'failed to persist complete streaming audio'
@@ -2627,7 +2743,7 @@ class PlayingManager(QObject):
                     )
                     return
                 song_storable.cacheImage(image_bytes)
-                saveFavorites()
+                scheduleFavoritesSave()
                 event_bus.emit(Events.IMAGE_ASSET_PERSISTED, song_storable)
 
             music_url = prepared.get('music_url')
@@ -2775,9 +2891,6 @@ class PlayingManager(QObject):
         self._startLyricSong(song_storable, restore_position is not None)
         event_bus.emit(Events.STOP_PROGRESS_LOADING)
         event_bus.emit(Events.PLAYBACK_SONG_LOADING, song_storable)
-        app = self._app
-        if app is not None:
-            app.processEvents()
 
         if (
             music_missing
@@ -2811,6 +2924,7 @@ class PlayingManager(QObject):
                 return
 
         result: dict[str, object] = {}
+        cover_target = self._coverTargetSize()
 
         def _prepare() -> None:
             if not _is_current_playback():
@@ -2843,7 +2957,7 @@ class PlayingManager(QObject):
             if pause_after_load:
                 player.pause()
 
-            self._loadPlaybackImage(song_storable, result)
+            self._loadPlaybackImage(song_storable, result, cover_target)
 
         def _finish() -> None:
             self._finishPlaybackLoad(
@@ -2860,14 +2974,44 @@ class PlayingManager(QObject):
     def _show_original_lyrics(self, song_storable: SongStorable) -> None:
         if not self.ctx:
             return
-        lyrics = song_storable.getLyrics()
-        self.ctx.lyrics_manager.applyLyrics(
-            lyrics['lyric'],
-            lyrics['yrc_lyric'],
-            lyrics['translated_lyric'],
-            self.total_length,
-        )
-        event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song_storable)
+        self._lyrics_parse_seq += 1
+        parse_seq = self._lyrics_parse_seq
+        result: dict[str, object] = {}
+
+        def _parse() -> None:
+            lyrics = song_storable.getLyrics()
+            try:
+                payload = callCompute(
+                    'parse_lyrics',
+                    {
+                        'lyric': lyrics['lyric'],
+                        'yrc_lyric': lyrics['yrc_lyric'],
+                        'translated_lyric': lyrics['translated_lyric'],
+                    },
+                )
+            except Exception as error:
+                self._logger.exception(error)
+                from core.lyrics import parseLyricsPayload
+
+                payload = parseLyricsPayload(
+                    lyrics['lyric'],
+                    lyrics['yrc_lyric'],
+                    lyrics['translated_lyric'],
+                )
+            result['payload'] = payload
+
+        def _apply() -> None:
+            payload = result.get('payload')
+            if (
+                parse_seq != self._lyrics_parse_seq
+                or self.current_song is not song_storable
+                or not isinstance(payload, dict)
+            ):
+                return
+            self.ctx.lyrics_manager.applyParsedLyrics(payload, self.total_length)
+            event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song_storable)
+
+        asyncTask(_parse, (), self, _apply)
 
     def _compute_gain_async(
         self,
@@ -2900,64 +3044,79 @@ class PlayingManager(QObject):
 
         threading.Thread(target=_compute_and_apply, daemon=True).start()
 
-    def _applyLyricTexts(
+    def _applyLyricTextsAsync(
         self,
         song: SongStorable,
         lyric: str,
         yrc_lyric: str,
         translated_lyric: str,
         source: str,
-    ) -> bool:
+    ) -> None:
         if self.current_song is not song:
-            return False
+            return
+        self._lyrics_parse_seq += 1
+        parse_seq = self._lyrics_parse_seq
+        result: dict[str, object] = {}
 
-        self.ctx.lyrics_manager.applyLyrics(
-            lyric, yrc_lyric, translated_lyric, self.total_length
-        )
-        self._logger.info('applied %s lyrics for %s', source, song.name)
-        return True
+        def _parse() -> None:
+            payload = callCompute(
+                'parse_lyrics',
+                {
+                    'lyric': lyric,
+                    'yrc_lyric': yrc_lyric,
+                    'translated_lyric': translated_lyric,
+                },
+            )
+            result['payload'] = payload
+
+        def _apply() -> None:
+            payload = result.get('payload')
+            if (
+                parse_seq != self._lyrics_parse_seq
+                or self.current_song is not song
+                or not isinstance(payload, dict)
+            ):
+                return
+            self.ctx.lyrics_manager.applyParsedLyrics(payload, self.total_length)
+            self._logger.info('applied %s lyrics for %s', source, song.name)
+            event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song)
+
+        asyncTask(_parse, (), self, _apply)
 
     def _applyLyricUpdate(self, song: SongStorable, candidate: LyricCandidate) -> None:
         if cfg.whisper_enabled:
             return
-        if not self._applyLyricTexts(
-            song,
-            candidate.lyric,
-            candidate.yrc_lyric,
-            candidate.translated_lyric,
-            candidate.source,
-        ):
+        if self.current_song is not song:
             return
 
-        song.writeLyrics(
-            candidate.lyric,
-            candidate.translated_lyric,
-            candidate.yrc_lyric,
-        )
-        saveFavorites()
-        event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song)
+        def _write() -> None:
+            song.writeLyrics(
+                candidate.lyric,
+                candidate.translated_lyric,
+                candidate.yrc_lyric,
+            )
+
+        def _finish() -> None:
+            if self.current_song is not song:
+                return
+            scheduleFavoritesSave()
+            self._logger.info('applied %s lyrics for %s', candidate.source, song.name)
+            self._show_original_lyrics(song)
+
+        asyncTask(_write, (), self, _finish)
 
     def _download_update_lyrics(self, song_storable: SongStorable) -> None:
         if cfg.whisper_enabled:
             self._queueWhisperLyrics(song_storable)
             return
         lyric_target = song_storable
-        lyrics = lyric_target.getLyrics()
-        self._applyLyricTexts(
-            lyric_target,
-            lyrics['lyric'],
-            lyrics['yrc_lyric'],
-            lyrics['translated_lyric'],
-            'cache',
-        )
-        event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, lyric_target)
-
-        if lyrics['yrc_lyric'].strip() and lyrics['translated_lyric'].strip():
-            return
 
         def _download() -> None:
             artists = [artist.name for artist in song_storable.artists if artist.name]
             try:
+                lyrics = lyric_target.getLyrics()
+                if lyrics['yrc_lyric'].strip() and lyrics['translated_lyric'].strip():
+                    return
                 for candidate in iterLyricUpdates(
                     song_storable.name,
                     artists,
@@ -3065,14 +3224,13 @@ class PlayingManager(QObject):
             or self.current_song is not song
         ):
             return
-        if self._applyLyricTexts(
+        self._applyLyricTextsAsync(
             song,
             lyrics['lyric'],
             lyrics['yrc_lyric'],
             lyrics['translated_lyric'],
             'Whisper',
-        ):
-            event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song)
+        )
 
     def _finishWhisperLyrics(
         self,

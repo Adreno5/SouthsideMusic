@@ -43,7 +43,7 @@ class SettingPageTests(unittest.TestCase):
         cfg.whisper_model = 'auto'
         self.addCleanup(vars(cfg).update, self.config)
         self.addCleanup(patch.stopall)
-        self.save_config = patch('views.setting_page.saveConfig').start()
+        self.save_config = patch('views.setting_page.scheduleConfigSave').start()
         patch('views.setting_page.getAudioDevices', return_value=[]).start()
         hardware = SimpleNamespace(
             runtime_label='ONNX Runtime CPU',
@@ -57,6 +57,7 @@ class SettingPageTests(unittest.TestCase):
         ).start()
         self.install_whisper = patch('views.setting_page.installWhisper').start()
         self.async_task = patch('views.setting_page.asyncTask').start()
+        self.async_task.side_effect = self._runAsync
         ctx = AppContext()
         ctx.app = self._app
         ctx.harmony_font_family = 'Segoe UI'
@@ -71,6 +72,8 @@ class SettingPageTests(unittest.TestCase):
         self.page.resize(1000, 720)
         self.page.show()
         self._app.processEvents()
+        self.async_task.reset_mock()
+        self.async_task.side_effect = None
 
     @override
     def tearDown(self) -> None:
@@ -90,11 +93,32 @@ class SettingPageTests(unittest.TestCase):
         self.page.close()
         self.page.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        self.async_task.side_effect = self._runAsync
         self.page = SettingPage(ctx)
         self.page.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
         self.page.resize(1000, 720)
         self.page.show()
         self._app.processEvents()
+        self.async_task.reset_mock()
+        self.async_task.side_effect = None
+
+    def _runAsync(
+        self,
+        task: object,
+        args: tuple,
+        parent: object,
+        finished: object = None,
+    ) -> None:
+        task(*args)
+        if callable(finished):
+            finished()
+
+    def _setWhisperReady(self, names: set[str]) -> None:
+        self.page._whisper_ready = {
+            model.name: model.name in names for model in WHISPER_MODELS
+        }
+        self.page._refreshWhisperModels()
+        self.page._refreshWhisperState()
 
     def test_whisper_config_defaults_and_serialization(self) -> None:
         self.assertFalse(Config.whisper_enabled)
@@ -208,7 +232,9 @@ class SettingPageTests(unittest.TestCase):
     def test_whisper_initialization_handles_missing_playing_manager(self) -> None:
         cfg.whisper_enabled = True
         self.page.ctx.playing_manager = None
+        self.async_task.side_effect = self._runAsync
         self.page._addWhisperSection()
+        self.async_task.side_effect = None
         self.assertFalse(cfg.whisper_enabled)
         self.assertFalse(self.page.whisper_enabled_box.isChecked())
         self.assertFalse(self.page.whisper_enabled_box.isEnabled())
@@ -217,10 +243,7 @@ class SettingPageTests(unittest.TestCase):
     def test_whisper_model_labels_mark_each_installed_model(self) -> None:
         cfg.whisper_model = 'large-v3'
         installed = {'base', 'large-v3'}
-        self.whisper_ready.side_effect = lambda name=None: (
-            getWhisperModel(name).name in installed
-        )
-        self.page._refreshWhisperModels()
+        self._setWhisperReady(installed)
         for model in WHISPER_MODELS:
             with self.subTest(model=model.name):
                 index = self.page.whisper_model_box.findData(model.name)
@@ -264,8 +287,7 @@ class SettingPageTests(unittest.TestCase):
         self.page.ctx.playing_manager.updateWhisperLyrics.assert_called_once()
 
     def test_whisper_toggle_saves_and_refreshes_lyrics(self) -> None:
-        self.whisper_ready.return_value = True
-        self.page._refreshWhisperState()
+        self._setWhisperReady({model.name for model in WHISPER_MODELS})
         self.page.whisper_enabled_box.click()
         self.assertTrue(cfg.whisper_enabled)
         self.page.whisper_enabled_box.click()
@@ -278,10 +300,7 @@ class SettingPageTests(unittest.TestCase):
     def test_whisper_missing_model_unchecks_and_disables_enabled_recognition(
         self,
     ) -> None:
-        self.whisper_ready.side_effect = lambda name=None: (
-            getWhisperModel(name).name == 'base'
-        )
-        self.page._refreshWhisperState()
+        self._setWhisperReady({'base'})
         self.page.whisper_enabled_box.click()
         self.page.ctx.playing_manager.updateWhisperLyrics.reset_mock()
         self.save_config.reset_mock()
@@ -299,8 +318,7 @@ class SettingPageTests(unittest.TestCase):
     def test_whisper_installed_model_change_preserves_enabled_recognition(
         self,
     ) -> None:
-        self.whisper_ready.return_value = True
-        self.page._refreshWhisperState()
+        self._setWhisperReady({model.name for model in WHISPER_MODELS})
         self.page.whisper_enabled_box.click()
         self.page.ctx.playing_manager.updateWhisperLyrics.reset_mock()
         self.page.whisper_model_box.setCurrentIndex(
@@ -335,6 +353,7 @@ class SettingPageTests(unittest.TestCase):
         )
         worker.start()
         worker.join(timeout=2)
+        self.async_task.side_effect = self._runAsync
         self.assertFalse(worker.is_alive())
         self.assertEqual(self.page.whisper_progress_bar.value(), 0)
         self._app.processEvents()
@@ -385,12 +404,9 @@ class SettingPageTests(unittest.TestCase):
         self.page.whisper_install_button.click()
         task = self.async_task.call_args.args[0]
         self.whisper_ready.return_value = True
-        worker = Thread(target=task)
-        worker.start()
-        worker.join(timeout=2)
-        self.assertFalse(worker.is_alive())
-        self.assertFalse(self.page.whisper_enabled_box.isEnabled())
-        self._app.processEvents()
+        self.async_task.side_effect = self._runAsync
+        task()
+        self.page._onWhisperInstallFinished('')
         self.assertTrue(self.page.whisper_enabled_box.isEnabled())
         self.assertFalse(self.page.whisper_enabled_box.isChecked())
         self.assertFalse(cfg.whisper_enabled)
@@ -422,7 +438,9 @@ class SettingPageTests(unittest.TestCase):
         self.install_whisper.side_effect = None
         self.page.whisper_install_button.click()
         self.whisper_ready.return_value = True
-        self.async_task.call_args.args[0]()
+        task = self.async_task.call_args.args[0]
+        self.async_task.side_effect = self._runAsync
+        task()
         self._app.processEvents()
         self.assertEqual(self.install_whisper.call_count, 2)
         self.assertTrue(self.page.whisper_enabled_box.isEnabled())
@@ -431,7 +449,9 @@ class SettingPageTests(unittest.TestCase):
 
     def test_whisper_install_requires_manifest_validation_before_enabling(self) -> None:
         self.page.whisper_install_button.click()
-        self.async_task.call_args.args[0]()
+        task = self.async_task.call_args.args[0]
+        self.async_task.side_effect = self._runAsync
+        task()
         self._app.processEvents()
         self.assertFalse(self.page.whisper_enabled_box.isEnabled())
         self.assertTrue(self.page.whisper_install_button.isEnabled())

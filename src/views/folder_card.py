@@ -1,5 +1,6 @@
 import hashlib
 import os
+import weakref
 
 import requests
 import shiboken6
@@ -9,14 +10,15 @@ from core.cache_cleanup import touchCacheFile
 from core.downloader import asyncTask
 from core.favorites import favorites_manager
 from core.icons import SouthsideIcon
+from core.image import loadImageFromBytes, loadImageFromPath
 from core.models import (
     CloudFolderInfo,
     LocalFolderInfo,
     SongStorable,
     SearchCloudFolderInfo,
 )
-from PySide6.QtCore import Signal
-from PySide6.QtGui import QAction, QContextMenuEvent, QMouseEvent, QPixmap, Qt
+from PySide6.QtCore import QSize, Signal
+from PySide6.QtGui import QAction, QContextMenuEvent, QImage, QMouseEvent, QPixmap, Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -31,14 +33,26 @@ from services.events import Events, event_bus
 from qfluentwidgets import SubtitleLabel
 
 
+def _setImage(label: QLabel, image: QImage) -> None:
+    if not shiboken6.isValid(label) or image.isNull():
+        return
+    label.setPixmap(QPixmap.fromImage(image))
+
+
 class LocalFolderCard(QWidget):
     clicked = Signal()
     imagePersisted = Signal(object)
 
-    def __init__(self, folder: LocalFolderInfo, width: int) -> None:
+    def __init__(
+        self,
+        folder: LocalFolderInfo,
+        width: int,
+        ctx: AppContext,
+    ) -> None:
         super().__init__()
         self.setFixedSize(width, 52)
         self.folder = folder
+        self._ctx = ctx
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -86,19 +100,25 @@ class LocalFolderCard(QWidget):
             if storable.id != first.id:
                 return
             first.image_cache_hash = storable.image_cache_hash
-        try:
-            image_bytes = first.getImageBytes()
-            pixmap = QPixmap()
-            pixmap.loadFromData(image_bytes)
-            if not pixmap.isNull():
-                scaled = pixmap.scaled(
-                    self.img_label.size(),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-                self.img_label.setPixmap(scaled)
-        except (FileNotFoundError, PermissionError):
-            pass
+        target = QSize(self.img_label.size())
+        result: dict[str, QImage] = {}
+        card_ref = weakref.ref(self)
+
+        def _read() -> None:
+            try:
+                result['image'] = loadImageFromBytes(first.getImageBytes(), target)
+            except (FileNotFoundError, PermissionError):
+                return
+
+        def _apply() -> None:
+            card = card_ref()
+            if card is None or not shiboken6.isValid(card.img_label):
+                return
+            image = result.get('image')
+            if image is not None and not image.isNull():
+                card.img_label.setPixmap(QPixmap.fromImage(image))
+
+        asyncTask(_read, (), self, _apply)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -159,46 +179,35 @@ class CloudFolderCard(QWidget):
     def _loadCoverImage(self):
         if not self.folder.image_url:
             return
-        os.makedirs(os.path.join('data', 'cover'), exist_ok=True)
         hashed = hashlib.sha256(self.folder.image_url.encode()).hexdigest()
         file = os.path.join('data', 'cover', hashed)
+        target = QSize(self.img_label.size())
+        card_ref = weakref.ref(self)
+        result: dict[str, QImage] = {}
 
-        if not os.path.isfile(file):
-
-            def _download():
-                image_bytes = requests.get(self.folder.image_url).content
+        def _load() -> None:
+            try:
+                if os.path.isfile(file):
+                    result['image'] = loadImageFromPath(str(file), target)
+                    touchCacheFile(file)
+                    return
+                image_bytes = requests.get(
+                    self.folder.image_url, timeout=(3.05, 8)
+                ).content
+                os.makedirs(os.path.dirname(file), exist_ok=True)
                 with open(file, 'wb') as f:
                     f.write(image_bytes)
+                result['image'] = loadImageFromBytes(image_bytes, target)
+            except (FileNotFoundError, PermissionError, requests.RequestException):
+                return
 
-                def applyPixmap():
-                    if not shiboken6.isValid(self.img_label):
-                        return
-                    pixmap = QPixmap()
-                    pixmap.loadFromData(image_bytes)
-                    if not pixmap.isNull():
-                        scaled = pixmap.scaled(
-                            self.img_label.size(),
-                            Qt.AspectRatioMode.KeepAspectRatio,
-                            Qt.TransformationMode.SmoothTransformation,
-                        )
-                        self.img_label.setPixmap(scaled)
+        def _apply() -> None:
+            card = card_ref()
+            image = result.get('image')
+            if card is not None and image is not None:
+                _setImage(card.img_label, image)
 
-                self._ctx.addScheduledTask(applyPixmap)
-
-            asyncTask(_download, (), self._ctx.main_window)
-        else:
-            with open(file, 'rb') as f:
-                image_bytes = f.read()
-                touchCacheFile(file)
-                pixmap = QPixmap()
-                pixmap.loadFromData(image_bytes)
-                if not pixmap.isNull():
-                    scaled = pixmap.scaled(
-                        self.img_label.size(),
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                    self.img_label.setPixmap(scaled)
+        asyncTask(_load, (), self._ctx.main_window, _apply)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -274,46 +283,35 @@ class SearchCloudFolderCard(QWidget):
     def loadDetailAndImage(self):
         if not self.folder.image_url:
             return
-        os.makedirs(os.path.join('data', 'cover'), exist_ok=True)
         hashed = hashlib.sha256(self.folder.image_url.encode()).hexdigest()
         file = os.path.join('data', 'cover', hashed)
+        target = QSize(self.img_label.size())
+        card_ref = weakref.ref(self)
+        result: dict[str, QImage] = {}
 
-        if not os.path.isfile(file):
-
-            def _download():
-                image_bytes = requests.get(self.folder.image_url).content
+        def _load() -> None:
+            try:
+                if os.path.isfile(file):
+                    result['image'] = loadImageFromPath(str(file), target)
+                    touchCacheFile(file)
+                    return
+                image_bytes = requests.get(
+                    self.folder.image_url, timeout=(3.05, 8)
+                ).content
+                os.makedirs(os.path.dirname(file), exist_ok=True)
                 with open(file, 'wb') as f:
                     f.write(image_bytes)
+                result['image'] = loadImageFromBytes(image_bytes, target)
+            except (FileNotFoundError, PermissionError, requests.RequestException):
+                return
 
-                def applyPixmap():
-                    if not shiboken6.isValid(self.img_label):
-                        return
-                    pixmap = QPixmap()
-                    pixmap.loadFromData(image_bytes)
-                    if not pixmap.isNull():
-                        scaled = pixmap.scaled(
-                            self.img_label.size(),
-                            Qt.AspectRatioMode.KeepAspectRatio,
-                            Qt.TransformationMode.SmoothTransformation,
-                        )
-                        self.img_label.setPixmap(scaled)
+        def _apply() -> None:
+            card = card_ref()
+            image = result.get('image')
+            if card is not None and image is not None:
+                _setImage(card.img_label, image)
 
-                self._ctx.addScheduledTask(applyPixmap)
-
-            asyncTask(_download, (), self._ctx.main_window)
-        else:
-            with open(file, 'rb') as f:
-                image_bytes = f.read()
-                touchCacheFile(file)
-                pixmap = QPixmap()
-                pixmap.loadFromData(image_bytes)
-                if not pixmap.isNull():
-                    scaled = pixmap.scaled(
-                        self.img_label.size(),
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                    self.img_label.setPixmap(scaled)
+        asyncTask(_load, (), self._ctx.main_window, _apply)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:

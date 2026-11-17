@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from core.cache_cleanup import touchCacheFile
+from core.deferred_writes import getDeferredWriter
 
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 DATA_DIR = os.path.join(_PROJECT_ROOT, 'data')
@@ -22,45 +23,78 @@ LEGACY_CACHE_DIR = os.path.join(_PROJECT_ROOT, 'cache')
 LEGACY_MUSIC_CACHE_DIR = os.path.join(LEGACY_CACHE_DIR, 'music')
 LEGACY_IMAGE_CACHE_DIR = os.path.join(LEGACY_CACHE_DIR, 'image')
 COUNT_FILE = os.path.join(DATA_DIR, 'count.json')
-_count_lock = threading.Lock()
+_count_lock = threading.RLock()
+_count_cache: dict[str, int] | None = None
+_count_cache_key: tuple[str, int, int] | None = None
+_count_writer = getDeferredWriter('count')
 
 _CACHE_INDEX_PATH = os.path.join(DATA_DIR, 'cache_index.json')
 _cache_index: dict[str, dict[str, str]] = {}
 _cache_index_loaded: bool = False
+_cache_index_key: tuple[str, int, int] | None = None
+_cache_index_lock = threading.RLock()
+_cache_index_writer = getDeferredWriter('cache-index')
+_lyric_write_lock = threading.Lock()
 
 
 def _loadCacheIndex() -> dict[str, dict[str, str]]:
-    global _cache_index, _cache_index_loaded
-    if _cache_index_loaded:
+    global _cache_index, _cache_index_key, _cache_index_loaded
+    key = _fileKey(_CACHE_INDEX_PATH)
+    with _cache_index_lock:
+        if _cache_index_loaded and key == _cache_index_key:
+            return _cache_index
+        _cache_index_loaded = True
+        _cache_index_key = key
+        if key is None:
+            _cache_index = {}
+            return _cache_index
+        with open(_CACHE_INDEX_PATH, 'r', encoding='utf-8') as f:
+            loaded = json.load(f)
+        if isinstance(loaded, dict):
+            _cache_index = loaded
+        else:
+            _cache_index = {}
         return _cache_index
-    _cache_index_loaded = True
-    if not os.path.exists(_CACHE_INDEX_PATH):
-        return _cache_index
-    with open(_CACHE_INDEX_PATH, 'r', encoding='utf-8') as f:
-        loaded = json.load(f)
-    if isinstance(loaded, dict):
-        _cache_index = loaded
-    return _cache_index
 
 
 def _saveCacheIndex() -> None:
     global _cache_index
+    with _cache_index_lock:
+        data = {song_id: entry.copy() for song_id, entry in _cache_index.items()}
+    _writeCacheIndex(data)
+
+
+def _scheduleCacheIndexSave() -> None:
+    with _cache_index_lock:
+        data = {song_id: entry.copy() for song_id, entry in _cache_index.items()}
+    _cache_index_writer.submit(lambda: _writeCacheIndex(data))
+
+
+def _writeCacheIndex(data: dict[str, dict[str, str]]) -> None:
+    global _cache_index, _cache_index_key, _cache_index_loaded
     os.makedirs(DATA_DIR, exist_ok=True)
-    with open(_CACHE_INDEX_PATH, 'w', encoding='utf-8') as f:
-        json.dump(_cache_index or {}, f, ensure_ascii=False, indent=2)
+    temporary = _CACHE_INDEX_PATH + '.tmp'
+    with _cache_index_lock:
+        with open(temporary, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(temporary, _CACHE_INDEX_PATH)
+        _cache_index = {song_id: entry.copy() for song_id, entry in data.items()}
+        _cache_index_loaded = True
+        _cache_index_key = _fileKey(_CACHE_INDEX_PATH)
 
 
 def _updateCacheIndex(song_id: str, image_hash: str = '', audio_hash: str = '') -> None:
     global _cache_index
-    idx = _loadCacheIndex()
-    entry = idx.get(song_id, {})
-    if image_hash:
-        entry['image_cache_hash'] = image_hash
-    if audio_hash:
-        entry['content_cache_hash'] = audio_hash
-    if entry:
-        idx[song_id] = entry
-        _saveCacheIndex()
+    with _cache_index_lock:
+        idx = _loadCacheIndex()
+        entry = dict(idx.get(song_id, {}))
+        if image_hash:
+            entry['image_cache_hash'] = image_hash
+        if audio_hash:
+            entry['content_cache_hash'] = audio_hash
+        if entry:
+            idx[song_id] = entry
+            _scheduleCacheIndexSave()
 
 
 def getCachedHashes(song_id: str) -> dict[str, str]:
@@ -136,22 +170,34 @@ def _song_id_from_object(obj: object) -> str:
 
 
 def _load_count() -> dict[str, int]:
-    if not os.path.exists(COUNT_FILE):
-        return {}
-    with open(COUNT_FILE, 'r', encoding='utf-8') as fp:
-        content = fp.read().strip()
-    if not content:
-        return {}
-    try:
-        obj = json.loads(content)
-    except json.JSONDecodeError:
-        try:
-            obj, _ = json.JSONDecoder().raw_decode(content)
-        except json.JSONDecodeError:
+    global _count_cache, _count_cache_key
+    key = _fileKey(COUNT_FILE)
+    with _count_lock:
+        if _count_cache is not None and key == _count_cache_key:
+            return dict(_count_cache)
+        if key is None:
+            _count_cache = {}
+            _count_cache_key = None
             return {}
-    if not isinstance(obj, dict):
-        return {}
-    return {str(song_id): _intFromObject(count) for song_id, count in obj.items()}
+        with open(COUNT_FILE, 'r', encoding='utf-8') as fp:
+            content = fp.read().strip()
+        obj: object = {}
+        if content:
+            try:
+                obj = json.loads(content)
+            except json.JSONDecodeError:
+                try:
+                    obj, _ = json.JSONDecoder().raw_decode(content)
+                except json.JSONDecodeError:
+                    obj = {}
+        if isinstance(obj, dict):
+            _count_cache = {
+                str(song_id): _intFromObject(count) for song_id, count in obj.items()
+            }
+        else:
+            _count_cache = {}
+        _count_cache_key = key
+        return dict(_count_cache)
 
 
 def _normalize_count(obj: dict[str, int]) -> dict[str, int]:
@@ -165,9 +211,29 @@ def _normalize_count(obj: dict[str, int]) -> dict[str, int]:
 
 
 def _save_count(obj: dict[str, int]) -> None:
+    global _count_cache, _count_cache_key
+    data = _normalize_count(obj)
     os.makedirs(DATA_DIR, exist_ok=True)
-    with open(COUNT_FILE, 'w', encoding='utf-8') as fp:
-        json.dump(_normalize_count(obj), fp, indent=4)
+    temporary = COUNT_FILE + '.tmp'
+    with _count_lock:
+        with open(temporary, 'w', encoding='utf-8') as fp:
+            json.dump(data, fp, indent=4)
+        os.replace(temporary, COUNT_FILE)
+        _count_cache = dict(data)
+        _count_cache_key = _fileKey(COUNT_FILE)
+
+
+def _scheduleCountSave(obj: dict[str, int]) -> None:
+    data = _normalize_count(obj)
+    _count_writer.submit(lambda: _save_count(data))
+
+
+def _fileKey(path: str) -> tuple[str, int, int] | None:
+    try:
+        stat_result = os.stat(path)
+    except OSError:
+        return None
+    return path, stat_result.st_mtime_ns, stat_result.st_size
 
 
 class SongStorable:
@@ -233,7 +299,7 @@ class SongStorable:
             obj = _load_count()
             if self.id not in obj:
                 obj[self.id] = 0
-            _save_count(obj)
+            _scheduleCountSave(obj)
 
     def incrementCount(self, count: int) -> None:
         with _count_lock:
@@ -241,11 +307,11 @@ class SongStorable:
             key = _song_id_from_object(self.id)
             obj[key] = obj.get(key, 0) + count
             self.count = obj[key]
-            _save_count(obj)
+            _scheduleCountSave(obj)
 
         from services.events import Events, event_bus
 
-        event_bus.emit(Events.STORABLE_COUNT_CHANGED, self)
+        event_bus.emitInMainThread(Events.STORABLE_COUNT_CHANGED, self)
 
     def _ensureArtists(self) -> None:
         if (self.artists and self.duration > 0) or not self.id:
@@ -456,22 +522,25 @@ class SongStorable:
         yrc_lyric: str = '',
         ytlrc_lyric: str = '',
     ) -> None:
-        os.makedirs(LYRIC_DATA_DIR, exist_ok=True)
-        self.lyric_cache_hash = f'{self.id}.json'
-        path = self.getLyricPath()
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(
-                {
-                    'lyric': lyric,
-                    'translated_lyric': translated_lyric,
-                    'yrc_lyric': yrc_lyric,
-                    'ytlrc_lyric': ytlrc_lyric,
-                    'has_yrc_lyric': bool(yrc_lyric),
-                },
-                f,
-                ensure_ascii=False,
-                indent=2,
-            )
+        with _lyric_write_lock:
+            os.makedirs(LYRIC_DATA_DIR, exist_ok=True)
+            self.lyric_cache_hash = f'{self.id}.json'
+            path = self.getLyricPath()
+            temporary = path + '.tmp'
+            with open(temporary, 'w', encoding='utf-8') as f:
+                json.dump(
+                    {
+                        'lyric': lyric,
+                        'translated_lyric': translated_lyric,
+                        'yrc_lyric': yrc_lyric,
+                        'ytlrc_lyric': ytlrc_lyric,
+                        'has_yrc_lyric': bool(yrc_lyric),
+                    },
+                    f,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            os.replace(temporary, path)
 
     def lyricsMissing(self) -> bool:
         self._ensureCacheFields()

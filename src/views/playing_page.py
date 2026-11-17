@@ -10,7 +10,7 @@ from core import theme
 from core.app_context import AppContext
 from core.color import mixColor
 from core.config import cfg
-from core.config import saveConfig
+from core.config import scheduleConfigSave
 from core.downloader import asyncTask
 from core.free_threaded_worker import jsonBase64Bytes
 from core.icons import bindIcon
@@ -25,7 +25,7 @@ from core.models import MUSIC_DATA_DIR
 from core.models import SongStorable
 from core.theme import isDark
 from core.playing_manager import PlayMode
-from PySide6.QtCore import QBuffer, QIODevice, QRect, QSignalBlocker
+from PySide6.QtCore import QRect, QSignalBlocker
 from PySide6.QtGui import QCursor, QMouseEvent, QPaintEvent, QPainter, QResizeEvent, Qt
 from PySide6.QtWidgets import (
     QColorDialog,
@@ -235,7 +235,7 @@ class LyricVideoExportDialog(MessageBoxBase):
         cfg.lyric_video_export_background_color = self._backgroundColorHex()
         cfg.lyric_video_export_with_audio = options.with_audio
         cfg.lyric_video_export_scroll_animation = options.scroll_animation
-        saveConfig()
+        scheduleConfigSave()
 
     def _backgroundColorHex(self) -> str:
         return '#{0:02X}{1:02X}{2:02X}'.format(
@@ -459,6 +459,8 @@ class PlayingPage(QWidget):
         self.setLayout(global_layout)
 
         self.bg_color = QColor(0, 0, 0) if isDark() else QColor(255, 255, 255)
+        self._cover_image: QImage | None = None
+        self._cover_png_bytes = b''
 
         self.translation_button = PillToolButton(self)
         self.translation_button.toggled.connect(self.translationToggled)
@@ -653,7 +655,10 @@ class PlayingPage(QWidget):
         self.lyric_video_export_button.setChecked(False)
 
         song = self.cur.storable
-        has_translation = bool(song.translated_lyric or self._transmgr.parsed)
+        has_translation = bool(
+            self._transmgr.parsed
+            or (self._transmgr.cur and self._transmgr.cur != '[00:00.000]')
+        )
         dialog = LyricVideoExportDialog(self._mwindow_obj, has_translation)
         if not dialog.exec():
             return
@@ -913,30 +918,29 @@ class PlayingPage(QWidget):
 
         self.img_label.clear()
         self.img_label.hide()
+        self._cover_image = None
+        self._cover_png_bytes = b''
         self.ring.show()
         self.sendSongCoverAndInfo()
-        self._app.processEvents()
 
     def _onPlaybackImageLoaded(
         self,
         song: SongStorable,
         image_bytes: bytes,
         avg_color: list[int] | tuple[int, int, int] | None = None,
+        image: QImage | None = None,
+        image_png: bytes = b'',
     ) -> None:
         if self.cur is None or self.cur.storable.id != song.id:
             return
-        qimg = QImage()
-        qimg.loadFromData(image_bytes)
-        if qimg.isNull():
+        if image is None:
+            image = QImage.fromData(image_bytes)
+        if image.isNull():
             return
 
-        pixmap = QPixmap.fromImage(qimg)
-        scaled = pixmap.scaled(
-            self.img_label.size(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        self.img_label.setPixmap(scaled)
+        self._cover_image = image
+        self._cover_png_bytes = image_png
+        self.img_label.setPixmap(QPixmap.fromImage(image))
         self.ring.hide()
         self.img_label.show()
         self.sendSongCoverAndInfo()
@@ -977,14 +981,7 @@ class PlayingPage(QWidget):
         if not isinstance(self.cur, DummyCard):
             return
 
-        pixmap = self.img_label.pixmap()
-        img_bytes = b''
-        if pixmap is not None and not pixmap.isNull():
-            buffer = QBuffer()
-            buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-            pixmap.save(buffer, 'PNG')
-            img_bytes = buffer.data().data()
-            buffer.close()
+        img_bytes = getattr(self, '_cover_png_bytes', b'')
 
         song_name = self.cur.storable.name
         position = self.playing_manager.getDisplayPosition()

@@ -206,6 +206,12 @@ class PerformanceOverlayTests(unittest.TestCase):
             QTest.qWait(1)
         self.assertFalse(self.overlay._memory_sampling)
 
+    def _waitExport(self, predicate, description: str) -> None:
+        deadline = time.perf_counter() + 5
+        while not predicate() and time.perf_counter() < deadline:
+            QTest.qWait(5)
+        self.assertTrue(predicate(), description)
+
     def _measureMemory(
         self,
         roots: tuple[object, ...],
@@ -257,6 +263,10 @@ class PerformanceOverlayTests(unittest.TestCase):
                         return_value='test report',
                     ) as save:
                         self.overlay._finishExport()
+                        self._waitExport(
+                            lambda: not self.overlay._capturing,
+                            'performance report finished',
+                        )
                     self.assertEqual(save.call_count, int(not cancelled))
                     self.assertFalse(self.ctx.debugging)
                     self.assertTrue(self.profiler.enabled)
@@ -280,6 +290,10 @@ class PerformanceOverlayTests(unittest.TestCase):
             for _ in range(5):
                 self.overlay.updateMemory()
                 self._waitMemory()
+            self._waitExport(
+                lambda: not self.overlay._memory_exporting,
+                'memory report finished',
+            )
             self.assertEqual(save.call_count, 1)
         self.assertFalse(self.overlay._memory_exporting)
         self.assertTrue(self.overlay.isVisible())

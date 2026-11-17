@@ -46,7 +46,7 @@ from qfluentwidgets import (
 from core import theme
 from core.app_context import AppContext
 from core.audio_player import getAudioDevices
-from core.config import cfg, decryptSecret, encryptSecret, saveConfig
+from core.config import cfg, decryptSecret, encryptSecret, scheduleConfigSave
 from core.downloader import asyncTask
 from core.i18n import (
     Language,
@@ -62,6 +62,7 @@ from core.llm import LLM
 from core.models import CurveInfo
 from core.whisper_lyrics import (
     WHISPER_MODELS,
+    WhisperHardware,
     getWhisperHardware,
     getWhisperModel,
     installWhisper,
@@ -566,7 +567,7 @@ class SettingPage(QWidget):
     def _onDebugModeChanged(self, enabled: bool) -> None:
         if self.ctx.main_window is not None:
             self.ctx.main_window.setDebugMode(enabled)
-        saveConfig()
+        scheduleConfigSave()
 
     def _addAppearanceSection(self) -> None:
         self.addSection(
@@ -813,7 +814,7 @@ class SettingPage(QWidget):
 
     def _saveEQBands(self) -> None:
         cfg.eq_bands = self.eq_edit.getBands()
-        saveConfig()
+        scheduleConfigSave()
         self._player.setEqualizer()
 
     def _addDesktopLyricsSection(self) -> None:
@@ -1145,7 +1146,8 @@ class SettingPage(QWidget):
     def _addWhisperSection(self) -> None:
         self._whisper_installing = False
         self._whisper_install_error = ''
-        self._whisper_hardware = getWhisperHardware()
+        self._whisper_hardware: WhisperHardware | None = None
+        self._whisper_ready: dict[str, bool] | None = None
         self.whisper_section = self.addSection(
             'setting_page.whisper', 'setting_page.whisper_description'
         )
@@ -1213,11 +1215,6 @@ class SettingPage(QWidget):
                 *(model.label for model in WHISPER_MODELS),
             ),
         )
-        if cfg.whisper_enabled and not isWhisperReady():
-            cfg.whisper_enabled = False
-            saveConfig()
-            if self.ctx.playing_manager is not None:
-                self.ctx.playing_manager.updateWhisperLyrics()
         self._refreshWhisperState()
         self.whisper_enabled_box.toggled.connect(self._onWhisperEnabledChanged)
         self.whisper_model_box.currentIndexChanged.connect(self._onWhisperModelChanged)
@@ -1228,19 +1225,59 @@ class SettingPage(QWidget):
         self.whisperInstallFinished.connect(
             self._onWhisperInstallFinished, Qt.ConnectionType.QueuedConnection
         )
+        self._loadWhisperSetup()
+
+    def _loadWhisperSetup(self) -> None:
+        result: dict[str, object] = {}
+
+        def _detect() -> None:
+            hardware = getWhisperHardware()
+            ready = {model.name: isWhisperReady(model.name) for model in WHISPER_MODELS}
+            result['hardware'] = hardware
+            result['ready'] = ready
+
+        def _apply() -> None:
+            hardware = result.get('hardware')
+            ready = result.get('ready')
+            if hardware is None or not isinstance(ready, dict):
+                return
+            self._whisper_hardware = hardware  # type: ignore[assignment]
+            self._whisper_ready = {
+                str(name): bool(value) for name, value in ready.items()
+            }
+            model = getWhisperModel(cfg.whisper_model)
+            if cfg.whisper_enabled and not self._whisper_ready.get(model.name, False):
+                cfg.whisper_enabled = False
+                scheduleConfigSave()
+                if self.ctx.playing_manager is not None:
+                    self.ctx.playing_manager.updateWhisperLyrics()
+            self._refreshWhisperModels()
+            self._refreshWhisperState()
+
+        asyncTask(_detect, (), self, _apply)
 
     def _refreshWhisperModels(self) -> None:
         self.whisper_model_box.blockSignals(True)
         self.whisper_model_box.clear()
-        recommended_model = getWhisperModel('auto')
+        if self._whisper_hardware is None:
+            recommended_name = cfg.whisper_model
+            if recommended_name == 'auto':
+                recommended_name = 'base'
+            recommended_model = next(
+                (model for model in WHISPER_MODELS if model.name == recommended_name),
+                WHISPER_MODELS[1],
+            )
+        else:
+            recommended_model = getWhisperModel('auto')
         label = tr('setting_page.whisper_model_auto', model=recommended_model.label)
-        if isWhisperReady(recommended_model.name):
+        ready_map = self._whisper_ready or {}
+        if ready_map.get(recommended_model.name, False):
             label = tr('setting_page.whisper_model_installed', model=label)
         self.whisper_model_box.addItem(label, userData='auto')
         for model in WHISPER_MODELS:
             label = (
                 tr('setting_page.whisper_model_installed', model=model.label)
-                if isWhisperReady(model.name)
+                if ready_map.get(model.name, False)
                 else model.label
             )
             self.whisper_model_box.addItem(label, userData=model.name)
@@ -1250,8 +1287,21 @@ class SettingPage(QWidget):
         self.whisper_model_box.blockSignals(False)
 
     def _refreshWhisperState(self) -> None:
+        if self._whisper_hardware is None:
+            self.whisper_hardware_label.setText('Detecting audio hardware...')
+            self.whisper_runtime_label.setText('')
+            self.whisper_model_info.setText('')
+            self.whisper_status_label.setText('')
+            self.whisper_enabled_box.blockSignals(True)
+            self.whisper_enabled_box.setChecked(False)
+            self.whisper_enabled_box.blockSignals(False)
+            self.whisper_enabled_box.setEnabled(False)
+            self.whisper_model_box.setEnabled(False)
+            self.whisper_install_button.setEnabled(False)
+            self.whisper_section.refreshContentHeight()
+            return
         model = getWhisperModel(cfg.whisper_model)
-        ready = isWhisperReady(model.name)
+        ready = (self._whisper_ready or {}).get(model.name, False)
         setBoundText(
             self.whisper_hardware_label,
             'setting_page.whisper_hardware_value',
@@ -1303,24 +1353,33 @@ class SettingPage(QWidget):
         self.whisper_section.refreshContentHeight()
 
     def _onWhisperEnabledChanged(self, enabled: bool) -> None:
-        cfg.whisper_enabled = enabled and isWhisperReady(cfg.whisper_model)
+        model = getWhisperModel(cfg.whisper_model)
+        cfg.whisper_enabled = enabled and (self._whisper_ready or {}).get(
+            model.name, False
+        )
         self._refreshWhisperState()
-        saveConfig()
+        scheduleConfigSave()
         self.ctx.playing_manager.updateWhisperLyrics()
 
     def _onWhisperModelChanged(self, _index: int) -> None:
         cfg.whisper_model = str(self.whisper_model_box.currentData())
-        cfg.whisper_enabled = cfg.whisper_enabled and isWhisperReady(cfg.whisper_model)
+        model = getWhisperModel(cfg.whisper_model)
+        cfg.whisper_enabled = cfg.whisper_enabled and (self._whisper_ready or {}).get(
+            model.name, False
+        )
         self._whisper_install_error = ''
         self.whisper_progress_bar.hide()
         self._refreshWhisperState()
-        saveConfig()
+        scheduleConfigSave()
         self.ctx.playing_manager.updateWhisperLyrics()
 
     def _installWhisper(self) -> None:
-        if self._whisper_installing or isWhisperReady(cfg.whisper_model):
+        model = getWhisperModel(cfg.whisper_model)
+        if self._whisper_installing or (self._whisper_ready or {}).get(
+            model.name, False
+        ):
             return
-        model_name = getWhisperModel(cfg.whisper_model).name
+        model_name = model.name
         self._whisper_installing = True
         self._whisper_install_error = ''
         self.whisper_progress_bar.setValue(0)
@@ -1376,13 +1435,27 @@ class SettingPage(QWidget):
     def _onWhisperInstallFinished(self, error: str) -> None:
         self._whisper_installing = False
         self._whisper_install_error = error
-        if not error:
-            if isWhisperReady(cfg.whisper_model):
+        if error:
+            self._refreshWhisperState()
+            return
+        model = getWhisperModel(cfg.whisper_model)
+        result: dict[str, bool] = {}
+
+        def _check() -> None:
+            result['ready'] = isWhisperReady(model.name)
+
+        def _apply() -> None:
+            if result.get('ready', False):
+                if self._whisper_ready is None:
+                    self._whisper_ready = {}
+                self._whisper_ready[model.name] = True
                 self.whisper_progress_bar.setValue(1000)
                 self._refreshWhisperModels()
             else:
                 self._whisper_install_error = 'setting_page.whisper_install_incomplete'
-        self._refreshWhisperState()
+            self._refreshWhisperState()
+
+        asyncTask(_check, (), self, _apply)
 
     def _addBeatSection(self) -> None:
         self.addSection(
@@ -1630,7 +1703,7 @@ class SettingPage(QWidget):
 
     def _onAdvancedSettingsChanged(self, *args: object) -> None:
         cfg.show_advanced_settings = self.advanced_settings_box.isChecked()
-        saveConfig()
+        scheduleConfigSave()
         self._applyAdvancedSettingsVisibility()
 
     def _sendFFTState(self) -> None:
@@ -2072,7 +2145,7 @@ class SettingPage(QWidget):
         if cfg.language == code:
             return
         setLanguage(cast(Language, code))
-        saveConfig()
+        scheduleConfigSave()
         event_bus.emit(Events.LANGUAGE_CHANGED)
 
     def _refreshPlayMethodBox(self) -> None:
@@ -2413,7 +2486,7 @@ class SettingPage(QWidget):
         cfg.llm_current_provider = name
         cfg.llm_current_model = str(models[0]['id']) if models else ''
         self._syncLegacyLlmConfig()
-        saveConfig()
+        scheduleConfigSave()
         self._hideLlmProviderForm()
         self._refreshMainWindowLlmModels()
 
@@ -2487,7 +2560,7 @@ class SettingPage(QWidget):
                 str(first.get('id', '')) if isinstance(first, dict) else ''
             )
         self._syncLegacyLlmConfig()
-        saveConfig()
+        scheduleConfigSave()
         self._refreshLlmProvidersView()
         self._refreshMainWindowLlmModels()
 

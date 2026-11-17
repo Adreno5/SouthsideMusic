@@ -602,8 +602,9 @@ class DesktopLyricsPage(QWidget):
             ctx.launch_window.subtitle(
                 tr('desktop_lyrics.creating_desktop_lyrics_viewer')
             )
-        self.viewer = DesktopLyricsViewer(ctx)
-        self.viewer.setVisible(cfg.enable_desktop_lyrics)
+        self._viewer: DesktopLyricsViewer | None = None
+        if cfg.enable_desktop_lyrics:
+            self._ensureViewer().setVisible(True)
 
         if ctx.launch_window:
             ctx.launch_window.subtitle(tr('desktop_lyrics.building_settings_panel'))
@@ -624,6 +625,15 @@ class DesktopLyricsPage(QWidget):
         global_layout.addLayout(buttons_layout)
         self.setLayout(global_layout)
 
+    @property
+    def viewer(self) -> DesktopLyricsViewer:
+        return self._ensureViewer()
+
+    def _ensureViewer(self) -> DesktopLyricsViewer:
+        if self._viewer is None:
+            self._viewer = DesktopLyricsViewer(self.ctx)
+        return self._viewer
+
     def onResetPos(self):
         cfg.desktop_lyrics_anchor = 'normal'
         cfg.desktop_lyrics_x = 0
@@ -636,10 +646,11 @@ class DesktopLyricsPage(QWidget):
             self.inputer.setChecked(visible)
             return
         if visible:
-            self.viewer.show()
-            self.viewer.raise_()
-        else:
-            self.viewer.hide()
+            viewer = self._ensureViewer()
+            viewer.show()
+            viewer.raise_()
+        elif self._viewer is not None:
+            self._viewer.hide()
 
     def onEnableChanged(self, _state=None):
         self.setLyricsVisible(self.inputer.isChecked())

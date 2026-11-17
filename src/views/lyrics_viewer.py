@@ -102,7 +102,12 @@ class LyricsViewer(QOpenGLWidget):
         self._translation_by_time: dict[int, str] = {}
         self._shifted_translation_by_time: dict[int, str] = {}
         self._translation_timing_shifted = False
+        self._translation_line_times: list[float] = []
+        self._translation_lines: list[LyricInfo] = []
         self._text_width_map: dict[str, float] = {}
+        self._yrc_width_cache: dict[
+            int, tuple[list[float], list[float], list[float]]
+        ] = {}
 
         self.hovering = False
 
@@ -311,6 +316,8 @@ class LyricsViewer(QOpenGLWidget):
             for line in self._transmgr.parsed
             if line.content.strip() and not line.isMetadata
         ]
+        self._translation_lines = translated_lines
+        self._translation_line_times = [line.time for line in translated_lines]
 
         for line in translated_lines:
             self._translation_by_time[self._timeKey(line.time)] = line.content.strip()
@@ -349,14 +356,25 @@ class LyricsViewer(QOpenGLWidget):
         if not hasattr(line, 'chars'):
             return line.time
         yrc_time = line.time
-        for trans_line in self._transmgr.parsed:
-            if abs(trans_line.time - yrc_time) <= self._TRANSLATION_TIME_TOLERANCE:
-                return yrc_time
+        if self._translationLineAt(yrc_time) is not None:
+            return yrc_time
         if use_yrc and self._mgr.parsed:
             lrc_line = self._mgr.getCurrentLyric(yrc_time)
             if lrc_line.content.strip():
                 return lrc_line.time
         return yrc_time
+
+    def _translationLineAt(self, time_value: float) -> LyricInfo | None:
+        times = self._translation_line_times
+        if not times:
+            return None
+        index = bisect_left(times, time_value)
+        for pair_index in (index - 1, index):
+            if 0 <= pair_index < len(times):
+                line = self._translation_lines[pair_index]
+                if abs(line.time - time_value) <= self._TRANSLATION_TIME_TOLERANCE:
+                    return line
+        return None
 
     def _translationTextForLine(
         self,
@@ -377,9 +395,9 @@ class LyricsViewer(QOpenGLWidget):
         if direct_match is not None:
             return direct_match
 
-        for trans_line in self._transmgr.parsed:
-            if abs(trans_line.time - trans_time) <= self._TRANSLATION_TIME_TOLERANCE:
-                return trans_line.content.strip()
+        trans_line = self._translationLineAt(trans_time)
+        if trans_line is not None:
+            return trans_line.content.strip()
         return ''
 
     def _shouldDrawTranslationForLine(
@@ -448,6 +466,7 @@ class LyricsViewer(QOpenGLWidget):
         )
         if key != self._layout_key:
             self._layout_key = key
+            self._yrc_width_cache.clear()
             spacing = self.ctx.config.lyrics_line_spacing
             steps = np.full(len(lines), self.font_height * 1.85 * spacing)
             translated = np.array(
@@ -685,15 +704,36 @@ class LyricsViewer(QOpenGLWidget):
             ratio = max(0.0, min(1.0, (position - line.time) / line.duration))
             return ratio, total_width * ratio
 
-        filled_width = 0.0
-        for ch in line.chars:
-            text_width = self._textWidth(ch.char)
+        cached = self._yrc_width_cache.get(id(line))
+        if cached is None:
+            starts: list[float] = []
+            widths: list[float] = []
+            cumulative = [0.0]
+            for ch in line.chars:
+                starts.append(ch.start)
+                width = self._textWidth(ch.char)
+                widths.append(width)
+                cumulative.append(cumulative[-1] + width)
+            cached = (starts, widths, cumulative)
+            self._yrc_width_cache[id(line)] = cached
+        starts, widths, cumulative = cached
+        index = max(0, bisect_right(starts, position) - 1)
+        while index > 0 and starts[index - 1] == starts[index]:
+            index -= 1
+        filled_width = cumulative[index]
+        for char_index in range(index, len(line.chars)):
+            ch = line.chars[char_index]
+            if ch.start > position:
+                break
             if ch.duration <= 0:
-                progress = 1.0 if position >= ch.start else 0.0
+                progress = 1.0
             else:
                 progress = (position - ch.start) / ch.duration
-            progress = max(0.0, min(1.0, progress))
-            filled_width += text_width * progress
+            if progress >= 1.0:
+                filled_width = cumulative[char_index + 1]
+                continue
+            filled_width += widths[char_index] * max(0.0, progress)
+            break
 
         ratio = max(0.0, min(1.0, filled_width / total_width))
         return ratio, filled_width

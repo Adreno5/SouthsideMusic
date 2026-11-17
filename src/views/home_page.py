@@ -314,6 +314,8 @@ class HomePage(SScrollArea):
         self._contents_widget.setAttribute(
             Qt.WidgetAttribute.WA_TranslucentBackground, True
         )
+        self._gradient_key: tuple[object, ...] = ()
+        self._gradient: QLinearGradient | None = None
 
         event_bus.subscribe(Events.SECOND_TICK, self.update)
 
@@ -332,19 +334,23 @@ class HomePage(SScrollArea):
         if event.type() == QEvent.Type.Paint:
             vp = self.viewport()
             h, w = vp.height(), vp.width()
+            system_color = theme.getSystemThemeColor()
+            key = (w, h, theme.isDark(), system_color.rgba())
+            if key != self._gradient_key:
+                self._gradient_key = key
+                gradient = QLinearGradient(w * 0.1, h * 0.8, w * 0.11, h)
+                if theme.isDark():
+                    gradient.setColorAt(0, QColor(0, 0, 0, 0))
+                else:
+                    gradient.setColorAt(0, QColor(255, 255, 255, 0))
+                system_color.setAlpha(12)
+                gradient.setColorAt(1, system_color)
+                self._gradient = gradient
 
             painter = QPainter(vp)
-            gradient = QLinearGradient(w * 0.1, h * 0.8, w * 0.11, h)
-            if theme.isDark():
-                gradient.setColorAt(0, QColor(0, 0, 0, 0))
-            else:
-                gradient.setColorAt(0, QColor(255, 255, 255, 0))
-            s = theme.getSystemThemeColor()
-            s.setAlpha(12)
-            gradient.setColorAt(1, s)
 
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(gradient)
+            painter.setBrush(self._gradient)
             painter.drawRect(QRect(0, 0, w, h))
             painter.end()
 

@@ -151,7 +151,10 @@ def exportSong(
             from core.soundfile import getSongFormat, saveSongWithInformation
 
             detail = getBackend().getTrackDetail(storable.id)
-            image_bytes = requests.get(detail.cover_url).content
+            image_bytes = requests.get(
+                detail.cover_url,
+                timeout=30,
+            ).content
 
             with open(cache_path, 'rb') as song_file:
                 original_bytes = song_file.read()

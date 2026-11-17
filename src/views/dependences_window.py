@@ -89,7 +89,7 @@ class DependencesWindow(QWidget):
         self.startCheck()
 
     def downloadFFmpeg(self) -> None:
-        from core.downloader import asyncDownload
+        from core.downloader import asyncDownload, asyncTask
 
         self.ffmpeg_label.setStyleSheet('')
 
@@ -100,7 +100,6 @@ class DependencesWindow(QWidget):
         self.probar.show()
         self.ctx.launch_window.setDownloadProgress(0)
         self.ffmpeg_label.setText(tr('dependences_window.ffmpeg_downloading'))
-        self.ctx.app.processEvents()
 
         def _progress(cur: float) -> None:
             self.probar.setValue(int(cur * 1000))
@@ -122,59 +121,68 @@ class DependencesWindow(QWidget):
                 self.activateWindow()
                 return
 
-            self.ffmpeg_label.setText(tr('dependences_window.ffmpeg_extracting'))
-            self.ctx.app.processEvents()
-
             base_dir = os.path.dirname(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             )
             zip_path = os.path.join(base_dir, 'ffmpeg_temp.zip')
             ffmpeg_dir = os.path.join(base_dir, 'ffmpeg')
+            result: dict[str, object] = {}
 
-            try:
-                with open(zip_path, 'wb') as f:
-                    f.write(data)
+            self.ffmpeg_label.setText(tr('dependences_window.ffmpeg_extracting'))
 
-                import zipfile
+            def _extract() -> None:
+                try:
+                    with open(zip_path, 'wb') as f:
+                        f.write(data)
 
-                with zipfile.ZipFile(zip_path, 'r') as zf:
-                    zf.extractall(base_dir)
+                    import zipfile
 
-                import shutil
+                    with zipfile.ZipFile(zip_path, 'r') as zf:
+                        zf.extractall(base_dir)
 
-                for item in os.listdir(base_dir):
-                    item_path = os.path.join(base_dir, item)
-                    if (
-                        os.path.isdir(item_path)
-                        and item.startswith('ffmpeg')
-                        and item != 'ffmpeg'
-                    ):
-                        if os.path.exists(ffmpeg_dir):
-                            shutil.rmtree(ffmpeg_dir)
-                        os.rename(item_path, ffmpeg_dir)
-                        break
-            except Exception as e:
-                self.logger.exception('Failed to extract FFmpeg')
-                self.logger.exception(e)
-                self.ffmpeg_label.setText(
-                    tr('dependences_window.ffmpeg_extraction_failed')
-                )
-                self.show()
-                self.raise_()
-                self.activateWindow()
-                return
-            finally:
-                if os.path.exists(zip_path):
-                    try:
-                        os.remove(zip_path)
-                    except OSError:
-                        pass
+                    import shutil
 
-            self._addFfmpegToPath(ffmpeg_dir)
+                    for item in os.listdir(base_dir):
+                        item_path = os.path.join(base_dir, item)
+                        if (
+                            os.path.isdir(item_path)
+                            and item.startswith('ffmpeg')
+                            and item != 'ffmpeg'
+                        ):
+                            if os.path.exists(ffmpeg_dir):
+                                shutil.rmtree(ffmpeg_dir)
+                            os.rename(item_path, ffmpeg_dir)
+                            break
+                    result['ok'] = True
+                except Exception as error:
+                    result['error'] = error
+                finally:
+                    if os.path.exists(zip_path):
+                        try:
+                            os.remove(zip_path)
+                        except OSError:
+                            pass
 
-            self.ffmpeg_label.setText(tr('dependences_window.ffmpeg_checking_2'))
-            self.ctx.app.processEvents()
-            self.checkFFmpeg()
+            def _applyExtract() -> None:
+                error = result.get('error')
+                if error is not None:
+                    self.logger.exception(error)
+                    self.ffmpeg_label.setText(
+                        tr('dependences_window.ffmpeg_extraction_failed')
+                    )
+                    self.show()
+                    self.raise_()
+                    self.activateWindow()
+                    return
+                self.ffmpeg_label.setText(tr('dependences_window.ffmpeg_checking_2'))
+
+                def _installAndCheck() -> None:
+                    self._addFfmpegToPath(ffmpeg_dir)
+                    self.checkFFmpeg()
+
+                Thread(target=_installAndCheck, daemon=True).start()
+
+            asyncTask(_extract, (), self, _applyExtract)
 
         manager = asyncDownload(url, parent=self, finished=_finished)
         manager.receiveProgress.connect(_progress)

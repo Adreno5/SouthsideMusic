@@ -21,6 +21,7 @@ from core import theme
 from core.audio_processing import sampleEqualizerCurve
 from core.color import mixColor
 from core.config import DEFAULT_EQ_BANDS, cfg
+from core.downloader import asyncTask
 from core.smooth import EaseInOutTimer, EaseOutTimer
 from services.events import Events, event_bus
 from views.curve_editor import CurveEditor
@@ -62,6 +63,9 @@ class EQEditor(CurveEditor):
             maxlen=max(1, int(refresh_rate * cfg.fft_buffer_seconds))
         )
         self._fft_norm_timer = EaseOutTimer(0.5, 2)
+        self._fft_computing = False
+        self._fft_pending = False
+        self._fft_generation = 0
         self._inset_timer = EaseInOutTimer(0.25, 3)
         self._inset_timer.target_value = self._targetInset()
         self._inset_timer.current_value = self._targetInset()
@@ -98,61 +102,141 @@ class EQEditor(CurveEditor):
     def _updateFFT(self, multiple_factor: float = 1.0) -> None:
         if not self.isVisible() or self._fft_magnitudes.size == 0:
             return
-        if (
-            not np.any(self._fft_magnitudes)
-            and not np.any(self._fft_smoothed > 0.0001)
-            and not np.any(self._fft_draw > 0.001)
-        ):
-            if np.any(self._fft_levels):
-                self._fft_levels.fill(0.0)
-                self.update()
+        if self._fft_computing:
+            self._fft_pending = True
             return
-        self._fft_smoothed += (self._fft_magnitudes - self._fft_smoothed) * (
+        self._fft_computing = True
+        generation = self._fft_generation
+        snapshot = {
+            'magnitudes': self._fft_magnitudes.copy(),
+            'smoothed': self._fft_smoothed.copy(),
+            'weights': self._fft_weights.copy(),
+            'draw': self._fft_draw.copy(),
+            'bin_frequencies': self._fft_bin_frequencies.copy(),
+            'bin_edges': self._fft_bin_edges.copy(),
+            'norm_buffer': list(self._fft_norm_buffer),
+            'norm_current': self._fft_norm_timer.current_value,
+            'multiple_factor': multiple_factor,
+        }
+        result: dict[str, object] = {}
+
+        def _compute() -> None:
+            result.update(self._computeFFTSnapshot(snapshot))
+
+        def _apply() -> None:
+            self._fft_computing = False
+            if generation == self._fft_generation:
+                levels = result.get('levels')
+                draw = result.get('draw')
+                smoothed = result.get('smoothed')
+                weights = result.get('weights')
+                norm_buffer = result.get('norm_buffer')
+                norm_target = result.get('norm_target')
+                if isinstance(levels, np.ndarray):
+                    self._fft_levels = levels
+                if isinstance(draw, np.ndarray):
+                    self._fft_draw = draw
+                if isinstance(smoothed, np.ndarray):
+                    self._fft_smoothed = smoothed
+                if isinstance(weights, np.ndarray):
+                    self._fft_weights = weights
+                if isinstance(norm_buffer, list):
+                    self._fft_norm_buffer = deque(
+                        (float(value) for value in norm_buffer),
+                        maxlen=self._fft_norm_buffer.maxlen,
+                    )
+                if isinstance(norm_target, (int, float)):
+                    self._fft_norm_timer.target_value = float(norm_target)
+                self.update()
+            if self._fft_pending:
+                self._fft_pending = False
+                self._updateFFT()
+
+        asyncTask(_compute, (), self, _apply)
+
+    def _computeFFTSnapshot(self, snapshot: dict[str, object]) -> dict[str, object]:
+        magnitudes = snapshot['magnitudes']
+        smoothed = snapshot['smoothed']
+        weights = snapshot['weights']
+        draw = snapshot['draw']
+        if not all(
+            isinstance(value, np.ndarray)
+            for value in (magnitudes, smoothed, weights, draw)
+        ):
+            return {}
+        if (
+            not np.any(magnitudes)
+            and not np.any(smoothed > 0.0001)
+            and not np.any(draw > 0.001)
+        ):
+            return {
+                'levels': np.zeros_like(draw),
+                'draw': draw,
+                'smoothed': smoothed,
+                'weights': weights,
+                'norm_buffer': snapshot.get('norm_buffer', []),
+                'norm_target': snapshot.get('norm_current', 1.0),
+            }
+        multiple_factor = float(snapshot.get('multiple_factor', 1.0))
+        smoothed += (magnitudes - smoothed) * (
             1 - pow(1 - cfg.fft_factor, multiple_factor)
         )
         window_size = int(cfg.fft_filtering_windowsize)
         kernel = np.ones(window_size) / window_size
         final_magnitudes = np.stack([
-            np.convolve(magnitudes, kernel, mode='same')
-            for magnitudes in self._fft_smoothed
+            np.convolve(magnitude, kernel, mode='same') for magnitude in smoothed
         ])
-        final_magnitudes *= self._fft_weights
+        final_magnitudes *= weights
+        bin_frequencies = snapshot.get('bin_frequencies')
+        if not isinstance(bin_frequencies, np.ndarray):
+            return {}
         display_magnitudes = np.stack([
             np.interp(
                 self._fft_frequencies,
-                self._fft_bin_frequencies,
-                magnitudes,
+                bin_frequencies,
+                magnitude,
                 left=0.0,
                 right=0.0,
             )
-            for magnitudes in final_magnitudes
+            for magnitude in final_magnitudes
         ])
-        occupied = np.diff(self._fft_bin_edges) > 0
+        bin_edges = snapshot.get('bin_edges')
+        if not isinstance(bin_edges, np.ndarray) or len(bin_edges) < 2:
+            return {}
+        occupied = np.diff(bin_edges) > 0
         if np.any(occupied):
             display_magnitudes[:, occupied] = np.maximum.reduceat(
-                final_magnitudes[:, : self._fft_bin_edges[-1]],
-                self._fft_bin_edges[:-1][occupied],
+                final_magnitudes[:, : bin_edges[-1]],
+                bin_edges[:-1][occupied],
                 axis=1,
             )
-        self._fft_norm_buffer.append(max(float(np.max(display_magnitudes[0])), 1e-6))
-        self._fft_norm_timer.target_value = max(self._fft_norm_buffer)
-        if len(self._fft_norm_buffer) == 1:
-            self._fft_norm_timer.current_value = self._fft_norm_timer.target_value
-        display_magnitudes /= max(self._fft_norm_timer.current_value, 1e-6)
-        np.maximum(display_magnitudes, self._fft_draw, out=self._fft_draw)
-        self._fft_draw *= pow(0.93, multiple_factor)
-        self._fft_levels[:] = np.power(self._fft_draw, 0.75)
-        self._fft_levels[1] = (
-            self._fft_levels[0] + (self._fft_levels[1] - self._fft_levels[0]) * 2.5
+        norm_buffer = deque(
+            snapshot.get('norm_buffer', []),
+            maxlen=self._fft_norm_buffer.maxlen,
         )
-        self._fft_levels *= 0.35
-        np.maximum(self._fft_levels, 0.0, out=self._fft_levels)
-        peak = float(np.max(self._fft_levels))
+        norm_buffer.append(max(float(np.max(display_magnitudes[0])), 1e-6))
+        norm_target = max(norm_buffer)
+        display_magnitudes /= max(float(snapshot.get('norm_current', 1.0)), 1e-6)
+        np.maximum(display_magnitudes, draw, out=draw)
+        draw *= pow(0.93, multiple_factor)
+        levels = np.power(draw, 0.75)
+        levels[1] = levels[0] + (levels[1] - levels[0]) * 2.5
+        levels *= 0.35
+        np.maximum(levels, 0.0, out=levels)
+        peak = float(np.max(levels))
         if peak > 0.55:
-            self._fft_levels *= 0.55 / peak
-        self.update()
+            levels *= 0.55 / peak
+        return {
+            'levels': levels,
+            'draw': draw,
+            'smoothed': smoothed,
+            'weights': weights,
+            'norm_buffer': list(norm_buffer),
+            'norm_target': norm_target,
+        }
 
     def _resetFFT(self, *_args: object) -> None:
+        self._fft_generation += 1
         self._fft_levels.fill(0.0)
         self._fft_magnitudes.fill(0.0)
         self._fft_smoothed.fill(0.0)

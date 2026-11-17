@@ -4,6 +4,7 @@ import json
 import random
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,6 +18,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QComboBox, QStackedWidget, QWidget
 
 from core.app_context import AppContext
+from core.deferred_writes import flushDeferredWrites
 from core.favorites import favorites_manager
 from core.i18n import tr
 from core.models import (
@@ -49,6 +51,7 @@ class RediscoveryTests(unittest.TestCase):
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
+        self.addCleanup(flushDeferredWrites)
         self.history_path = Path(temporary.name) / 'listening_history.json'
         self.count_path = Path(temporary.name) / 'count.json'
         self.now = 2_000_000_000.0
@@ -111,7 +114,22 @@ class RediscoveryTests(unittest.TestCase):
             stack.addWidget(widget)
         stack.setCurrentWidget(page)
         page.setSource()
+        self.waitPage(page)
         return page
+
+    def waitPage(self, page: RediscoveryPage) -> None:
+        deadline = time.monotonic() + 5.0
+        while page._building_batch:
+            if time.monotonic() >= deadline:
+                self.fail('Rediscovery page did not finish loading')
+            QTest.qWait(10)
+
+    def waitCount(self, page: RediscoveryPage, count: int) -> None:
+        deadline = time.monotonic() + 5.0
+        while page.song_viewer.count() < count:
+            if time.monotonic() >= deadline:
+                self.fail(f'Rediscovery page stopped at {page.song_viewer.count()}')
+            QTest.qWait(10)
 
     def test_rare_mix_starts_with_overlooked_tail(self) -> None:
         songs = [self.song(i, 120 if i < 6 else 0) for i in range(36)]
@@ -210,6 +228,7 @@ class RediscoveryTests(unittest.TestCase):
         page = self.page(songs)
         songs.clear()
         page.play()
+        self.waitPage(page)
         page.ctx.playing_manager.setPlaylist.assert_not_called()
         self.assertFalse(page.play_button.isEnabled())
         self.assertEqual(page.song_viewer.count(), 0)
@@ -218,10 +237,12 @@ class RediscoveryTests(unittest.TestCase):
         songs = [self.song(1)]
         page = self.page(songs)
         page.mode_box.setCurrentIndex(page.mode_box.findData('forgotten'))
+        self.waitPage(page)
         self.assertEqual(page.summary.text(), tr('rediscovery.no_history'))
         self.assertFalse(page.play_button.isEnabled())
         songs[0].count = 100
         page.refresh()
+        self.waitPage(page)
         self.assertTrue(page.play_button.isEnabled())
         self.assertEqual(page.song_viewer.count(), 1)
         self.assertEqual(page._date_labels[0][0].text(), tr('rediscovery.unknown_date'))
@@ -236,11 +257,13 @@ class RediscoveryTests(unittest.TestCase):
         scrollbar = page.song_viewer.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
         QTest.qWait(100)
+        self.waitCount(page, 80)
         self.assertEqual(page.song_viewer.count(), 80)
         first_batch = [card.storable.id for card in page._song_cards[:40]]
         self.assertEqual(first_batch, ranked_ids[:40])
         scrollbar.setValue(scrollbar.maximum())
         QTest.qWait(100)
+        self.waitCount(page, 95)
         self.assertEqual(page.song_viewer.count(), 95)
         self.assertEqual([card.storable.id for card in page._song_cards], ranked_ids)
         self.assertEqual(len(set(ranked_ids)), 95)
@@ -251,8 +274,10 @@ class RediscoveryTests(unittest.TestCase):
         songs = [self.song(i, 120 if i < 6 else 0) for i in range(95)]
         page = self.page(songs)
         page._appendSongBatch()
+        self.waitPage(page)
         self.assertEqual(page.song_viewer.count(), 80)
         page.mode_box.setCurrentIndex(page.mode_box.findData('rare'))
+        self.waitPage(page)
         self.assertEqual(page.song_viewer.count(), 40)
         self.assertEqual(len(page._songs), 95)
         self.assertTrue(all(song.count == 0 for song in page._songs[:40]))
@@ -320,6 +345,7 @@ class RediscoveryTests(unittest.TestCase):
         window = page.ctx.main_window
         folder = favorites_manager.folders[0]
         MainWindow.openRediscovery(window, folder)
+        self.waitPage(page)
         self.assertIs(window.contents_widget.currentWidget(), page)
         self.assertIs(page._folder, folder)
         self.assertEqual(
@@ -338,6 +364,7 @@ class RediscoveryTests(unittest.TestCase):
         folder = CloudFolderInfo(folder_name='Cloud', image_url='', id='cloud-id')
         page.ctx.main_window._fp = SimpleNamespace(curr_cloud_songs=cloud_songs)
         MainWindow.openRediscovery(page.ctx.main_window, folder)
+        self.waitPage(page)
         self.assertEqual(set(page._songs), set(cloud_songs))
         self.assertIs(page._folder, folder)
 

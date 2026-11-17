@@ -1,12 +1,12 @@
 import logging
-import os
 from typing import TYPE_CHECKING
 
 import requests
 import shiboken6
 
 from core.backend import getBackend
-from PySide6.QtGui import QPixmap, Qt
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QSizePolicy,
@@ -34,6 +34,7 @@ from views.translation_handler import TranslationHandler
 from core.i18n import tr
 from core.qt_utils import removeWidgets
 from core.downloader import asyncTask
+from core.image import loadImageFromBytes, loadImageFromPath
 from core.models import BeReplyComment, Comment, CommentInfo, UserInfo
 
 if TYPE_CHECKING:
@@ -127,34 +128,31 @@ class CommentCard(QWidget):
         avatar_path = (
             Path(f'.\\data\\image\\u_avatar{publisher.id}').absolute().resolve()
         )
-        pixmap = QPixmap()
+        target = QSize(size, size)
 
-        def _final(image: QPixmap) -> None:
-            scaled = image.scaled(
-                size,
-                size,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
+        def _apply(image: QImage) -> None:
+            if shiboken6.isValid(avatar) and not image.isNull():
+                avatar.setImage(QPixmap.fromImage(image))
 
-            def _apply() -> None:
-                if shiboken6.isValid(avatar):
-                    avatar.setImage(scaled)
+        result: dict[str, QImage] = {}
 
-            self.ctx.addScheduledTask(_apply)
+        def _load() -> None:
+            try:
+                if avatar_path.is_file():
+                    result['image'] = loadImageFromPath(str(avatar_path), target)
+                    return
+                data = requests.get(publisher.avatar_url, timeout=(3.05, 8)).content
+                result['image'] = loadImageFromBytes(data, target)
+                avatar_path.write_bytes(data)
+            except (FileNotFoundError, PermissionError, requests.RequestException):
+                return
 
-        if avatar_path.is_file():
-            pixmap.loadFromData(avatar_path.read_bytes())
-            _final(pixmap)
-            return
+        def _applyLoaded() -> None:
+            image = result.get('image')
+            if image is not None:
+                _apply(image)
 
-        def _download() -> None:
-            data = requests.get(publisher.avatar_url).content
-            pixmap.loadFromData(data)
-            _final(pixmap)
-            avatar_path.write_bytes(data)
-
-        asyncTask(_download, (), self)
+        asyncTask(_load, (), self, _applyLoaded)
 
 
 class CommentsPage(SScrollArea):
@@ -181,6 +179,7 @@ class CommentsPage(SScrollArea):
         self.avatar_widget = AvatarWidget(
             str(Path('./images/def_avatar.png').resolve())
         )
+        self._default_avatar_pixmap = QPixmap('./images/def_avatar.png')
         self.avatar_widget.setRadius(18)
         top_layout.addWidget(self.avatar_widget)
         self.inputer = TextEdit()
@@ -321,7 +320,7 @@ class CommentsPage(SScrollArea):
 
     def send(self):
         backend = getBackend()
-        if not backend.getAccountInfo().logged_in:
+        if not backend.loggedIn():
             InfoBar.warning(
                 'Error',
                 "You' not logged in!",
@@ -333,42 +332,49 @@ class CommentsPage(SScrollArea):
         current = self.ctx.playing_manager.current_song
         if not current:
             return
-        backend.addComment(current.id, self.inputer.toPlainText())
-        self.inputer.clear()
+        text = self.inputer.toPlainText()
+        if not text.strip():
+            return
+        self.send_button.setEnabled(False)
+        result: dict[str, object] = {}
 
-        InfoBar.success(
-            'Success',
-            'Added a comment successfully',
-            duration=3500,
-            parent=self.ctx.main_window,
-        )
+        def _send() -> None:
+            try:
+                backend.addComment(current.id, text)
+            except Exception as error:
+                result['error'] = error
 
-    def refreshInformations(self):
-        if os.path.exists('images/avatar.png'):
-            os.remove('images/avatar.png')
+        def _finish() -> None:
+            self.send_button.setEnabled(True)
+            error = result.get('error')
+            if error is not None:
+                InfoBar.error(
+                    'Error',
+                    str(error),
+                    duration=3500,
+                    parent=self.ctx.main_window,
+                )
+                return
+            self.inputer.clear()
+            InfoBar.success(
+                'Success',
+                'Added a comment successfully',
+                duration=3500,
+                parent=self.ctx.main_window,
+            )
 
-        backend = getBackend()
-        account = None
+        asyncTask(_send, (), self, _finish)
 
-        try:
-            account = backend.getAccountInfo()
-            if account.avatar_url:
-                self._logger.debug(f'{account.avatar_url=}')
-                avatar_url = account.avatar_url
-                avatar_data = requests.get(avatar_url).content
-                with open('images/avatar.png', 'wb') as f:
-                    f.write(avatar_data)
-        except Exception as e:
-            self._logger.warning(f'Failed to fetch user detail or avatar: {e}')
-
-        nickname = 'Anonymous User'
-        if account is not None and account.nickname.strip():
-            nickname = account.nickname.strip()
+    def applyLoginInformations(
+        self,
+        nickname: str,
+        avatar: QImage | None = None,
+    ) -> None:
         self._nickname = nickname
-
-        if not os.path.exists('images/avatar.png'):
-            pixmap = QPixmap('./images/def_avatar.png')
-        else:
-            pixmap = QPixmap('./images/avatar.png')
+        pixmap = (
+            QPixmap.fromImage(avatar)
+            if avatar is not None
+            else self._default_avatar_pixmap
+        )
         if not pixmap.isNull():
             self.avatar_widget.setPixmap(pixmap)

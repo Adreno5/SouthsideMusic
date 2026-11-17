@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Callable
 
 import shiboken6
+from PySide6.QtCore import QCoreApplication, QObject, QThread, Signal, Slot, Qt
 
 from core.frame_profiler import frame_profiler
 from services.events.events import Events
@@ -42,6 +43,24 @@ def _listenerName(listener: Listener) -> str:
     return name if isinstance(name, str) else type(listener).__name__
 
 
+class _MainThreadDispatcher(QObject):
+    requested = Signal(object, tuple, dict)
+
+    def __init__(self, bus: 'EventBus') -> None:
+        super().__init__()
+        self._bus = bus
+        self.requested.connect(
+            self._dispatch,
+            Qt.ConnectionType.QueuedConnection,
+        )
+
+    @Slot(object, tuple, dict)
+    def _dispatch(
+        self, event: Events, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> None:
+        self._bus._emitNow(event, *args, **kwargs)
+
+
 class EventBus:
     def __init__(
         self, thread_safe: bool = True, launchwindow: LaunchWindow | None = None
@@ -51,6 +70,8 @@ class EventBus:
         self._lock = threading.Lock() if thread_safe else None
         self._lw = launchwindow
         self.enabled = True
+        self._main_dispatcher: _MainThreadDispatcher | None = None
+        self._main_dispatcher_lock = threading.Lock()
 
         self._logger = logging.getLogger('event_bus')
 
@@ -106,6 +127,26 @@ class EventBus:
         return entries
 
     def emit(self, event: Events, *args: Any, **kwargs: Any) -> None:
+        self._emitNow(event, *args, **kwargs)
+
+    def emitInMainThread(self, event: Events, *args: Any, **kwargs: Any) -> None:
+        app = QCoreApplication.instance()
+        if app is None or QThread.currentThread() == app.thread():
+            self.emit(event, *args, **kwargs)
+            return
+        self._getMainDispatcher().requested.emit(event, args, kwargs)
+
+    def _getMainDispatcher(self) -> _MainThreadDispatcher:
+        with self._main_dispatcher_lock:
+            if self._main_dispatcher is None:
+                dispatcher = _MainThreadDispatcher(self)
+                app = QCoreApplication.instance()
+                if app is not None:
+                    dispatcher.moveToThread(app.thread())
+                self._main_dispatcher = dispatcher
+            return self._main_dispatcher
+
+    def _emitNow(self, event: Events, *args: Any, **kwargs: Any) -> None:
         if not self.enabled:
             return
         entries = self._snapshots.get(event)

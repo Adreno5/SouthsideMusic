@@ -9,6 +9,7 @@ from PySide6.QtGui import QColor
 
 _logger = logging.getLogger(__name__)
 _is_dark = isDarkDarkdetect()
+_system_theme_color = QColor(0, 120, 212)
 
 
 def _primaryColor() -> QColor:
@@ -18,7 +19,7 @@ def _primaryColor() -> QColor:
 setattr(ThemeColor.PRIMARY, 'color', _primaryColor)
 
 
-def syncSystemThemeColor() -> None:
+def readSystemThemeColor() -> QColor | None:
     try:
         with winreg.OpenKey(
             winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\DWM'
@@ -26,25 +27,26 @@ def syncSystemThemeColor() -> None:
             value, _ = winreg.QueryValueEx(key, 'AccentColor')
     except OSError as e:
         _logger.exception(e)
-        return
+        return None
 
-    color = QColor(value & 0xFF, (value >> 8) & 0xFF, (value >> 16) & 0xFF)
+    return QColor(value & 0xFF, (value >> 8) & 0xFF, (value >> 16) & 0xFF)
+
+
+def applySystemThemeColor(color: QColor | None) -> None:
+    global _system_theme_color
+    if color is None or color == _system_theme_color:
+        return
+    _system_theme_color = QColor(color)
     if color != qconfig.get(qconfig.themeColor):
         setThemeColor(color)
 
 
-def getSystemThemeColor() -> QColor:
-    try:
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\DWM'
-        ) as key:
-            value, _ = winreg.QueryValueEx(key, 'AccentColor')
-    except OSError as e:
-        _logger.exception(e)
-        return
+def syncSystemThemeColor() -> None:
+    applySystemThemeColor(readSystemThemeColor())
 
-    color = QColor(value & 0xFF, (value >> 8) & 0xFF, (value >> 16) & 0xFF)
-    return color
+
+def getSystemThemeColor() -> QColor:
+    return QColor(_system_theme_color)
 
 
 def isDark() -> bool:

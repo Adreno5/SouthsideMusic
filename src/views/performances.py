@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from ctypes import wintypes
 from dataclasses import asdict, fields, is_dataclass
 from queue import Queue
@@ -37,6 +37,7 @@ from shiboken6 import isValid
 
 from core import theme
 from core.app_context import AppContext
+from core.downloader import asyncTask
 from core.frame_profiler import FrameProfile, frame_profiler
 from core.lyric_video_export import lyricVideoExportDebugProcessPids
 from core.models import DATA_DIR
@@ -865,27 +866,99 @@ class PerformanceOverlay(QWidget):
             frames = frame_profiler.finishCapture()
             if not frame_profiler.enabled:
                 frames = ()
-            if frames:
-                path = self._savePerformanceReport(frames)
-                self.export_button.setText('PNG + JSON saved - Export Frames')
-                self.export_button.setToolTip(path)
-                _logger.info('performance report saved to %s', path)
-            else:
-                self.export_button.setText('Export Frames')
-                self.export_button.setToolTip('Capture cancelled: profiling disabled')
         except Exception as error:
-            _logger.exception('performance report export failed')
+            self._completePerformanceExport(error=error)
+            return
+        if not frames:
+            self._completePerformanceExport(cancelled=True)
+            return
+        self.export_button.setText('Saving frames...')
+        context = self._performanceReportContext(frames)
+        result: dict[str, object] = {}
+
+        def _save() -> None:
+            try:
+                result['path'] = self._savePerformanceReport(frames, context)
+            except Exception as error:
+                result['error'] = error
+
+        def _finished() -> None:
+            path = result.get('path')
+            error = result.get('error')
+            if isinstance(error, Exception):
+                self._completePerformanceExport(error=error)
+                return
+            self._completePerformanceExport(path=str(path))
+
+        asyncTask(_save, (), self, _finished)
+
+    def _completePerformanceExport(
+        self,
+        path: str = '',
+        error: Exception | None = None,
+        cancelled: bool = False,
+    ) -> None:
+        if error is not None:
+            _logger.exception(error)
             self.export_button.setText('Export failed - Retry')
             self.export_button.setToolTip(str(error))
-        finally:
-            self._capturing = False
-            self.export_button.setEnabled(True)
-            self.export_memory_button.setEnabled(True)
-            self._showDebugLayers(self._debugging_restore and frame_profiler.enabled)
-            self.show()
-            self.update()
+        elif cancelled:
+            self.export_button.setText('Export Frames')
+            self.export_button.setToolTip('Capture cancelled: profiling disabled')
+        else:
+            self.export_button.setText('PNG + JSON saved - Export Frames')
+            self.export_button.setToolTip(path)
+            _logger.info('performance report saved to %s', path)
+        self._capturing = False
+        self.export_button.setEnabled(True)
+        self.export_memory_button.setEnabled(True)
+        self._showDebugLayers(self._debugging_restore and frame_profiler.enabled)
+        self.show()
+        self.update()
 
-    def _savePerformanceReport(self, frames: tuple[FrameProfile, ...]) -> str:
+    def _performanceReportContext(
+        self, frames: tuple[FrameProfile, ...]
+    ) -> dict[str, object]:
+        names = {name for frame in frames for name, _duration in frame.sections}
+        names.update(('Other modules', 'Idle / uninstrumented'))
+        window = self.ctx.main_window
+        handle = window.windowHandle()
+        events_service = self.ctx.events_service
+        refresh_rate = (
+            float(events_service.refresh_rate) if events_service is not None else 60.0
+        )
+        return {
+            'refresh_rate': refresh_rate,
+            'window_size': (window.width(), window.height()),
+            'device_pixel_ratio': window.devicePixelRatioF(),
+            'window_visible': window.isVisible(),
+            'window_minimized': window.isMinimized(),
+            'window_exposed': bool(handle is not None and handle.isExposed()),
+            'font_family': self.ctx.harmony_font_family,
+            'colors': {name: QColor(self._itemColor(name)) for name in names},
+        }
+
+    def _savePerformanceReport(
+        self,
+        frames: tuple[FrameProfile, ...],
+        report_context: dict[str, object] | None = None,
+    ) -> str:
+        if report_context is None:
+            report_context = self._performanceReportContext(frames)
+        refresh_value = report_context.get('refresh_rate', 60.0)
+        refresh_rate = (
+            float(refresh_value)
+            if isinstance(refresh_value, (int, float, str))
+            else 60.0
+        )
+        font_family = str(report_context['font_family'])
+        colors = report_context.get('colors')
+        color_map = colors if isinstance(colors, dict) else {}
+
+        def color(name: str) -> QColor:
+            value = color_map.get(name)
+            return value if isinstance(value, QColor) else QColor('#edf0f5')
+
         all_frames = frames
         frames = tuple(frame for frame in frames if frame.complete)
         totals: dict[str, int] = {}
@@ -900,7 +973,6 @@ class PerformanceOverlay(QWidget):
         frame_count = sum(frame.frame_count for frame in frames)
         if duration_ns <= 0 or frame_count <= 0:
             raise ValueError('No performance samples were recorded')
-        refresh_rate = self.ctx.events_service.refresh_rate
         budget_ns = 1_000_000_000 / refresh_rate
         interval_ns = np.array([frame.wall_duration_ns for frame in frames])
         work_ns = np.array([frame.work_duration_ns for frame in frames])
@@ -939,9 +1011,9 @@ class PerformanceOverlay(QWidget):
         try:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             painter.setPen(QColor('#edf0f5'))
-            painter.setFont(QFont(self.ctx.harmony_font_family, 22, QFont.Weight.Bold))
+            painter.setFont(QFont(font_family, 22, QFont.Weight.Bold))
             painter.drawText(40, 48, 'SouthsideMusic - Performance capture')
-            painter.setFont(QFont(self.ctx.harmony_font_family, 12))
+            painter.setFont(QFont(font_family, 12))
             painter.drawText(
                 40,
                 82,
@@ -951,7 +1023,7 @@ class PerformanceOverlay(QWidget):
                 f'Average interval: {wall_ns / frame_count / 1_000_000:.3f} ms | '
                 'Debug overlay excluded',
             )
-            painter.setFont(QFont(self.ctx.harmony_font_family, 16, QFont.Weight.Bold))
+            painter.setFont(QFont(font_family, 16, QFont.Weight.Bold))
             painter.drawText(40, 126, 'Average time distribution')
             painter.drawText(410, 126, 'Top 10 modules - average over complete cycles')
             pie_rect = QRect(40, 154, 310, 310)
@@ -961,13 +1033,13 @@ class PerformanceOverlay(QWidget):
             for name, duration in slices:
                 elapsed_ns += duration
                 end_angle = round(elapsed_ns / duration_ns * 5760)
-                painter.setBrush(self._itemColor(name))
+                painter.setBrush(color(name))
                 painter.drawPie(pie_rect, angle, end_angle - angle)
                 angle = end_angle
-            painter.setFont(QFont(self.ctx.harmony_font_family, 11))
+            painter.setFont(QFont(font_family, 11))
             for i, (name, duration) in enumerate(top):
                 row_y = 166 + i * 50
-                painter.fillRect(QRect(410, row_y - 14, 12, 12), self._itemColor(name))
+                painter.fillRect(QRect(410, row_y - 14, 12, 12), color(name))
                 painter.setPen(QColor('#edf0f5'))
                 text = painter.fontMetrics().elidedText(
                     f'{i + 1}. {name}', Qt.TextElideMode.ElideRight, 1200
@@ -984,18 +1056,18 @@ class PerformanceOverlay(QWidget):
                 )
             for i, (name, duration) in enumerate(slices[-2:]):
                 row_y = 500 + i * 35
-                painter.fillRect(QRect(40, row_y - 14, 12, 12), self._itemColor(name))
+                painter.fillRect(QRect(40, row_y - 14, 12, 12), color(name))
                 painter.setPen(QColor('#edf0f5'))
                 painter.drawText(
                     62, row_y, f'{name}: {duration / duration_ns * 100:.2f}%'
                 )
             painter.setPen(QColor('#edf0f5'))
-            painter.setFont(QFont(self.ctx.harmony_font_family, 16, QFont.Weight.Bold))
+            painter.setFont(QFont(font_family, 16, QFont.Weight.Bold))
             painter.drawText(
                 40, 708, 'Per-cycle time (ms) - refresh interval and top 10 modules'
             )
             plot = QRect(85, 746, width - 130, 340)
-            painter.setFont(QFont(self.ctx.harmony_font_family, 11))
+            painter.setFont(QFont(font_family, 11))
             max_ms = max(frame.wall_duration_ns / 1_000_000 for frame in frames) * 1.1
             max_ms = max(1.0, max_ms)
             for tick in range(6):
@@ -1028,10 +1100,8 @@ class PerformanceOverlay(QWidget):
                         - (plot.height() - 1) * value_ns / 1_000_000 / max_ms
                     )
                     (path.moveTo if index == 0 else path.lineTo)(x, y)
-                color = (
-                    QColor('#edf0f5') if series_index == 0 else self._itemColor(name)
-                )
-                painter.setPen(QPen(color, 2 if series_index == 0 else 1.2))
+                series_color = QColor('#edf0f5') if series_index == 0 else color(name)
+                painter.setPen(QPen(series_color, 2 if series_index == 0 else 1.2))
                 painter.drawPath(path)
                 if len(frames) == 1:
                     painter.drawEllipse(QPointF(x, y), 3, 3)
@@ -1039,8 +1109,8 @@ class PerformanceOverlay(QWidget):
             for index, name in enumerate(series):
                 x = 40 + (index % 2) * 820
                 y = 1150 + (index // 2) * 30
-                color = QColor('#edf0f5') if index == 0 else self._itemColor(name)
-                painter.fillRect(QRect(x, y - 12, 12, 12), color)
+                legend_color = QColor('#edf0f5') if index == 0 else color(name)
+                painter.fillRect(QRect(x, y - 12, 12, 12), legend_color)
                 painter.setPen(QColor('#edf0f5'))
                 painter.drawText(
                     x + 22,
@@ -1083,17 +1153,11 @@ class PerformanceOverlay(QWidget):
             json.dump(
                 {
                     'refresh_rate_hz': refresh_rate,
-                    'window_size': [
-                        self.ctx.main_window.width(),
-                        self.ctx.main_window.height(),
-                    ],
-                    'device_pixel_ratio': self.ctx.main_window.devicePixelRatioF(),
-                    'window_visible': self.ctx.main_window.isVisible(),
-                    'window_minimized': self.ctx.main_window.isMinimized(),
-                    'window_exposed': bool(
-                        (handle := self.ctx.main_window.windowHandle()) is not None
-                        and handle.isExposed()
-                    ),
+                    'window_size': self._reportWindowSize(report_context),
+                    'device_pixel_ratio': report_context['device_pixel_ratio'],
+                    'window_visible': report_context['window_visible'],
+                    'window_minimized': report_context['window_minimized'],
+                    'window_exposed': report_context['window_exposed'],
                     'budget_ns': budget_ns,
                     'statistics': statistics,
                     'frames': [asdict(frame) for frame in all_frames],
@@ -1119,16 +1183,27 @@ class PerformanceOverlay(QWidget):
     def _finishMemoryExport(self) -> None:
         if not self._memory_exporting:
             return
-        try:
-            path = self._saveMemoryReport(self._memory_export_samples)
-            self.export_memory_button.setText('PNG + JSON saved - Export Memory')
-            self.export_memory_button.setToolTip(path)
-            _logger.info('memory report saved to %s', path)
-        except Exception as error:
-            _logger.exception('memory report export failed')
-            self.export_memory_button.setText('Export failed - Retry')
-            self.export_memory_button.setToolTip(str(error))
-        finally:
+        samples = list(self._memory_export_samples)
+        context = self._memoryReportContext(samples)
+        result: dict[str, object] = {}
+
+        def _save() -> None:
+            try:
+                result['path'] = self._saveMemoryReport(samples, context)
+            except Exception as error:
+                result['error'] = error
+
+        def _finished() -> None:
+            path = result.get('path')
+            error = result.get('error')
+            if isinstance(error, Exception):
+                _logger.exception(error)
+                self.export_memory_button.setText('Export failed - Retry')
+                self.export_memory_button.setToolTip(str(error))
+            else:
+                self.export_memory_button.setText('PNG + JSON saved - Export Memory')
+                self.export_memory_button.setToolTip(str(path))
+                _logger.info('memory report saved to %s', path)
             self._memory_export_samples.clear()
             self._memory_exporting = False
             self.export_button.setEnabled(True)
@@ -1137,7 +1212,40 @@ class PerformanceOverlay(QWidget):
             self.show()
             self.update()
 
-    def _saveMemoryReport(self, samples: list[dict[str, int]]) -> str:
+        asyncTask(_save, (), self, _finished)
+
+    def _memoryReportContext(self, samples: list[dict[str, int]]) -> dict[str, object]:
+        names = {name for sample in samples for name in sample}
+        names.add('Other components')
+        return {
+            'font_family': self.ctx.harmony_font_family,
+            'system_total': self.system_total,
+            'system_used': self.system_used,
+            'sample_interval': self.memory_timer.interval(),
+            'details': dict(self._memory_details),
+            'colors': {name: QColor(self._itemColor(name)) for name in names},
+        }
+
+    def _saveMemoryReport(
+        self,
+        samples: list[dict[str, int]],
+        report_context: dict[str, object] | None = None,
+    ) -> str:
+        if report_context is None:
+            report_context = self._memoryReportContext(samples)
+        font_family = str(report_context['font_family'])
+        system_total = self._reportInt(report_context.get('system_total'))
+        system_used = self._reportInt(report_context.get('system_used'))
+        sample_interval = self._reportInt(report_context.get('sample_interval'))
+        details = report_context.get('details')
+        memory_details = details if isinstance(details, dict) else {}
+        colors = report_context.get('colors')
+        color_map = colors if isinstance(colors, dict) else {}
+
+        def color(name: str) -> QColor:
+            value = color_map.get(name)
+            return value if isinstance(value, QColor) else QColor('#edf0f5')
+
         if not samples:
             raise ValueError('No memory samples were recorded')
         names = {name for sample in samples for name in sample}
@@ -1145,7 +1253,15 @@ class PerformanceOverlay(QWidget):
             name: sum(sample.get(name, 0) for sample in samples) / len(samples)
             for name in names
         }
-        image = self._memoryReportImage(samples, averages)
+        image = self._memoryReportImage(
+            samples,
+            averages,
+            font_family,
+            system_total,
+            system_used,
+            sample_interval,
+            color,
+        )
         directory = os.path.join(DATA_DIR, 'debug', 'performance')
         os.makedirs(directory, exist_ok=True)
         filename = (
@@ -1161,12 +1277,12 @@ class PerformanceOverlay(QWidget):
             json.dump(
                 {
                     'sample_count': len(samples),
-                    'system_total': self.system_total,
-                    'system_used': self.system_used,
+                    'system_total': system_total,
+                    'system_used': system_used,
                     'total_rss': sum(averages.values()),
                     'averages': averages,
                     'samples': samples,
-                    'details': self._memory_details,
+                    'details': memory_details,
                 },
                 file,
                 ensure_ascii=False,
@@ -1174,7 +1290,14 @@ class PerformanceOverlay(QWidget):
         return file_path
 
     def _memoryReportImage(
-        self, samples: list[dict[str, int]], averages: dict[str, float]
+        self,
+        samples: list[dict[str, int]],
+        averages: dict[str, float],
+        font_family: str,
+        system_total: int,
+        system_used: int,
+        sample_interval: int,
+        color: Callable[[str], QColor],
     ) -> QImage:
         total = max(1.0, sum(averages.values()))
         top = sorted(averages.items(), key=lambda item: item[1], reverse=True)[:10]
@@ -1189,17 +1312,17 @@ class PerformanceOverlay(QWidget):
         try:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             painter.setPen(QColor('#edf0f5'))
-            painter.setFont(QFont(self.ctx.harmony_font_family, 22, QFont.Weight.Bold))
+            painter.setFont(QFont(font_family, 22, QFont.Weight.Bold))
             painter.drawText(40, 48, 'SouthsideMusic - Memory capture')
-            painter.setFont(QFont(self.ctx.harmony_font_family, 12))
+            painter.setFont(QFont(font_family, 12))
             painter.drawText(
                 40,
                 82,
                 f'{len(samples)} samples averaged | Total: {total / 1024**2:.2f} MB RSS | '
-                f'System: {self.system_used / 1024**3:.2f} / '
-                f'{self.system_total / 1024**3:.2f} GB | Debug overlays hidden',
+                f'System: {system_used / 1024**3:.2f} / '
+                f'{system_total / 1024**3:.2f} GB | Debug overlays hidden',
             )
-            painter.setFont(QFont(self.ctx.harmony_font_family, 16, QFont.Weight.Bold))
+            painter.setFont(QFont(font_family, 16, QFont.Weight.Bold))
             painter.drawText(40, 126, 'Average resident set')
             painter.drawText(410, 126, 'Top 10 components - average over samples')
             pie_rect = QRect(40, 154, 310, 310)
@@ -1209,13 +1332,13 @@ class PerformanceOverlay(QWidget):
             for name, value in slices:
                 elapsed += value
                 end_angle = round(elapsed / total * 5760)
-                painter.setBrush(self._itemColor(name))
+                painter.setBrush(color(name))
                 painter.drawPie(pie_rect, angle, end_angle - angle)
                 angle = end_angle
-            painter.setFont(QFont(self.ctx.harmony_font_family, 11))
+            painter.setFont(QFont(font_family, 11))
             for index, (name, value) in enumerate(top):
                 row_y = 166 + index * 50
-                painter.fillRect(QRect(410, row_y - 14, 12, 12), self._itemColor(name))
+                painter.fillRect(QRect(410, row_y - 14, 12, 12), color(name))
                 painter.setPen(QColor('#edf0f5'))
                 painter.drawText(
                     432,
@@ -1237,12 +1360,12 @@ class PerformanceOverlay(QWidget):
                 f'{other / total * 100:.2f}%',
             )
             painter.setPen(QColor('#edf0f5'))
-            painter.setFont(QFont(self.ctx.harmony_font_family, 16, QFont.Weight.Bold))
+            painter.setFont(QFont(font_family, 16, QFont.Weight.Bold))
             painter.drawText(
                 40, 708, 'Resident set per sample (MB) - top 10 components'
             )
             plot = QRect(85, 746, width - 130, 340)
-            painter.setFont(QFont(self.ctx.harmony_font_family, 11))
+            painter.setFont(QFont(font_family, 11))
             max_mb = (
                 max(
                     (
@@ -1281,7 +1404,7 @@ class PerformanceOverlay(QWidget):
                 path.moveTo(points[0])
                 for point in points[1:]:
                     path.lineTo(point)
-                painter.setPen(QPen(self._itemColor(name), 2))
+                painter.setPen(QPen(color(name), 2))
                 painter.drawPath(path)
                 for point in points:
                     painter.drawEllipse(point, 3, 3)
@@ -1289,7 +1412,7 @@ class PerformanceOverlay(QWidget):
             for index, name in enumerate(series):
                 x = 40 + (index % 2) * 820
                 y = 1150 + (index // 2) * 30
-                painter.fillRect(QRect(x, y - 12, 12, 12), self._itemColor(name))
+                painter.fillRect(QRect(x, y - 12, 12, 12), color(name))
                 painter.setPen(QColor('#edf0f5'))
                 painter.drawText(
                     x + 22,
@@ -1315,13 +1438,27 @@ class PerformanceOverlay(QWidget):
             painter.drawText(
                 40,
                 height - 20,
-                f'Sample interval: {self.memory_timer.interval() / 1000:.1f}s | '
-                f'System in use: {self.system_used / 1024**2:.0f} / '
-                f'{self.system_total / 1024**2:.0f} MB',
+                f'Sample interval: {sample_interval / 1000:.1f}s | '
+                f'System in use: {system_used / 1024**2:.0f} / '
+                f'{system_total / 1024**2:.0f} MB',
             )
         finally:
             painter.end()
         return image
+
+    @staticmethod
+    def _reportInt(value: object) -> int:
+        return int(value) if isinstance(value, (int, float, str)) else 0
+
+    @staticmethod
+    def _reportWindowSize(report_context: dict[str, object]) -> list[int]:
+        value = report_context.get('window_size')
+        if isinstance(value, (list, tuple)) and len(value) >= 2:
+            return [
+                int(value[0]) if isinstance(value[0], (int, float, str)) else 0,
+                int(value[1]) if isinstance(value[1], (int, float, str)) else 0,
+            ]
+        return [0, 0]
 
     def _itemColor(self, name: str) -> QColor:
         if name not in self.item_colors:

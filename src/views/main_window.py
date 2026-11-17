@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 
 from PySide6.QtGui import QMouseEvent
@@ -42,11 +43,15 @@ from qfluentwidgets.window.fluent_window import FluentWindowBase
 from core.models import CloudFolderInfo, LocalFolderInfo, SongInfo, SongStorable
 from core.color import mixColor
 from core.config import cfg
-from core.favorites import favorites_manager, saveFavorites
+from core.favorites import favorites_manager, scheduleFavoritesSave
 from core.icons import bindIcon
 from core.downloader import asyncTask
 from core.i18n import tr, bindText
-from views.account_widget import AccountWidget
+from views.account_widget import (
+    AccountWidget,
+    LoginInformations,
+    fetchLoginInformations,
+)
 from views.folder_card import CloudFolderCard, LocalFolderCard
 from views.line_edit import SearchLineEdit
 from views.llm_viewer_panel import LLMViewerPanel, LLM_WINDOW_WIDTH_DELTA
@@ -200,6 +205,10 @@ class MainWindow(FluentWindowBase):
         self.controller.setParent(self)
 
         self.connected = False
+        self._account_refresh_seq = 0
+        self._repaint_interval = 0.0
+        self._paint_brush_key: tuple[object, ...] = ()
+        self._paint_brush = QColor(0, 0, 0)
 
         self.setWindowTitle('Southside Music')
 
@@ -297,12 +306,12 @@ class MainWindow(FluentWindowBase):
             time.time() - self.last_action > self.ctx.config.afk_secs
             and not self.isActiveWindow()
         ):
-            event_bus.emit(Events.REPAINT_EVENT_INTERVAL, 200)
+            interval = 200.0
         else:
-            event_bus.emit(
-                Events.REPAINT_EVENT_INTERVAL,
-                1000 / self.ctx.events_service.refresh_rate,
-            )
+            interval = 1000 / self.ctx.events_service.refresh_rate
+        if interval != self._repaint_interval:
+            self._repaint_interval = interval
+            event_bus.emit(Events.REPAINT_EVENT_INTERVAL, interval)
 
     def mousePressEvent(self, e):
         self.last_action = time.time()
@@ -494,7 +503,7 @@ class MainWindow(FluentWindowBase):
 
     def init(self) -> None:
         self._launchwindow.clear()
-        self._launchwindow.subtitle('Initializing main window...')
+        self._launchwindow.subtitle('Initializing main window...', process_events=False)
         last_playlist: list[SongStorable] = []
         last_playing_index = -1
 
@@ -506,48 +515,58 @@ class MainWindow(FluentWindowBase):
                 last_playing_index = cfg.last_playing_index
 
         def _finish_init() -> None:
-            if last_playlist:
-                self._launchwindow.subtitle('restore playlist...')
-                self._dp.playlist = list(last_playlist)
-                if 0 <= last_playing_index < len(last_playlist):
-                    self._launchwindow.subtitle('continue last song...')
+            self._launchwindow.subtitle(
+                'refreshing login information', process_events=False
+            )
+
+            def _show() -> None:
+                continue_last_song = False
+                if last_playlist:
+                    self._launchwindow.subtitle(
+                        'restore playlist...', process_events=False
+                    )
+                    if 0 <= last_playing_index < len(last_playlist):
+                        self._launchwindow.subtitle(
+                            'continue last song...', process_events=False
+                        )
+                        continue_last_song = True
+
+                if last_playlist:
+                    self._dp.playlist = list(last_playlist)
+
+                if self.llm_viewer_panel.expanded:
+                    self.toggleLLMViewerExpand()
+                self.contents_widget.setCurrentWidget(self.ctx.home_page)
+                self.controller.showLyrics()
+                self.show()
+                self.raise_()
+                self.activateWindow()
+                self._launchwindow.close()
+                self._launchwindow.deleteLater()
+                event_bus._lw = None
+                if continue_last_song:
 
                     def _continue() -> None:
                         event_bus.emit(
-                            Events.PLAY_CONTINUE_LAST_SONG, cfg.last_playing_index
+                            Events.PLAY_CONTINUE_LAST_SONG,
+                            cfg.last_playing_index,
                         )
 
                     self.ctx.addScheduledTask(_continue)
 
-            self._launchwindow.subtitle('refreshing login information')
-            asyncTask(self.refreshLoginInformations, (), self)
-
-            def _show() -> None:
-                self.show()
-
-                if self.llm_viewer_panel.expanded:
-                    self.toggleLLMViewerExpand()
-
-                self.refreshFolders()
-                if favorites_manager.folders:
-                    self._fp.setDisplayFolder(favorites_manager.folders[0])
-                self.contents_widget.setCurrentWidget(self.ctx.home_page)
-
-                self.controller.showLyrics()
-                self.ctx.setting_page._onLyricsAnimationTypeChanged(
-                    self.ctx.setting_page.lyrics_type_box.currentText().lower()
-                )
-
-                self.raise_()
-                self.activateWindow()
-
-                event_bus._lw = None
-                self._launchwindow.close()
-                self._launchwindow.deleteLater()
+                QTimer.singleShot(16, self._finishShown)
 
             self.ctx.addScheduledTask(_show)
 
         asyncTask(_init, (), self, finished=_finish_init)
+
+    def _finishShown(self) -> None:
+        self.refreshFolders()
+        if favorites_manager.folders:
+            self._fp.setDisplayFolder(favorites_manager.folders[0])
+        self.ctx.setting_page._onLyricsAnimationTypeChanged(
+            self.ctx.setting_page.lyrics_type_box.currentText().lower()
+        )
 
     def refreshFolders(self) -> None:
         self._folder_refresh_seq += 1
@@ -564,7 +583,7 @@ class MainWindow(FluentWindowBase):
         self.folders_list.addItem(local_item)
 
         for folder in favorites_manager.folders:
-            card = LocalFolderCard(folder, self.folders_list.width())
+            card = LocalFolderCard(folder, self.folders_list.width(), self.ctx)
             card.clicked.connect(lambda f=folder: self._openFolder(f))
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, folder)
@@ -631,7 +650,7 @@ class MainWindow(FluentWindowBase):
                 if refresh_seq != self._folder_refresh_seq:
                     return
                 inf = LocalFolderInfo(tr('main_window.daily_recommend'), songs)
-                card = LocalFolderCard(inf, self.folders_list.width())
+                card = LocalFolderCard(inf, self.folders_list.width(), self.ctx)
                 card.clicked.connect(lambda f=inf: self._openFolder(f))
                 item = QListWidgetItem()
                 item.setData(Qt.ItemDataRole.UserRole, inf)
@@ -647,12 +666,24 @@ class MainWindow(FluentWindowBase):
         else:
             self.refresh_button.setEnabled(True)
 
-        saveFavorites()
+        scheduleFavoritesSave()
 
     def refreshLoginInformations(self) -> None:
-        self.account_widget.refreshLoginInformations()
-        self.ctx.home_page.accounter.refreshLoginInformations()
-        self.ctx.comments_page.refreshInformations()
+        self._account_refresh_seq += 1
+        seq = self._account_refresh_seq
+
+        def worker() -> None:
+            info = fetchLoginInformations()
+            self.ctx.addScheduledTask(lambda: self._applyLoginInformations(seq, info))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _applyLoginInformations(self, seq: int, info: LoginInformations) -> None:
+        if seq != self._account_refresh_seq:
+            return
+        self.account_widget.applyLoginInformations(info.nickname, info.avatar)
+        self.ctx.home_page.accounter.applyLoginInformations(info.nickname, info.avatar)
+        self.ctx.comments_page.applyLoginInformations(info.nickname, info.avatar)
 
     def _replaceHomePage(self) -> None:
         was_home_page = self.contents_widget.currentWidget() == self.ctx.home_page
@@ -664,7 +695,6 @@ class MainWindow(FluentWindowBase):
 
         self.ctx.home_page = HomePage(self.ctx)
         self.contents_widget.addWidget(self.ctx.home_page)
-        self.ctx.home_page.accounter.refreshLoginInformations()
         if was_home_page:
             self.contents_widget.setCurrentWidget(self.ctx.home_page)
 
@@ -697,8 +727,22 @@ class MainWindow(FluentWindowBase):
             self,
         )
         if name:
-            getBackend().createPlaylist(name)
-            self.refreshFolders()
+            result: dict[str, object] = {}
+
+            def _create() -> None:
+                try:
+                    result['playlist_id'] = getBackend().createPlaylist(name)
+                except Exception as error:
+                    result['error'] = error
+
+            def _finish() -> None:
+                error = result.get('error')
+                if error is not None:
+                    InfoBar.error('Error', str(error), parent=self)
+                    return
+                self.refreshFolders()
+
+            asyncTask(_create, (), self, _finish)
 
     def onAddLocalFolder(self):
         name = getTextLineedit(
@@ -843,14 +887,23 @@ class MainWindow(FluentWindowBase):
         painter = QPainter(self)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setFont(self.loading_ft)
-        painter.setBrush(
-            mixColor(
+        brush_key = (
+            theme.isDark(),
+            self.song_theme.rgba(),
+            self.backgroundColor.rgba(),
+            cfg.background_ratio,
+        )
+        if brush_key != self._paint_brush_key:
+            self._paint_brush_key = brush_key
+            self._paint_brush = mixColor(
                 QColor(0, 0, 0) if theme.isDark() else QColor(255, 255, 255),
                 mixColor(
-                    self.song_theme, QColor(self.backgroundColor), cfg.background_ratio
+                    self.song_theme,
+                    QColor(self.backgroundColor),
+                    cfg.background_ratio,
                 ),
                 0.4,
             )
-        )
+        painter.setBrush(self._paint_brush)
         painter.drawRect(self.rect())
         painter.end()

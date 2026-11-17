@@ -40,6 +40,7 @@ class LogHandlerTests(unittest.TestCase):
             patch.object(sys, '__stdout__', stream),
         ):
             self.logger.info('applied %s lyrics for %s', 'cache', message)
+            self.handler.flush()
             return buffer.getvalue().decode(encoding)
 
     def test_gbk_console_escapes_unsupported_song_name_characters(self) -> None:

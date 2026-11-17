@@ -21,11 +21,14 @@ from core.crash_handler import installCrashHandler, installQtMessageHandler
 
 installCrashHandler()
 
-for _scipy_module in ('scipy.signal', 'scipy.fft', 'scipy.ndimage'):
-    try:
-        import_module(_scipy_module)
-    except ImportError:
-        logging.getLogger(__name__).exception('failed to import %s', _scipy_module)
+
+def warmScipyModules() -> None:
+    for module_name in ('scipy.signal', 'scipy.fft', 'scipy.ndimage'):
+        try:
+            import_module(module_name)
+        except ImportError:
+            logging.getLogger(__name__).exception('failed to import %s', module_name)
+
 
 from PySide6.QtCore import Qt, QTimer
 
@@ -92,6 +95,8 @@ from qfluentwidgets import setTheme, Theme
 import shiboken6
 
 from core.cache_cleanup import DEFAULT_DATA_CLEANUP_INTERVAL_SECONDS, cleanupDataFolder
+from core.compute_worker import shutdownComputeWorker
+from core.deferred_writes import flushDeferredWrites
 from core.favorites import favorites_manager, saveFavorites
 from core.icons import refreshBoundIcons
 from core.llm import LLM
@@ -133,6 +138,8 @@ def atExitListener() -> None:
     context = globals().get('ctx')
     if context is None:
         ws_server.stop(shutdown_json_sender=True)
+        shutdownComputeWorker()
+        flushDeferredWrites(2.0)
         return
 
     playing_manager = context.playing_manager
@@ -141,6 +148,7 @@ def atExitListener() -> None:
     if playing_manager is not None:
         playing_manager.shutdownWorkers()
     context.ws_server.stop(shutdown_json_sender=True)
+    shutdownComputeWorker()
 
     if playing_manager is not None:
         cfg.last_playlist = playing_manager.playlist.copy()
@@ -157,6 +165,7 @@ def atExitListener() -> None:
         cfg.window_maximized = main_window.isMaximized()
         cfg.llm_viewer_expanded = main_window.llm_viewer_panel.expanded
 
+    flushDeferredWrites(2.0)
     saveConfig()
     saveFavorites()
 
@@ -208,10 +217,6 @@ def _on_ws_connected():
 def _on_ws_disconnected():
     if mwindow:
         mwindow.onWebsocketDisconnected()
-
-
-ws_handler.onConnected.connect(_on_ws_connected)
-ws_handler.onDisconnected.connect(_on_ws_disconnected)
 
 
 def _schedule_ws_task(fn) -> None:
@@ -441,8 +446,14 @@ ctx.llm = LLM()
 ctx.playing_manager = PlayingManager(ctx)
 ctx.smtc = SmtcController(ctx)
 
-ws_handler.onMessage.connect(_handle_ws_message)
-ws_handler.onConnected.connect(_send_ws_playlist_state)
+ws_handler.onMessage.connect(
+    lambda message: _schedule_ws_task(
+        lambda payload=message: _handle_ws_message(payload)
+    )
+)
+ws_handler.onConnected.connect(lambda: _schedule_ws_task(_on_ws_connected))
+ws_handler.onDisconnected.connect(lambda: _schedule_ws_task(_on_ws_disconnected))
+ws_handler.onConnected.connect(lambda: _schedule_ws_task(_send_ws_playlist_state))
 event_bus.subscribe(Events.PLAYLIST_CHANGED, lambda: _send_ws_playlist_state())
 event_bus.subscribe(Events.SONG_CHANGED, lambda _song: _send_ws_playlist_state())
 event_bus.subscribe(
@@ -471,12 +482,31 @@ def southsideMusic() -> None:
     if cfg.login_status and not backend.currentSessionIsAnonymous():
         backend.writeLoginInfo(cfg.login_status)
     else:
-        cfg.login_status = backend.getCurrentLoginStatus()
+        cfg.login_status = None
+
+        def _refreshAnonymousLoginStatus() -> None:
+            def _load() -> None:
+                try:
+                    status = backend.getCurrentLoginStatus()
+                except Exception as error:
+                    _logger.exception(error)
+                    return
+                ctx.addScheduledTask(_applyAnonymousLoginStatus, status)
+
+            def _applyAnonymousLoginStatus(status: dict) -> None:
+                cfg.login_status = status
+
+            threading.Thread(target=_load, daemon=True).start()
+
+        QTimer.singleShot(0, _refreshAnonymousLoginStatus)
 
     def _themeChanged(theme: str):
+        system_color = themeModule.readSystemThemeColor()
+
         def _updateTheme():
             global mwindow
             themeModule._is_dark = themeModule.getDarkdetect().isDark()
+            themeModule.applySystemThemeColor(system_color)
             setTheme(Theme.LIGHT if theme == 'Light' else Theme.DARK)
             app.setStyleSheet(f'color: {"white" if themeModule.isDark() else "black"};')
             refreshBoundIcons()
@@ -532,8 +562,6 @@ def southsideMusic() -> None:
     setTheme(Theme.LIGHT if themeModule.isLight() else Theme.DARK)
     themeModule.syncSystemThemeColor()
 
-    event_bus.subscribe(Events.SECOND_TICK, themeModule.syncSystemThemeColor)
-
     app.processEvents()
 
     launchwindow.subtitle('Loading fonts...')
@@ -556,7 +584,16 @@ def southsideMusic() -> None:
     launchwindow.subtitle('Initializing services...')
 
     launchwindow.subtitle('Loading favorites...')
-    favorites_manager.load()
+    favorites_error: list[BaseException] = []
+
+    def _loadFavorites() -> None:
+        try:
+            favorites_manager.load()
+        except BaseException as error:
+            favorites_error.append(error)
+
+    favorites_loader = threading.Thread(target=_loadFavorites, daemon=True)
+    favorites_loader.start()
 
     launchwindow.subtitle('Logging in...')
     if cfg.session:
@@ -584,6 +621,11 @@ def southsideMusic() -> None:
 
         if not launchwindow:
             return
+        if favorites_loader.is_alive():
+            QTimer.singleShot(10, _postStageInit)
+            return
+        if favorites_error:
+            raise favorites_error[0]
         launchwindow.subtitle('Initializing events services...')
         ctx.events_service = EventsServices(ctx)
 
@@ -622,7 +664,7 @@ def southsideMusic() -> None:
 
         ctx.process_pids['main'] = os.getpid()
 
-        launchwindow.subtitle('Initializing main window...')
+        launchwindow.subtitle('Initializing main window...', process_events=False)
         mwindow = MainWindow(ctx)
         ctx.main_window = mwindow
 
@@ -634,6 +676,10 @@ def southsideMusic() -> None:
         print(backend.getSessionBindings())
 
         QTimer.singleShot(2000, lambda: startUpdateCheck(mwindow))  # type: ignore
+        QTimer.singleShot(
+            3000,
+            lambda: threading.Thread(target=warmScipyModules, daemon=True).start(),
+        )
 
         _logger.debug(f'{sys.path=}')
 

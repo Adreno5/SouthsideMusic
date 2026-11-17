@@ -8,6 +8,8 @@ import time
 import traceback
 
 from core.app_context import AppContext
+from core.compute_worker import callCompute
+from core.downloader import asyncTask
 from core.lyrics import LyricInfo, YRCCharInfo, YRCLyricInfo
 from core.models import SongStorable
 from PySide6.QtCore import QEvent, QObject
@@ -127,6 +129,9 @@ class LyricEditorPage(QWidget):
         self.ctx = ctx
         self._song: SongStorable | None = None
         self._lyrics_cache: dict[str, str] = {}
+        self._lyrics_load_seq = 0
+        self._lyrics_loading = False
+        self._preview_parse_seq = 0
         self._translated_lines: list[str] = []
         self._ytlrc_lines: list[str] = []
         self._token_lines: list[list[LyricTokenTiming]] = []
@@ -186,15 +191,24 @@ class LyricEditorPage(QWidget):
             return False
 
         self._song = song
-        self._loadLyricsCache(song)
+        self._lyrics_cache = {}
+        self._translated_lines = []
+        self._ytlrc_lines = []
         self._resetBeatState()
         self._current_yrc = ''
-        self.editor.setPlainText(self._initialLyricText(song))
+        initial_text = self._initialLyricText(song)
+        self.editor.setPlainText(initial_text)
+        has_text = bool(initial_text.strip())
+        self.editor.setReadOnly(not has_text)
+        self.next_button.setEnabled(has_text)
+        self._loadLyricsCacheAsync(song)
         self.global_layout.setCurrentWidget(self.edit_page)
         return True
 
     def nextStep(self) -> None:
         if self._song is None:
+            return
+        if self._lyrics_loading and not self.editor.toPlainText().strip():
             return
         self.ctx.player.setPosition(0)
         self.ctx.player.pause()
@@ -224,6 +238,8 @@ class LyricEditorPage(QWidget):
     def saveLyrics(self) -> None:
         song = self._song or self._currentSong()
         if song is None:
+            return
+        if self._lyrics_loading and not self.editor.toPlainText().strip():
             return
         try:
             if not self._persistLyrics(finalize=True, emit_update=True):
@@ -355,26 +371,56 @@ class LyricEditorPage(QWidget):
             return cur.storable
         return None
 
-    def _loadLyricsCache(self, song: SongStorable) -> None:
-        self._lyrics_cache = song.getLyrics()
-        translated_source = self._lyrics_cache.get('translated_lyric', '')
-        ytlrc_source = self._lyrics_cache.get('ytlrc_lyric', '')
-        transmgr_source = self.ctx.transmgr.cur
-        self._translated_lines = _textLinesFromLyric(translated_source)
-        self._ytlrc_lines = _textLinesFromLyric(ytlrc_source)
-        if (
-            not self._translated_lines
-            and not self._ytlrc_lines
-            and transmgr_source
-            and transmgr_source != '[00:00.000]'
-        ):
-            self._translated_lines = _textLinesFromLyric(transmgr_source)
+    def _loadLyricsCacheAsync(self, song: SongStorable) -> None:
+        self._lyrics_load_seq += 1
+        sequence = self._lyrics_load_seq
+        self._lyrics_loading = True
+        result: dict[str, object] = {}
+
+        def _read() -> None:
+            try:
+                result['lyrics'] = song.getLyrics()
+            except Exception as error:
+                result['error'] = error
+
+        def _apply() -> None:
+            if sequence != self._lyrics_load_seq or self._song is not song:
+                return
+            self._lyrics_loading = False
+            self.editor.setReadOnly(False)
+            self.next_button.setEnabled(True)
+            error = result.get('error')
+            if error is not None:
+                self._logger.exception(error)
+            lyrics = result.get('lyrics')
+            if not isinstance(lyrics, dict):
+                return
+            self._lyrics_cache = {
+                key: str(lyrics.get(key, ''))
+                for key in ('lyric', 'translated_lyric', 'yrc_lyric', 'ytlrc_lyric')
+            }
+            translated_source = self._lyrics_cache.get('translated_lyric', '')
+            ytlrc_source = self._lyrics_cache.get('ytlrc_lyric', '')
+            transmgr_source = self.ctx.transmgr.cur
+            self._translated_lines = _textLinesFromLyric(translated_source)
+            self._ytlrc_lines = _textLinesFromLyric(ytlrc_source)
+            if (
+                not self._translated_lines
+                and not self._ytlrc_lines
+                and transmgr_source
+                and transmgr_source != '[00:00.000]'
+            ):
+                self._translated_lines = _textLinesFromLyric(transmgr_source)
+            if not self.editor.toPlainText().strip():
+                self.editor.setPlainText(
+                    _plainTextFromLyric(self._lyrics_cache.get('lyric', ''))
+                )
+
+        asyncTask(_read, (), self, _apply)
 
     def _initialLyricText(self, song: SongStorable) -> str:
         if self.ctx.mgr.cur and self.ctx.mgr.cur != '[00:00.000]':
             return _plainTextFromLyric(self.ctx.mgr.cur)
-        if not self._lyrics_cache:
-            self._loadLyricsCache(song)
         return _plainTextFromLyric(self._lyrics_cache.get('lyric', ''))
 
     def _lyricLines(self) -> list[str]:
@@ -536,16 +582,44 @@ class LyricEditorPage(QWidget):
         self._ensureTokenTimings()
         lines = self._lyricLines()
         line_times = self._lineStartTimes(lines)
-        yrc_parsed = self._buildYrcParsed()
-        translated_parsed, ytlrc_parsed = self._buildAlignedTranslationsParsed(
-            line_times
+        lyric = self._buildLrc(lines, line_times)
+        yrc_lyric = self._buildYrc()
+        translated_lyric, ytlrc_lyric = self._buildAlignedTranslations(line_times)
+        translated_lyric, ytlrc_lyric = self._preserveFallbackTranslations(
+            translated_lyric,
+            ytlrc_lyric,
         )
-        self._applyParsedLyricsToContext(
-            self._buildLrcParsed(lines, line_times),
-            translated_parsed,
-            yrc_parsed,
-            ytlrc_parsed,
-        )
+        song = self._song
+        duration = self._songDuration()
+        self._preview_parse_seq += 1
+        sequence = self._preview_parse_seq
+        result: dict[str, object] = {}
+
+        def _parse() -> None:
+            try:
+                result['payload'] = callCompute(
+                    'parse_lyrics',
+                    {
+                        'lyric': lyric,
+                        'yrc_lyric': yrc_lyric,
+                        'translated_lyric': translated_lyric,
+                    },
+                )
+            except Exception as error:
+                self._logger.exception(error)
+
+        def _apply() -> None:
+            payload = result.get('payload')
+            if (
+                sequence != self._preview_parse_seq
+                or self._song is not song
+                or not isinstance(payload, dict)
+            ):
+                return
+            self.ctx.lyrics_manager.applyParsedLyrics(payload, duration)
+            self.viewer.setPreviewPosition(self._manual_position)
+
+        asyncTask(_parse, (), self, _apply)
         self.viewer.setPreviewPosition(self._manual_position)
 
     def _refreshLyricsViews(self) -> None:
@@ -568,25 +642,46 @@ class LyricEditorPage(QWidget):
             translated_lyric,
             ytlrc_lyric,
         )
-        song.writeLyrics(lyric, translated_lyric, yrc_lyric, ytlrc_lyric)
-        self._lyrics_cache = song.getLyrics()
-        yrc_parsed = self._buildYrcParsed(finalize=finalize)
-        translated_parsed, ytlrc_parsed = self._buildAlignedTranslationsParsed(
-            line_times
-        )
-        self._applyParsedLyricsToContext(
-            self._buildLrcParsed(lines, line_times),
-            translated_parsed,
-            yrc_parsed,
-            ytlrc_parsed,
-            lyric=lyric,
-            translated_lyric=translated_lyric,
-            yrc_lyric=yrc_lyric,
-            ytlrc_lyric=ytlrc_lyric,
-        )
-        self._refreshLyricsViews()
-        if emit_update:
-            event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song)
+        self._lyrics_cache = {
+            'lyric': lyric,
+            'translated_lyric': translated_lyric,
+            'yrc_lyric': yrc_lyric,
+            'ytlrc_lyric': ytlrc_lyric,
+        }
+        duration = self._songDuration()
+        result: dict[str, object] = {}
+
+        def _write() -> None:
+            try:
+                song.writeLyrics(
+                    lyric,
+                    translated_lyric,
+                    yrc_lyric,
+                    ytlrc_lyric,
+                )
+                result['payload'] = callCompute(
+                    'parse_lyrics',
+                    {
+                        'lyric': lyric,
+                        'yrc_lyric': yrc_lyric,
+                        'translated_lyric': translated_lyric,
+                    },
+                )
+            except Exception as error:
+                result['error'] = error
+
+        def _finish() -> None:
+            error = result.get('error')
+            if error is not None:
+                self._logger.exception(error)
+            payload = result.get('payload')
+            if isinstance(payload, dict):
+                self.ctx.lyrics_manager.applyParsedLyrics(payload, duration)
+            self._refreshLyricsViews()
+            if emit_update:
+                event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song)
+
+        asyncTask(_write, (), self, _finish)
         return True
 
     def _applyParsedLyricsToContext(

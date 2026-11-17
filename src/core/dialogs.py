@@ -3,6 +3,7 @@ import io
 from core.backend import getBackend
 from PySide6.QtWidgets import QLabel, QListWidget, QWidget
 from core.i18n import bindText, tr
+from core.downloader import asyncTask
 from PySide6.QtGui import QImage, QPixmap
 import qrcode
 from qfluentwidgets import (
@@ -138,34 +139,59 @@ class QRCodeLoginDialog(MessageBoxBase):
         self.viewLayout.addWidget(self.errlabel)
 
         self.makeImage(qrcode_url)
+        self._login_pending = False
 
         self.yesButton.hide()
 
     def makeImage(self, qrcode_url: str) -> None:
         self.qrlabel.show()
+        result: dict[str, QImage] = {}
 
-        io_ = io.BytesIO()
-        qrcode.make(qrcode_url).save(io_)
-        io_.seek(0)
+        def _make() -> None:
+            io_ = io.BytesIO()
+            qrcode.make(qrcode_url).save(io_)
+            result['image'] = QImage.fromData(io_.getvalue())
 
-        qimage = QImage.fromData(io_.read())
-        self.qrlabel.setPixmap(QPixmap.fromImage(qimage).scaled(self.qrlabel.size()))
+        def _apply() -> None:
+            image = result.get('image')
+            if image is not None and not image.isNull():
+                self.qrlabel.setPixmap(
+                    QPixmap.fromImage(image).scaled(self.qrlabel.size())
+                )
+            self.is_btn.setEnabled(True)
 
-        self.is_btn.setEnabled(True)
+        asyncTask(_make, (), self, _apply)
 
     def login(self):
+        if self._login_pending:
+            return
+        self._login_pending = True
+        self.is_btn.setEnabled(False)
         self.errlabel.hide()
+        result: dict[str, int] = {}
 
-        code = getBackend().checkLoginQRCode(self.key)
-        if code == 803:
-            self.logger.info('Logined in successfully')
-            self.accept()
-        elif code == 8821:
-            self.errlabel.setText(tr('dialogs.login_anomaly_risk_control'))
-            self.errlabel.show()
-        elif code == 800:
-            self.errlabel.setText(tr('dialogs.qr_code_expired_or_not_exist'))
-            self.errlabel.show()
+        def _check() -> None:
+            try:
+                result['code'] = getBackend().checkLoginQRCode(self.key)
+            except Exception as error:
+                self.logger.exception(error)
+                result['code'] = 0
+
+        def _finish() -> None:
+            self._login_pending = False
+            self.is_btn.setEnabled(True)
+            code = result.get('code', 0)
+            if code == 803:
+                self.logger.info('Logined in successfully')
+                self.accept()
+            elif code == 8821:
+                self.errlabel.setText(tr('dialogs.login_anomaly_risk_control'))
+                self.errlabel.show()
+            elif code == 800:
+                self.errlabel.setText(tr('dialogs.qr_code_expired_or_not_exist'))
+                self.errlabel.show()
+
+        asyncTask(_check, (), self, _finish)
 
 
 class CookieLoginDialog(MessageBoxBase):

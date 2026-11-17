@@ -62,7 +62,7 @@ class PreloadRaceTests(unittest.TestCase):
         self.cached = patch(
             'core.playing_manager.getCachedAudio', return_value=self.audio
         ).start()
-        patch('core.playing_manager.saveFavorites').start()
+        patch('core.playing_manager.scheduleFavoritesSave').start()
         self.workers: list[threading.Thread] = []
         self.errors: list[Exception] = []
         self.ready = threading.Event()

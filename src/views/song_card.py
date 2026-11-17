@@ -54,6 +54,7 @@ from core.models import (
     getCachedHashes,
 )
 from core.icons import bindIcon, getQIcon
+from core.image import loadImageFromBytes
 from core.downloader import (
     asyncTask,
 )
@@ -129,7 +130,11 @@ class FolderSelectDialog(MessageBoxBase):
         if local_folders:
             self.list_widget.addItem(QListWidgetItem(tr('song_card.local')))
             for folder in local_folders:
-                card = LocalFolderCard(folder, self.list_widget.width())
+                card = LocalFolderCard(
+                    folder,
+                    self.list_widget.width(),
+                    self._mwindow.ctx,
+                )
                 card.clicked.connect(
                     lambda f=folder: self._select('local', f.folder_name, None)
                 )
@@ -201,7 +206,7 @@ class FolderSelectDialog(MessageBoxBase):
 
 
 class SearchSongCard(QWidget):
-    imageLoaded = Signal(bytes)
+    imageLoaded = Signal(str, QImage)
 
     def __init__(
         self, info: SearchSongInfo, play_callback: Callable, ctx: AppContext
@@ -319,25 +324,35 @@ class SearchSongCard(QWidget):
         folder_type, folder_name, cloud_id = selection
 
         if folder_type == 'cloud' and cloud_id:
-            if not getBackend().editPlaylist('add', [str(self.info.id)], cloud_id):
-                InfoBar.warning(
-                    tr('song_card.session_expired'),
-                    tr('song_card.please_re_login_to_perform_this_action'),
-                    parent=self._mwindow,
-                    duration=5000,
+            result: dict[str, bool] = {}
+
+            def _addCloud() -> None:
+                result['added'] = getBackend().editPlaylist(
+                    'add', [str(self.info.id)], cloud_id
                 )
-                return
-            event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
-            InfoBar.success(
-                tr('song_card.favorited'),
-                tr(
-                    'song_card.added_song_name_to_cloud_playlist_folder_name',
-                    song_name=self.info.name,
-                    folder_name=folder_name,
-                ),
-                parent=self._mwindow,
-                duration=3000,
-            )
+
+            def _finishCloud() -> None:
+                if not result.get('added', False):
+                    InfoBar.warning(
+                        tr('song_card.session_expired'),
+                        tr('song_card.please_re_login_to_perform_this_action'),
+                        parent=self._mwindow,
+                        duration=5000,
+                    )
+                    return
+                event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
+                InfoBar.success(
+                    tr('song_card.favorited'),
+                    tr(
+                        'song_card.added_song_name_to_cloud_playlist_folder_name',
+                        song_name=self.info.name,
+                        folder_name=folder_name,
+                    ),
+                    parent=self._mwindow,
+                    duration=3000,
+                )
+
+            asyncTask(_addCloud, (), self._mwindow, _finishCloud)
             return
 
         if folder_name == '+ Create New Folder...':
@@ -397,38 +412,39 @@ class SearchSongCard(QWidget):
         self.load = True
         card_ref = weakref.ref(self)
         info_id = str(self.info.id)
-        mwindow = self._mwindow
+        ctx = self.ctx
+        target = self.img_label.size()
 
         def _do():
-            detail = getBackend().getTrackDetail(info_id)
-            img_url = detail.cover_url
-            img_bytes = requests.get(img_url).content
+            try:
+                detail = getBackend().getTrackDetail(info_id)
+                img_url = detail.cover_url
+                img_bytes = requests.get(img_url, timeout=30).content
+                image = loadImageFromBytes(img_bytes, target)
+            except Exception as error:
+                logging.getLogger(__name__).warning(
+                    'failed to load search cover for %s: %s', info_id, error
+                )
+                return
+            ctx.addScheduledTask(_applyImage, img_url, image)
+
+        def _applyImage(img_url: str, image: QImage) -> None:
             card = card_ref()
             if card is None or card._released:
                 return
-            try:
-                card.objectName()
-            except RuntimeError:
-                return
             card.detail.image_url = img_url
-            card.imageLoaded.emit(img_bytes)
+            card.imageLoaded.emit(img_url, image)
 
-        asyncTask(_do, (), mwindow)
+        asyncTask(_do, (), self._mwindow)
 
-    def onImageLoaded(self, image_bytes: bytes) -> None:
+    def onImageLoaded(self, image_url: str, image: QImage) -> None:
         if self._released:
             return
+        self.detail.image_url = image_url
         self.ring.hide()
         self.img_label.show()
-        pixmap = QPixmap()
-        pixmap.loadFromData(image_bytes)
-        if not pixmap.isNull():
-            scaled = pixmap.scaled(
-                self.img_label.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            self.img_label.setPixmap(scaled)
+        if not image.isNull():
+            self.img_label.setPixmap(QPixmap.fromImage(image))
         self.playbtn.setEnabled(True)
 
 
@@ -653,7 +669,7 @@ class _SongCardItem(QWidget):
             try:
                 detail = getBackend().getTrackDetail(storable.id)
                 image_url = detail.cover_url
-                image_bytes = requests.get(image_url).content
+                image_bytes = requests.get(image_url, timeout=30).content
             except Exception as e:
                 self._logger.warning(
                     f'failed to auto-download image for {storable.id}: {e}'
@@ -663,7 +679,7 @@ class _SongCardItem(QWidget):
             if not image_bytes:
                 return
             storable._writeCache(image_bytes, IMAGE_DATA_DIR, 'image_cache_hash')
-            favorites_manager._save()
+            favorites_manager._saveAsync()
             if self._released:
                 return
             if self._mwindow:
@@ -671,7 +687,7 @@ class _SongCardItem(QWidget):
                     lambda s=storable: event_bus.emit(Events.IMAGE_ASSET_PERSISTED, s)
                 )
             else:
-                event_bus.emit(Events.IMAGE_ASSET_PERSISTED, storable)
+                event_bus.emitInMainThread(Events.IMAGE_ASSET_PERSISTED, storable)
         finally:
             lock.release()
 
@@ -762,7 +778,30 @@ class _SongCardItem(QWidget):
         if folder_type == 'local':
             favorites_manager.addSong(folder_name, self.storable)
         elif folder_type == 'cloud':
-            getBackend().editPlaylist('add', [song_id], str(cloud_id))
+            result: dict[str, bool] = {}
+
+            def _addCloud() -> None:
+                result['added'] = getBackend().editPlaylist(
+                    'add', [song_id], str(cloud_id)
+                )
+
+            def _finishCloud() -> None:
+                if not result.get('added', False):
+                    InfoBar.warning(
+                        tr('song_card.session_expired'),
+                        tr('song_card.please_re_login_to_perform_this_action'),
+                        parent=self._mwindow,
+                        duration=5000,
+                    )
+                    return
+                self._showAdded(folder_name)
+
+            asyncTask(_addCloud, (), self._mwindow, _finishCloud)
+            return
+
+        self._showAdded(folder_name)
+
+    def _showAdded(self, folder_name: str) -> None:
         InfoBar.info(
             tr('song_card.added'),
             tr(
@@ -774,6 +813,45 @@ class _SongCardItem(QWidget):
             duration=3000,
         )
         event_bus.emit(Events.MWINDOW_REFRESH_FOLDERS)
+
+    def _exportSongAsync(self) -> None:
+        if not self._dp.playing_manager.ensureAssets(self.storable):
+            return
+        cache_path = os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash)
+        result: dict[str, object] = {}
+
+        def _read() -> None:
+            try:
+                from core.soundfile import getSongFormat
+
+                with open(cache_path, 'rb') as file:
+                    music_bytes = file.read()
+                touchCacheFile(cache_path)
+                result['format'] = getSongFormat(music_bytes)
+            except Exception as error:
+                result['error'] = error
+
+        def _choose() -> None:
+            error = result.get('error')
+            if error is not None:
+                self._logger.exception(error)
+                InfoBar.error(
+                    tr('song_card.export_song'),
+                    str(error),
+                    parent=self._mwindow,
+                    duration=5000,
+                )
+                return
+            export_path, _format = QFileDialog.getSaveFileName(
+                self._mwindow,
+                tr('song_card.export_song'),
+                _export_default_path(self.storable, str(result.get('format', ''))),
+                tr('song_card.song_files_mp3_m4a_flac_wav_ogg_opus'),
+            )
+            if export_path:
+                exportSong(self.storable, cache_path, export_path, self._mwindow)
+
+        asyncTask(_read, (), self._mwindow, _choose)
 
 
 class PlaylistSongCard(_SongCardItem):
@@ -799,23 +877,7 @@ class PlaylistSongCard(_SongCardItem):
         menu.exec(event.globalPos(), aniType=MenuAnimationType.DROP_DOWN)
 
     def _exportSong(self):
-        from core.soundfile import getSongFormat
-
-        if not self._dp.playing_manager.ensureAssets(self.storable):
-            return
-        cache_path = os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash)
-        with open(cache_path, 'rb') as f:
-            music_bytes = f.read()
-            touchCacheFile(cache_path)
-            export_path, fmt = QFileDialog.getSaveFileName(
-                self._mwindow,
-                tr('song_card.export_song'),
-                _export_default_path(self.storable, getSongFormat(music_bytes)),
-                tr('song_card.song_files_mp3_m4a_flac_wav_ogg_opus'),
-            )
-
-        if export_path:
-            exportSong(self.storable, cache_path, export_path, self._mwindow)
+        self._exportSongAsync()
 
     def _removeSong(self):
         playlist = self._dp.playing_manager.playlist
@@ -878,23 +940,7 @@ class FavoriteSongCard(_SongCardItem):
             self._remove_callback()
 
     def _exportSong(self):
-        from core.soundfile import getSongFormat
-
-        if not self._dp.playing_manager.ensureAssets(self.storable):
-            return
-        cache_path = os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash)
-        with open(cache_path, 'rb') as f:
-            music_bytes = f.read()
-            touchCacheFile(cache_path)
-            export_path, fmt = QFileDialog.getSaveFileName(
-                self._mwindow,
-                tr('song_card.export_song'),
-                _export_default_path(self.storable, getSongFormat(music_bytes)),
-                tr('song_card.song_files_mp3_m4a_flac_wav_ogg_opus'),
-            )
-
-        if export_path:
-            exportSong(self.storable, cache_path, export_path, self._mwindow)
+        self._exportSongAsync()
 
 
 class CloudFavoriteSongCard(_SongCardItem):
@@ -937,20 +983,4 @@ class CloudFavoriteSongCard(_SongCardItem):
             self._remove_callback()
 
     def _exportSong(self):
-        from core.soundfile import getSongFormat
-
-        if not self._dp.playing_manager.ensureAssets(self.storable):
-            return
-        cache_path = os.path.join(MUSIC_DATA_DIR, self.storable.content_cache_hash)
-        with open(cache_path, 'rb') as f:
-            music_bytes = f.read()
-            touchCacheFile(cache_path)
-            export_path, fmt = QFileDialog.getSaveFileName(
-                self._mwindow,
-                tr('song_card.export_song'),
-                _export_default_path(self.storable, getSongFormat(music_bytes)),
-                tr('song_card.song_files_mp3_m4a_flac_wav_ogg_opus'),
-            )
-
-        if export_path:
-            exportSong(self.storable, cache_path, export_path, self._mwindow)
+        self._exportSongAsync()

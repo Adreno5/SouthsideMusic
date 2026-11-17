@@ -19,6 +19,7 @@ from qfluentwidgets import (
 )
 
 from core.favorites import favorites_manager
+from core.downloader import asyncTask
 from core.i18n import bindText, tr
 from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable
 from core.qt_utils import clearListWidget
@@ -48,6 +49,8 @@ class RediscoveryPage(QWidget):
         self._history: dict[str, float] = {}
         self._next_song_index = 0
         self._building_batch = False
+        self._batch_target_index = 0
+        self._refresh_seq = 0
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 18, 24, 12)
@@ -149,30 +152,60 @@ class RediscoveryPage(QWidget):
             self.refresh()
 
     def refresh(self, _index: int = 0, *, rotate: bool = False) -> None:
+        self._refresh_seq += 1
+        refresh_seq = self._refresh_seq
         self._load_timer.stop()
         self._building_batch = True
-        source = self._sourceSongs()
+        source = list(self._sourceSongs())
         current = self.ctx.playing_manager.current_song
         previous_ids = {str(song.id) for song in self._songs[:40]} if rotate else None
-        self._songs = getRediscoverySongs(
-            source,
-            cast(RediscoveryMode, self.mode_box.currentData()),
-            limit=None,
-            previous_ids=previous_ids,
-            current_id=str(current.id) if current else None,
-        )
         self._source_ids = tuple(str(song.id) for song in source)
-        self._history = getListeningHistory()
-        clearListWidget(self.song_viewer)
-        self._song_cards.clear()
-        self._date_labels.clear()
-        self._next_song_index = 0
-        self._appendSongBatch()
+        mode = cast(RediscoveryMode, self.mode_box.currentData())
+        current_id = str(current.id) if current else None
+        result: dict[str, object] = {}
+
+        def _compute() -> None:
+            result['songs'] = getRediscoverySongs(
+                source,
+                mode,
+                limit=None,
+                previous_ids=previous_ids,
+                current_id=current_id,
+            )
+            result['history'] = getListeningHistory()
+
+        def _apply() -> None:
+            if refresh_seq != self._refresh_seq:
+                return
+            songs = result.get('songs')
+            history = result.get('history')
+            if not isinstance(songs, list) or not isinstance(history, dict):
+                return
+            self._songs = songs
+            self._history = history
+            clearListWidget(self.song_viewer)
+            self._song_cards.clear()
+            self._date_labels.clear()
+            self._next_song_index = 0
+            self._building_batch = False
+            self._batch_target_index = 0
+            self._appendSongBatch()
+
+        asyncTask(_compute, (), self, _apply)
 
     def _appendSongBatch(self) -> None:
+        continuing_batch = self._building_batch
         self._building_batch = True
-        end = min(self._next_song_index + LIST_BUILD_BATCH_SIZE, len(self._songs))
-        for index in range(self._next_song_index, end):
+        start = self._next_song_index
+        if not continuing_batch:
+            self._batch_target_index = min(
+                start + LIST_BUILD_BATCH_SIZE,
+                len(self._songs),
+            )
+        batch_end = self._batch_target_index
+        deadline = time.perf_counter() + 0.008
+        end = start
+        for index in range(start, batch_end):
             song = self._songs[index]
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, song)
@@ -196,10 +229,16 @@ class RediscoveryPage(QWidget):
             self.song_viewer.setItemWidget(item, card)
             self._song_cards.append(card)
             self._date_labels.append((date_label, str(song.id)))
+            end = index + 1
+            if time.perf_counter() >= deadline:
+                break
         self._next_song_index = end
-        self._building_batch = False
         self.song_viewer.doItemsLayout()
         self._updateTexts()
+        if end < batch_end:
+            self._load_timer.start(1)
+            return
+        self._building_batch = False
         self._queueSongBatch()
 
     def _updateDate(self, label: CaptionLabel, song_id: str) -> None:
@@ -249,6 +288,7 @@ class RediscoveryPage(QWidget):
         if (
             self._building_batch
             or not self.isVisible()
+            or not self.window().isVisible()
             or self._next_song_index >= len(self._songs)
         ):
             return
@@ -261,7 +301,7 @@ class RediscoveryPage(QWidget):
             self._load_timer.start(16)
 
     def _checkVisibleCards(self) -> None:
-        if not self.isVisible():
+        if not self.isVisible() or not self.window().isVisible():
             return
         viewport = self.song_viewer.viewport()
         visible = viewport.rect().adjusted(0, -viewport.height(), 0, viewport.height())
@@ -302,7 +342,7 @@ class RediscoveryPage(QWidget):
         source = self._sourceSongs()
         if tuple(str(song.id) for song in source) != self._source_ids:
             self.refresh()
-            index = 0
+            return
         if not self._songs:
             return
         self.ctx.playing_manager.setPlaylist(list(self._songs))

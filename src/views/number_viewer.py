@@ -11,7 +11,9 @@ from PySide6.QtGui import (
     QImage,
     QPainter,
     QRegion,
+    QMoveEvent,
     QShowEvent,
+    QResizeEvent,
     QWheelEvent,
 )
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
@@ -59,42 +61,62 @@ class NumberViewer(QOpenGLWidget):
         self._bg_key: tuple[object, ...] = ()
         self._known_ancestors: list[QWidget] = []
         self._color_ancestors: list[Any] = []
+        self._background_dirty = True
+        self._text_dirty = True
 
         for char in self.numbers:
             self.width_map[char] = self.metri.horizontalAdvance(char)
 
         event_bus.subscribe(Events.REPAINT, self.updateDatas)
+        event_bus.subscribe(Events.POST_THEME_CHANGED, self._markBackgroundDirty)
+        event_bus.subscribe(Events.BACKGROUND_RATIO_CHANGED, self._markBackgroundDirty)
+        event_bus.subscribe(Events.SONG_CHANGED, self._markBackgroundDirty)
 
     def updateDatas(self, _: float) -> None:
-        background_key = self._backgroundKey()
-        if background_key != self._bg_key:
-            self._bg_key = background_key
-            if self.isVisible():
-                self.update()
+        if not self.isVisible():
+            return
+        if self._background_dirty:
+            self._refreshBackgroundColor()
+            self._background_dirty = False
 
-        for i, char in enumerate(self.cur_text):
-            if not self.width_map.get(char):
-                self.width_map[char] = self.metri.horizontalAdvance(char)
-            if char not in self.numbers:
-                continue
-            digit = int(char)
-            if not self.y_map.get(i):
-                self.y_map[i] = EaseOutTimer(self.animation_time, self.power_number)
-            self.y_map[i].target_value = self.full_height * digit
-
-        self.width_timer.target_value = self.metri.horizontalAdvance(self.cur_text)
+        if self._text_dirty:
+            for i, char in enumerate(self.cur_text):
+                if not self.width_map.get(char):
+                    self.width_map[char] = self.metri.horizontalAdvance(char)
+                if char not in self.numbers:
+                    continue
+                digit = int(char)
+                if not self.y_map.get(i):
+                    self.y_map[i] = EaseOutTimer(self.animation_time, self.power_number)
+                self.y_map[i].target_value = self.full_height * digit
+            self.width_timer.target_value = self.metri.horizontalAdvance(self.cur_text)
+            self._text_dirty = False
 
         if self.width_timer.is_animating:
             self.updateGeometry()
 
-        if all(not timer.is_animating for timer in self.y_map.values()):
+        if not self.width_timer.is_animating and not any(
+            self.y_map[i].is_animating
+            for i in range(len(self.cur_text))
+            if i in self.y_map
+        ):
             return
 
-        if self.isVisible():
-            self.update()
+        self.update()
+
+    def _markBackgroundDirty(self, *_args: object) -> None:
+        self._background_dirty = True
+
+    def _refreshBackgroundColor(self) -> None:
+        key = self._backgroundKey()
+        if key == self._bg_key:
+            return
+        self._bg_key = key
+        self._bg_color = self._sampleBackgroundColor()
 
     @override
     def showEvent(self, event: QShowEvent) -> None:
+        self._background_dirty = True
         self.updateGeometry()
         return super().showEvent(event)
 
@@ -103,8 +125,19 @@ class NumberViewer(QOpenGLWidget):
         self.updateGeometry()
         return super().hideEvent(event)
 
+    @override
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        self._background_dirty = True
+        return super().resizeEvent(event)
+
+    @override
+    def moveEvent(self, event: QMoveEvent) -> None:
+        self._background_dirty = True
+        return super().moveEvent(event)
+
     def setText(self, text: str) -> None:
         self.cur_text = text
+        self._text_dirty = True
 
     @override
     def sizeHint(self) -> QSize:
@@ -181,6 +214,9 @@ class NumberViewer(QOpenGLWidget):
         )
 
     def _backgroundColor(self) -> QColor:
+        return QColor(self._bg_color)
+
+    def _sampleBackgroundColor(self) -> QColor:
         if self.parentWidget() is None:
             return self._bg_color
 

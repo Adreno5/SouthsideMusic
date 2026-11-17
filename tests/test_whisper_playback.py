@@ -90,7 +90,7 @@ class WhisperPlaybackTests(unittest.TestCase):
             'ytlrc_lyric': '',
         }
         with (
-            patch.object(self.manager, '_applyLyricTexts', return_value=True) as apply,
+            patch.object(self.manager, '_applyLyricTextsAsync') as apply,
             patch('core.playing_manager.event_bus.emit') as emit,
         ):
             self.manager._applyWhisperLyrics(
@@ -107,7 +107,7 @@ class WhisperPlaybackTests(unittest.TestCase):
             lyrics['translated_lyric'],
             'Whisper',
         )
-        emit.assert_called_once()
+        emit.assert_not_called()
 
     def test_next_song_waits_until_current_lyrics_are_cached(self) -> None:
         self.manager._queueWhisperLyrics(self.next_song)
@@ -120,7 +120,21 @@ class WhisperPlaybackTests(unittest.TestCase):
         lyrics_manager = LyricManager()
         lyrics_manager.startSong(self.song, 10.0, continuous=False)
         self.manager.ctx.lyrics_manager = lyrics_manager
-        with patch('core.playing_manager.event_bus.emit'):
+
+        def runAsync(
+            task: object,
+            args: tuple,
+            parent: object,
+            finished: object = None,
+        ) -> None:
+            task(*args)
+            if callable(finished):
+                finished()
+
+        with (
+            patch('core.playing_manager.event_bus.emit'),
+            patch('core.playing_manager.asyncTask', side_effect=runAsync),
+        ):
             for text in ('Wrong', 'Corrected', ''):
                 self.manager._applyWhisperLyrics(
                     self.song,

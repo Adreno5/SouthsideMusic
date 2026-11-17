@@ -15,6 +15,12 @@ from typing import Any
 from unittest.mock import patch
 
 
+def _clearProjectModules() -> None:
+    for name in tuple(sys.modules):
+        if name.partition('.')[0] in {'core', 'services', 'views', 'ncm'}:
+            sys.modules.pop(name, None)
+
+
 def runApplication(
     root: Path,
     address: str,
@@ -24,6 +30,7 @@ def runApplication(
     native: bool = False,
 ) -> None:
     os.chdir(root)
+    _clearProjectModules()
     sys.path.insert(0, str(root / 'src'))
     sys.argv = [str(root / 'src' / 'main.py')]
     host, port = address.split(':')

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from core.app_context import AppContext
-from PySide6.QtCore import QSize, Signal
+from PySide6.QtCore import QSize, QTimer, Signal
 from qfluentwidgets import ComboBox
 from core.i18n import tr
 from services.events import Events, event_bus
@@ -44,6 +45,15 @@ class SearchPage(QWidget):
         self.can_load_more = True
         self.curr_offset = 0
         self.last_search = ''
+        self._search_seq = 0
+        self._batch_results: list[SearchSongInfo] | list[SearchCloudFolderInfo] = []
+        self._batch_type = 'Songs'
+        self._batch_index = 0
+        self._batch_offset = 0
+        self._batch_seq = 0
+        self._batch_timer = QTimer(self)
+        self._batch_timer.setSingleShot(True)
+        self._batch_timer.timeout.connect(self._appendResultsBatch)
 
         global_layout = QVBoxLayout()
 
@@ -84,14 +94,26 @@ class SearchPage(QWidget):
         if not self.cards:
             return
 
-        for i, card in enumerate(self.cards):
-            item = self.lst.item(i)
+        start = 0
+        end = self.lst.count()
+        viewport_rect = self.lst.viewport().rect()
+        while start < end:
+            middle = (start + end) // 2
+            item = self.lst.item(middle)
             if item is None:
+                break
+            if self.lst.visualItemRect(item).bottom() < viewport_rect.top():
+                start = middle + 1
+            else:
+                end = middle
+        for index in range(start, self.lst.count()):
+            item = self.lst.item(index)
+            if item is None or index >= len(self.cards):
                 continue
-
             item_rect = self.lst.visualItemRect(item)
-            viewport_rect = self.lst.viewport().rect()
-
+            if item_rect.top() > viewport_rect.bottom():
+                break
+            card = self.cards[index]
             if viewport_rect.intersects(item_rect) and not card.load:
                 card.loadDetailAndImage()
 
@@ -135,9 +157,12 @@ class SearchPage(QWidget):
             self.search(self.last_search)
 
     def search(self, keywords: str, offset: int = 0) -> None:
+        self._search_seq += 1
+        search_seq = self._search_seq
         self.last_search = keywords
         self.searching = True
         search_type = self.ctx.config.search_type
+        self._batch_timer.stop()
 
         bar = self.lst.verticalScrollBar()
         bar.setValue(bar.minimum())
@@ -148,46 +173,89 @@ class SearchPage(QWidget):
             self.cards.clear()
             self.img_card_map.clear()
 
-        result: list[SearchSongInfo] | list[SearchCloudFolderInfo] = []
-
         def _do():
-            nonlocal result
-            if search_type == 'Songs':
-                result = getBackend().searchSong(keywords, offset=offset)
-            else:
-                result = getBackend().searchPlaylist(keywords, offset=offset)
-
-            self.can_load_more = bool(result)
-
-            def _apply() -> None:
+            try:
                 if search_type == 'Songs':
-                    self.addSongs(result)  # type: ignore
+                    result = getBackend().searchSong(keywords, offset=offset)
                 else:
-                    self.addPlaylists(result)  # type: ignore
-
-                self.curr_offset += len(result)
-                self.searching = False
-
-            self.ctx.addScheduledTask(_apply)
+                    result = getBackend().searchPlaylist(keywords, offset=offset)
+            except Exception as error:
+                self._logger.exception(error)
+                result = []
+            self.ctx.addScheduledTask(
+                self._applySearchResults,
+                search_seq,
+                search_type,
+                result,
+                offset,
+            )
 
         asyncTask(_do, (), self._mwindow)
 
+    def _applySearchResults(
+        self,
+        search_seq: int,
+        search_type: str,
+        result: list[SearchSongInfo] | list[SearchCloudFolderInfo],
+        offset: int,
+    ) -> None:
+        if search_seq != self._search_seq:
+            return
+        self.can_load_more = bool(result)
+        self._batch_results = result
+        self._batch_type = search_type
+        self._batch_index = 0
+        self._batch_offset = offset
+        self._batch_seq = search_seq
+        if result:
+            self._appendResultsBatch()
+        else:
+            self.searching = False
+
+    def _appendResultsBatch(self) -> None:
+        if self._batch_seq != self._search_seq:
+            return
+        deadline = time.perf_counter() + 0.008
+        end = len(self._batch_results)
+        while self._batch_index < end:
+            if self._batch_type == 'Songs':
+                self._addSongResult(self._batch_results[self._batch_index])  # type: ignore[arg-type]
+            else:
+                self._addPlaylistResult(self._batch_results[self._batch_index])  # type: ignore[arg-type]
+            self._batch_index += 1
+            if time.perf_counter() >= deadline:
+                break
+        if self._batch_index < end:
+            self._batch_timer.start(1)
+            return
+        self.curr_offset += len(self._batch_results)
+        self.searching = False
+        self._batch_results = []
+        self._checkVisibleCards()
+
+    def _checkVisibleCards(self) -> None:
+        self.checkRect()
+
     def addPlaylists(self, result: list[SearchCloudFolderInfo]) -> None:
-        for i, playlist in enumerate(result):
-            item = QListWidgetItem()
-            item.setSizeHint(QSize(0, 150))
-            self.lst.addItem(item)
-            content_widget = SearchCloudFolderCard(playlist, self.lst.width(), self.ctx)
-            self.lst.setItemWidget(item, content_widget)
-            self.cards.append(content_widget)
+        for playlist in result:
+            self._addPlaylistResult(playlist)
 
     def addSongs(self, result: list[SearchSongInfo]) -> None:
-        for i, song in enumerate(result):
-            item = QListWidgetItem()
-            content_widget = SearchSongCard(
-                song, lambda c: self._mwindow.play(c), self.ctx
-            )
-            self.lst.addItem(item)
-            self.lst.setItemWidget(item, content_widget)
-            self.cards.append(content_widget)
-            content_widget.load = False
+        for song in result:
+            self._addSongResult(song)
+
+    def _addPlaylistResult(self, playlist: SearchCloudFolderInfo) -> None:
+        item = QListWidgetItem()
+        item.setSizeHint(QSize(0, 150))
+        self.lst.addItem(item)
+        content_widget = SearchCloudFolderCard(playlist, self.lst.width(), self.ctx)
+        self.lst.setItemWidget(item, content_widget)
+        self.cards.append(content_widget)
+
+    def _addSongResult(self, song: SearchSongInfo) -> None:
+        item = QListWidgetItem()
+        content_widget = SearchSongCard(song, lambda c: self._mwindow.play(c), self.ctx)
+        self.lst.addItem(item)
+        self.lst.setItemWidget(item, content_widget)
+        self.cards.append(content_widget)
+        content_widget.load = False

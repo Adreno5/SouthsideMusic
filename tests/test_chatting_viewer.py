@@ -4,6 +4,7 @@ import base64
 import os
 import sys
 import tempfile
+import time
 import unittest
 from html.parser import HTMLParser
 from pathlib import Path
@@ -178,6 +179,22 @@ class ChattingViewerTests(unittest.TestCase):
         cast(QApplication, self._app).processEvents()
         self.temp_dir.cleanup()
 
+    def _finishStream(self) -> None:
+        self.viewer.finishStream()
+        self._waitRender()
+
+    def _waitRender(self) -> None:
+        deadline = time.monotonic() + 5.0
+        while (
+            self.viewer._render_running
+            or self.viewer._render_pending
+            or self.viewer._render_finish
+        ):
+            if time.monotonic() >= deadline:
+                self.fail('Markdown render did not finish')
+            QTest.qWait(10)
+        QTest.qWait(10)
+
     def _loadCase(self, case: dict[str, Any]) -> None:
         self.viewer.reset()
         for filename, encoded in case.get('image_files', {}).items():
@@ -185,7 +202,7 @@ class ChattingViewerTests(unittest.TestCase):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(base64.b64decode(encoded, validate=True))
         self.viewer.appendChunk(case['source'])
-        self.viewer.finishStream()
+        self._finishStream()
         cast(QApplication, self._app).processEvents()
 
     def _imageFormats(self) -> list[QTextImageFormat]:
@@ -255,7 +272,7 @@ class ChattingViewerTests(unittest.TestCase):
             '[Southside](https://example.invalid/music)'
         )
         self.viewer.appendChunk(source)
-        self.viewer.finishStream()
+        self._finishStream()
         document = self.viewer.browser.document()
         for text, property_name, expected in [
             ('bold', 'fontWeight', QFont.Weight.Bold),
@@ -343,7 +360,7 @@ class ChattingViewerTests(unittest.TestCase):
                     position += width
                 for position in range(position, len(source), 7):
                     self.viewer.appendChunk(source[position : position + 7])
-                self.viewer.finishStream()
+                self._finishStream()
                 self.assertEqual(self.viewer.toMarkdown(), source)
                 self.assertEqual(self.viewer.browser.toPlainText(), complete_plain)
                 self.assertEqual(
@@ -379,7 +396,7 @@ class ChattingViewerTests(unittest.TestCase):
                     )
                     self.assertEqual(finished.count(), 0)
                     self.viewer.appendChunk(source[split:])
-                    self.viewer.finishStream()
+                    self._finishStream()
                     self.assertEqual(self.viewer.toMarkdown(), source)
                     self.assertEqual(finished.count(), 1)
                     self.assertEqual(
@@ -389,7 +406,7 @@ class ChattingViewerTests(unittest.TestCase):
                     final_plain = self.viewer.browser.toPlainText()
                     self.viewer.reset()
                     self.viewer.appendChunk(source)
-                    self.viewer.finishStream()
+                    self._finishStream()
                     self.assertEqual(self.viewer.browser.toPlainText(), final_plain)
 
     def test_empty_chunks_and_empty_finish_signals(self) -> None:
@@ -399,7 +416,7 @@ class ChattingViewerTests(unittest.TestCase):
         QTest.qWait(120)
         self.assertEqual(received.count(), 0)
         self.assertEqual(finished.count(), 0)
-        self.viewer.finishStream()
+        self._finishStream()
         self.assertEqual(received.count(), 0)
         self.assertEqual(finished.count(), 1)
         self.assertEqual(self.viewer.toMarkdown(), '')
@@ -416,7 +433,7 @@ class ChattingViewerTests(unittest.TestCase):
         chunks = ['南方', '🎵', 'e\u0301', '👩\u200d💻', '**bold**']
         for chunk in chunks:
             self.viewer.appendChunk(chunk)
-        self.viewer.finishStream()
+        self._finishStream()
         self.assertEqual(events[0], ('chars', len(''.join(chunks))))
         self.assertEqual(events[-1][0], 'finished')
         self.assertIn('南方🎵e\u0301👩\u200d💻bold', cast(str, events[-1][1]))
@@ -427,7 +444,7 @@ class ChattingViewerTests(unittest.TestCase):
         finished = QSignalSpy(self.viewer.finished)
         self.viewer.appendChunk('First ')
         self.viewer.appendChunk('**chunk**')
-        self.viewer.finishStream()
+        self._finishStream()
         self.assertEqual(self.viewer.toMarkdown(), 'First **chunk**')
         self.assertIn('First chunk', self.viewer.browser.toPlainText())
         self.assertEqual(received.count(), 1)
@@ -439,7 +456,7 @@ class ChattingViewerTests(unittest.TestCase):
 
     def test_reset_clears_rendered_and_pending_content_without_signals(self) -> None:
         self.viewer.appendChunk('# Old heading\n\n$x^2$')
-        self.viewer.finishStream()
+        self._finishStream()
         self.assertTrue(self._imageFormats())
         received = QSignalSpy(self.viewer.charReceived)
         finished = QSignalSpy(self.viewer.finished)
@@ -452,7 +469,7 @@ class ChattingViewerTests(unittest.TestCase):
         self.assertEqual(received.count(), 0)
         self.assertEqual(finished.count(), 0)
         self.viewer.appendChunk('**New** stream')
-        self.viewer.finishStream()
+        self._finishStream()
         self.assertEqual(self.viewer.toMarkdown(), '**New** stream')
         self.assertIn('New stream', self.viewer.browser.toPlainText())
         self.assertNotIn('Old', self.viewer.browser.toPlainText())
@@ -464,12 +481,12 @@ class ChattingViewerTests(unittest.TestCase):
         finished = QSignalSpy(self.viewer.finished)
         for chunk in ['First', ' second']:
             self.viewer.appendChunk(chunk)
-            self.viewer.finishStream()
+            self._finishStream()
         self.assertEqual(self.viewer.toMarkdown(), 'First second')
         self.assertEqual(finished.count(), 2)
         self.viewer.reset()
         self.viewer.appendChunk('Third')
-        self.viewer.finishStream()
+        self._finishStream()
         self.assertEqual(self.viewer.toMarkdown(), 'Third')
         self.assertEqual(finished.count(), 3)
 
@@ -491,7 +508,7 @@ class ChattingViewerTests(unittest.TestCase):
             with self.subTest(source=source[:30]):
                 self.viewer.reset()
                 self.viewer.appendChunk(source)
-                self.viewer.finishStream()
+                self._finishStream()
                 self.assertEqual(
                     self.viewer.browser.document().defaultTextOption().wrapMode(),
                     QTextOption.WrapMode.WrapAnywhere,
@@ -511,7 +528,7 @@ class ChattingViewerTests(unittest.TestCase):
                 self.viewer.reset()
                 self.viewer.setFixedWidth(720)
                 self.viewer.appendChunk(source)
-                self.viewer.finishStream()
+                self._finishStream()
                 cast(QApplication, self._app).processEvents()
                 document = self.viewer.browser.document()
                 wide_height = document.size().height()
@@ -538,7 +555,7 @@ class ChattingViewerTests(unittest.TestCase):
     def test_resize_can_shrink_viewer_after_initial_render(self) -> None:
         self.viewer.resize(720, 24)
         self.viewer.appendChunk('wrap text ' * 120)
-        self.viewer.finishStream()
+        self._finishStream()
         cast(QApplication, self._app).processEvents()
         wide_width = self.viewer.width()
         self.viewer.resize(240, self.viewer.height())
@@ -556,7 +573,7 @@ class ChattingViewerTests(unittest.TestCase):
         palette.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.darkMagenta)
         self.viewer.browser.setPalette(palette)
         self.viewer.appendChunk('Before $x^2$ after.')
-        self.viewer.finishStream()
+        self._finishStream()
         images = self._imageFormats()
         self.assertEqual(len(images), 1)
         self._assertImageLoaded(images[0])

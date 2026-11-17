@@ -137,13 +137,14 @@ class LaunchWindow(QWidget):
             self.width_timer.target_value = 1
             self._paint_timer.start()
 
-    def subtitle(self, text: str) -> None:
+    def subtitle(self, text: str, process_events: bool = True) -> None:
         if self._stage_started_ns:
             now = time.perf_counter_ns()
             self._stages.append((self._stage_text, self._stage_started_ns, now))
             self._stage_started_ns = now
             self._stage_text = text
-        self._app.processEvents()
+        if process_events:
+            self._app.processEvents()
 
     def setDownloadProgress(self, progress: float | None) -> None:
         if self._process is not None:

@@ -9,6 +9,7 @@ import winreg
 from typing import TYPE_CHECKING
 
 from core.models import IMAGE_DATA_DIR, SongStorable, TrackDetailInfo
+from core.downloader import asyncTask
 from PySide6.QtCore import QObject
 from services.events import Events, event_bus
 from winrt.windows.media import (
@@ -187,12 +188,26 @@ class SmtcController(QObject):
         properties.album_artist = artists
         properties.album_title = ''
         properties.track_number = 0
-        thumbnail = _thumbnailReference(song)
-        if thumbnail is not None:
-            self._cover = thumbnail
-            updater.thumbnail = thumbnail
         updater.update()
+        self._loadThumbnailAsync(song)
         self._loadDetail(song)
+
+    def _loadThumbnailAsync(self, song: SongStorable) -> None:
+        result: dict[str, object] = {}
+
+        def _load() -> None:
+            result['thumbnail'] = _thumbnailReference(song)
+
+        def _apply() -> None:
+            if self._smtc is None or self._currentSong() != song:
+                return
+            thumbnail = result.get('thumbnail')
+            if thumbnail is not None:
+                self._cover = thumbnail  # type: ignore[assignment]
+                self._smtc.display_updater.thumbnail = thumbnail  # type: ignore[assignment]
+                self._smtc.display_updater.update()
+
+        asyncTask(_load, (), self, _apply)
 
     def _loadDetail(self, song: SongStorable) -> None:
         def _fetch() -> None:

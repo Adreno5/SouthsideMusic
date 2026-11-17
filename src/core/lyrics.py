@@ -41,6 +41,34 @@ class YRCLyricInfo:
     translation: str = ''
 
 
+def parseLyricsPayload(
+    lyric: str,
+    yrc_lyric: str,
+    translated_lyric: str,
+) -> dict[str, object]:
+    lrc = LRCLyricParser()
+    yrc = YRCLyricParser()
+    translation = LRCLyricParser()
+    lrc.cur = lyric or yrc_lyric
+    yrc.cur = yrc_lyric
+    translation.cur = translated_lyric
+    lrc.parse()
+    yrc.parse()
+    translation.parse()
+    return {
+        'lrc_parsed': lrc.parsed,
+        'lrc_empty_times': lrc.empty_times,
+        'lrc_cur': lrc.cur,
+        'yrc_parsed': yrc.parsed,
+        'yrc_cur': yrc.cur,
+        'yrc_has_timing': yrc.hasYrcTiming(),
+        'translated_parsed': translation.parsed,
+        'translated_empty_times': translation.empty_times,
+        'translated_cur': translation.cur,
+        'mixed': _mixLines(lrc, yrc, translation),
+    }
+
+
 _LRC_TIME_RE = re.compile(r'^\[(\d+):(\d+)[.:](\d+)\]')
 
 
@@ -132,6 +160,7 @@ class YRCLyricParser:
         self.cur: str = ''
         self.parsed: list[YRCLyricInfo] = []
         self._has_yrc_timing = False
+        self._times: list[float] = []
 
     def hasYrcTiming(self) -> bool:
         return self._has_yrc_timing
@@ -148,6 +177,7 @@ class YRCLyricParser:
         if cur is not None:
             self.cur = cur
         self.parsed = sorted(parsed, key=lambda x: x.time)
+        self._times = [line.time for line in self.parsed]
         self._has_yrc_timing = (
             any(line.chars for line in self.parsed)
             if has_yrc_timing is None
@@ -159,17 +189,10 @@ class YRCLyricParser:
 
     @lru_cache
     def _getCurrentLyric(self, time: float) -> YRCLyricInfo:
-        if not self.parsed:
+        index = self._getCurrentLyricIndex(time)
+        if index < 0:
             return YRCLyricInfo(time=0, duration=0, content='', chars=[])
-
-        if self.parsed[0].time > time:
-            return YRCLyricInfo(time=0, duration=0, content='', chars=[])
-
-        for i, line in enumerate(self.parsed):
-            if line.time > time:
-                return self.parsed[i - 1]
-
-        return self.parsed[-1]
+        return self.parsed[index]
 
     def getOffsetedLyric(self, time: float, offset_index: int) -> YRCLyricInfo:
         return self._getOffsetedLyric(time, offset_index)
@@ -198,15 +221,7 @@ class YRCLyricParser:
     def _getCurrentLyricIndex(self, time: float) -> int:
         if not self.parsed:
             return -1
-
-        if self.parsed[0].time > time:
-            return -1
-
-        for i, line in enumerate(self.parsed):
-            if line.time > time:
-                return i - 1
-
-        return len(self.parsed) - 1
+        return bisect_right(self._times, time) - 1
 
     def parse(self) -> None:
         self._getOffsetedLyric.cache_clear()
@@ -218,6 +233,7 @@ class YRCLyricParser:
 
         if not self.cur:
             self.parsed = parsed
+            self._times = []
             self._has_yrc_timing = has_yrc_timing
             return
 
@@ -250,6 +266,7 @@ class YRCLyricParser:
 
         parsed.sort(key=lambda x: x.time)
         self.parsed = parsed
+        self._times = [line.time for line in parsed]
         self._has_yrc_timing = has_yrc_timing
         self._logger.info(f'parsed {len(parsed)} YRC lines')
 
@@ -261,6 +278,7 @@ class LRCLyricParser:
         self.parsed: list[LyricInfo] = []
         self.empty_times: list[float] = []
         self.version: int = 0
+        self._times: list[float] = []
 
     def setParsed(
         self,
@@ -274,6 +292,7 @@ class LRCLyricParser:
         if cur is not None:
             self.cur = cur
         self.parsed = sorted(parsed, key=lambda x: x.time)
+        self._times = [line.time for line in self.parsed]
         self.empty_times = list(empty_times or [])
         self.version += 1
 
@@ -282,17 +301,10 @@ class LRCLyricParser:
 
     @lru_cache
     def _getCurrentLyric(self, time: float) -> LyricInfo:
-        if not self.parsed:
+        index = self._getCurrentLyricIndex(time)
+        if index < 0:
             return LyricInfo(time=0, content='')
-
-        if self.parsed[0].time > time:
-            return LyricInfo(time=0, content='')
-
-        for i, line in enumerate(self.parsed):
-            if line.time > time:
-                return self.parsed[i - 1]
-
-        return self.parsed[-1]
+        return self.parsed[index]
 
     def getOffsetedLyric(self, time: float, offset_index: int) -> LyricInfo:
         return self._getOffsetedLyric(time, offset_index)
@@ -321,15 +333,7 @@ class LRCLyricParser:
     def _getCurrentLyricIndex(self, time: float) -> int:
         if not self.parsed:
             return -1
-
-        if self.parsed[0].time > time:
-            return -1
-
-        for i, line in enumerate(self.parsed):
-            if line.time > time:
-                return i - 1
-
-        return len(self.parsed) - 1
+        return bisect_right(self._times, time) - 1
 
     def parse(self) -> None:
         self._getOffsetedLyric.cache_clear()
@@ -343,6 +347,7 @@ class LRCLyricParser:
         if not self.cur:
             self.parsed = parsed
             self.empty_times = empty_times
+            self._times = []
             return
 
         for line in self.cur.splitlines():
@@ -371,6 +376,7 @@ class LRCLyricParser:
 
         parsed.sort(key=lambda x: x.time)
         self.parsed = parsed
+        self._times = [line.time for line in parsed]
         self.empty_times = empty_times
         self._logger.info(f'parsed {len(parsed)} lines')
 
@@ -383,6 +389,65 @@ class LyricTrack:
     offset: float = 0.0
     start_index: int = 0
     end_index: int = 0
+
+
+def _mixLines(
+    lrc: LRCLyricParser,
+    yrc: YRCLyricParser,
+    translation: LRCLyricParser,
+) -> list[LyricInfo | YRCLyricInfo]:
+    lines: list[LyricInfo | YRCLyricInfo] = (
+        list(yrc.parsed) if yrc.hasYrcTiming() else list(lrc.parsed)
+    )
+    for text in (lrc.cur, yrc.cur):
+        for raw_line in text.splitlines():
+            metadata = _try_parse_json_metadata_line(raw_line.strip())
+            if metadata is not None and not any(
+                line.isMetadata
+                and line.time == metadata.time
+                and line.content == metadata.content
+                for line in lines
+            ):
+                lines.append(metadata)
+    original_lines = [line for line in lrc.parsed if not line.isMetadata]
+    translated_lines = [line for line in translation.parsed if not line.isMetadata]
+    missing = len(original_lines) - len(translated_lines)
+    shifted = (
+        bool(translated_lines)
+        and missing > 0
+        and all(
+            any(abs(empty - line.time) <= 0.02 for empty in translation.empty_times)
+            for line in original_lines[:missing]
+        )
+        and all(
+            abs(original.time - translated.time) <= 0.02
+            for original, translated in zip(original_lines[missing:], translated_lines)
+        )
+    )
+    translated = (
+        {
+            round(original.time * 1000): translated.content
+            for original, translated in zip(original_lines, translated_lines)
+        }
+        if shifted
+        else {round(line.time * 1000): line.content for line in translated_lines}
+    )
+    for i, line in enumerate(lines):
+        text = translated.get(round(line.time * 1000), '')
+        if not text and not shifted:
+            text = next(
+                (
+                    translated.content
+                    for translated in translated_lines
+                    if abs(translated.time - line.time) <= 0.02
+                ),
+                '',
+            )
+        if not text and isinstance(line, YRCLyricInfo):
+            original = lrc.getCurrentLyric(line.time)
+            text = translated.get(round(original.time * 1000), '')
+        lines[i] = replace(line, translation='' if line.isMetadata else text)
+    return sorted(lines, key=lambda line: line.time)
 
 
 class LyricManager:
@@ -440,6 +505,33 @@ class LyricManager:
         track.lines = self._mixedLines(self.lrc, self.yrc, self.translation)
         self._rebuild()
 
+    def applyParsedLyrics(
+        self,
+        payload: dict[str, object],
+        duration: float,
+    ) -> None:
+        self.lrc.setParsed(
+            payload['lrc_parsed'],  # type: ignore[arg-type]
+            cur=str(payload.get('lrc_cur', '')),
+            empty_times=payload['lrc_empty_times'],  # type: ignore[arg-type]
+        )
+        self.yrc.setParsed(
+            payload['yrc_parsed'],  # type: ignore[arg-type]
+            cur=str(payload.get('yrc_cur', '')),
+            has_yrc_timing=bool(payload.get('yrc_has_timing', False)),
+        )
+        self.translation.setParsed(
+            payload['translated_parsed'],  # type: ignore[arg-type]
+            cur=str(payload.get('translated_cur', '')),
+            empty_times=payload['translated_empty_times'],  # type: ignore[arg-type]
+        )
+        if self.current_track < 0:
+            return
+        track = self.tracks[self.current_track]
+        track.duration = duration
+        track.lines = payload['mixed']  # type: ignore[assignment]
+        self._rebuild()
+
     def syncParsed(self) -> None:
         if self.current_track < 0:
             return
@@ -467,6 +559,21 @@ class LyricManager:
             )
         self._rebuild()
 
+    def applyPreviewParsed(
+        self,
+        song: SongStorable | None,
+        duration: float,
+        payload: dict[str, object],
+    ) -> None:
+        del self.tracks[self.current_track + 1 :]
+        if song is not None and self.current_track >= 0:
+            mixed = payload.get('mixed')
+            if isinstance(mixed, list):
+                self.tracks.append(
+                    LyricTrack(song, duration, mixed)  # type: ignore[arg-type]
+                )
+        self._rebuild()
+
     def timelinePosition(self, position: float) -> float:
         if self.current_track < 0:
             return position
@@ -484,60 +591,7 @@ class LyricManager:
     def _mixedLines(
         self, lrc: LRCLyricParser, yrc: YRCLyricParser, translation: LRCLyricParser
     ) -> list[LyricInfo | YRCLyricInfo]:
-        lines: list[LyricInfo | YRCLyricInfo] = (
-            list(yrc.parsed) if yrc.hasYrcTiming() else list(lrc.parsed)
-        )
-        for text in (lrc.cur, yrc.cur):
-            for raw_line in text.splitlines():
-                metadata = _try_parse_json_metadata_line(raw_line.strip())
-                if metadata is not None and not any(
-                    line.isMetadata
-                    and line.time == metadata.time
-                    and line.content == metadata.content
-                    for line in lines
-                ):
-                    lines.append(metadata)
-        original_lines = [line for line in lrc.parsed if not line.isMetadata]
-        translated_lines = [line for line in translation.parsed if not line.isMetadata]
-        missing = len(original_lines) - len(translated_lines)
-        shifted = (
-            bool(translated_lines)
-            and missing > 0
-            and all(
-                any(abs(empty - line.time) <= 0.02 for empty in translation.empty_times)
-                for line in original_lines[:missing]
-            )
-            and all(
-                abs(original.time - translated.time) <= 0.02
-                for original, translated in zip(
-                    original_lines[missing:], translated_lines
-                )
-            )
-        )
-        translated = (
-            {
-                round(original.time * 1000): translated.content
-                for original, translated in zip(original_lines, translated_lines)
-            }
-            if shifted
-            else {round(line.time * 1000): line.content for line in translated_lines}
-        )
-        for i, line in enumerate(lines):
-            text = translated.get(round(line.time * 1000), '')
-            if not text and not shifted:
-                text = next(
-                    (
-                        translated.content
-                        for translated in translated_lines
-                        if abs(translated.time - line.time) <= 0.02
-                    ),
-                    '',
-                )
-            if not text and isinstance(line, YRCLyricInfo):
-                original = lrc.getCurrentLyric(line.time)
-                text = translated.get(round(original.time * 1000), '')
-            lines[i] = replace(line, translation='' if line.isMetadata else text)
-        return sorted(lines, key=lambda line: line.time)
+        return _mixLines(lrc, yrc, translation)
 
     def _rebuild(self) -> None:
         self.parsed = []

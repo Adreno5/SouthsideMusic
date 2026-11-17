@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import threading
+import time
 import unittest
 from pathlib import Path
 from typing import cast, override
@@ -10,11 +11,13 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from PySide6.QtCore import QCoreApplication, QEvent, QObject
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QThread
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 import shiboken6
 
 from core.downloader import TaskManager
+from services.events import Events, EventBus
 
 
 class BackgroundTaskTests(unittest.TestCase):
@@ -109,6 +112,26 @@ class BackgroundTaskTests(unittest.TestCase):
         finished.assert_called_once_with()
         self.assertEqual(manager.args, ())
         self.assertIsNot(manager.task, task)
+
+    def test_worker_event_is_dispatched_on_main_thread(self) -> None:
+        bus = EventBus()
+        seen: list[QThread] = []
+
+        def listener() -> None:
+            seen.append(QThread.currentThread())
+
+        bus.subscribe(Events.SECOND_TICK, listener)
+        worker = threading.Thread(
+            target=lambda: bus.emitInMainThread(Events.SECOND_TICK),
+            daemon=True,
+        )
+        worker.start()
+        worker.join(2)
+        deadline = time.monotonic() + 2
+        while not seen and time.monotonic() < deadline:
+            QTest.qWait(10)
+        bus.unsubscribe(Events.SECOND_TICK, listener)
+        self.assertEqual(seen, [QThread.currentThread()])
 
 
 if __name__ == '__main__':

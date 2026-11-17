@@ -114,6 +114,7 @@ def checkStreaming(
             _storableDuration=lambda storable, duration: duration,
             _applyStoredLoudnessGain=Mock(),
             _loadPlaybackImage=Mock(),
+            _loadPlaybackImageAsync=Mock(),
             _finishPlaybackLoad=Mock(),
             _emitError=Mock(),
         )
@@ -143,7 +144,7 @@ def checkStreaming(
             ),
             patch('core.playing_manager.asyncTask', side_effect=runTask),
             patch('core.playing_manager.requests.get', return_value=response),
-            patch('core.playing_manager.saveFavorites'),
+            patch('core.playing_manager.scheduleFavoritesSave'),
             patch('core.playing_manager.event_bus.emit'),
             patch(
                 'core.playing_manager.sd.query_devices',

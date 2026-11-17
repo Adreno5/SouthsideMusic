@@ -320,6 +320,20 @@ def _handleWorkerRequest(request: dict[str, Any]) -> Any:
     payload = request.get('payload', {})
     if op == 'json_dumps':
         return dumpJsonPayload(payload)
+    if op == 'capabilities':
+        import importlib.util
+
+        return {
+            'render_markdown_blocks': all(
+                importlib.util.find_spec(name) is not None
+                for name in ('markdown_it', 'ziamath')
+            ),
+            'parse_lyrics': True,
+            'build_equalizer_kernel': all(
+                importlib.util.find_spec(name) is not None
+                for name in ('numpy', 'scipy')
+            ),
+        }
 
     if not isinstance(payload, dict):
         raise TypeError('worker payload must be a dict')
@@ -337,6 +351,41 @@ def _handleWorkerRequest(request: dict[str, Any]) -> Any:
         return _decodeAudio(payload)
     if op == 'crossfade':
         return _crossfade(payload)
+    if op == 'render_markdown_blocks':
+        from core.markdown_renderer import renderMarkdownBlocks
+
+        return renderMarkdownBlocks(
+            str(payload.get('markdown', '')),
+            str(payload.get('math_color', '#ffffff')),
+        )
+    if op == 'parse_lyrics':
+        from core.lyrics import parseLyricsPayload
+
+        return parseLyricsPayload(
+            str(payload.get('lyric', '')),
+            str(payload.get('yrc_lyric', '')),
+            str(payload.get('translated_lyric', '')),
+        )
+    if op == 'build_equalizer_kernel':
+        from core.audio_processing import buildEqualizerKernel
+
+        raw_bands = payload.get('bands', [])
+        bands = [
+            (float(band[0]), float(band[1]))
+            for band in raw_bands
+            if isinstance(band, (list, tuple)) and len(band) >= 2
+        ]
+        kernel = buildEqualizerKernel(
+            bands,
+            int(payload.get('sample_rate', 0)),
+        )
+        if kernel is None:
+            return {'kernel': None}
+        return {
+            'kernel': kernel.tobytes(),
+            'dtype': str(kernel.dtype),
+            'shape': tuple(kernel.shape),
+        }
 
     raise ValueError(f'unsupported worker op: {op}')
 

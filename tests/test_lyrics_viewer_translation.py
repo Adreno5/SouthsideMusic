@@ -17,6 +17,7 @@ class TranslationLookup:
     _translationLookupKey = LyricsViewer._translationLookupKey
     _ensureTranslationLookup = LyricsViewer._ensureTranslationLookup
     _translationTimeForLine = LyricsViewer._translationTimeForLine
+    _translationLineAt = LyricsViewer._translationLineAt
     _translationTextForLine = LyricsViewer._translationTextForLine
     _usesHandoff = LyricsViewer._usesHandoff
 
@@ -32,6 +33,8 @@ class TranslationLookup:
         self._translation_by_time: dict[int, str] = {}
         self._shifted_translation_by_time: dict[int, str] = {}
         self._translation_timing_shifted = False
+        self._translation_lines = []
+        self._translation_line_times = []
 
 
 def test_translation_with_three_leading_empty_timestamps() -> None:

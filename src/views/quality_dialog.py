@@ -128,29 +128,46 @@ class QualityDialog(MessageBoxBase):
         self.scroll_area.setFixedSize(self.parentWidget().size() * 0.5)
 
     def loadQualities(self):
-        def _load():
-            def _returnNull():
-                self.inter.hide()
-                self.viewLayout.addWidget(SubtitleLabel(tr('quality_dialog.null_song')))
+        result: dict[str, object] = {}
 
+        def _load():
             cur = self.ctx.playing_manager.current_song
             if cur is None:
-                self.ctx.addScheduledTask(_returnNull)
+                result['null'] = True
                 return
-            qualities = getBackend().getSongQualityPrivilege(cur.id)
+            try:
+                result['qualities'] = getBackend().getSongQualityPrivilege(cur.id)
+            except Exception as error:
+                result['error'] = error
+
+        def _apply():
+            if result.get('null'):
+                self.inter.hide()
+                self.viewLayout.addWidget(SubtitleLabel(tr('quality_dialog.null_song')))
+                return
+            error = result.get('error')
+            if error is not None:
+                self.inter.hide()
+                ErrorPopupWindow(
+                    str(error),
+                    parent=self.ctx.main_window,
+                    title=tr('quality_dialog.failed'),
+                ).exec()
+                return
+            qualities = result.get('qualities')
+            if qualities is None:
+                return
             self.scroll_area.show()
-            for q in qualities.levels:
-                self.ctx.addScheduledTask(
-                    lambda nq=q: self.card_layout.addWidget(
-                        QualityCard(
-                            self.card_container,
-                            nq,
-                            self.ctx.playing_manager.getCurrentRequestBr(),
-                            self.ctx,
-                        )
+            for q in qualities.levels:  # type: ignore[union-attr]
+                self.card_layout.addWidget(
+                    QualityCard(
+                        self.card_container,
+                        q,
+                        self.ctx.playing_manager.getCurrentRequestBr(),
+                        self.ctx,
                     )
                 )
             self.inter.hide()
             self.tl.show()
 
-        asyncTask(_load, (), self)
+        asyncTask(_load, (), self, _apply)

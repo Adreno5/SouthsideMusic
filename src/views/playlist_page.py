@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING
 
 from core import theme
@@ -188,7 +189,22 @@ class PlaylistPage(QWidget):
     def _checkVisibleCards(self):
         if not self.isVisible():
             return
-        for idx, card in enumerate(list(self._song_cards)):
+        viewport_rect = self.lst.viewport().rect()
+        start = 0
+        end = self.lst.count()
+        while start < end:
+            middle = (start + end) // 2
+            item = self.lst.item(middle)
+            if item is None:
+                break
+            if self.lst.visualItemRect(item).bottom() < viewport_rect.top():
+                start = middle + 1
+            else:
+                end = middle
+        for idx in range(start, self.lst.count()):
+            if idx >= len(self._song_cards):
+                break
+            card = self._song_cards[idx]
             try:
                 card.objectName()
             except RuntimeError:
@@ -199,7 +215,8 @@ class PlaylistPage(QWidget):
             if item is None:
                 continue
             item_rect = self.lst.visualItemRect(item)
-            viewport_rect = self.lst.viewport().rect()
+            if item_rect.top() > viewport_rect.bottom():
+                break
             if viewport_rect.intersects(item_rect):
                 card.loadDetailAndImage()
 
@@ -225,8 +242,14 @@ class PlaylistPage(QWidget):
             return
 
         end = min(start + LIST_BUILD_BATCH_SIZE, len(songs))
+        deadline = time.perf_counter() + 0.008
+        added = 0
         for song in songs[start:end]:
             self.addSongCardToList(song)
+            added += 1
+            if time.perf_counter() >= deadline:
+                end = start + added
+                break
 
         if end < len(songs):
             QTimer.singleShot(

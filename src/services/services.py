@@ -42,6 +42,8 @@ class EventsServices(QObject):
         self._app = ctx.app
 
         self._start_session_refresher()
+        self._theme_sync_running = False
+        self._last_theme_sync = 0.0
 
         self._screen = self._app.primaryScreen()
         self._window_handle: QWindow | None = None
@@ -84,6 +86,26 @@ class EventsServices(QObject):
         event_bus.subscribe(Events.CLOUD_RENAME_FOLDER, self.cloudRenameFolder)
         event_bus.subscribe(Events.CLOUD_ADD_TO_LOCAL, self.cloudAddToLocal)
         event_bus.subscribe(Events.REPAINT_EVENT_INTERVAL, self._setRepaintInterval)
+        event_bus.subscribe(Events.SECOND_TICK, self._syncThemeColor)
+
+    def _syncThemeColor(self) -> None:
+        now = time.monotonic()
+        if self._theme_sync_running or now - self._last_theme_sync < 30:
+            return
+        self._theme_sync_running = True
+        self._last_theme_sync = now
+
+        def _read() -> None:
+            color = theme.readSystemThemeColor()
+            self.ctx.addScheduledTask(theme.applySystemThemeColor, color)
+
+        def _run() -> None:
+            try:
+                _read()
+            finally:
+                self._theme_sync_running = False
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def _setRepaintInterval(self, interval: float) -> None:
         if interval == self.last_interval:

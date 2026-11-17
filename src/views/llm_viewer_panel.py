@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Callable
 
 from core import theme
 from core.app_context import AppContext
-from core.config import cfg, saveConfig
+from core.config import cfg, scheduleConfigSave
 from core.i18n import bindText, tr
 from core.icons import bindIcon
 from core.llm_tools import LLMToolRunner, llmToolSchemas
@@ -310,7 +310,7 @@ class LLMViewerPanel(QFrame):
         cfg.llm_current_provider = str(data[0])
         cfg.llm_current_model = str(data[1])
         self._syncLegacyLlmConfig()
-        saveConfig()
+        scheduleConfigSave()
 
     def _syncLegacyLlmConfig(self) -> None:
         for provider in cfg.llm_providers:

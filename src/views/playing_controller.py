@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 import time
 from collections import deque
+from queue import Empty, Full, Queue
 from typing import TYPE_CHECKING, override
 from typing import cast as _cast
 
 import PySide6
 import numpy as np
-from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSize, QTimer
+from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSize, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -227,6 +229,8 @@ class PlayingControllerLyricsViewer(QWidget):
 
 
 class PlayingController(QOpenGLWidget):
+    _fftDisplayReady = Signal(int, object)
+
     def __init__(
         self,
         ctx: AppContext,
@@ -287,6 +291,8 @@ class PlayingController(QOpenGLWidget):
         self.draw_magnitudes: np.ndarray = np.zeros(2049, dtype=np.float64)
         self.fft_display_magnitudes: np.ndarray = np.zeros(768, dtype=np.float32)
         self._fft_path = QPainterPath()
+        self._fft_gradient: QLinearGradient | None = None
+        self._fft_gradient_key: tuple[object, ...] = ()
         self._draw_progress_left = 52
         self.last_lyric: LyricInfo | YRCLyricInfo | None = None
         self._last_ws_lyric_send = 0.0
@@ -307,6 +313,16 @@ class PlayingController(QOpenGLWidget):
         self._layout_width = -1
         self._layout_text_width = 0
         self._last_paint_state: tuple[object, ...] = ()
+        self._fft_display_sequence = 0
+        self._fft_display_applied = -1
+        self._fft_display_queue: Queue[dict[str, object] | None] = Queue(maxsize=1)
+        self._fft_display_thread = threading.Thread(
+            target=self._fftDisplayWorker,
+            daemon=True,
+            name='southside-fft-display',
+        )
+        self._fft_display_thread.start()
+        self._fftDisplayReady.connect(self._applyFFTDisplay)
 
         self.cover_label = SImageLabel()
         self.cover_label.setFixedWidth(52)
@@ -383,6 +399,7 @@ class PlayingController(QOpenGLWidget):
         event_bus.subscribe(Events.REPAINT, self._onRepaintTick)
 
         self._player.fftDataReady.connect(self.updateFFTData)
+        event_bus.subscribe(Events.PLAYBACK_IMAGE_LOADED, self._onPlaybackImageLoaded)
 
         self.bar_alpha_timer = EaseOutTimer(0.3, 2)
         self.beat_flash_timer = EaseOutTimer(0.6, 2)
@@ -468,25 +485,34 @@ class PlayingController(QOpenGLWidget):
         self.norm_timer.target_value = 100000
 
         if song:
-            try:
-                qimg = QImage.fromData(song.getImageBytes())
-            except FileNotFoundError:
-                qimg = QImage()
-
-            if qimg.isNull():
-                self.cover_label.clear()
-            else:
-                pixmap = QPixmap.fromImage(qimg)
-                pixmap = pixmap.scaled(
-                    self.height(),
-                    self.height(),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-                self.cover_label.setPixmap(pixmap)
+            self.cover_label.clear()
             self.song_title_label.setText(song.name)
 
         self.update()
+
+    def _onPlaybackImageLoaded(
+        self,
+        song: SongStorable,
+        image_bytes: bytes,
+        _avg_color: object = None,
+        image: QImage | None = None,
+        _image_png: bytes = b'',
+    ) -> None:
+        current = self.ctx.playing_manager.current_song
+        if current is not song:
+            return
+        if image is None:
+            image = QImage.fromData(image_bytes)
+        if image.isNull():
+            self.cover_label.clear()
+            return
+        target = self.cover_label.size()
+        pixmap = QPixmap.fromImage(image).scaled(
+            target,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self.cover_label.setPixmap(pixmap)
 
     @override
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
@@ -578,27 +604,33 @@ class PlayingController(QOpenGLWidget):
         self.cur_freqs = freqs
         self.cur_magnitudes = magnitudes
 
-    def _displayFFTMagnitudes(self) -> np.ndarray:
-        if self.cur_freqs is None or len(self.cur_freqs) < 2:
-            return np.zeros(0, dtype=np.float32)
-        size = min(len(self.cur_freqs), len(self.draw_magnitudes))
+    def _displayFFTMagnitudes(
+        self,
+        freqs_source: np.ndarray | None,
+        draw_magnitudes: np.ndarray,
+        centers_key: tuple[object, ...],
+        centers: np.ndarray,
+    ) -> tuple[np.ndarray, tuple[object, ...], np.ndarray]:
+        if freqs_source is None or len(freqs_source) < 2:
+            return np.zeros(0, dtype=np.float32), centers_key, centers
+        size = min(len(freqs_source), len(draw_magnitudes))
         if size < 2:
-            return np.zeros(0, dtype=np.float32)
+            return np.zeros(0, dtype=np.float32), centers_key, centers
 
-        freqs = self.cur_freqs[:size]
-        magnitudes = self.draw_magnitudes[:size]
+        freqs = freqs_source[:size]
+        magnitudes = draw_magnitudes[:size]
         min_frequency = max(float(cfg.fft_min_frequency_hz), float(freqs[1]))
         max_frequency = min(float(cfg.fft_max_frequency_hz), float(freqs[-1]))
         if max_frequency <= min_frequency:
-            return np.zeros(0, dtype=np.float32)
+            return np.zeros(0, dtype=np.float32), centers_key, centers
 
         key = (size, float(freqs[1]), float(freqs[-1]), min_frequency, max_frequency)
-        if key != self._fft_centers_key:
-            self._fft_centers_key = key
+        if key != centers_key:
+            centers_key = key
             mel_min = np.log1p(min_frequency / 700)
             mel_max = np.log1p(max_frequency / 700)
-            self._fft_centers = 700 * np.expm1(np.linspace(mel_min, mel_max, 768))
-        display = np.interp(self._fft_centers, freqs, magnitudes).astype(
+            centers = 700 * np.expm1(np.linspace(mel_min, mel_max, 768))
+        display = np.interp(centers, freqs, magnitudes).astype(
             np.float32,
             copy=False,
         )
@@ -607,24 +639,187 @@ class PlayingController(QOpenGLWidget):
             np.divide(display, peak, out=display)
             np.power(display, 1.6, out=display)
             np.multiply(display, peak, out=display)
-        return display.astype(np.float32, copy=False)
+        return display.astype(np.float32, copy=False), centers_key, centers
 
-    def _updateFFTAndRepaint(self, multiple_factor: float = 1.0) -> None:
+    def _requestFFTDisplay(self, multiple_factor: float) -> None:
+        if self.cur_freqs is None or self.cur_magnitudes is None:
+            return
         from views.song_card import DummyCard
 
+        dummy_factor = 1.0
+        if isinstance(self._dp.cur, DummyCard):
+            gain = max(float(self._dp.cur.storable.loudness_gain), 1e-6)
+            dummy_factor = (2 / gain) * 0.75
+        self._fft_display_sequence += 1
+        snapshot: dict[str, object] = {
+            'sequence': self._fft_display_sequence,
+            'freqs': np.array(self.cur_freqs, copy=True),
+            'magnitudes': np.array(self.cur_magnitudes, copy=True),
+            'smoothed': self.smoothed_magnitudes.copy(),
+            'draw': self.draw_magnitudes.copy(),
+            'centers_key': self._fft_centers_key,
+            'centers': self._fft_centers.copy(),
+            'weights': self._fft_weights.copy(),
+            'norm_buffer': list(self.norm_buffer),
+            'norm_maxlen': self.norm_buffer.maxlen,
+            'norm_current': self.norm_timer.current_value,
+            'playing': self.ctx.player.isPlaying(),
+            'multiple_factor': multiple_factor,
+            'height': self.height(),
+            'dummy_factor': dummy_factor,
+        }
+        while True:
+            try:
+                self._fft_display_queue.put_nowait(snapshot)
+                return
+            except Full:
+                try:
+                    self._fft_display_queue.get_nowait()
+                except Empty:
+                    return
+
+    def _fftDisplayWorker(self) -> None:
+        while True:
+            snapshot = self._fft_display_queue.get()
+            if snapshot is None:
+                return
+            try:
+                result = self._computeFFTDisplay(snapshot)
+            except Exception as error:
+                self._logger.exception(error)
+                continue
+            try:
+                self._fftDisplayReady.emit(int(snapshot['sequence']), result)
+            except RuntimeError:
+                return
+
+    def _computeFFTDisplay(self, snapshot: dict[str, object]) -> dict[str, object]:
+        freqs = snapshot['freqs']
+        magnitudes = snapshot['magnitudes']
+        smoothed = snapshot['smoothed']
+        draw = snapshot['draw']
+        if not isinstance(freqs, np.ndarray) or not isinstance(magnitudes, np.ndarray):
+            return {}
+        if not isinstance(smoothed, np.ndarray) or not isinstance(draw, np.ndarray):
+            return {}
+        if len(magnitudes) != len(smoothed):
+            smoothed = np.zeros_like(magnitudes, dtype=np.float32)
+            draw = np.zeros_like(magnitudes, dtype=np.float64)
+        playing = bool(snapshot.get('playing', False))
+        active = (
+            playing or bool(np.any(smoothed > 0.0001)) or bool(np.any(draw > 0.001))
+        )
+        norm_buffer = deque(
+            snapshot.get('norm_buffer', []),  # type: ignore[arg-type]
+            maxlen=snapshot.get('norm_maxlen'),  # type: ignore[arg-type]
+        )
+        norm_target = float(snapshot.get('norm_current', 1.0) or 1.0)
+        centers_key = snapshot.get('centers_key', ())
+        centers = snapshot.get('centers', np.empty(0, dtype=np.float64))
+        weights = snapshot.get('weights')
+        final = np.zeros(0, dtype=np.float32)
+        if not isinstance(centers_key, tuple) or not isinstance(centers, np.ndarray):
+            centers_key = ()
+            centers = np.empty(0, dtype=np.float64)
+        if not active:
+            smoothed.fill(0)
+            draw.fill(0)
+            display = np.zeros(0, dtype=np.float32)
+        else:
+            multiple_factor = float(snapshot.get('multiple_factor', 1.0))
+            smoothed += (magnitudes - smoothed) * (
+                1 - pow(1 - cfg.fft_factor, multiple_factor)
+            )
+            window_size = int(cfg.fft_filtering_windowsize)
+            kernel = np.ones(window_size) / window_size
+            final = np.convolve(smoothed, kernel, mode='same')
+            if not isinstance(weights, np.ndarray) or len(weights) != len(final):
+                weights = np.arange(len(final), dtype=final.dtype)
+                weights -= int(len(final) * 0.015)
+                np.abs(weights, out=weights)
+                weights += 1.0
+                weights *= 1.05
+            final *= weights
+            final *= float(snapshot.get('dummy_factor', 1.0))
+            if playing:
+                norm_buffer.append(max(float(np.max(final)), 1))
+                norm_target = max(norm_buffer)
+                if len(norm_buffer) >= min(5, int(norm_buffer.maxlen or 1)):
+                    final /= max(
+                        float(snapshot.get('norm_current', 1.0)),
+                        1e-6,
+                    )
+                    final *= max(1, int(snapshot.get('height', 1)) - 10)
+            np.maximum(final, draw, out=draw)
+            draw *= pow(0.93, multiple_factor)
+            np.maximum(draw, 0, out=draw)
+            display, centers_key, centers = self._displayFFTMagnitudes(
+                freqs,
+                draw,
+                centers_key,
+                centers,
+            )
+            weights = weights.astype(np.float32, copy=False)
+        return {
+            'smoothed': smoothed.astype(np.float32, copy=False),
+            'final': final.astype(np.float32, copy=False),
+            'draw': draw.astype(np.float64, copy=False),
+            'display': display.astype(np.float32, copy=False),
+            'weights': weights,
+            'centers': centers.astype(np.float64, copy=False),
+            'centers_key': centers_key,
+            'norm_buffer': list(norm_buffer),
+            'norm_maxlen': norm_buffer.maxlen,
+            'norm_target': norm_target,
+            'active': active,
+        }
+
+    def _applyFFTDisplay(self, sequence: int, result: object) -> None:
+        if sequence < self._fft_display_applied or not isinstance(result, dict):
+            return
+        self._fft_display_applied = sequence
+        smoothed = result.get('smoothed')
+        final = result.get('final')
+        draw = result.get('draw')
+        display = result.get('display')
+        centers = result.get('centers')
+        weights = result.get('weights')
+        if isinstance(smoothed, np.ndarray):
+            self.smoothed_magnitudes = smoothed
+        if isinstance(final, np.ndarray):
+            self.final_magnitudes = final
+        if isinstance(draw, np.ndarray):
+            self.draw_magnitudes = draw
+        if isinstance(display, np.ndarray):
+            self.fft_display_magnitudes = display
+        if isinstance(centers, np.ndarray):
+            self._fft_centers = centers
+        if isinstance(weights, np.ndarray):
+            self._fft_weights = weights
+        centers_key = result.get('centers_key')
+        if isinstance(centers_key, tuple):
+            self._fft_centers_key = centers_key
+        norm_buffer = result.get('norm_buffer')
+        if isinstance(norm_buffer, list):
+            self.norm_buffer = deque(
+                (float(value) for value in norm_buffer),
+                maxlen=result.get('norm_maxlen'),  # type: ignore[arg-type]
+            )
+        norm_target = result.get('norm_target')
+        if isinstance(norm_target, (int, float)):
+            self.norm_timer.target_value = float(norm_target)
+        self._fft_active = bool(result.get('active', False))
+        self.update()
+
+    def _updateFFTAndRepaint(self, multiple_factor: float = 1.0) -> None:
         self._draw_fft = (
             self._stp.enableFFT_box.isChecked()
             and self.cur_freqs is not None
             and self.cur_magnitudes is not None
         )
         playing = self._player.isPlaying()
-        self._fft_active = self._draw_fft and (
-            playing
-            or bool(np.any(self.smoothed_magnitudes > 0.0001))
-            or bool(np.any(self.draw_magnitudes > 0.001))
-        )
         needs_fft = self._draw_fft and (self.isVisible() or self._ws_handler.is_open)
-        if needs_fft and self._fft_active:
+        if needs_fft:
             if (
                 not playing
                 and self.cur_magnitudes is not None
@@ -633,48 +828,9 @@ class PlayingController(QOpenGLWidget):
                 self.cur_magnitudes = np.zeros_like(
                     self.cur_magnitudes, dtype=np.float32
                 )
-            window_size = int(cfg.fft_filtering_windowsize)
-            if self._fft_kernel_size != window_size:
-                self._fft_kernel_size = window_size
-                self._fft_kernel = np.ones(window_size) / window_size
-
-            self.smoothed_magnitudes += (
-                self.cur_magnitudes - self.smoothed_magnitudes
-            ) * (1 - pow(1 - cfg.fft_factor, multiple_factor))
-            self.final_magnitudes = np.convolve(
-                self.smoothed_magnitudes,
-                self._fft_kernel,
-                mode='same',
-            )
-            n = len(self.final_magnitudes)
-            if len(self._fft_weights) != n:
-                self._fft_weights = np.arange(n, dtype=self.final_magnitudes.dtype)
-                self._fft_weights -= int(n * 0.015)
-                np.abs(self._fft_weights, out=self._fft_weights)
-                self._fft_weights += 1.0
-                self._fft_weights *= 1.05
-            self.final_magnitudes *= self._fft_weights
-            if isinstance(self._dp.cur, DummyCard):
-                self.final_magnitudes *= (
-                    2 / self._dp.cur.storable.loudness_gain
-                ) * 0.75
-
-            if self.ctx.player.isPlaying():
-                self.norm_buffer.append(max(np.max(self.final_magnitudes), 1))
-                self.norm_timer.target_value = max(self.norm_buffer)
-                if len(self.norm_buffer) >= min(5, int(self.norm_buffer.maxlen or 1)):
-                    self.final_magnitudes /= self.norm_timer.current_value
-                    self.final_magnitudes *= self.height() - 10
-
-            np.maximum(
-                self.final_magnitudes, self.draw_magnitudes, out=self.draw_magnitudes
-            )
-            self.draw_magnitudes *= pow(0.93, multiple_factor)
-            np.maximum(self.draw_magnitudes, 0, out=self.draw_magnitudes)
-            self.fft_display_magnitudes = self._displayFFTMagnitudes()
-        elif needs_fft:
-            self.smoothed_magnitudes.fill(0)
-            self.draw_magnitudes.fill(0)
+            self._requestFFTDisplay(multiple_factor)
+        elif not self._draw_fft:
+            self._fft_active = False
             self.fft_display_magnitudes.fill(0)
 
         if needs_fft and self._ws_handler.is_open:
@@ -1086,13 +1242,20 @@ class PlayingController(QOpenGLWidget):
             painter.setPen(QPen(QColor(120, 120, 120), 1))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPath(self._fft_path)
-            gradient = QLinearGradient(0, self.height(), 0, 0)
-            gradient.setColorAt(
-                1,
-                QColor(QColor(255, 255, 255, 150) if isDark else QColor(0, 0, 0, 150)),
-            )
-            gradient.setColorAt(0.5, QColor(0, 0, 0, 0))
-            painter.fillPath(self._fft_path, gradient)
+            gradient_key = (self.height(), isDark)
+            if gradient_key != self._fft_gradient_key:
+                self._fft_gradient_key = gradient_key
+                gradient = QLinearGradient(0, self.height(), 0, 0)
+                gradient.setColorAt(
+                    1,
+                    QColor(
+                        QColor(255, 255, 255, 150) if isDark else QColor(0, 0, 0, 150)
+                    ),
+                )
+                gradient.setColorAt(0.5, QColor(0, 0, 0, 0))
+                self._fft_gradient = gradient
+            if self._fft_gradient is not None:
+                painter.fillPath(self._fft_path, self._fft_gradient)
 
         bar_alpha = int(self.bar_alpha_timer.current_value * 255)
         painter.setPen(QPen(QColor(120, 120, 120, bar_alpha), self.progress_bar_height))

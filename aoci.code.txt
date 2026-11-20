@@ -1,0 +1,305 @@
+#AOCI-CODE-VOLUME: 1
+
+===/<repository>/===
+.gitattributes[FC7T]: F:声明全仓文本使用 LF，保证 AOCI 源码摘要跨平台稳定 | R:- | A:- | S:AOCI 按原始字节建立基线；Windows 的 autocrlf 改写行尾会把整棵树标成 stale，因此文本必须保持 LF。
+.gitignore[FC5T]: F:排除虚拟环境、构建产物、用户配置、收藏、媒体文件与本地工具缓存 | R:- | A:- | S:/AGENTS.md 和 /index.js 在忽略列表中但仍被项目跟踪，不能仅凭忽略文件判断它们不存在。
+.python-version[FV5T]: F:固定工作区与 CI 使用 Python 3.14 | R:code:.github/workflows/ci.yml,code:.github/workflows/build.yml,code:pyproject.toml | A:- | S:打包应用还要求额外的 free-threaded 3.14t worker；本文件只声明 GIL 主运行时。
+.requirements_sha256[FV4T]: F:保存嵌入式依赖清单摘要，作为构建输入缓存键 | R:code:embed_python_requirements.txt,code:.github/workflows/build.yml | A:- | S:修改 embed_python_requirements.txt 后必须同步更新该摘要，否则 CI 缓存可能复用旧运行时输入。
+.ruff.toml[FQ5T]: F:定义 Ruff 的行宽、缩进、单引号格式与排除目录 | R:code:.github/workflows/ci.yml,code:pyproject.toml | A:- | S:只启用 E4/E7/E9/F 规则，并特意忽略管道初始化后的 E402 与事件包重导出的 F403。
+AGENTS.md[SG9L]: F:定义跨平台环境、命令、测试、编码风格、常量和四仓协作约束 | R:code:docs/README.md,code:docs/testing.md,code:build.py,code:tests/harness/runner.py,code:src/main.py | A:全局执行规范,跨平台守卫,构建与测试命令,导入风格,常量规则,跨仓协议 | S:Windows 专属集成必须用 sys.platform/os.name 守卫并提供跨平台回退；pytest 不可用且测试必须走 unittest/harness；torch_venv 与 freethreaded_venv 禁止扫描编辑；未经用户明确要求不得提交或推送；build.py 是跨平台构建入口，build.bat 只是其 Windows 包装器。
+IDEA.md[SB1T]: F:记录一个关于本地音乐人演出发现 Web 应用的产品设想 | R:- | A:- | S:这是独立构想，不是当前 SouthsideMusic 桌面播放器的实现说明。
+LICENSE[SG6S]: F:声明 Southside Music 使用 PolyForm Noncommercial 1.0.0 许可 | R:code:docs/terms_of_service.md,code:docs/README.md | A:- | S:许可禁止商业用途；源码可用性不等于可商业分发。
+bootstrap.py[RR9L]: F:首次启动修复打包 Python 依赖，校验双运行时，展示下载安装进度后启动主程序 | R:code:full_requirements.txt,code:embed_python_requirements.txt,code:launcher.py,code:src/main.py,code:src/core/crash_handler.py | A:镜像延迟竞速,wheel 索引解析,哈希校验下载,双运行时安装,导入验证,子进程启动 | S:嵌入运行时必须先具备 PySide6/shiboken6 才能启动修复窗口；free-threaded runtime 只安装 numpy/scipy/Pillow/pydub/audioop-lts，任何必需导入失败都会阻止主程序启动。
+build.bat[OV8T]: F:Windows 构建包装器，切换到仓库根后调用 build.py，并在失败或结束时暂停以保留控制台 | R:code:build.py | A:切换仓库根,调用构建脚本,失败暂停 | S:只是 build.py 的 Windows 包装器，Nuitka 与 Inno Setup 流程都在 build.py；CI 以 `< nul` 调用以避免 pause 阻塞。
+embed_python_requirements.txt[FV7T]: F:列出嵌入 Python 首启所需的 PySide6、Fluent Widgets 与 shiboken6 最小依赖 | R:code:bootstrap.py,code:full_requirements.txt,code:build.bat | A:- | S:该清单只够启动 bootstrap 进度窗口，不是应用完整依赖；缺少 PySide6/shiboken6 时构建后导入检查会失败。
+full_requirements.txt[FV8T]: F:固定打包应用与 bootstrap 使用的完整 Python 依赖版本 | R:code:bootstrap.py,code:embed_python_requirements.txt,code:pyproject.toml | A:- | S:bootstrap 按这里的精确 pin 解析并安装；版本变更必须同时验证 GIL 与 free-threaded 运行时导入。
+index.js[DU2M]: F:个人 Monaco 编辑器光标拖尾动画脚本，包含画布粒子与光标轮询逻辑 | R:- | A:- | S:本地编辑器实验，不是应用运行时代码；文件也被 .gitignore 排除。
+installer.iss[OV8S]: F:Inno Setup 安装器定义，打包 raw 构建、快捷方式、安装与卸载清理及版本元数据 | R:code:build.bat,code:launcher.py,code:LICENSE,code:.github/workflows/build.yml | A:应用标识,安装删除,文件与快捷方式,注册表,默认目录 | S:#define AppVersion 必须与 pyproject.toml 和发布 tag 一致；安装器必须排除旧 flat 模块和根目录 launcher/python DLL。
+launcher.py[ER8S]: F:跨平台单实例启动器，定位应用根和内置 Python，在 Windows 启动 bootstrap，在 POSIX 直接启动主程序 | R:code:bootstrap.py,code:src/main.py,code:build.py,code:installer.iss | A:单实例锁,应用根定位,解释器发现,错误提示,子进程启动 | S:启动器必须位于 launcher 子目录并从应用根目录启动子进程；Windows 根目录不能出现 GIL 版 python314.dll；Windows 需用 CREATE_NO_WINDOW 启动 bootstrap，macOS/Linux 用 fcntl 锁且直接运行 src/main.py。
+main.py[ER7T]: F:从仓库根以 __main__ 方式转交 src/main.py 启动应用 | R:code:src/main.py | A:- | S:必须保留根目录工作目录，因为资源和数据路径相对应用根解析。
+pyproject.toml[FV8T]: F:声明项目版本、Python 版本范围、运行时依赖与开发依赖组 | R:code:uv.lock,code:full_requirements.txt,code:.github/workflows/build.yml,code:.python-version | A:项目元数据,平台依赖标记,运行时依赖,开发依赖 | S:Python 必须大于等于 3.13 且小于 3.15；openai<=3.22.1 与 full_requirements.txt 的 3.23.0 不一致；pywin32 与 winrt 依赖带 sys_platform == 'win32' 标记。
+setup_workspace.py[OV9L]: F:自动搭建 uv、嵌入式 Python 3.14.7、free-threaded worker、Nuitka 构建环境和 Inno Setup | R:code:embed_python_requirements.txt,code:full_requirements.txt,code:build.bat,code:bootstrap.py | A:环境检查,uv 同步,双运行时,构建 venv,嵌入式依赖,Inno Setup | S:必须在 Windows x64 的全局 Python 3.14 运行，不能在 venv 内；build_venv 的主版本必须与 embed_python 一致，否则 Launch.exe 会带错 python DLL。
+updates.bat[OV4T]: F:交互式版本更新脚本，把 pyproject.toml 与 installer.iss 的版本统一为同一 vN 并执行 uv sync | R:code:pyproject.toml,code:installer.iss,code:uv.lock | A:版本输入,正则替换,uv sync | S:只更新两个版本声明；发布 tag 与 release-notes/<tag>.md 仍需人工创建。
+uv.lock[FV7L]: F:uv 生成的完整依赖解析锁，固定项目与开发依赖的版本和来源 | R:code:pyproject.toml,code:full_requirements.txt,code:.github/workflows/ci.yml | A:包版本,解析来源,校验和,平台标记 | S:该文件由 uv lock/uv sync 生成，不应手改；依赖变更后必须重新同步并提交锁文件；pywin32 与 winrt 依赖在锁中带 sys_platform == 'win32' 标记。
+build.py[OV9L]: F:跨平台构建入口，按平台编译或组装运行时与资源，生成 Windows 安装器、macOS 应用镜像和 Linux 包 | R:code:build.bat,code:launcher.py,code:installer.iss,code:scripts/create_shortcut.ps1,code:full_requirements.txt,code:pyproject.toml,code:.github/workflows/build.yml | A:平台分派,Nuitka 编译,uv 运行时安装,资源组装,缓存清理,Inno/dmg/deb 打包 | S:Windows 必须使用 build_venv 与 embed_python，free-threaded 目录可缺省；macOS/Linux 用 uv 下载托管 Python 并通过 --target 安装依赖，不能用 --system 写托管运行时；POSIX 启动脚本必须在 launcher 子目录并指向 ../python/bin；macOS 依赖 iconutil/hdiutil，Linux 依赖 dpkg-deb 才生成 deb。
+
+===/<repository>/.github/workflows/===
+build.yml[OV8M]: F:可复用多平台构建工作流，先跑 CI，再解析版本并在 Windows、macOS、Linux 矩阵构建、校验和上传安装包 | R:code:.github/workflows/ci.yml,code:build.py,code:build.bat,code:installer.iss,code:pyproject.toml,code:.python-version | A:版本一致性校验,三平台矩阵,Windows 缓存与嵌入运行时,产物完整性检查,分平台构件上传 | S:pyproject.toml 与 installer.iss 的版本必须一致且等于触发 tag；Windows 走 setup_workspace 与 build.bat，macOS/Linux 走 uv sync 与 build.py；上传构件名必须保留平台后缀，release.yml 按该前缀下载。
+ci.yml[TQ8S]: F:在 Windows 上执行编译、Ruff、格式、unit 与 core/online harness，并在 Ubuntu 验证非 Windows 依赖解析和平台敏感模块导入 | R:code:scripts/test_harness.py,code:tests/harness/runner.py,code:tests/harness/unit_runner.py,code:.github/workflows/build.yml | A:check job,harness job,portability job,free-threaded worker,报告上传 | S:CI 不运行 pytest；单元入口是 scripts/test_harness.py unit；harness 依赖 FFmpeg 和 3.14t worker；portability job 使用 offscreen 导入，不启动 GUI。
+release.yml[OV8T]: F:tag push 时调用多平台构建工作流，汇总各平台安装包并创建 GitHub Release | R:code:.github/workflows/build.yml | A:tag 触发,artifact 下载,发布说明查找,全平台资产收集,gh release 创建 | S:release job 仅在 tag push 执行；发布说明读取 release-notes/<tag>.md，缺失时退回 GitHub 自动生成；发布资产从 dist 递归收集，不再只匹配 exe 和 Portable.zip。
+
+===/<repository>/.idea/===
+.gitignore[FZ2T]: F:IntelliJ 本地工作区与 HTTP 请求缓存的忽略规则 | R:- | A:- | S:-
+SouthsideMusic.iml[FZ3T]: F:定义 PyCharm 模块、src 源码根以及本地虚拟环境和构建目录排除项 | R:code:pyproject.toml,code:.idea/modules.xml | A:源码根,目录排除 | S:模块 SDK 固定到本机 .venv 路径，不能当作可移植运行配置。
+material_theme_project_new.xml[FZ1T]: F:记录 Material Theme 项目迁移与本地用户标识元数据 | R:- | A:- | S:-
+modules.xml[FZ2T]: F:注册 .idea/SouthsideMusic.iml 为项目唯一模块 | R:code:.idea/SouthsideMusic.iml | A:- | S:-
+vcs.xml[FZ1T]: F:将仓库根目录映射为 Git 版本控制目录 | R:- | A:- | S:-
+
+===/<repository>/.idea/dictionaries/===
+project.xml[FZ1T]: F:项目拼写词典，收录 Netease、downloadMaxbr 等专有词 | R:- | A:- | S:-
+
+===/<repository>/.idea/inspectionProfiles/===
+profiles_settings.xml[FZ1T]: F:声明 IntelliJ 检查配置使用项目默认 profile | R:- | A:- | S:-
+
+===/<repository>/docs/===
+README.md[SG7L]: F:英文项目主页，概述跨平台功能、安装、使用、开发、多平台构建、技术栈与数据位置 | R:code:docs/README_zh.md,code:docs/testing.md,code:docs/music_bridge_protocol.md | A:功能指南,平台安装,开发命令,构建流程,数据布局 | S:必须与回链的 README_zh.md 保持功能与命令一致；Windows 安装器、macOS dmg 与 Linux deb/tar.gz 均由 build.py 生成；SMTC 与 Windows bootstrap 仍仅支持 Windows。
+README_zh.md[SG6L]: F:中文项目主页，提供与英文 README 对应的跨平台功能、安装、开发与多平台构建说明 | R:code:docs/README.md,code:docs/testing.md,code:docs/music_bridge_protocol.md | A:功能指南,平台安装,开发命令,构建流程,数据布局 | S:必须与英文 README 保持功能与命令一致；Windows 安装器、macOS dmg 与 Linux deb/tar.gz 均由 build.py 生成；SMTC 与 Windows bootstrap 仍仅支持 Windows。
+SouthsideMusic_Story.md[SG4L]: F:面向普通读者的 Southside Music 开发编年史，记录功能演进与取舍 | R:code:docs/Story_Prompt.md | A:- | S:成稿不得包含提交哈希、路径、函数名、框架技术名或取证过程。
+Story_Prompt.md[SW3M]: F:规定编年史的取证、续写、去 AI 味与成稿隔离流程 | R:code:docs/SouthsideMusic_Story.md | A:取证顺序,增量续写,禁用词表,完成检查 | S:只能依据可验证历史写作，禁止把提交标题或当前结构直接当事实；已有章节不得整篇重建。
+music_bridge_protocol.md[EN9T]: F:定义 SouthsideMusic 与 Legacy 的本地 WebSocket v2 歌曲、播放、歌词布局和兼容协议 | R:code:src/core/ws_server.py,code:src/views/playing_controller.py,code:src/views/playing_page.py,code:tests/test_music_bridge.py | A:bridge hello,main menu 数据包,lyric layout,FFT,播放列表,控制命令 | S:endpoint 固定为 ws://localhost:15489/，帧为 JSON 文本；所有时间以秒计，比例范围为 0..1；未握手客户端继续走 v1，歌词布局坐标与字号均为 Qt 逻辑像素。
+netease-pc-api.md[SN8L]: F:记录网易云 PC 客户端 3.1.40 的真实 eapi 加密、请求头、登录链路和脱敏抓包 | R:code:src/ncm/utils/crypto.py,code:src/ncm/apis/login.py,code:src/ncm/utils/constant.py | A:eapi 摘要与加密,headers,cookies,扫码登录,路由对照 | S:结论绑定客户端 3.1.40.205461；接口字段和 host 可能随网易版本变化，凭据字段不得写回仓库。
+privacy_policy.md[SS6M]: F:说明本地数据、敏感凭据、外部网络出口、保留与删除方式 | R:code:docs/terms_of_service.md,code:src/core/config.py | A:本地数据,平台密钥保护,网络出口,删除方式 | S:应用不得引入遥测或广告上报；LLM API key 在 Windows 用 DPAPI，在 macOS/Linux 用 AES-GCM 和 data/secret.key。
+terms_of_service.md[SG5M]: F:声明独立非官方客户端的许可、账号、内容导出、第三方服务与本地桥风险 | R:code:LICENSE,code:docs/privacy_policy.md,code:docs/music_bridge_protocol.md | A:可接受使用,内容与版权,第三方服务,本地桥,更新 | S:导出仅限个人非商业使用；本地桥 localhost:15489 可接收控制命令，使用者负责限制可连接程序。
+testing.md[SQ7M]: F:说明真实测试入口、隔离 harness、gateway 协议、报告结构与 CI 门禁 | R:code:scripts/test_harness.py,code:tests/harness/runner.py,code:tests/harness/gateway.py,code:.github/workflows/ci.yml | A:测试命令,unit suite,场景分组,gateway 格式,portability 导入,CI 门禁 | S:测试使用生成数据和隔离临时根，不复制用户配置、收藏或虚拟环境；CI 必须通过编译、Ruff、格式、unit 与 core/online harness；Ubuntu portability job 只做模块导入。
+
+===/<repository>/dsh-plugins/step-slide-in/===
+LICENSE[SE1T]: F:step-slide-in DSH 插件的 MIT 许可文本 | R:code:dsh-plugins/step-slide-in/package.json | A:- | S:-
+README.md[SU4S]: F:描述 DSH 元素入场与出场动画、Swarm Cursors、安装、诊断和性能边界 | R:code:dsh-plugins/step-slide-in/client.js,code:dsh-plugins/step-slide-in/package.json,code:dsh-plugins/step-slide-in/test/swarm.test.mjs | A:入场与出场,动画密度,Swarm,诊断,限制 | S:动画只允许修改合成层属性，不写内联样式、高度、margin 或 overflow；该约束保证异常时元素不会停留在屏幕外。
+client.js[DU5L]: F:注册 DSH 插件，用 MutationObserver 为新增和删除元素编舞，并提供曲线、密度与 Swarm Cursors 设置 | R:code:dsh-plugins/step-slide-in/README.md,code:dsh-plugins/step-slide-in/test/swarm.test.mjs,code:dsh-plugins/step-slide-in/package.json | A:mutation 批处理,群心飞入,弹性落定,幽灵出场,Swarm 覆盖层,设置持久化 | S:入场不写 el.style，只用 WAAPI 合成属性；Swarm 层位于 closed shadow root，队列清空后必须销毁；reduced-motion 时不动画。
+cordis.patch.yml[FE2T]: F:DSH bundle 补丁，将 step-slide-in 插入插件列表 | R:code:dsh-plugins/step-slide-in/package.json | A:- | S:-
+index.js[EE2T]: F:DSH 服务端入口，仅导出空 apply()；浏览器行为由包导出 ./client 提供 | R:code:dsh-plugins/step-slide-in/client.js,code:dsh-plugins/step-slide-in/package.json | A:- | S:客户端逻辑在 client.js；package exports 的 ./client 指向它。
+package.json[FE4T]: F:定义 dsh-step-slide-in 版本、导出、bundle 补丁、浏览器注入与测试脚本 | R:code:dsh-plugins/step-slide-in/index.js,code:dsh-plugins/step-slide-in/client.js,code:dsh-plugins/step-slide-in/cordis.patch.yml | A:package exports,DSH bundle,DSH client,npm test | S:客户端配置 immediately:true，且 ./client 必须继续导出浏览器模块，否则插件不加载动画。
+
+===/<repository>/dsh-plugins/step-slide-in/locale/===
+en.json[FL2T]: F:DSH 插件英文标题与描述 | R:code:dsh-plugins/step-slide-in/locale/zh.json | A:- | S:-
+zh.json[FL2T]: F:DSH 插件中文标题与描述 | R:code:dsh-plugins/step-slide-in/locale/en.json | A:- | S:-
+
+===/<repository>/dsh-plugins/step-slide-in/test/===
+swarm.test.mjs[TU4L]: F:用最小 DOM 与 WAAPI 桩执行真实 client.js，覆盖动画关闭、Swarm、跳过、reduced-motion、设置 UI 和四类光标编舞 | R:code:dsh-plugins/step-slide-in/client.js,code:dsh-plugins/step-slide-in/package.json | A:fake DOM,clock,boot,模式测试,跟随测试 | S:测试直接读取 client.js 源码并在 Node 中执行，不依赖真实浏览器；修改客户端 DOM API 用法时需同步扩展桩。
+
+===/<repository>/motion/handover-17s/===
+README.md[SV3T]: F:说明 19.6 秒 SouthsideMusic 智能交叉淡化宣传片的镜头、物理隐喻、指标、音效和产物 | R:code:motion/handover-17s/comp.html,code:motion/handover-17s/film.render.json,code:motion/handover-17s/draft.render.json | A:节拍表,指标,文件清单 | S:冻结段把创作时间 u 映射到真实时间；验证须服从 do_verify.py。
+comp.html[DU4L]: F:可逐帧渲染的 Canvas 宣传片合成，按纯时间函数表现交叉淡化、节拍匹配、调性、曲线与混音 | R:code:motion/handover-17s/motion.js,code:motion/handover-17s/look.js,code:motion/handover-17s/README.md | A:相机,冻结映射,节拍事件,splice patch,半调混音,score 导出 | S:每个视觉值必须由当前时间决定；?t= 固定帧、?play 循环，暴露 window.__ready 与 window.__score() 供 Playwright 采集。
+do_verify.py[TQ3T]: F:读取 score 中的镜头边界，调用 onetake 验证器检查宣传片草稿 | R:code:motion/handover-17s/comp.html,code:motion/handover-17s/score.json | A:- | S:依赖固定 onetake skill 路径，不是项目自包含测试。
+draft.render.json[FV2T]: F:保存 1080p30 草稿渲染的帧数、快门、采样与耗时统计 | R:code:motion/handover-17s/comp.html,code:motion/handover-17s/film.render.json | A:- | S:该配置是非最终审片版本，不能替代 4K60 主渲染参数。
+dump_events.py[XU2T]: F:用 Playwright 加载合成页面并导出镜头、命中与配乐事件到 score.json | R:code:motion/handover-17s/comp.html,code:motion/handover-17s/score.json | A:- | S:先等待 window.__ready，再读 __score()；运行会覆盖 score.json。
+film.render.json[FV2T]: F:保存 4K60 最终渲染的帧数、快门、自适应采样、worker 与耗时统计 | R:code:motion/handover-17s/comp.html,code:motion/handover-17s/draft.render.json | A:- | S:最终渲染使用 scale:2 的原生 3840×2160 合成，不是 1080p 上采样。
+look.js[LU3T]: F:由 look.json 生成的视觉样式与内嵌字体加载器，向 Canvas 和 DOM 输出 stencil 主题 | R:code:motion/handover-17s/look.json,code:motion/handover-17s/comp.html | A:字体加载,CSS 变量,Canvas 字体助手 | S:生成文件；改 look.json 后重跑 look.py apply，不手改。
+look.json[FU3T]: F:定义 HANDOVER 宣传片的 stencil 配色、三种字体与字距 | R:code:motion/handover-17s/look.js,code:motion/handover-17s/comp.html | A:- | S:-
+measure.py[XQ2T]: F:用 Playwright 打开合成页面并打印三种字体的实际 Canvas 度量与字体可用性 | R:code:motion/handover-17s/comp.html,code:motion/handover-17s/look.js | A:- | S:依赖浏览器与 __ready，不是渲染步骤。
+motion.js[LU5L]: F:onetake 运动库，提供曲线、入场、转场、接触模拟、相机与流体的纯时间函数 | R:code:motion/handover-17s/comp.html,code:motion/handover-17s/look.js | A:缓动与弹簧,相机,冲击,权形变,丝滑噪声,轮播 | S:函数不得读取 DOM/画布或 Math.random；相同参数必须产生相同结果，window.__seek(t) 依赖这一确定性。
+score.json[DU4M]: F:HANDOVER 的命中事件、节拍分段、冻结区间、安静窗口与镜头边界时间表 | R:code:motion/handover-17s/comp.html,code:motion/handover-17s/sfx.py,code:motion/handover-17s/do_verify.py | A:- | S:由 comp.html 的 window.__score() 导出，供 sfx.py 与 do_verify.py 消费。
+score_plot.py[XU2T]: F:读取 sfx.wav 并绘制全片波形与秒格线到 wave.png | R:code:motion/handover-17s/sfx.py,code:motion/handover-17s/score.json | A:- | S:读取 sfx.wav，输出 wave.png；不是正式构建步骤。
+sfx.py[KB5M]: F:按 score.json 的事件时间合成木、金属、低频、空气与扫频音效，并输出母带 WAV | R:code:motion/handover-17s/score.json,code:motion/handover-17s/sfx_raw.wav,code:motion/handover-17s/sfx.wav | A:程序化拟音,脉冲床,卷积空间,FFmpeg 响度测量,限幅 | S:最终音频必须经 loudnorm 归一到 -16 LUFS 并受 -7.5 dBFS 上限保护；直接叠加会削波。
+shot.py[XU2T]: F:用 Playwright 按指定时间调用 __seek 并截取合成画面 | R:code:motion/handover-17s/comp.html,code:motion/handover-17s/README.md | A:- | S:依赖 Playwright；截图写入指定目录，不修改应用。
+
+===/<repository>/promo-video/===
+CREDITS.md[SG2T]: F:记录宣传片 BGM 与全部 Freesound 音效的作者、许可和来源 | R:code:promo-video/public/audio/FREESOUND-CREDITS.md,code:promo-video/public/audio/audio-manifest.json | A:- | S:两条 CC BY 4.0 素材必须在发布页保留署名与来源链接。
+DESIGN.md[SV4T]: F:定义宣传片的产品简报、视觉方向、10 镜时间表、真实素材管线、声音与渲染约束 | R:code:promo-video/README.md,code:promo-video/src/SouthsidePromo.tsx,code:promo-video/capture/harness.py | A:视觉 token,镜头表,素材管线,音频偏移,渲染 | S:硬约束为真实界面、4K60、约 20–25 秒；不得伪造产品 UI。
+README.md[SV3T]: F:说明 24 秒 Remotion 宣传片的启动、渲染、目录和文档入口 | R:code:promo-video/package.json,code:promo-video/DESIGN.md,code:promo-video/src/index.ts | A:快速开始,渲染命令,目录说明 | S:-
+package.json[FV3T]: F:声明 Remotion/React 版本以及宣传片开发、渲染、静帧和类型检查脚本 | R:code:promo-video/src/index.ts,code:promo-video/remotion.config.ts | A:dev,render,still,typecheck | S:-
+props-nobgm.json[FV2T]: F:Remotion 输入属性，关闭 BGM 但保留音效 | R:code:promo-video/src/SouthsidePromo.tsx | A:- | S:-
+remotion.config.ts[FV3T]: F:配置 Remotion 的静帧格式、覆盖输出、Chromium 渲染器与并发数 | R:code:promo-video/package.json,code:promo-video/src/index.ts | A:JPEG,覆盖写入,swangle,8 并发 | S:浏览器路径写死为本机 Edge；换机器时需改 setBrowserExecutable。
+tsconfig.json[FV3T]: F:Remotion TypeScript 的严格、ES2022、Bundler 与 React JSX 编译配置 | R:code:promo-video/package.json,code:promo-video/src/index.ts | A:- | S:-
+
+===/<repository>/promo-video/capture/===
+harness.py[XV7L]: F:启动真实 SouthsideMusic，用 2x/3x DPR 抓取页面、元素裁剪、歌词与 EQ 序列及缩略图 | R:code:src/main.py,code:src/views/main_window.py,code:promo-video/capture/out/layout.json,code:promo-video/public/textures | A:主窗口注入,页面截图,元素裁剪,序列采集,设置滚动,退出恢复 | S:只用于宣传片采集，会 monkeypatch 应用依赖检查和错误弹窗；必须使用真实应用与本地配置，输出到 public/textures，不是自动化测试。
+
+===/<repository>/promo-video/capture/out/===
+layout.json[FV4M]: F:保存真实页面截图尺寸、DPR、元素类名、位置与裁剪文件索引 | R:code:promo-video/capture/harness.py,code:promo-video/src/generated/layout.json | A:- | S:由 capture/harness.py 写入，记录页面尺寸与元素裁剪坐标。
+
+===/<repository>/promo-video/public/audio/===
+FREESOUND-CREDITS.md[SG3T]: F:逐条记录音效的 Freesound 页面、作者、许可与发布时必须保留的署名 | R:code:promo-video/CREDITS.md,code:promo-video/public/audio/audio-manifest.json | A:- | S:两条 CC BY 4.0 素材必须在发布页保留署名与来源链接。
+audio-manifest.json[FV4L]: F:记录 BGM 节拍网格、SFX 峰值、活动区间、建议帧位与 60fps 对齐规则 | R:code:promo-video/public/audio/FREESOUND-CREDITS.md,code:promo-video/src/SouthsidePromo.tsx,code:promo-video/research/bgm/analysis.json | A:节拍帧,素材测量,对齐公式,许可记录 | S:峰值是 sample peak 不是 true peak；排点需扣源峰值滞后与输出偏移。
+
+===/<repository>/promo-video/public/seq/eq_drag/===
+times.json[FV2T]: F:EQ 拖动序列的时间、帧号与鼠标坐标表 | R:code:promo-video/src/generated/seq.json,code:promo-video/src/SouthsidePromo.tsx | A:- | S:由 harness 采集生成的逐帧时间表，帧文件必须与 times 对应。
+
+===/<repository>/promo-video/public/seq/lyrics/===
+times.json[FV2T]: F:逐字歌词序列的时间、帧号与画布尺寸表 | R:code:promo-video/src/generated/seq.json,code:promo-video/src/SouthsidePromo.tsx | A:- | S:由 harness 采集生成的逐帧时间表，帧文件必须与 times 对应。
+
+===/<repository>/promo-video/research/bgm/===
+analysis.json[DA4L]: F:可直接消费的 cat-walk 24 秒剪辑时间线，包含 BPM、四分拍、段结构和强拍 | R:code:promo-video/research/bgm/analyze.py,code:promo-video/public/audio/audio-manifest.json | A:节拍网格,段落,强拍,帧基 | S:第 0 帧等于 BGM 起点；节拍帧由 129.99 BPM 网格推导。
+analysis.md[SA4M]: F:记录五首 BGM 的 BPM、网格残差、结构、选曲理由和卡点建议 | R:code:promo-video/research/bgm/analyze.py,code:promo-video/research/bgm/analysis.json | A:方法,横向比较,cat-walk 结构,风险 | S:结论绑定 cat-walk 与当前剪辑；换曲或换段必须重跑 analyze.py。
+analysis.raw.json[FA4L]: F:五首候选 BGM 的全量节拍、瞬态、结构和窗口拟合原始测量数据 | R:code:promo-video/research/bgm/analyze.py,code:promo-video/research/bgm/analysis.json | A:- | S:原始测量审计数据，由 analyze.py 生成，不应手工编辑。
+analyze.py[KA5L]: F:分析 BGM 的 HPSS 瞬态、分带鼓点、分段能量和 60fps 节拍时间线 | R:code:promo-video/research/bgm/analysis.raw.json,code:promo-video/research/bgm/analysis.json | A:beat_track,最小二乘网格,MAD 峰值,递归分段,帧换算 | S:依赖 librosa 1.0.0、scipy 与本机 BGM 目录；只服务宣传片研究，不是应用运行时。
+
+===/<repository>/promo-video/research/===
+shots.md[SV4L]: F:把产品功能映射到 124 张镜头卡，给出推荐方案、时间轴、60fps 换算和验收清单 | R:code:promo-video/DESIGN.md,code:promo-video/src/SouthsidePromo.tsx,code:promo-video/capture/harness.py | A:素材分层,方案 A,镜头映射,帧率换算,验收 | S:60fps 帧常量需按时间换算；真实状态变化必须逐帧采集，不能手搓 UI。
+
+===/<repository>/promo-video/scripts/===
+build-assets.mjs[XV3T]: F:把 capture/out/layout.json 与 public/textures/seq 的索引汇总到 src/generated | R:code:promo-video/capture/out/layout.json,code:promo-video/src/generated/layout.json,code:promo-video/src/generated/seq.json | A:复制 layout,扫描序列,写入生成数据 | S:先跑 capture/harness.py，再跑本脚本；会覆盖生成数据。
+
+===/<repository>/promo-video/src/===
+Probe.tsx[TQ2T]: F:黑场 60 帧音效探针，用于测量输出音轨相对画面的峰位偏移 | R:code:promo-video/src/Root.tsx,code:promo-video/public/audio/audio-manifest.json | A:- | S:只用于测量 AAC/容器导致的音画偏移，不参与正式叙事。
+Root.tsx[EV4T]: F:注册 1440 帧 4K 构图 SouthsidePromo 与 60 帧音效探针 Probe | R:code:promo-video/src/SouthsidePromo.tsx,code:promo-video/src/Probe.tsx,code:promo-video/src/index.ts | A:Composition 注册,时长/帧率/尺寸,默认 props | S:SouthsidePromo 为 1440f；Probe 为 60f；两者均 60fps。
+SouthsidePromo.tsx[AV7L]: F:24 秒宣传片主合成，按 10 个镜头组织真实页面、逐字歌词、EQ、交叉淡化、队列、重新发现与片尾 | R:code:promo-video/src/generated/layout.json,code:promo-video/src/generated/seq.json,code:promo-video/src/lib/ui.tsx,code:promo-video/src/lib/PageCam.tsx | A:SHOTS 时间表,页面镜头,歌词/EQ 序列,交叉淡化,BGM/SFX,片尾 | S:1440f@60fps、1920×1080 构图；真实页面由 capture 产物提供，不能手搓替换；SFX 与 BGM 的帧位绑定 audio-manifest。
+index.ts[EV2T]: F:Remotion 入口，注册 Root 组合 | R:code:promo-video/src/Root.tsx,code:promo-video/package.json | A:- | S:-
+
+===/<repository>/promo-video/src/generated/===
+gl.json[FV2T]: F:保存 EQ 面板与歌词查看器在真实页面中的裁剪矩形 | R:code:promo-video/src/SouthsidePromo.tsx,code:promo-video/src/generated/layout.json | A:- | S:-
+layout.json[FV3L]: F:真实页面截图、DPR、元素类名、位置与裁剪文件索引的 Remotion 消费副本 | R:code:promo-video/capture/out/layout.json,code:promo-video/scripts/build-assets.mjs,code:promo-video/src/SouthsidePromo.tsx | A:- | S:由 build-assets.mjs 从 capture 输出复制，不应手工编辑。
+seq.json[FV3S]: F:汇总逐字歌词与 EQ 拖动序列的帧时间表和图片数量 | R:code:promo-video/public/seq/lyrics/times.json,code:promo-video/public/seq/eq_drag/times.json,code:promo-video/scripts/build-assets.mjs | A:- | S:由 build-assets.mjs 生成；序列目录变化后需重新生成。
+
+===/<repository>/promo-video/src/lib/===
+FlashCut.tsx[LU2T]: F:硬切处的暖白闪光过渡层，按持续帧数淡入淡出 | R:code:promo-video/src/SouthsidePromo.tsx | A:- | S:-
+PageCam.tsx[LU4S]: F:在整页截图上实现 2.5D 平移、缩放、旋转和景深近似，并支持页面坐标叠加层 | R:code:promo-video/src/SouthsidePromo.tsx,code:promo-video/src/lib/time.ts | A:相机关键帧,平面/3D 路径,景深,页面叠加 | S:3D 路径必须用 CSS zoom 保持文字清晰；无 3D 字段时保持平面输出逐像素不变。
+time.ts[LG3T]: F:定义宣传片 FPS、拍间隔与帧号换算，以及确定性随机数 | R:code:promo-video/src/SouthsidePromo.tsx,code:promo-video/src/lib/ui.tsx | A:beatF,clamp/lerp,缓动,mulberry32 | S:FPS=60 与拍间隔 0.461572 是卡点基准，改动会让帧号错位。
+ui.tsx[LU5M]: F:宣传片设计 token、字体注入、字幕/字标以及颗粒、暗角、尘埃、扫光等视觉层 | R:code:promo-video/src/SouthsidePromo.tsx,code:promo-video/src/lib/time.ts,code:fonts/HARMONYOS_SANS_SC_REGULAR.ttf | A:色彩 token,字体,字幕/字标,颗粒/暗角,尘埃/扫光 | S:字体与颜色必须来自产品资源；随机尘埃使用固定 seed，保证同帧可复现。
+
+===/<repository>/release-notes/===
+README.md[SV4T]: F:规定版本发布说明的文件命名、标题格式、提交与推 tag 流程 | R:code:.github/workflows/release.yml,code:release-notes/v51.md,code:release-notes/v52.md,code:updates.bat | A:文件命名,标题格式,发布步骤,回退行为 | S:首行必须同时以 # 开头且含 tag，才会被发布工作流当作标题。
+v51.md[SV3T]: F:v51 发布说明，记录图标修复与首次 GitHub Actions 自动发布 | R:code:release-notes/README.md,code:.github/workflows/release.yml | A:- | S:v51 是首个 GitHub Actions 自动发布版本。
+v52.md[SV3T]: F:v52 发布说明，记录增强错误处理与桌面歌词置顶修复 | R:code:release-notes/README.md,code:.github/workflows/release.yml | A:- | S:记录 v52 的主要修复，发布标题第一行必须含 v52。
+
+===/<repository>/scripts/===
+_beat_old.py[DB3M]: F:保留旧版 PCM 鼓点检测器，作为 beat_lab 的性能与召回基线 | R:code:scripts/beat_lab.py,code:src/core/beat.py | A:频谱分带,自适应阈值,节律估计,帧输出 | S:仅作为 beat_lab 的旧算法对照，不是生产检测器。
+beat_lab.py[TQ3M]: F:用合成鼓点、旋律和真实歌曲对照新旧 BeatDetector 的 F1、时延与流式一致性 | R:code:scripts/_beat_old.py,code:src/core/beat.py | A:合成鼓点,评分,流式检查,真实曲目检查 | S:使用合成鼓点比较新旧检测器；不在正式测试套件内。
+benchmark_audio_memory.py[TQ3S]: F:生成 60 秒立体声样本，比较解码与 PCM 缓冲改造前后的 RSS 和 Python 峰值内存 | R:code:src/core/audio_decode.py,code:src/core/audio_player.py,code:src/core/pcm_timeline.py | A:FFmpeg 样本,before/after 子进程,RSS,tracemalloc | S:before 模式读取 git HEAD 的旧解码器，需要仓库历史。
+create_icon.py[XV3T]: F:把根目录 icon.png 生成含 256/128/64/48/32/16 尺寸的 icons/app.ico | R:code:icon.png,code:icons/app.ico,code:build.bat | A:- | S:构建流程依赖该脚本刷新应用图标，不能删除多尺寸输出。
+create_shortcut.ps1[OV3T]: F:在当前应用根创建指向 launcher/Launch.exe 的 Launch.lnk，并设置绝对工作目录 | R:code:launcher.py,code:build.py,code:installer.iss | A:检查目标,删除旧链接,创建 WScript 快捷方式 | S:必须从 raw 应用根运行；Start in 必须是应用根，不能是 launcher 子目录。
+crossfade_gallery.py[XQ3S]: F:生成多组交叉淡化分析图，展示时间曲线、频谱或波形对比 | R:code:scripts/crossfade_lab.py | A:参数解析,多组布局,图表导出 | S:依赖 matplotlib 与本地 crossfade_lab，属于分析实验，不是应用入口。
+crossfade_lab.py[XQ3S]: F:加载 data/music 歌曲并绘制交叉淡化包络、采样与混合结果 | R:code:src/core/crossfade.py,code:scripts/crossfade_probe.py,code:scripts/crossfade_sweep.py | A:随机选歌,分段解码,RMS 包络,图表样式 | S:需要 data/music 至少两首歌，输出到 data/crossfade_plots。
+crossfade_probe.py[XB3S]: F:针对一对歌曲生成三阶段六面板交叉淡化诊断图 | R:code:scripts/crossfade_lab.py,code:src/core/crossfade.py | A:输出尾部/头部包络,曲线残差,频谱,调试图 | S:读取 data/music 前两首，输出 probe_*.png。
+crossfade_sweep.py[XB3S]: F:扫描交叉淡化时长与强度组合，比较连续性和自适应淡入淡出长度 | R:code:scripts/crossfade_lab.py,code:src/core/crossfade.py | A:参数扫描,最佳值搜索,图表输出 | S:遍历 6×8 个参数组合，输出 sweep_*.png。
+download_ncm_api_reference.py[XN4S]: F:从 jsDelivr 下载固定版本 NeteaseCloudMusicApi 源码并记录下载元数据 | R:code:api-reference/NeteaseCloudMusicApi,code:docs/netease-pc-api.md | A:文件清单,并发下载,目标清理,元数据写入 | S:safe_clean 只允许 api-reference/NeteaseCloudMusicApi。
+
+===/<repository>/scripts/reverse/===
+.gitignore[FC2T]: F:忽略抓包、二维码、解密输出和请求日志等逆向临时文件 | R:- | A:- | S:抓包与二维码日志可能含凭据，必须保持忽略。
+capture.py[XN5S]: F:通过 Frida 附着 cloudmusic.exe，注入 ncm_capture.js 并按 PID 写入 JSONL | R:code:scripts/reverse/ncm_capture.js | A:进程枚举,attach/detach,watch 模式,超时守卫 | S:连接到真实 cloudmusic.exe；抓包文件可能含凭据，不得提交。
+coverage.py[XQ3T]: F:解密抓包中的 eapi 信封并与在用路由清单比对覆盖率 | R:code:scripts/reverse/inuse_params.txt,code:src/ncm/utils/crypto.py | A:- | S:输入为 capture*.jsonl；只打印覆盖率，不写文件。
+decrypt_capture.py[XN5S]: F:解密抓包 params/responseHex，验证 eapi digest，并对 cookie 与敏感参数脱敏 | R:code:src/ncm/utils/crypto.py,code:scripts/reverse/dump_inuse_params.py | A:信封解密,digest 校验,cookie/params 脱敏 | S:必须保留 cookie 与敏感参数脱敏，输出不得回写仓库。
+dump_inuse_params.py[XN4S]: F:汇总真实抓包中命中在用接口的明文参数与响应摘要，写入 inuse_params.txt | R:code:scripts/reverse/inuse_params.txt,code:scripts/reverse/decrypt_capture.py | A:路由匹配,参数脱敏,响应截断,计数 | S:扫描 capture*.jsonl；敏感键必须保持 redacted。
+grep_js.py[XZ2T]: F:递归搜索 JS/HTML/JSON 字节，输出命中位置与上下文字符串 | R:- | A:扩展名过滤,正则匹配,上下文截取 | S:只做字节级只读搜索，不执行目标 JS。
+inuse_params.txt[FN3T]: F:真实客户端抓包中命中在用接口的脱敏参数与响应记录 | R:code:scripts/reverse/dump_inuse_params.py,code:docs/netease-pc-api.md | A:- | S:生成的自证报文；凭据已脱敏，不应手改。
+ncm_capture.js[XN5M]: F:Frida 脚本 hook libcurl 的 setopt/write/perform，记录 URL、options、body、cookie 与响应字节 | R:code:scripts/reverse/capture.py,code:scripts/reverse/decrypt_capture.py | A:curl 选项解析,响应捕获,handle 生命周期,JSONL 输出 | S:抓取 libcurl 请求与响应时最多保留 800000 字节响应。
+probe_intelligence.py[XN3S]: F:用抓包 cookie 登录并测试私人漫游接口的五种参数形态 | R:code:src/ncm/apis/playmode.py,code:src/ncm/apis/eapi.py | A:登录,cookie 提取,参数变体,结果码打印 | S:需要真实登录 cookie；只打印状态，不输出 token。
+record_requests.py[XN4S]: F:hook 应用实际 eapi 调用，记录路由、方法、参数、响应键与 cookie 名称 | R:code:src/ncm/apis/eapi.py,code:scripts/reverse/requests.jsonl | A:会话登录,eapi 包装,脱敏,JSONL 写出 | S:必须先脱敏再写入 requests.jsonl；不得记录 cookie 值。
+unpack_ntpk.py[XN2T]: F:从云端音乐 CEF 资源中定位 ZIP 偏移，列出条目并可提取或扫描 API 路由 | R:code:docs/netease-pc-api.md | A:ZIP 探测,条目统计,解包,路由扫描 | S:只解包本地 ntpk 并只读扫描文本路由。
+verify_chain.py[XN4S]: F:从抓包 cookie 建立会话并只读验证登录、用户、搜索、歌曲、歌词、评论和推荐链路 | R:code:src/ncm/apis/login.py,code:src/ncm/apis/user.py,code:src/ncm/apis/track.py | A:- | S:从抓包读取 MUSIC_U 但只打印状态，不落盘 token。
+verify_qr_login.py[XN3T]: F:交互式二维码登录并验证新会话上的搜索、音频、歌词和用户接口 | R:code:src/ncm/apis/login.py,code:src/ncm/apis/track.py,code:src/ncm/apis/user.py | A:unikey 轮询,二维码输出,登录落盘,链路检查 | S:交互式扫码，会写 login_qr.png 和登录状态；用测试账号。
+
+===/<repository>/southsidemusic_show/===
+index.html[SU3L]: F:自包含的 Southside Music 设计展示页，呈现液态玻璃、高定杂志、3D 黏土与新野兽派四种视觉研究 | R:code:icons/app.ico,code:fonts/HARMONYOS_SANS_SC_REGULAR.ttf | A:响应式布局,交互旋钮,标签页,复制按钮,内嵌图形 | S:这是静态展示页，不是应用运行时资源；无需与播放器一起打包。
+
+===/<repository>/src/core/===
+Lyricify-Lyrics-Helper.LICENSE.txt[SG5M]: F:记录从 Lyricify Lyrics Helper 改编的歌词匹配与请求代码的 Apache-2.0 许可和署名 | R:code:src/core/lyric_sources.py | A:- | S:改编自 Lyricify Lyrics Helper，分发时必须保留 Apache-2.0 声明。
+app_context.py[AG8S]: F:集中持有应用、播放器、配置、歌词、窗口、服务与 LLM 句柄，并提供主线程任务调度 | R:code:src/core/audio_player.py,code:src/core/config.py,code:src/views/main_window.py,code:src/services/events/event_bus.py | A:依赖容器,定时任务队列,窗口引用,LLM 句柄 | S:跨线程 UI 操作必须经 addScheduledTask；调度队列一次只在主线程执行一个任务。
+audio_analysis.py[KA5T]: F:维护环形 PCM 历史并使用 Hann 窗与 SciPy RFFT 生成频谱 | R:code:src/core/audio_player.py,code:src/core/beat.py | A:环形缓冲,窗口重建,频率表,幅度输出 | S:FFT 大小或采样率变化时必须重置窗口与频率表，但保留最近样本。
+audio_decode.py[DP8M]: F:带超时的 pydub/ffmpeg 解码封装、WAV 头修复、弱引用缓存与磁盘-backed FileAudioSegment | R:code:src/core/pcm_buffer.py,code:src/core/audio_player.py,code:src/core/loudness.py | A:探测解码,超时,WAV 修复,缓存,文件 PCM,分块读取 | S:FileAudioSegment 以磁盘 PCM 为后备，避免直接读取 `_data` 把整首载入内存；解码超时默认 90 秒。
+audio_effect_export.py[AB6S]: F:按当前播放设置渲染速度、音调、立体声、混响与 EQ，并编码为音频文件字节 | R:code:src/core/audio_processing.py,code:src/core/audio_decode.py,code:src/core/config.py | A:分块渲染,进度回调,EQ 卷积,FFmpeg 编码 | S:导出使用当前 cfg 的速度、音调、立体声、混响与 EQ，并统一输出 16-bit 立体声。
+audio_player.py[AB9L]: F:核心音频引擎，负责 PCM 缓冲、sounddevice 输出、变速变调、EQ、响度、FFT/节拍分析与交叉淡化时间线 | R:code:src/core/audio_processing.py,code:src/core/audio_decode.py,code:src/core/beat.py,code:src/core/crossfade.py,code:src/core/pcm_timeline.py | A:生产者线程,音频回调,FFT worker,时间线拼接,拖拽缓冲,设备切换 | S:sounddevice 回调只消费队列并做轻量 EQ/增益，不能在回调内解码或做长计算；解码与变速由 producer 线程预填充，队列下溢会计入统计。
+audio_processing.py[KB8M]: F:实现 EQ 曲线采样、最小相位 FIR 核、分块卷积状态、WSOLA 变速变调、Haas 立体声与多抽头混响 | R:code:src/core/wsola.py,code:src/core/pcm_buffer.py,code:src/core/pcm_timeline.py | A:EQ 核,WSOLA 读取,重采样,立体声,混响,分块渲染 | S:平直 EQ 返回 None；常数 EQ 返回单元素增益；其余用 minimum_phase FIR 与分块卷积状态。
+backend.py[IG7T]: F:全局音乐服务后端的注册与取用入口 | R:code:src/core/models.py | A:getBackend,initBackend | S:任何取后端调用前必须先 initBackend；否则 getBackend 断言失败。
+beat.py[KA7L]: F:流式 PCM 鼓点与节拍检测器，输出强度、点事件、周期、相位和置信度 | R:code:src/core/audio_analysis.py,code:src/core/audio_player.py,code:src/core/crossfade.py | A:分带频谱,自适应阈值,节律估计,谐波历史,相位跟踪 | S:process 接受流式 PCM，保持内部缓冲区；采样率/声道/频带变化会重置状态。
+cache_cleanup.py[RD6S]: F:按年龄和总容量清理 data 下可重新下载的歌曲、封面与临时缓存 | R:code:src/core/config.py,code:src/main.py | A:文件枚举,年龄清理,容量清理,受保护文件 | S:count.json 与 cache_index.json 受保护；最近 5 分钟文件不会被删除。
+color.py[CU3T]: F:提供可哈希 QColor 与带缓存的 RGBA 颜色混合 | R:code:src/core/theme.py,code:src/core/icons.py | A:mixColor,HashableQColor | S:ratio=1 返回第一色，ratio=0 返回第二色；alpha 也按同一权重混合。
+compute_worker.py[MP7S]: F:将 Markdown、歌词解析、EQ 核等重计算转发给 free-threaded 侧车，失败时在本地回退 | R:code:src/core/free_threaded_worker.py,code:src/core/lyrics.py,code:src/core/audio_processing.py | A:能力查询,调用转发,本地回退,关闭 | S:worker 不支持某操作或调用失败时回退到主进程实现。
+config.py[PC9L]: F:定义并持久化应用设置、窗口位置、音频参数、歌词导出、数据清理与 LLM provider 配置 | R:code:config.json,code:src/core/deferred_writes.py,code:src/core/models.py | A:Config 单例,JSON 校验,DPAPI/AES-GCM 密钥,旧配置迁移,延迟保存 | S:config.json 采用 UTF-8 BOM 兼容读取和临时文件替换写入；Windows 的 win32crypt 前缀继续用 DPAPI，其它平台用 AES-GCM 和 data/secret.key。
+crash_handler.py[RO9L]: F:安装 Python/Qt/原生崩溃捕获器，写会话日志并启动独立监视与报告查看器 | R:code:src/main.py,code:bootstrap.py | A:faulthandler,线程/不可抛出异常钩子,原生 stderr,跨平台监视子进程,诊断 ZIP | S:Windows 用 OpenProcess 监视退出码，POSIX 用 psutil 轮询并以 clean.exit 标记正常退出；启动时接管 sys/thread/unraisable 异常；报告写入 data/crashes。
+crossfade.py[KB9L]: F:智能交叉淡化分析，检测结尾类型、调性、音色、BPM 与相位，生成自适应淡入淡出和混合 PCM | R:code:src/core/beat.py,code:src/core/wsola.py,code:src/core/audio_player.py,code:src/core/config.py | A:静音/结尾分类,调性检测,BPM/相位,曲线选择,AGC,速度过渡/缓存 | S:缓存键必须包含歌曲 id、采样率、参数与时长；节拍速度仅在 0.85–1.15 比例内匹配。
+debugging.py[OO5T]: F:通过事件总线收集播放器、歌词、桥接、桌面歌词与主窗口的调试信息 | R:code:src/core/frame_profiler.py,code:src/services/events/events.py | A:订阅/退订,采集中状态,FRAME PROFILE | S:只有 config.debug_mode 且启用时才收集事件总线数据。
+deferred_writes.py[MD6T]: F:按名称提供串行延迟写入器，合并高频保存请求并在关闭时等待落盘 | R:code:src/core/config.py,code:src/core/favorites.py | A:submit,flush,drain,writer registry | S:同一 writer 只保留最后一个待写任务；关闭前应调用 flush。
+dialogs.py[LU5M]: F:提供文本/列表输入、二维码登录与 Cookie 登录对话框 | R:code:src/core/backend.py,code:src/core/downloader.py,code:src/core/i18n.py | A:LineEdit 输入,文本/列表选择,二维码生成,扫码轮询,Cookie 输入 | S:QR 登录通过 asyncTask 检查；803 成功、800 过期、8821 风控。
+downloader.py[IN8L]: F:提供后台任务、内存下载与可续传的分块文件流下载，统一上报进度 | R:code:src/services/events/events.py,code:src/core/config.py | A:HEAD 探测,Range 分块,线程池,单流回退,进度信号,异步任务 | S:有 Range 时按配置并发分块，无 Range 时退化为单流；start_byte 续传路径会追加文件。
+favorites.py[PD8M]: F:维护本地收藏夹、歌曲增删移动、封面补全与 favorites.json 持久化及旧格式迁移 | R:code:favorites.json,code:src/core/models.py,code:src/core/deferred_writes.py | A:收藏夹 CRUD,歌曲移动,封面下载,JSON 原子写入,旧格式迁移 | S:favorites.json 使用延迟写入和临时文件替换；旧内嵌图片字段会被清理。
+frame_profiler.py[OO5S]: F:记录主线程帧耗时与命名区段，支持实时快照和连续帧捕获 | R:code:src/core/debugging.py,code:src/views/performances.py | A:beginFrame,section stack,capture,excluded regions | S:只记录创建它的主线程；开始帧后必须匹配结束段，否则时间会残留。
+free_threaded_worker.py[MP9L]: F:启动 free-threaded Python 侧车，用 pickle 长度帧协议承载 JSON、解码、交叉淡化、响度与图像颜色等重任务 | R:code:src/core/audio_decode.py,code:src/core/crossfade.py,code:src/core/loudness.py,code:src/core/image.py | A:侧车进程,framed IPC,线程池,跨平台解释器发现,跨进程回调 | S:侧车必须验证 sys._is_gil_enabled()==False；请求帧为 pickle，stdin/stdout 不能混入日志；解释器候选覆盖 Windows Scripts/python.exe、POSIX bin/python* 与 uv 安装目录。
+i18n.py[LL7L]: F:维护中英文字符串表、当前语言、格式化翻译与 Qt 控件文本绑定 | R:code:src/core/config.py,code:src/views/setting_page.py | A:tr,bindText,setLanguage,refreshBoundTexts,依赖窗口文案 | S:键缺失时 tr 返回键本身；语言切换会刷新所有仍存活的绑定控件。
+icons.py[LU5S]: F:枚举应用 SVG 图标、按主题改色并缓存渲染器，提供字符串图标绑定 | R:code:icons/app.ico,code:src/core/theme.py | A:SouthsideIcon,getFluentIcon,getQIcon,bindIcon | S:枚举值参与 _icon_map 字符串查找，删除成员会导致 bindIcon/getQIcon 运行时报错。
+image.py[LU5T]: F:解码、缩放、PNG 编码 QImage，并计算封面平均颜色 | R:code:src/core/theme.py,code:src/views/image_label.py | A:bytes/path 加载,缩放,PNG 编码,平均色缓存 | S:无效图像返回 [128,128,128]；平均色按 RGBA 像素的 RGB 三通道求均值。
+llm.py[IA9L]: F:Onerad 的多格式 LLM 客户端，支持 OpenAI Chat、OpenAI Responses、Anthropic 流式回复与工具循环 | R:code:src/core/config.py,code:src/core/llm_tools.py | A:provider 解析,模型列表,流式文本,工具调用,取消事件,系统提示 | S:支持 openai_chat、openai_responses、anthropic；工具轮次必须遵守取消事件并在工具调用后继续消息链。
+llm_tools.py[IA8L]: F:定义并执行 Onerad 工具，覆盖歌曲/歌词/收藏夹、设置、LLM provider、Legacy 连接与源码只读检查 | R:code:src/core/llm.py,code:src/core/app_context.py,code:src/core/favorites.py,code:src/core/config.py,code:src/core/models.py | A:工具 schema,用法门禁,确认卡,句柄映射,源码树,设置读写 | S:除 get_tool_usage 与 get_confirm 外，工具必须先加载用法；remove_song 还要求显式确认；read/grep 只允许 src；set_current_lyrics 的缺省翻译与逐字时间取自 getStoredLyrics，避免把 Whisper 叠加歌词写入普通缓存。
+loudness.py[KB8L]: F:按 ITU-R BS.1770 风格实现 K-weighting、门限块积分与目标 LUFS 增益计算 | R:code:src/core/audio_decode.py,code:src/core/free_threaded_worker.py,code:src/core/audio_player.py | A:IIR 滤波,400ms 分块,积分响度,增益计算,FileAudioSegment 流式读取 | S:validAudio 要求至少 0.4 秒且最多 5 声道；FileAudioSegment 按块读取，不应整段转为 numpy。
+lyric_formats.py[KB8L]: F:解析和转换 LRC、YRC、QRC、KRC 与 Richsync，包含 KRC/QRC 解密和翻译对齐 | R:code:src/core/lyric_sources.py,code:src/core/lyrics.py | A:时间戳/逐字词,元数据过滤,翻译对齐,LRC/YRC 生成,QRC/KRC 解密 | S:QRC/KRC 需要先解密；parseAny 依次尝试 KRC、YRC、QRC、LRC；翻译按内容行时间对齐。
+lyric_sources.py[IN8L]: F:并行查询网易云、QQ、酷狗、汽水、LRCLIB 与 Musixmatch，评分歌曲并合并歌词与翻译候选 | R:code:src/core/lyric_formats.py,code:src/ncm/apis/track.py,code:src/core/config.py | A:多来源搜索,名称/歌手/时长评分,简体归一,翻译选择,流式候选,取消 | S:多个来源并发请求；超过歌曲时长 1 秒的结果丢弃；whisper_enabled 为真时不再在线抓词；非 Windows 无 LCMapStringEx 时退回内置简体映射。
+lyric_video_export.py[AB8L]: F:把当前歌词、翻译、封面与音频渲染成逐帧 Qt 画面，交给 FFmpeg 输出歌词视频 | R:code:src/core/lyrics.py,code:src/core/color.py,code:src/core/audio_decode.py | A:单进程渲染,Qt 分段并行,FFmpeg 编码,跨平台 sidecar 发现,临时分段合并 | S:并行分段要求存在可导入 PySide6 的 sidecar；失败时回退单进程；渲染固定 1920 宽，高度随显示行数变化；解释器候选同时覆盖 Windows Scripts 与 POSIX bin/python。
+lyrics.py[DB8L]: F:解析 LRC/YRC、合并翻译并维护连续播放的多曲歌词时间线 | R:code:src/core/lyric_formats.py,code:src/core/models.py,code:src/views/lyrics_viewer.py | A:LRC/YRC parser,LyricManager,混合行,连续曲目偏移,当前行查找,空时间戳 | S:YRC 有逐字时间时优先于 LRC 行级时间；连续播放时后续曲目歌词整体平移到时间线；翻译按时间近似匹配并处理前置空行。
+markdown_renderer.py[LA5S]: F:将 CommonMark、表格、删除线与 LaTeX 公式渲染为 HTML，并支持按块输出 | R:code:src/core/llm.py,code:src/views/llm_viewer_panel.py | A:MarkdownIt 配置,数学解析,LaTeX SVG,块级渲染 | S:HTML 被禁用；裸 x^2 不是公式；latex/math/tex 代码块按 Markdown 公式渲染。
+models.py[DD9L]: F:定义歌曲/文件夹/搜索/音质/评论/会话等数据模型，以及本地缓存索引和音乐服务抽象接口 | R:code:src/core/cache_cleanup.py,code:src/core/netease_backend.py,code:src/core/favorites.py,code:src/core/whisper_lyrics.py | A:SongStorable,普通与显示歌词,本地/云端文件夹,搜索与音质信息,缓存哈希,MusicServiceBackend | S:SongStorable 以歌曲 id 相等；资产写入哈希命名缓存；旧 base64 媒体字段迁移到文件缓存；所有后端必须实现 MusicServiceBackend 的抽象方法；getStoredLyrics 读取普通歌词缓存并丢弃逐字 YRC 与任一 Whisper 缓存完全一致的条目，getLyrics 仅在 cfg.whisper_enabled 时改用 Whisper 叠加。
+netease_backend.py[IN9L]: F:把内置 ncm API 适配为 MusicServiceBackend，处理登录、搜索、歌曲、播放列表、推荐、评论和音质 | R:code:src/core/models.py,code:src/ncm/apis/login.py,code:src/ncm/apis/track.py,code:src/ncm/apis/user.py | A:会话快照,二维码/手机/Cookie 登录,歌曲模型映射,播放列表,推荐,评论 | S:所有返回数据转换为 models 数据类；QR 803 时写登录信息；会话以 ncm Session 字符串整体保存和恢复。
+pcm_buffer.py[PP6T]: F:用 data/pcm 下的临时二进制文件承载 float32 PCM，并提供可切片的 PcmBuffer 视图 | R:code:src/core/audio_decode.py,code:src/core/pcm_timeline.py | A:PcmFile 读写锁,PcmBuffer 切片/视图/追加,分块写入 | S:buffer 只在 offset=0 时允许追加；视图共享同一存储；PcmFile 依赖析构关闭临时文件。
+pcm_timeline.py[DP7S]: F:维护绝对帧位置的 PCM 块序列，支持拼接下一首、增益和释放已消费前缀 | R:code:src/core/pcm_buffer.py,code:src/core/audio_player.py,code:src/core/crossfade.py | A:PcmBlock,PcmTimeline append/read/replaceFrom/discardBefore,增益乘算 | S:读取已释放的 PCM 区间会抛错；大数组按 65536 帧分块；PcmBuffer 块保持磁盘后备。
+playing_manager.py[AB9L]: F:管理播放列表、播放模式、歌曲加载、预加载、交叉淡化、响度、心动模式、私人漫游、雷达和流式播放 | R:code:src/core/audio_player.py,code:src/core/crossfade.py,code:src/core/favorites.py,code:src/core/rediscovery.py,code:src/core/loudness.py | A:选择器,预加载,时间线拼接,流式分析,歌词更新,播放记录 | S:异步结果必须用 play_seq 判断是否仍属于当前歌曲；跳转后交叉淡化延期至少 1 秒；预加载 PCM 未在 EOF 前入队时回退无淡化拼接。
+profiled_application.py[EO5T]: F:QApplication 子类，在 notify 中按接收控件和事件类型给 FrameProfiler 记账 | R:code:src/core/frame_profiler.py,code:src/main.py | A:事件区段,父级排除标记,QTimer 事件归属 | S:只在主线程 profiling 开启时记录；带 _exclude_from_profile 的控件及其父链不进入统计。
+qt_utils.py[LU4T]: F:提供布局递归清空、控件释放、列表控件清理与 Qt 兼容整数转换 | R:code:src/views/animated_layout.py,code:src/views/main_window.py | A:removeWidgets,releaseWidget,clearListWidget,toQtInt | S:控件释放走 setParent(None)+deleteLater，不能继续持有；非有限或越界数值夹到 Qt int 范围。
+rediscovery.py[DD5S]: F:根据收藏、播放次数和 listening_history 生成 balanced/rare/forgotten 三种重新发现排序 | R:code:data/listening_history.json,code:data/count.json,code:src/core/models.py | A:历史缓存,记录播放时间,去重排序,模式优先级 | S:历史写入延迟落盘；forgotten 模式排除从未播放也无历史记录的歌曲；当前歌曲和近期歌曲优先压低。
+smooth.py[LU5M]: F:提供 EaseOut/EaseOutBack/EaseInOut 数值动画与歌词/列表滚动计时器 | R:code:src/views/lyrics_viewer.py,code:src/views/list_widget.py,code:src/services/events/events.py | A:时间型缓动,SScrollTimer,滚动队列,调试投影 | S:SScrollTimer 订阅 REPAINT 或 REPAINT_ALWAYS，以小数余量累积整数像素；动画进度按真实时间计算。
+smtc.py[IH7M]: F:接入 Windows System Media Transport Controls，同步歌曲元数据、时间线、播放状态和系统媒体键；非 Windows 平台惰性导入并降级为空操作 | R:code:src/main.py,code:src/core/app_context.py,code:src/core/models.py | A:AUMID,缩略图,详情补全,时间线,播放模式,平台守卫 | S:没有主窗口句柄时 SMTC 保持关闭；按钮和跳转请求经 addScheduledTask 回主线程；安装路径从 HKLM 读取；winrt 与 winreg 只在 win32 导入。
+soundfile.py[PD6M]: F:用 mutagen 为 MP3/FLAC/M4A/OGG/Opus/WAV 写入标题、歌手、专辑、歌词、封面、曲序与风格等标签 | R:code:src/core/models.py,code:src/core/lyrics.py | A:格式探测,ID3/Vorbis/MP4 标签,临时文件,输出路径移动 | S:格式由临时文件内容探测；不支持格式直接报错；输出路径为空时返回临时文件最终改名后的路径。
+theme.py[LU4T]: F:检测系统明暗主题并同步主题色：Windows 读 DWM AccentColor，其它平台用 Qt 调色板高亮色 | R:code:src/main.py,code:src/core/icons.py,code:src/core/color.py | A:darkdetect,跨平台主题色读取,主题色应用,深色判断 | S:读取注册表失败时保留当前主题色，不中断启动；非 Windows 使用 QApplication.palette().Highlight。
+time_format.py[KG2T]: F:把秒数拆成分钟、秒和毫秒的 TimeInfo，并缓存换算结果 | R:code:src/views/playing_page.py,code:src/views/lyrics_viewer.py | A:float2time,TimeInfo,线程锁与 lru_cache | S:毫秒四舍五入；结果按浮点秒缓存。
+weighted_random.py[KB3T]: F:按已抽取次数递减权重选择元素，使随机播放更均匀 | R:code:src/core/playing_manager.py | A:init,random,重复次数权重 | S:使用前必须先 init 非空列表；空列表直接返回会导致后续 random 无有效目标。
+whisper_lyrics.py[IA7L]: F:管理 faster-whisper 模型目录、硬件检测、运行时安装、转写任务和 YRC/LRC 缓存 | R:code:src/core/whisper_worker.py,code:src/core/lyric_formats.py,code:src/core/playing_manager.py,code:src/core/models.py | A:模型清单,硬件推荐,下载,子进程转写,进度,缓存失效与比对 | S:模型 ready 清单与文件大小必须匹配；转写使用 word_timestamps；cfg.whisper_enabled 时在线歌词抓取停用；matchesWhisperLyrics 按缓存文件 mtime 缓存，并把普通缓存的逐字 YRC 与所有模型识别缓存精确比对，用于识别被复制的识别结果。
+whisper_worker.py[XA6M]: F:faster-whisper 转写子进程，按窗口生成带词级时间戳的 segments 与语言信息 | R:code:src/core/whisper_lyrics.py,code:src/core/lyric_formats.py | A:音频解码,窗口转写,词级结果,原子 JSON 写出 | S:词开始/结束按窗口起点校正；结果文件先写临时文件再 os.replace。
+ws_server.py[IN9L]: F:在 localhost:15489 运行 Tornado WebSocket 服务，向唯一 Legacy 客户端发送 Bridge JSON 并接收控制命令 | R:code:docs/music_bridge_protocol.md,code:src/views/playing_controller.py,code:src/core/free_threaded_worker.py | A:protocol_version,handler 生命周期,发送代际,JSON 合并,ping,连接指标 | S:只维护一个当前连接；发送任务按 generation 丢弃过期结果；旧 handler 的关闭不得覆盖新连接。
+wsola.py[KB7M]: F:基于波形相似叠加的变速时间伸缩，带搜索窗与交叉淡化 | R:code:src/core/audio_processing.py,code:src/core/crossfade.py | A:hop/search,相关性搜索,交叉淡化,重置策略,输出缓冲 | S:速度接近 1 时直接读取并 reset；速度、起始位置、声道变化会触发状态重置。
+
+===/<repository>/src/===
+main.py[ER9L]: F:应用启动编排：初始化崩溃处理、Qt、配置、后端、播放器、页面、服务、字体、依赖检查与清理 | R:code:src/core/crash_handler.py,code:src/core/app_context.py,code:src/core/netease_backend.py,code:src/views/main_window.py | A:ProfiledApplication,启动窗口,依赖检查,后端初始化,跨平台启动守卫,退出清理 | S:崩溃处理必须在 Qt 初始化前安装；依赖检查完成前不能构造主窗口；更新检查和 scipy 预热延迟执行；AA_UseOpenGLES 与子进程窗口隐藏只在 win32 生效；退出时写 clean.exit。
+test.py[TG1T]: F:读取 config.json 的登录状态并手动查询一首歌的音质，把结果写入 res.json | R:code:src/core/config.py,code:src/ncm/apis/track.py | A:- | S:这是手动 API 探索脚本，会写 res.json，不属于 unittest 套件。
+
+===/<repository>/src/ncm/===
+__init__.py[IN8M]: F:内置网易云 API 客户端核心，定义线程本地 Session、登录状态、eapi 配置和会话序列化 | R:code:src/ncm/apis/__init__.py,code:src/ncm/utils/crypto.py,code:src/core/netease_backend.py | A:Session,SessionManager,deviceId,eapi_config,cookie,dump/load | S:API host 为 interfacepc.music.163.com；请求头 requestId 固定 0；每个线程有独立 Session 栈；winreg 不可用时 osver 为空，UA 仍保持网易 PC 客户端格式。
+
+===/<repository>/src/ncm/apis/===
+__init__.py[IN8T]: F:提供统一 eapi 请求函数，注入 header/cookie、加密 params 并解密响应 | R:code:src/ncm/__init__.py,code:src/ncm/utils/crypto.py | A:eapi,LOGIN_REQUIRED,模块重导出 | S:路径必须以 /api/ 开头；header 内 requestId 固定 '0'；响应解密失败时才退回按明文 JSON 解析。
+cloudsearch.py[IN5T]: F:调用 /api/cloudsearch/pc 搜索歌曲、专辑、歌手、歌单等资源 | R:code:src/ncm/apis/__init__.py | A:资源类型常量,分页参数 | S:stype 常量必须与接口约定一致；关键词、limit、offset 都作为字符串发送。
+exception.py[IR2T]: F:定义需要登录与登录失败两种 API 异常 | R:code:src/ncm/apis/__init__.py,code:src/ncm/apis/login.py | A:LoginRequiredException,LoginFailedException | S:-
+login.py[II8M]: F:实现二维码、手机验证码、Cookie、匿名与退出登录，以及登录状态和二维码 URL 构造 | R:code:src/ncm/apis/__init__.py,code:src/ncm/utils/security.py,code:src/core/netease_backend.py | A:登录/刷新/退出,QRCode type 5,手机验证码,匿名设备编码,登录信息写入 | S:PC 二维码登录类型为 5；Cookie 登录会把 MUSIC_U 写入当前 Session 并写登录信息；匿名登录依赖 cloudmusic_dll_encode_id。
+playlist.py[IN6S]: F:读取歌单详情/全部歌曲并创建、删除、增删歌单曲目 | R:code:src/ncm/apis/__init__.py | A:playlist detail,all tracks,manipulate/create/remove,分页 | S:详情存在普通与 EAPI 变体；创建和删除都需要登录会话。
+playmode.py[IN4T]: F:请求心动模式/智能播放列表的 intelligence list | R:code:src/ncm/apis/__init__.py,code:src/core/playing_manager.py | A:songId,playlistId,startMusicId,type,count | S:播放模式由 type 控制，fromPlayOne 与 fromPlayAll 是已验证的取值。
+radio.py[IN3T]: F:请求个人 FM/私人漫游歌曲 | R:code:src/ncm/apis/__init__.py | A:getPersonalFM | S:请求固定携带 imageFm=1。
+recommend.py[IN4T]: F:获取 PC 首页推荐资源和相似歌曲 | R:code:src/ncm/apis/__init__.py,code:src/core/netease_backend.py | A:getPcRecommendResource,getSimilarSongs | S:相似歌曲接口按 songid/limit/offset 请求。
+track.py[IN8S]: F:封装歌曲详情、音频 URL、音质、歌词、评论与评论发布接口 | R:code:src/ncm/apis/__init__.py,code:src/core/netease_backend.py | A:音质映射,播放/下载 URL,歌词多种版本,评论分页,评论发布 | S:bitrate 通过 LEVEL_BY_BITRATE 映射 level；歌词请求同时索要 LRC/YRC/翻译；歌曲评论路由为 R_SO_4_<id>。
+user.py[IN7T]: F:读取用户详情、歌单、每日推荐、推荐资源和音质权限，并发送 weblog | R:code:src/ncm/apis/__init__.py,code:src/core/netease_backend.py | A:用户详情,用户歌单,每日推荐,音质权限,weblog | S:用户歌单默认 limit 1001；每日推荐接口区分歌曲与资源。
+
+===/<repository>/src/ncm/utils/===
+__init__.py[CN4T]: F:提供随机字符串、16 进制转换与 MD5 摘要工具 | R:code:src/ncm/utils/crypto.py,code:src/ncm/__init__.py | A:BASE62/BASE64,_random_string,_hex_digest/_hex_compose | S:_hex_compose 假定输入为偶数长度十六进制。
+aes.py[KS5M]: F:纯 Python AES 实现，支持 ECB/CBC 与 16/24/32 字节密钥 | R:code:src/ncm/utils/crypto.py | A:AES 块变换,密钥扩展,ECB/CBC,PKCS7 辅助 | S:块大小为 16 字节；EAPI 使用 ECB；密钥长度必须是 16/24/32。
+constant.py[FI5M]: F:保存一批已知可用的客户端 deviceId 常量 | R:code:src/ncm/__init__.py,code:src/ncm/apis/login.py | A:known_good_deviceIds | S:这些是设备标识而非登录令牌；不要用真实用户标识替换或提交到日志。
+crypto.py[KS8T]: F:实现 EAPI 的 MD5 摘要拼接与 AES-128-ECB 加密解密 | R:code:src/ncm/utils/aes.py,code:src/ncm/apis/__init__.py | A:_eapi_encrypt,_eapi_decrypt,PKCS7,AES wrapper | S:明文格式固定为 url-36cd479b6b5-text-36cd479b6b5-digest；EAPI 密钥固定，ECB 无 IV。
+downloader.py[IN3S]: F:基于线程池和 Queue 的顺序 URL 下载器，带进度状态与并发报告 | R:code:src/core/downloader.py | A:PoolWorker,DownloadWorker,Downloader,状态字典 | S:只处理 HTTP 200 且 content-length 有效；0xFF 是内部完成码。
+helper.py[LD4M]: F:提供 API 响应的容错属性访问、用户/歌曲对象包装、文件名安全转换和模糊路径匹配 | R:code:src/core/models.py | A:IDCahceHelper,UserHelper,TrackHelper,FuzzyPathHelper | S:IDCahceHelper 是类级共享缓存；属性读取失败返回默认值而不是抛错。
+lrcparser.py[KL5M]: F:解析/生成 LRC，支持元数据标签、同一行多时间戳、偏移和按时间查找 | R:code:src/ncm/utils/yrcparser.py | A:LrcParser,stamp2tag,tag2stamp,find | S:同一行多个时间戳会生成多条歌词；offset 以秒为单位；无方括号 JSON 行会被忽略。
+security.py[KS3T]: F:实现匿名设备 ID 的 XOR+MD5+Base64 编码 | R:code:src/ncm/apis/login.py | A:cloudmusic_dll_encode_id,ID_XOR_KEY_1 | S:该算法用于匿名登录设备串，不是通用加密。
+yrcparser.py[KL5S]: F:解析旧版 YRC 46 行/块结构并可生成 ASS 卡拉 OK 文本 | R:code:src/ncm/utils/lrcparser.py | A:YrcParser46,YrcLine,YrcBlock,ASSWriter | S:块时间字段是厘秒，需乘 10 转毫秒；缺失的块结束时间由下一行开始补齐。
+
+===/<repository>/src/services/events/===
+__init__.py[MM3T]: F:重导出 event_bus 与 Events，作为统一事件包入口 | R:code:src/services/events/event_bus.py,code:src/services/events/events.py | A:- | S:不要在此加入逻辑；消费者统一导入 services.events。
+event_bus.py[MM8S]: F:线程安全事件总线，支持订阅/退订、快照、主线程派发、失效 Qt 对象清理和 profiling | R:code:src/services/events/events.py,code:src/core/frame_profiler.py | A:subscribe/unsubscribe,emit,emitInMainThread,dead owner pruning,listener snapshots | S:emit 在调用线程同步执行；UI 监听器必须通过 emitInMainThread 或 addScheduledTask；Qt 对象失效后会自动剪枝。
+events.py[FM8T]: F:定义跨组件事件名，覆盖播放、歌词、主题、收藏、桥接、加载、调试和定时器 | R:- | A:- | S:字符串值即跨组件事件词汇；改名会使所有旧订阅与发射端失配。
+
+===/<repository>/src/services/===
+services.py[AM8M]: F:运行应用级事件服务：精确重绘调度、固定周期 tick、主题同步、文件夹操作和会话刷新 | R:code:src/services/events/event_bus.py,code:src/core/theme.py,code:src/core/favorites.py | A:repaint timer,tick deadlines,session refresher,folder CRUD,PID 收集 | S:重绘用单调时钟 Deadline 调度；会话每 60 秒检查一次并保存刷新后的 config。
+update.py[IV7M]: F:查询 GitHub 最新 Release，比较 published_at，下载 tag zip 覆盖应用文件并重启 | R:code:update.json,code:.github/workflows/release.yml | A:latest release check,update.json,codeload zip,progress,跨平台重启,clean.exit | S:只有 published_at 比已安装记录更新才提示；下载 URL 必须对 tag 做 URL 编码；跳过更新会写入跳过时间；非 Windows 用 start_new_session 重启，os._exit 前写 clean.exit 避免监视误报。
+
+===/<repository>/src/views/===
+account_widget.py[LU7L]: F:账户头像与登录入口，支持二维码、手机验证码、Cookie 登录、退出和用户信息刷新 | R:code:src/core/netease_backend.py,code:src/core/dialogs.py,code:src/core/config.py | A:登录方式选择,QR/Cell/Cookie 流程,头像缓存,登出,loginChanged | S:登录成功和登出都会保存 session/login_status；异步刷新与登录结果用 busy/sequence 守护。
+animated_layout.py[LU5M]: F:提供滑动入场的 QVBoxLayout 与可流动布局 SFlowLayout，支持重排/插入/移动动画 | R:code:src/core/qt_utils.py,code:src/views/main_window.py | A:slide-in,flow reflow,tight mode,spacing,event filter | S:重排动画绑定控件属性 flowAni；移除控件前先 stop 并 deleteLater，避免残留动画访问已销毁控件。
+chatting_viewer.py[LU5M]: F:Onerad 流式消息渲染控件，累积 Markdown 块并在后台解析为 HTML | R:code:src/core/markdown_renderer.py,code:src/core/compute_worker.py | A:流式追加,80/250ms 合并,块级 Markdown,自动高度适配 | S:每批增量落在 80/250ms 合并计时器上；渲染用 generation 丢弃过期结果；不能直接在 UI 线程重渲染整段。
+comments_page.py[LU6M]: F:歌曲评论页，加载分页评论、楼中楼回复、头像缓存与评论发布 | R:code:src/core/netease_backend.py,code:src/views/list_widget.py,code:src/core/image.py | A:评论卡片,回复嵌套,分页游标,发送评论,头像缓存 | S:滚动加载依赖 page 与 cursor；头像缓存写入 data/image；未登录时发布评论会被后端异常阻止；头像路径必须用 Path/os.path.join 拼接而不是反斜杠字面量。
+curve_editor.py[LU5M]: F:可编辑的 OpenGL 曲线控件，支持点拖拽、悬停、键盘微调和曲线平滑 | R:code:src/core/models.py,code:src/core/smooth.py,code:src/core/theme.py | A:点集合,坐标夹取,拖拽,键盘步进,曲线路径,主题重绘 | S:点坐标必须夹在 0..1；点集去重并按 x 排序；编辑操作通过 pointsChanged/edited 信号传播。
+debug_overlay.py[OO5L]: F:可拖动/缩放的调试覆盖层，显示进程内存、CPU、节拍和帧统计 | R:code:src/core/app_context.py,code:src/core/frame_profiler.py,code:src/core/lyric_video_export.py | A:进程采样,内存历史,CPU 历史,节拍波形,边界拖拽 | S:只在 ctx.debugging 时采样；隐藏时会停止 tick 订阅；异步采样用 pending 标志避免并发。
+dependences_window.py[ER7M]: F:启动依赖检查窗口，检查 FFmpeg、运行时、音频、网络和 OpenGL，并在 Windows 可下载 FFmpeg | R:code:src/core/downloader.py,code:src/views/launch_window.py,code:src/main.py | A:并行检查,跨平台 FFmpeg 发现,Windows 下载解压,路径注入,pydub 配置,结果汇总 | S:依赖检查需要在主窗口构造前完成；Windows 缺失 FFmpeg 时可下载解压；macOS/Linux 只检测系统 ffmpeg 并配置 pydub，不自动下载；成功后设置 ctx.dependences_available。
+desktop_lyrics.py[LU7L]: F:桌面歌词浮窗，继承 LyricsViewer 并支持置顶、顶部吸附、鼠标穿透判定和标题行；Windows 用 Win32 置顶，其它平台用 Qt raise_ | R:code:src/views/lyrics_viewer.py,code:src/core/config.py,code:src/core/lyrics.py | A:跨平台置顶,位置保存,标题回退,逐字高亮,翻译 | S:窗口必须持续置顶；标题行在首句歌词前显示歌名和歌手；桌面歌词只订阅 REPAINT_ALWAYS；BypassWindowManagerHint 仅在 win32 使用。
+eq_editor.py[LU6L]: F:基于 CurveEditor 的 20Hz–20kHz 对数频率 EQ 编辑器，叠加实时原始/处理后频谱 | R:code:src/views/curve_editor.py,code:src/core/audio_processing.py,code:src/core/config.py | A:对数频率映射,增益 ±20dB,FFT 频段聚合,平滑,主题重绘 | S:频点和增益必须夹在界面范围；FFT 只在可见时处理，切歌/暂停会重置频谱状态。
+error_popup.py[RO5T]: F:错误弹窗，展示异常详情、复制按钮和 GitHub issue 入口 | R:code:src/main.py,code:src/core/i18n.py | A:详情展示,复制,报告按钮,外部链接 | S:错误文本必须可复制；报告按钮打开项目 issue 新建页。
+favorites_page.py[LU7L]: F:本地与云端收藏夹页面，提供播放全部、加入队列、批量选择、搜索、重命名/删除和重新发现入口 | R:code:src/core/favorites.py,code:src/core/netease_backend.py,code:src/views/song_card.py,code:src/views/song_list.py | A:文件夹切换,云端歌曲加载,批量操作,本地搜索,过期文件夹清理 | S:本地文件夹来自 favorites_manager，云端文件夹按需从 backend 拉取；批量和文件夹操作通过事件总线触发刷新。
+folder_card.py[LU5M]: F:本地/云端收藏夹卡片，加载封面、显示歌曲数并处理右键菜单操作 | R:code:src/core/favorites.py,code:src/core/netease_backend.py,code:src/core/image.py | A:本地卡片,云端卡片,封面缓存,重命名/删除/互转,点击信号 | S:卡片封面缓存按 URL 哈希写入 data/image；云端卡片的歌曲数是可选值，缺失时应继续请求。
+home_page.py[LU6M]: F:首页入口页，提供心动模式、私人漫游、私人雷达和相似歌曲等推荐入口 | R:code:src/core/playing_manager.py,code:src/core/netease_backend.py,code:src/views/rediscovery_card.py | A:推荐卡片,登录状态,加载动画,启动模式 | S:推荐入口依赖登录状态；未登录时点击推荐应由上层弹出登录或错误提示，不能静默播放空列表。
+image_label.py[LU4S]: F:用独立 OpenGL canvas 绘制 QLabel 内 pixmap，支持透明背景、缩放与对齐 | R:code:src/core/image.py,code:src/views/playing_page.py | A:延迟同步 canvas,透明合成,禁用态图标,DPI 绘制 | S:paintEvent 只调度一次同步；pixmap 变化时重建绘制状态；canvas 不得拦截鼠标事件。
+launch_window.py[EU5M]: F:启动展示窗口，显示加载提示、进度、背景动画和可选独立进程 | R:code:src/main.py,code:src/views/dependences_window.py | A:启动字幕,进度条,下载进度,窗口动画,跨平台子进程 | S:启动窗口必须早于主窗口构造；独立进程模式下不能访问主窗口对象；完成时应平滑关闭；CREATE_NO_WINDOW 与 AllowSetForegroundWindow 只在 Windows 调用。
+line_edit.py[LU4M]: F:可展开搜索输入框，按焦点/文本状态改变宽度、图标和背景 | R:code:src/views/search_page.py,code:src/core/smooth.py,code:src/core/theme.py | A:展开动画,图标布局,主题重绘,清空/回车信号 | S:展开宽度由 EaseOutTimer 驱动；主题切换时必须重算背景色和文本色，不能缓存旧主题图标。
+list_widget.py[LU6L]: F:自定义平滑滚动条、列表控件和透明 SScrollArea，统一列表动画与主题绘制 | R:code:src/core/smooth.py,code:src/core/config.py,code:src/services/events/events.py | A:平滑滚轮,滚动条动画,列表委托,透明背景,调试统计 | S:滚动动画依赖 REPAINT 事件和固定的刷新率；线程/对象销毁前要解除事件订阅。
+llm_viewer_panel.py[LA8L]: F:Onerad 侧栏，负责流式聊天、Markdown 卡片、工具调用展示、确认卡、停止/编辑/复制与模型选择 | R:code:src/core/llm.py,code:src/core/llm_tools.py,code:src/views/chatting_viewer.py | A:流式消息,工具卡,确认执行,消息历史,模型选择,自动滚动 | S:异步流必须用 generation 防止旧请求写回；确认卡未批准时不能执行 pending tools；编辑消息会截断后续历史。
+log_handler.py[OO6M]: F:Qt/终端日志渲染器，重定向 stdout/stderr 并隐藏媒体 URL 中的密钥片段 | R:code:src/main.py,code:src/core/crash_handler.py | A:日志队列,跨平台终端宽度,ANSI 着色,URL 脱敏,stderr 捕获 | S:日志写入必须脱敏媒体 URL；重定向后的 stream 不能再递归写入自身；Windows 用 ReadConsoleInputW 监听宽度，其它平台轮询终端列数。
+lyric_editor_page.py[LU7L]: F:手动歌词对轴页，支持空格打拍、逐词时间、LRC/YRC 生成、翻译对齐和保存 | R:code:src/core/lyrics.py,code:src/core/lyric_formats.py,code:src/core/models.py | A:文本编辑,打拍计时,预览,翻译保留,YRC 生成,缓存写入 | S:打拍必须在当前播放位置记录；保存前不能丢原翻译；YRC 与 LRC 的逐行数量必须保持一致。
+lyrics_viewer.py[LU8L]: F:OpenGL 歌词视图，渲染当前行、翻译、YRC 逐字高亮、滚动与横向偏移 | R:code:src/core/lyrics.py,code:src/core/smooth.py,code:src/core/theme.py | A:多行布局,滚动动画,逐字裁剪,翻译查找,布局序列化,鼠标交互 | S:歌词渲染与桥接布局必须共用同一行布局；有 YRC 时优先逐字时间；缺少翻译时保留空行而不重排。
+main_window.py[AU9L]: F:主窗口，组装侧边栏、页面栈、播放控制器、标题栏、收藏夹导航、Onerad 侧栏和状态提示 | R:code:src/main.py,code:src/core/app_context.py,code:src/views/playing_controller.py,code:src/views/llm_viewer_panel.py | A:页面切换,文件夹刷新,登录/登出,播放控制,窗口布局,关闭清理 | S:页面对象由 main.py 预先注入 AppContext；所有异步 UI 更新必须经 addScheduledTask；关闭时保存窗口和播放状态。
+number_viewer.py[LU4M]: F:可编辑数字显示控件，支持拖拽/滚轮/键盘调整与数值信号 | R:code:src/core/smooth.py,code:src/views/setting_page.py | A:SettableNumberViewer,拖拽调节,范围夹取,valueChanged | S:外部设置与用户交互都应通过统一 setter/信号，避免重复触发；数值必须按控件范围夹取。
+performances.py[OO5L]: F:性能覆盖层，绘制 CPU/内存/帧耗时曲线，并导出性能或内存报告 | R:code:src/core/frame_profiler.py,code:src/core/debugging.py,code:src/core/app_context.py | A:性能采样,内存采样,内存图,帧图,报告图片,非 Windows 回退 | S:只有调试模式开启时才采样；导出前必须停止/隐藏调试层，完成后恢复原状态；POSIX 无 VirtualQueryEx 时 _residentMemory 抛 OSError 并回退 RSS 汇总。
+playing_controller.py[AU9L]: F:主窗口底部播放控制器，绘制封面、FFT、进度、当前歌词、播放/切歌/队列按钮并处理点击拖拽 | R:code:src/core/audio_player.py,code:src/core/playing_manager.py,code:src/core/ws_server.py | A:FFT 显示,封面主题,进度跳转,歌词窗口,交叉淡化提示,桥接状态 | S:鼠标位置换算为播放时间时必须按有效进度区；FFT 计算在工作线程且用序列号丢弃过期结果。
+playing_page.py[AU9L]: F:播放页，展示封面、歌曲信息、歌词、翻译、音质、评论、歌词编辑与歌词视频导出入口 | R:code:src/core/playing_manager.py,code:src/core/lyric_video_export.py,code:src/views/quality_dialog.py,code:src/views/comments_page.py | A:播放状态,封面加载,翻译开关,歌词视频选项,播放页事件 | S:下载/播放状态通过事件总线回填；歌词视频参数会写回 cfg；不能在切歌后把旧歌曲的异步结果应用到当前页面。
+playlist_page.py[LU6M]: F:播放列表页，展示当前队列、支持移除/移动/批量操作和队列播放 | R:code:src/core/playing_manager.py,code:src/views/song_list.py,code:src/views/song_card.py | A:队列卡片,顺序移动,移除,播放全部,批量选择 | S:队列变更必须同时刷新播放器的 playlist 与页面；移动卡片要更新 PlayingManager 索引。
+quality_dialog.py[LU5S]: F:音质选择对话框，展示可用码率、会员/收费标记并切换当前请求码率 | R:code:src/core/netease_backend.py,code:src/core/playing_manager.py | A:QualityCard,可用级别,当前码率,切换请求码率 | S:只展示后端返回的可用级别；切换失败时必须保留旧码率并提示错误。
+rediscovery_card.py[LU3T]: F:首页的重新发现入口卡片，显示说明并打开 RediscoveryPage | R:code:src/views/rediscovery_page.py,code:src/core/i18n.py | A:图标,标题,说明,鼠标点击 | S:-
+rediscovery_page.py[LU5M]: F:重新发现收藏页，按 balanced/rare/forgotten 模式分批展示歌曲并支持播放、刷新和返回 | R:code:src/core/rediscovery.py,code:src/core/favorites.py,code:src/views/song_card.py | A:模式切换,分批加载,滚动懒加载,播放队列,日期标注 | S:每批卡片在接近可见区时才创建；模式/来源变化会重建排序；上一批异步构建结果需丢弃。
+search_page.py[LU7M]: F:云端搜索页，支持歌曲/歌单类型切换、分页搜索、增量卡片构建与播放 | R:code:src/core/netease_backend.py,code:src/views/song_card.py,code:src/views/song_list.py | A:搜索类型,分页,结果卡片,可见区懒加载,播放入口 | S:分页请求必须带 offset；旧搜索请求的结果不能追加到新关键词；卡片生成按可见区批处理。
+separator.py[LU1T]: F:可绘制水平分隔线的小型 QWidget | R:- | A:- | S:-
+setting_page.py[AU9L]: F:设置页，分组管理外观、播放、交叉淡化、EQ、桌面歌词、存储、响度、动画、歌词、FFT、Whisper、节拍、Onerad 与连接状态 | R:code:src/core/config.py,code:src/core/llm.py,code:src/core/whisper_lyrics.py,code:src/core/theme.py | A:可折叠分区,选项控件,搜索/跳转,主题/语言刷新,LLM provider CRUD,Whisper 安装 | S:设置变更即写入 cfg 并按需保存；LLM provider 区对可调用工具隐藏；Whisper 安装必须在 UI 线程外执行。
+song_card.py[LU8L]: F:歌曲卡片体系，覆盖搜索结果、歌单、本地/云端收藏，支持播放、收藏、加入歌单、移动、导出和删除 | R:code:src/core/favorites.py,code:src/core/playing_manager.py,code:src/views/song_list.py,code:src/views/song_export.py | A:搜索卡片,歌单/收藏卡,文件夹选择,批量选择,右键菜单,异步封面 | S:卡片释放时解除事件订阅；异步封面下载按歌曲 id 加锁；旧卡片的异步结果不得更新新卡片。
+song_export.py[LU6M]: F:歌曲导出向导，询问是否应用播放效果，展示解码/处理/编码进度并处理成功或失败 | R:code:src/core/audio_effect_export.py,code:src/core/models.py,code:src/views/song_card.py | A:导出选项,进度对话框,后台导出,完成提示 | S:导出在后台线程执行；进度回调要经 main window 的 scheduled task；失败时应删除未完成文件并提示。
+song_list.py[LU4S]: F:歌曲卡片列表容器，按可见区懒创建卡片、同步删除并维护卡片索引 | R:code:src/views/list_widget.py,code:src/views/song_card.py | A:setSongs,cards,可见区检查,懒构建 | S:列表重建时先清理旧卡片；卡片必须在可见时创建，避免长列表一次生成全部控件。
+title_bar.py[LU3T]: F:自定义无边框标题栏，重排标题与窗口按钮并阻止在搜索框上拖动窗口 | R:code:src/views/main_window.py,code:src/views/line_edit.py | A:标题标签,窗口按钮,拖动判定,主题样式 | S:搜索框可见并包含拖动起点时，标题栏不能开始拖动窗口。
+translation_handler.py[LU2T]: F:保存当前翻译文本并在设置时发出 textChanged 的最小 QObject | R:code:src/views/comments_page.py | A:textChanged,setText | S:-

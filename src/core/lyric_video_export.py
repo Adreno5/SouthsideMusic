@@ -535,7 +535,11 @@ def _findQtSidecarInterpreter() -> str | None:
             candidates.append(Path(value))
     candidates.extend([
         root / '.venv' / 'Scripts' / 'python.exe',
+        root / '.venv' / 'bin' / 'python3',
+        root / '.venv' / 'bin' / 'python',
         root / 'venv' / 'Scripts' / 'python.exe',
+        root / 'venv' / 'bin' / 'python3',
+        root / 'venv' / 'bin' / 'python',
         Path(sys.executable),
     ])
     for candidate in candidates:

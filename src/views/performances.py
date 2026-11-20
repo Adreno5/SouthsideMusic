@@ -8,7 +8,6 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable, Iterator
-from ctypes import wintypes
 from dataclasses import asdict, fields, is_dataclass
 from queue import Queue
 from typing import override
@@ -52,6 +51,10 @@ def _residentMemory(
     ranges: list[tuple[int, int, str]],
     object_addresses: set[int],
 ) -> tuple[dict[str, int], dict[str, str]]:
+    if os.name != 'nt':
+        raise OSError('resident memory breakdown requires Windows')
+    from ctypes import wintypes
+
     class MemoryRegion(ctypes.Structure):
         _fields_ = [
             ('base_address', ctypes.c_void_p),

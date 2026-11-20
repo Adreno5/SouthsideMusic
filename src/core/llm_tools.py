@@ -755,7 +755,7 @@ class LLMToolRunner:
         song = pm.current_song if pm else None
         if song is None:
             return {'error': 'no song is loaded'}
-        stored = song.getLyrics()
+        stored = song.getStoredLyrics()
         translated = translated_lyric or stored['translated_lyric']
         yrc = yrc_lyric or stored['yrc_lyric']
         song.writeLyrics(lyric, translated, yrc)

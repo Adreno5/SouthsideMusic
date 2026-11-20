@@ -210,6 +210,8 @@ def runExportCase(ctx: Any, case_id: str, output: Path, backend: Any) -> dict[st
                 ) from error
             assert device['max_output_channels'] > 0
         else:
+            if sys.platform != 'win32':
+                raise unittest.SkipTest('Native SMTC is only available on Windows')
             from winrt.windows.media import (
                 MediaPlaybackStatus,
                 SystemMediaTransportControls,
@@ -291,10 +293,13 @@ def runExportCase(ctx: Any, case_id: str, output: Path, backend: Any) -> dict[st
     ffmpeg = shutil.which('ffmpeg')
     ffprobe = shutil.which('ffprobe')
     binary_dir = Path(backend.root) / 'ffmpeg' / 'bin'
-    if not ffmpeg and (binary_dir / 'ffmpeg.exe').is_file():
-        ffmpeg = str(binary_dir / 'ffmpeg.exe')
-    if not ffprobe and (binary_dir / 'ffprobe.exe').is_file():
-        ffprobe = str(binary_dir / 'ffprobe.exe')
+    ffmpeg_name, ffprobe_name = (
+        ('ffmpeg.exe', 'ffprobe.exe') if os.name == 'nt' else ('ffmpeg', 'ffprobe')
+    )
+    if not ffmpeg and (binary_dir / ffmpeg_name).is_file():
+        ffmpeg = str(binary_dir / ffmpeg_name)
+    if not ffprobe and (binary_dir / ffprobe_name).is_file():
+        ffprobe = str(binary_dir / ffprobe_name)
     if not ffmpeg or not ffprobe:
         raise unittest.SkipTest('Local FFmpeg and FFprobe are required')
     video_case = case_id == 'export_video'

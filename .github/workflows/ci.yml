@@ -90,6 +90,34 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  portability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libportaudio2 libegl1 libgl1 libxkbcommon-x11-0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Check non-Windows imports
+        run: |
+          QT_QPA_PLATFORM=offscreen uv run python -c "import sys; sys.path.insert(0, 'src'); import core.config, core.theme, core.smtc, core.crash_handler, core.lyric_sources, core.free_threaded_worker, core.lyric_video_export, views.log_handler, views.desktop_lyrics, views.performances, views.dependences_window, views.comments_page, views.launch_window, ncm; print('non-Windows imports ok')"
+
   harness:
     runs-on: windows-latest
     timeout-minutes: 30

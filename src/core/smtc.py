@@ -4,31 +4,36 @@ import ctypes
 import datetime
 import logging
 import os
+import sys
 import threading
-import winreg
 from typing import TYPE_CHECKING
 
 from core.models import IMAGE_DATA_DIR, SongStorable, TrackDetailInfo
 from core.downloader import asyncTask
 from PySide6.QtCore import QObject
 from services.events import Events, event_bus
-from winrt.windows.media import (
-    MediaPlaybackStatus,
-    MediaPlaybackType,
-    MediaPlaybackAutoRepeatMode,
-    PlaybackPositionChangeRequestedEventArgs,
-    SystemMediaTransportControls,
-    SystemMediaTransportControlsButton,
-    SystemMediaTransportControlsButtonPressedEventArgs,
-    SystemMediaTransportControlsDisplayUpdater,
-    SystemMediaTransportControlsTimelineProperties,
-    interop,
-)
-from winrt.windows.storage.streams import (
-    DataWriter,
-    InMemoryRandomAccessStream,
-    RandomAccessStreamReference,
-)
+
+_IS_WINDOWS = sys.platform == 'win32'
+
+if _IS_WINDOWS:
+    import winreg
+    from winrt.windows.media import (
+        MediaPlaybackStatus,
+        MediaPlaybackType,
+        MediaPlaybackAutoRepeatMode,
+        PlaybackPositionChangeRequestedEventArgs,
+        SystemMediaTransportControls,
+        SystemMediaTransportControlsButton,
+        SystemMediaTransportControlsButtonPressedEventArgs,
+        SystemMediaTransportControlsDisplayUpdater,
+        SystemMediaTransportControlsTimelineProperties,
+        interop,
+    )
+    from winrt.windows.storage.streams import (
+        DataWriter,
+        InMemoryRandomAccessStream,
+        RandomAccessStreamReference,
+    )
 
 if TYPE_CHECKING:
     from core.app_context import AppContext
@@ -61,6 +66,8 @@ def _launcherCandidates() -> list[str]:
 
 
 def initAppIdentity() -> None:
+    if not _IS_WINDOWS:
+        return
     try:
         aumid = _appUserModelId()
         shell32 = ctypes.windll.shell32
@@ -78,7 +85,7 @@ def initAppIdentity() -> None:
 
 
 def _thumbnailReference(song: SongStorable) -> RandomAccessStreamReference | None:
-    if not song.image_cache_hash:
+    if not _IS_WINDOWS or not song.image_cache_hash:
         return None
     path = os.path.join(IMAGE_DATA_DIR, song.image_cache_hash)
     if not os.path.exists(path):
@@ -113,6 +120,8 @@ class SmtcController(QObject):
         self._updatePlayMode()
 
     def setEnabled(self, enabled: bool) -> None:
+        if not _IS_WINDOWS:
+            return
         if enabled and self._smtc is None:
             self._create()
         if self._smtc is None:
@@ -137,6 +146,8 @@ class SmtcController(QObject):
             event_bus.unsubscribe(Events.SECOND_TICK, self._tick)
 
     def _create(self) -> None:
+        if not _IS_WINDOWS:
+            return
         window = self.ctx.main_window
         if window is None:
             _logger.warning('main window is missing, smtc stays off')
@@ -170,7 +181,7 @@ class SmtcController(QObject):
         return None
 
     def _updateMetadata(self) -> None:
-        if self._smtc is None:
+        if not _IS_WINDOWS or self._smtc is None:
             return
         updater: SystemMediaTransportControlsDisplayUpdater = self._smtc.display_updater
         song = self._currentSong()
@@ -231,7 +242,7 @@ class SmtcController(QObject):
         updater.update()
 
     def _updateTimeline(self) -> None:
-        if self._smtc is None:
+        if not _IS_WINDOWS or self._smtc is None:
             return
         duration = self.ctx.player.getLength()
         if duration <= 0:
@@ -247,7 +258,7 @@ class SmtcController(QObject):
 
     def _updatePlayMode(self) -> None:
         manager = self.ctx.playing_manager
-        if self._smtc is None or manager is None:
+        if not _IS_WINDOWS or self._smtc is None or manager is None:
             return
         mode = manager.play_mode
         self._smtc.shuffle_enabled = mode == 'Shuffle'
@@ -259,7 +270,7 @@ class SmtcController(QObject):
             self._smtc.auto_repeat_mode = MediaPlaybackAutoRepeatMode.NONE
 
     def _setStatus(self, is_playing: bool) -> None:
-        if self._smtc is None:
+        if not _IS_WINDOWS or self._smtc is None:
             return
         self._smtc.playback_status = (
             MediaPlaybackStatus.PLAYING if is_playing else MediaPlaybackStatus.PAUSED

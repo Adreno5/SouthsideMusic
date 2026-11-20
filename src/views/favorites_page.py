@@ -2,14 +2,9 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
-
-import shiboken6
 
 from core.app_context import AppContext
-from core.qt_utils import clearListWidget
-from PySide6.QtCore import QPoint, QTimer
-from PySide6.QtGui import Qt
+from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QLabel
 from qfluentwidgets import FluentIcon, PrimaryPushButton, PushButton
 from core.i18n import bindText, tr
@@ -18,8 +13,6 @@ from PySide6.QtCore import QEasingCurve, QPropertyAnimation
 from PySide6.QtWidgets import (
     QGraphicsOpacityEffect,
     QHBoxLayout,
-    QListWidget,
-    QListWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -31,7 +24,6 @@ from qfluentwidgets import (
     SearchLineEdit,
     TitleLabel,
 )
-from views.list_widget import SListWidget
 
 from core.models import CloudFolderInfo, LocalFolderInfo, SongStorable
 from core.favorites import favorites_manager
@@ -45,9 +37,9 @@ from views.song_card import (
     FolderSelectDialog,
     _SongCardItem,
 )
+from views.song_list import SongListWidget
 
 _logger = logging.getLogger(__name__)
-LIST_BUILD_BATCH_SIZE = 40
 
 
 class FavoritesPage(QWidget):
@@ -129,21 +121,10 @@ class FavoritesPage(QWidget):
         self.search_input.textChanged.connect(self._onSearchTextChanged)
         global_layout.addWidget(self.search_input)
 
-        self.song_viewer = SListWidget()
-        self.song_viewer.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.song_viewer = SongListWidget(self._createSongCard)
         global_layout.addWidget(self.song_viewer, 1)
 
-        self._song_cards: list[_SongCardItem] = []
         self._batch_songs: list[SongStorable] = []
-        self._next_song_index = 0
-        self._scroll_speed = 0.0
-        self._last_scroll_value = 0
-        self._last_scroll_time = time.perf_counter()
-        self._batch_timer = QTimer(self)
-        self._batch_timer.setSingleShot(True)
-        self._batch_timer.timeout.connect(self._appendSongBatch)
-        self.song_viewer.verticalScrollBar().valueChanged.connect(self._onScroll)
-        event_bus.subscribe(Events.TICK_50MS, self._checkVisibleCards)
 
         self._cloud_loading = False
         self._batch_mode = False
@@ -197,23 +178,14 @@ class FavoritesPage(QWidget):
             return self.curr_folder.songs
         return []
 
-    def _validSongCards(self) -> list[_SongCardItem]:
-        self._song_cards = [
-            card for card in self._song_cards if shiboken6.isValid(card)
-        ]
-        return self._song_cards
-
     def displayEmpty(self) -> None:
         self.rediscovery_button.setEnabled(False)
         self._favorites_refresh_seq += 1
-        self._batch_timer.stop()
         self._batch_songs = []
-        self._next_song_index = 0
         self.title_label.setText(tr('favorites_page.none'))
         self.setBatchMode(False)
         self.batch_btn.setChecked(False)
-        clearListWidget(self.song_viewer)
-        self._song_cards = []
+        self.song_viewer.setSongs([])
 
     def setDisplayFolder(self, folder: LocalFolderInfo | CloudFolderInfo) -> None:
         if self._cloud_loading:
@@ -268,84 +240,8 @@ class FavoritesPage(QWidget):
     def _get_favs(self):
         return favorites_manager.folders
 
-    def _checkVisibleCards(self) -> None:
-        if self.isVisible():
-            viewport_rect = self.song_viewer.viewport().rect()
-            preload_rect = viewport_rect.adjusted(
-                0,
-                -viewport_rect.height(),
-                0,
-                max(viewport_rect.height() * 2, int(self._scroll_speed * 0.5)),
-            )
-            start = 0
-            end = self.song_viewer.count()
-            while start < end:
-                middle = (start + end) // 2
-                item = self.song_viewer.item(middle)
-                if item is None:
-                    break
-                if self.song_viewer.visualItemRect(item).bottom() < preload_rect.top():
-                    start = middle + 1
-                else:
-                    end = middle
-            for row in range(start, self.song_viewer.count()):
-                item = self.song_viewer.item(row)
-                if item is None:
-                    continue
-                item_rect = self.song_viewer.visualItemRect(item)
-                if item_rect.top() > preload_rect.bottom():
-                    break
-                card = self.song_viewer.itemWidget(item)
-                if (
-                    isinstance(card, _SongCardItem)
-                    and shiboken6.isValid(card)
-                    and not card.load
-                    and preload_rect.intersects(item_rect)
-                ):
-                    card.loadDetailAndImage()
-        self._queueSongBatch()
-
-    def _onScroll(self, value: int) -> None:
-        now = time.perf_counter()
-        elapsed = max(now - self._last_scroll_time, 0.001)
-        speed = max(0, value - self._last_scroll_value) / elapsed
-        self._scroll_speed = min(speed, 24000)
-        self._last_scroll_time = now
-        self._last_scroll_value = value
-        self._queueSongBatch()
-
-    def _queueSongBatch(self) -> None:
-        if not self.isVisible() or self._next_song_index >= len(self._batch_songs):
-            self._batch_timer.stop()
-            return
-        if time.perf_counter() - self._last_scroll_time > 0.15:
-            self._scroll_speed = 0.0
-        scrollbar = self.song_viewer.verticalScrollBar()
-        preload_distance = max(
-            self.song_viewer.viewport().height() * 2, int(self._scroll_speed * 0.5)
-        )
-        if scrollbar.maximum() - scrollbar.value() > preload_distance:
-            self._batch_timer.stop()
-            return
-        interval = max(16, 80 - int(self._scroll_speed / 100))
-        if scrollbar.maximum() < self.song_viewer.viewport().height():
-            interval = 16
-        if (
-            not self._batch_timer.isActive()
-            or self._batch_timer.remainingTime() > interval
-        ):
-            self._batch_timer.start(interval)
-
     def refresh(self) -> None:
         self._favorites_refresh_seq += 1
-        self._batch_timer.stop()
-        self._batch_songs = []
-        self._next_song_index = 0
-        clearListWidget(self.song_viewer)
-        self._song_cards = []
-        self._scroll_speed = 0.0
-        self._last_scroll_value = self.song_viewer.verticalScrollBar().value()
-        self._last_scroll_time = time.perf_counter()
 
         if self.is_cloud and self.curr_cloud_folder:
             self.title_label.setText(self.curr_cloud_folder.folder_name)
@@ -359,7 +255,7 @@ class FavoritesPage(QWidget):
             self.title_label.setText(self.curr_folder.folder_name)
             songs = self.curr_folder.songs
         else:
-            return
+            songs = []
 
         songs = list(songs)
         self.rediscovery_button.setEnabled(bool(songs))
@@ -374,32 +270,9 @@ class FavoritesPage(QWidget):
                 or any(keyword in artist.name.lower() for artist in song.artists)
             ]
         self._batch_songs = songs
-        self._appendSongBatch()
+        self.song_viewer.setSongs(songs)
 
-    def _appendSongBatch(self) -> None:
-        start = self._next_song_index
-        batch_size = (
-            LIST_BUILD_BATCH_SIZE
-            if start == 0
-            else min(LIST_BUILD_BATCH_SIZE, 1 + int(self._scroll_speed / 1000))
-        )
-        end = min(start + batch_size, len(self._batch_songs))
-        time_budget = (
-            0.008 if start == 0 else min(0.012, 0.004 + self._scroll_speed / 2_000_000)
-        )
-        deadline = time.perf_counter() + time_budget
-        for index in range(start, end):
-            self._addSongCard(self._batch_songs[index])
-            self._next_song_index = index + 1
-            if time.perf_counter() >= deadline:
-                break
-        self.song_viewer.doItemsLayout()
-        self._checkVisibleCards()
-
-    def _addSongCard(self, song: SongStorable) -> None:
-        item = QListWidgetItem()
-        item.setData(Qt.ItemDataRole.UserRole, song)
-
+    def _createSongCard(self, song: SongStorable) -> _SongCardItem:
         if self.is_cloud:
             card = CloudFavoriteSongCard(
                 song,
@@ -407,6 +280,7 @@ class FavoritesPage(QWidget):
                 self._mwindow,
                 self._plp,
                 remove_callback=lambda s=song: self.deleteCloudSong(s),
+                parent=self.song_viewer.viewport(),
                 lazy=True,
             )
         else:
@@ -417,23 +291,22 @@ class FavoritesPage(QWidget):
                 self._plp,
                 remove_callback=lambda s=song: self.deleteSong(s),
                 move_callback=self.moveSong,
+                parent=self.song_viewer.viewport(),
                 lazy=True,
             )
-        card.clicked.connect(lambda s: self._replaceAndPlay(s))
-        card.queued.connect(lambda s: self._queueAfterCurrent(s))
-        card.selectionChanged.connect(self._onSongSelectionChanged)
+        card.clicked.connect(self._replaceAndPlay)
+        card.queued.connect(self._queueAfterCurrent)
         card.setSelectionMode(self._batch_mode)
         card.setSelected(str(song.id) in self._selected_song_ids)
-        self.song_viewer.addItem(item)
-        self.song_viewer.setItemWidget(item, card)
-        self._song_cards.append(card)
+        card.selectionChanged.connect(self._onSongSelectionChanged)
+        return card
 
     def setBatchMode(self, state: bool) -> None:
         self._batch_mode = state
         self.batch_widget.setVisible(state)
         if not state:
             self._selected_song_ids.clear()
-        for card in self._validSongCards():
+        for card in self.song_viewer.cards():
             card.setSelectionMode(state)
         self._syncBatchButtons()
 
@@ -463,13 +336,13 @@ class FavoritesPage(QWidget):
 
     def selectAllSongs(self) -> None:
         self._selected_song_ids = {str(song.id) for song in self._batch_songs}
-        for card in self._validSongCards():
+        for card in self.song_viewer.cards():
             card.setSelected(True)
         self._syncBatchButtons()
 
     def clearSelection(self) -> None:
         self._selected_song_ids.clear()
-        for card in self._validSongCards():
+        for card in self.song_viewer.cards():
             card.setSelected(False)
         self._syncBatchButtons()
 
@@ -485,11 +358,7 @@ class FavoritesPage(QWidget):
         self._animateCoverFly(song)
 
     def _animateCoverFly(self, song: SongStorable):
-        for card in list(self._song_cards):
-            try:
-                card.objectName()
-            except RuntimeError:
-                continue
+        for card in self.song_viewer.cards():
             if card.storable is song:
                 break
         else:

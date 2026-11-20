@@ -1,4 +1,5 @@
 import base64
+import ctypes
 from dataclasses import dataclass, field
 import json
 import logging
@@ -7,8 +8,6 @@ import os
 import threading
 
 from typing import Any, Literal, cast
-
-import win32crypt
 
 from core.deferred_writes import getDeferredWriter
 from core.models import SongStorable
@@ -23,6 +22,8 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 CONFIG_PATH = os.path.join(_PROJECT_ROOT, 'config.json')
 LEGACY_PICKLE_CONFIG_PATH = os.path.join(_PROJECT_ROOT, 'config.pkl')
 SECRET_PREFIX = 'win32crypt:'
+AES_SECRET_PREFIX = 'aesgcm:'
+_SECRET_KEY_PATH = os.path.join(_PROJECT_ROOT, 'data', 'secret.key')
 
 DEFAULT_EQ_BANDS: tuple[tuple[float, float], ...] = (
     (20.0, 0.0),
@@ -212,36 +213,162 @@ Config()
 cfg = Config.instance()
 
 
-def encryptSecret(value: str) -> str:
-    if not value:
-        return ''
-    encrypted = win32crypt.CryptProtectData(
-        value.encode('utf-8'),
+class _DataBlob(ctypes.Structure):
+    _fields_ = [
+        ('cbData', ctypes.c_uint32),
+        ('pbData', ctypes.POINTER(ctypes.c_ubyte)),
+    ]
+
+
+def _dataBlob(data: bytes) -> tuple[Any, _DataBlob]:
+    buffer = ctypes.create_string_buffer(data)
+    blob = _DataBlob(
+        len(data),
+        ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ubyte)),
+    )
+    return buffer, blob
+
+
+def _dpapiCrypt32() -> tuple[Any, Any]:
+    crypt32 = ctypes.WinDLL('crypt32', use_last_error=True)
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    crypt32.CryptProtectData.argtypes = (
+        ctypes.POINTER(_DataBlob),
+        ctypes.c_wchar_p,
+        ctypes.POINTER(_DataBlob),
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.POINTER(_DataBlob),
+    )
+    crypt32.CryptProtectData.restype = ctypes.c_int
+    crypt32.CryptUnprotectData.argtypes = (
+        ctypes.POINTER(_DataBlob),
+        ctypes.POINTER(ctypes.c_wchar_p),
+        ctypes.POINTER(_DataBlob),
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.POINTER(_DataBlob),
+    )
+    crypt32.CryptUnprotectData.restype = ctypes.c_int
+    kernel32.LocalFree.argtypes = (ctypes.c_void_p,)
+    kernel32.LocalFree.restype = ctypes.c_void_p
+    return crypt32, kernel32
+
+
+def _dpapiEncrypt(value: str) -> bytes:
+    crypt32, kernel32 = _dpapiCrypt32()
+    _buffer, source = _dataBlob(value.encode('utf-8'))
+    encrypted = _DataBlob()
+    if not crypt32.CryptProtectData(
+        ctypes.byref(source),
         'SouthsideMusic',
         None,
         None,
         None,
         0,
+        ctypes.byref(encrypted),
+    ):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return ctypes.string_at(encrypted.pbData, encrypted.cbData)
+    finally:
+        kernel32.LocalFree(encrypted.pbData)
+
+
+def _dpapiDecrypt(encrypted: bytes) -> str:
+    crypt32, kernel32 = _dpapiCrypt32()
+    _buffer, source = _dataBlob(encrypted)
+    decrypted = _DataBlob()
+    description = ctypes.c_wchar_p()
+    if not crypt32.CryptUnprotectData(
+        ctypes.byref(source),
+        ctypes.byref(description),
+        None,
+        None,
+        None,
+        0,
+        ctypes.byref(decrypted),
+    ):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return ctypes.string_at(decrypted.pbData, decrypted.cbData).decode('utf-8')
+    finally:
+        kernel32.LocalFree(decrypted.pbData)
+        if description.value:
+            kernel32.LocalFree(ctypes.cast(description, ctypes.c_void_p))
+
+
+def _secretKey() -> bytes:
+    directory = os.path.dirname(_SECRET_KEY_PATH)
+    os.makedirs(directory, exist_ok=True)
+    try:
+        with open(_SECRET_KEY_PATH, 'rb') as file:
+            key = file.read()
+    except FileNotFoundError:
+        key = b''
+    if len(key) == 32:
+        return key
+    key = os.urandom(32)
+    descriptor = os.open(
+        _SECRET_KEY_PATH,
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        0o600,
     )
-    return f'{SECRET_PREFIX}{base64.b64encode(encrypted).decode("ascii")}'
+    with os.fdopen(descriptor, 'wb') as file:
+        file.write(key)
+    try:
+        os.chmod(_SECRET_KEY_PATH, 0o600)
+    except OSError:
+        pass
+    return key
+
+
+def _aesEncrypt(value: str) -> str:
+    from Crypto.Cipher import AES
+
+    nonce = os.urandom(12)
+    cipher = AES.new(_secretKey(), AES.MODE_GCM, nonce=nonce)
+    ciphertext, tag = cipher.encrypt_and_digest(value.encode('utf-8'))
+    payload = base64.b64encode(nonce + tag + ciphertext).decode('ascii')
+    return f'{AES_SECRET_PREFIX}{payload}'
+
+
+def _aesDecrypt(payload: str) -> str:
+    from Crypto.Cipher import AES
+
+    raw = base64.b64decode(payload.encode('ascii'))
+    if len(raw) < 28:
+        return ''
+    nonce, tag, ciphertext = raw[:12], raw[12:28], raw[28:]
+    cipher = AES.new(_secretKey(), AES.MODE_GCM, nonce=nonce)
+    return cipher.decrypt_and_verify(ciphertext, tag).decode('utf-8')
+
+
+def encryptSecret(value: str) -> str:
+    if not value:
+        return ''
+    if os.name == 'nt':
+        encrypted = _dpapiEncrypt(value)
+        return f'{SECRET_PREFIX}{base64.b64encode(encrypted).decode("ascii")}'
+    return _aesEncrypt(value)
 
 
 def decryptSecret(value: str) -> str:
-    if not value or not value.startswith(SECRET_PREFIX):
+    if not value:
         return ''
     try:
-        encrypted = base64.b64decode(value[len(SECRET_PREFIX) :].encode('ascii'))
-        _desc, data = win32crypt.CryptUnprotectData(
-            encrypted,
-            None,
-            None,
-            None,
-            0,
-        )
-        return data.decode('utf-8')
+        if value.startswith(SECRET_PREFIX):
+            if os.name != 'nt':
+                return ''
+            encrypted = base64.b64decode(value[len(SECRET_PREFIX) :])
+            return _dpapiDecrypt(encrypted)
+        if value.startswith(AES_SECRET_PREFIX):
+            return _aesDecrypt(value[len(AES_SECRET_PREFIX) :])
     except Exception as e:
         _logger.exception(e)
-        return ''
+    return ''
 
 
 def _songFromObject(data: Any) -> SongStorable | None:

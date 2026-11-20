@@ -1,39 +1,27 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import TYPE_CHECKING
+
+from PySide6.QtGui import QColor, QPaintEvent, QPainter, QPen
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+from qfluentwidgets import InfoBar, MessageBox, TransparentPushButton
 
 from core import theme
 from core.app_context import AppContext
-
-from core.config import cfg
-
 from core.color import mixColor
-from core.qt_utils import clearListWidget
-from PySide6.QtCore import QTimer
-from PySide6.QtGui import QColor, QPaintEvent, QPainter, QPen, Qt
+from core.config import cfg
 from core.i18n import bindText, tr
-from services.events import Events, event_bus
-from PySide6.QtWidgets import (
-    QHBoxLayout,
-    QListWidget,
-    QListWidgetItem,
-    QVBoxLayout,
-    QWidget,
-)
-from qfluentwidgets import MessageBox
-from views.list_widget import SListWidget
-from qfluentwidgets import InfoBar, TransparentPushButton
-from core.models import SongStorable
 from core.icons import bindIcon
+from core.models import SongStorable
+from services.events import Events, event_bus
 from views.song_card import DummyCard, PlaylistSongCard
+from views.song_list import SongListWidget
 
 if TYPE_CHECKING:
     from core.ws_server import QObjectHandler, WebSocketServer
 
 WHITE = QColor(255, 255, 255, 100)
-LIST_BUILD_BATCH_SIZE = 40
 
 
 class PlaylistPage(QWidget):
@@ -61,13 +49,8 @@ class PlaylistPage(QWidget):
 
         self.lst_interface = QWidget()
         self.lst_layout = QVBoxLayout()
-        self.lst = SListWidget()
-        self.lst.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.lst = SongListWidget(self._createSongCard)
         self.lst_layout.addWidget(self.lst)
-
-        self._song_cards: list[PlaylistSongCard] = []
-        self._playlist_refresh_seq = 0
-        event_bus.subscribe(Events.TICK_50MS, self._checkVisibleCards)
 
         btn_layout = QHBoxLayout()
         self.removeall_btn = TransparentPushButton('')
@@ -123,10 +106,10 @@ class PlaylistPage(QWidget):
 
         self.update()
 
-    def _onSongChanged(self, _song_storable):
+    def _onSongChanged(self, _song_storable: SongStorable) -> None:
         self._syncPlaylistSelection()
 
-    def _syncPlaylistSelection(self):
+    def _syncPlaylistSelection(self) -> None:
         if not self._dp.cur:
             return
         if not hasattr(self._dp.cur, 'storable'):
@@ -157,8 +140,6 @@ class PlaylistPage(QWidget):
         self._pm.current_index = 0 if self._pm.playlist else -1
         event_bus.emit(Events.PLAYLIST_CHANGED)
 
-        self.refreshPlaylistWidget()
-
         InfoBar.success(
             tr('playlist_page.removed'),
             tr('playlist_page.removed_all_songs'),
@@ -166,104 +147,29 @@ class PlaylistPage(QWidget):
             parent=self._mwindow,
         )
 
-    def addSongCardToList(self, song: SongStorable) -> QListWidgetItem:
-        item = QListWidgetItem()
-        item.setData(Qt.ItemDataRole.UserRole, song)
+    def _createSongCard(self, song: SongStorable) -> PlaylistSongCard:
         card = PlaylistSongCard(
             song,
             self._dp,
             mwindow=self._mwindow,
             plp=self,
-            lazy=True,  # type: ignore
+            parent=self.lst.viewport(),
+            lazy=True,
         )
-        card.clicked.connect(lambda s: self._onSongClicked(s))
-        card.queued.connect(lambda s: self._onSongClicked(s))
-        self.lst.addItem(item)
-        self.lst.setItemWidget(item, card)
-        self._song_cards.append(card)
-        return item
+        card.clicked.connect(self._onSongClicked)
+        card.queued.connect(self._onSongClicked)
+        return card
 
-    def _onSongClicked(self, storable: SongStorable):
+    def _onSongClicked(self, storable: SongStorable) -> None:
         event_bus.emit(Events.PLAY_PLAYLIST_STORABLE, storable)
 
-    def _checkVisibleCards(self):
-        if not self.isVisible():
-            return
-        viewport_rect = self.lst.viewport().rect()
-        start = 0
-        end = self.lst.count()
-        while start < end:
-            middle = (start + end) // 2
-            item = self.lst.item(middle)
-            if item is None:
-                break
-            if self.lst.visualItemRect(item).bottom() < viewport_rect.top():
-                start = middle + 1
-            else:
-                end = middle
-        for idx in range(start, self.lst.count()):
-            if idx >= len(self._song_cards):
-                break
-            card = self._song_cards[idx]
-            try:
-                card.objectName()
-            except RuntimeError:
-                continue
-            if card.load:
-                continue
-            item = self.lst.item(idx)
-            if item is None:
-                continue
-            item_rect = self.lst.visualItemRect(item)
-            if item_rect.top() > viewport_rect.bottom():
-                break
-            if viewport_rect.intersects(item_rect):
-                card.loadDetailAndImage()
-
-    def refreshPlaylistWidget(self):
-        self._playlist_refresh_seq += 1
-        refresh_seq = self._playlist_refresh_seq
-        val = self.lst.verticalScrollBar().value()
-        songs = list(self._pm.playlist)
-        clearListWidget(self.lst)
-        self._song_cards = []
-        self._pm.clearPreload()
-
-        self._appendPlaylistBatch(refresh_seq, songs, 0, val)
-
-    def _appendPlaylistBatch(
-        self,
-        refresh_seq: int,
-        songs: list[SongStorable],
-        start: int,
-        scroll_value: int,
-    ) -> None:
-        if refresh_seq != self._playlist_refresh_seq:
-            return
-
-        end = min(start + LIST_BUILD_BATCH_SIZE, len(songs))
-        deadline = time.perf_counter() + 0.008
-        added = 0
-        for song in songs[start:end]:
-            self.addSongCardToList(song)
-            added += 1
-            if time.perf_counter() >= deadline:
-                end = start + added
-                break
-
-        if end < len(songs):
-            QTimer.singleShot(
-                1,
-                lambda: self._appendPlaylistBatch(
-                    refresh_seq,
-                    songs,
-                    end,
-                    scroll_value,
-                ),
-            )
-            return
-
-        self.lst.verticalScrollBar().setValue(scroll_value)
+    def refreshPlaylistWidget(self) -> None:
+        scrollbar = self.lst.verticalScrollBar()
+        value = scrollbar.value()
+        self.lst.setSongs(list(self._pm.playlist))
+        if value:
+            self.lst.doItemsLayout()
+            scrollbar.setValue(value)
         self._syncPlaylistSelection()
 
     def movePlaylistSong(self, song: SongStorable, delta: int):

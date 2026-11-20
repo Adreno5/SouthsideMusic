@@ -239,8 +239,11 @@ def runApplication(
             patch.object(sounddevice, 'query_devices', virtualDevices),
             patch.object(sounddevice, 'check_output_settings', return_value=None),
             patch.object(sounddevice, 'OutputStream', VirtualOutputStream),
-            patch.object(smtc_module.interop, 'get_for_window', return_value=smtc),
         ])
+        if sys.platform == 'win32':
+            patches.append(
+                patch.object(smtc_module.interop, 'get_for_window', return_value=smtc)
+            )
     try:
         for item in patches:
             item.start()

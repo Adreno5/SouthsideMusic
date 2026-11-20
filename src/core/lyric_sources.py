@@ -234,13 +234,20 @@ def _toInt(value: object) -> int:
 def _simplified(text: str) -> str:
     if not text:
         return ''
-    convert = ctypes.windll.kernel32.LCMapStringEx
-    length = len(text.encode('utf-16-le', 'surrogatepass')) // 2
-    size = convert('zh-CN', 0x02000000, text, length, None, 0, None, None, 0)
-    if size:
-        buffer = ctypes.create_unicode_buffer(size)
-        if convert('zh-CN', 0x02000000, text, length, buffer, size, None, None, 0):
-            text = buffer.value
+    windll = getattr(ctypes, 'windll', None)
+    if windll is not None:
+        try:
+            convert = windll.kernel32.LCMapStringEx
+            length = len(text.encode('utf-16-le', 'surrogatepass')) // 2
+            size = convert('zh-CN', 0x02000000, text, length, None, 0, None, None, 0)
+            if size:
+                buffer = ctypes.create_unicode_buffer(size)
+                if convert(
+                    'zh-CN', 0x02000000, text, length, buffer, size, None, None, 0
+                ):
+                    text = buffer.value
+        except (AttributeError, OSError):
+            pass
     return (
         text
         .translate(_CHINESE_MAP)

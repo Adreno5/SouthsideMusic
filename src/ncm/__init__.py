@@ -63,7 +63,9 @@ CLIENT_OS = 'pc'
 def _osVersion() -> str:
     try:
         import winreg
-
+    except ImportError:
+        return ''
+    try:
         with winreg.OpenKey(
             winreg.HKEY_LOCAL_MACHINE,
             r'SOFTWARE\Microsoft\Windows NT\CurrentVersion',

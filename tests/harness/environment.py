@@ -15,6 +15,10 @@ import numpy as np
 import psutil
 from PIL import Image
 
+_FFMPEG_NAME = 'ffmpeg.exe' if os.name == 'nt' else 'ffmpeg'
+_FFPROBE_NAME = 'ffprobe.exe' if os.name == 'nt' else 'ffprobe'
+_PYTHON_NAME = 'python.exe' if os.name == 'nt' else 'python3'
+
 
 def _isRunning(process: psutil.Process) -> bool:
     try:
@@ -138,7 +142,9 @@ def findWorker(root: Path) -> str | None:
         os.environ.get('SOUTHSIDE_FREE_THREADED_PYTHON', ''),
         os.environ.get('PYTHON_FREETHREADED', ''),
         str(root / '.harness-results' / 'worker' / 'Scripts' / 'python.exe'),
+        str(root / '.harness-results' / 'worker' / 'bin' / 'python3'),
         str(root / '.venv-ft' / 'Scripts' / 'python.exe'),
+        str(root / '.venv-ft' / 'bin' / 'python3'),
     ]
     for candidate in candidates:
         if not candidate or not Path(candidate).is_file():
@@ -169,7 +175,7 @@ def prepareWorker(root: Path) -> str:
     worker = root / '.harness-results' / 'worker'
     subprocess.run(['uv', 'python', 'install', '3.14t'], check=True)
     subprocess.run(['uv', 'venv', '--python', '3.14t', str(worker)], check=True)
-    executable = worker / 'Scripts' / 'python.exe'
+    executable = worker / ('Scripts' if os.name == 'nt' else 'bin') / _PYTHON_NAME
     packages = [
         f'{name}=={version(name)}'
         for name in ('numpy', 'scipy', 'pillow', 'pydub', 'audioop-lts')
@@ -197,11 +203,12 @@ class Sandbox:
     def __init__(self, root: Path, gateway_url: str, native: bool = False) -> None:
         ffmpeg = shutil.which('ffmpeg')
         if not ffmpeg:
-            candidate = root / 'ffmpeg' / 'bin' / 'ffmpeg.exe'
+            candidate = root / 'ffmpeg' / 'bin' / _FFMPEG_NAME
             ffmpeg = str(candidate) if candidate.is_file() else None
         if not ffmpeg:
             raise RuntimeError('FFmpeg is required; install it before running core')
-        if not (Path(ffmpeg).parent / 'ffprobe.exe').is_file():
+        ffprobe = shutil.which('ffprobe')
+        if ffprobe is None and not (Path(ffmpeg).parent / _FFPROBE_NAME).is_file():
             raise RuntimeError('FFprobe is required')
         worker = findWorker(root)
         if not worker:
@@ -244,6 +251,7 @@ class Sandbox:
             self.environment.pop('PYTHON_GIL', None)
             self.environment['TEMP'] = str(self.root / 'temp')
             self.environment['TMP'] = self.environment['TEMP']
+            self.environment['TMPDIR'] = self.environment['TEMP']
             (self.root / 'temp').mkdir()
             self._createMedia()
             config = {
@@ -299,7 +307,7 @@ class Sandbox:
                 output.writeframes((stereo * 32767).astype('<i2').tobytes())
             subprocess.run(
                 [
-                    str(self.root / 'ffmpeg' / 'bin' / 'ffmpeg.exe'),
+                    str(self.root / 'ffmpeg' / 'bin' / _FFMPEG_NAME),
                     '-v',
                     'error',
                     '-y',
@@ -309,7 +317,7 @@ class Sandbox:
                 ],
                 check=True,
                 timeout=20,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=(subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0),
             )
 
     def close(self) -> None:

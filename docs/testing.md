@@ -1,6 +1,8 @@
 # Testing SouthsideMusic
 
-Run these commands in the repository root on Windows. Use the existing lockfile:
+Run these commands in the repository root. The full harness is Windows-oriented;
+macOS and Linux can run the platform-neutral unit files and the portability import
+check described below. Use the existing lockfile:
 
 ```powershell
 uv sync --frozen
@@ -258,6 +260,9 @@ compile, Ruff lint, and formatting checks, then runs the complete `unit` command
 A free-threaded worker is prepared for the unit suite's worker memory checks.
 A separate Windows harness job installs the frozen dependencies and FFmpeg,
 creates the free-threaded worker in `RUNNER_TEMP`, and runs `core` plus `online`.
+An Ubuntu portability job installs the frozen dependencies with the Windows-only
+markers excluded, then imports every platform-sensitive module under an offscreen
+Qt platform; it does not start the GUI or run the Windows harness.
 
 Both jobs attempt report uploads and GitHub step summaries even after a failed
 step. Unit artifacts include only the JSON/XML reports, summary, and per-file

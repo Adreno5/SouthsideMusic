@@ -9,15 +9,18 @@ import shutil
 import re
 import sys
 import threading
+import time
 from core.crash_handler import nativeLogActive
 from services.events import Events, event_bus
 from typing import TextIO, Optional
-import ctypes
-from ctypes import wintypes
 
-kernel32 = ctypes.windll.kernel32
-STD_INPUT_HANDLE = -10
-h = kernel32.GetStdHandle(STD_INPUT_HANDLE)
+if sys.platform == 'win32':
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.windll.kernel32
+    STD_INPUT_HANDLE = -10
+    h = kernel32.GetStdHandle(STD_INPUT_HANDLE)
 
 from colorama import Fore, Style, init
 
@@ -322,15 +325,30 @@ def hijackStreams() -> tuple[TextIO | None, TextIO | None, StderrRedirector | No
     return original_stdout, original_stderr, stderr_redirector
 
 
-class INPUT_RECORD(ctypes.Structure):
-    _fields_ = [
-        ('EventType', wintypes.WORD),
-        ('_pad', wintypes.WORD),
-        ('Event', ctypes.c_byte * 16),
-    ]
+if sys.platform == 'win32':
+
+    class INPUT_RECORD(ctypes.Structure):
+        _fields_ = [
+            ('EventType', wintypes.WORD),
+            ('_pad', wintypes.WORD),
+            ('Event', ctypes.c_byte * 16),
+        ]
+
+
+def _pollTerminalSize() -> None:
+    last_width = shutil.get_terminal_size().columns
+    while True:
+        time.sleep(0.5)
+        width = shutil.get_terminal_size().columns
+        if width != last_width:
+            last_width = width
+            event_bus.emit(Events.TERMINAL_SIZE_CHANGED)
 
 
 def terminalSizeListen():
+    if sys.platform != 'win32':
+        _pollTerminalSize()
+        return
     record = INPUT_RECORD()
     read = wintypes.DWORD()
     while True:

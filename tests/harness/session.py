@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import shutil
 import socket
@@ -78,7 +79,7 @@ class ApplicationSession:
                 env=self.sandbox.environment,
                 stdout=self.log,
                 stderr=subprocess.STDOUT,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=(subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0),
             )
             try:
                 self._parent = psutil.Process(self.process.pid)

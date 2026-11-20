@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-import ctypes
-from ctypes import wintypes
+import sys
 from typing import cast, override
+
+if sys.platform == 'win32':
+    import ctypes
+    from ctypes import wintypes
 
 from PySide6.QtCore import QPoint, QRect, QRectF, QSize
 from PySide6.QtGui import (
@@ -62,12 +65,14 @@ class DesktopLyricsViewer(LyricsViewer):
         self.scr_size: QSize = ctx.app.primaryScreen().size()
         super().__init__(ctx)
 
-        self.setWindowFlags(
+        flags = (
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
-            | Qt.WindowType.BypassWindowManagerHint
         )
+        if sys.platform == 'win32':
+            flags |= Qt.WindowType.BypassWindowManagerHint
+        self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedSize(self.scr_size.width(), 65)
         self.move(0, 0)
@@ -87,6 +92,9 @@ class DesktopLyricsViewer(LyricsViewer):
 
     def _keepOnTop(self) -> None:
         if not self.isVisible():
+            return
+        if sys.platform != 'win32':
+            self.raise_()
             return
         hwnd = int(self.winId())
         user32 = ctypes.windll.user32

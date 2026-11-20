@@ -606,6 +606,11 @@ class FreeThreadedJsonSender:
         self._logger.info('free-threaded JSON worker started: %s', interpreter)
         return process
 
+    def _interpreterPaths(self, prefix: Path) -> list[Path]:
+        if os.name == 'nt':
+            return [prefix / 'Scripts' / 'python.exe', prefix / 'python.exe']
+        return sorted((prefix / 'bin').glob('python*'))
+
     def _findInterpreter(self) -> Path | None:
         if self._interpreter is not None:
             return self._interpreter
@@ -627,21 +632,24 @@ class FreeThreadedJsonSender:
             '.venv-ft-pyside-blocked',
             '.venv-free-threaded',
         ):
-            candidates.append(root / name / 'Scripts' / 'python.exe')
+            candidates.extend(self._interpreterPaths(root / name))
 
         for name in (
             'freethreaded_python',
             '.python-ft-pyside-blocked',
         ):
-            candidates.append(root / name / 'python.exe')
+            candidates.extend(self._interpreterPaths(root / name))
 
-        appdata = os.environ.get('APPDATA')
-        if appdata:
-            uv_python_dir = Path(appdata) / 'uv' / 'python'
-            if uv_python_dir.is_dir():
-                candidates.extend(
-                    path / 'python.exe' for path in uv_python_dir.glob('*freethreaded*')
-                )
+        uv_dir = os.environ.get('UV_PYTHON_INSTALL_DIR')
+        if not uv_dir:
+            if os.name == 'nt':
+                appdata = os.environ.get('APPDATA')
+                uv_dir = str(Path(appdata) / 'uv' / 'python') if appdata else ''
+            else:
+                uv_dir = str(Path.home() / '.local' / 'share' / 'uv' / 'python')
+        if uv_dir and Path(uv_dir).is_dir():
+            for path in Path(uv_dir).glob('*freethreaded*'):
+                candidates.extend(self._interpreterPaths(path))
 
         for candidate in candidates:
             if candidate.is_file() and self._isFreeThreaded(candidate):

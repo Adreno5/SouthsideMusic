@@ -16,6 +16,7 @@ from core import whisper_lyrics as whisper
 from core.config import cfg
 from core.lyric_formats import parseYrc
 from core.lyrics import YRCLyricParser
+from core import models
 from core.models import ArtistInfo, SongInfo, SongStorable
 
 
@@ -281,6 +282,22 @@ class WhisperLyricsTests(unittest.TestCase):
             cfg.whisper_enabled = True
             self.assertEqual(self.song.getLyrics()['lyric'], '')
             network_path.assert_not_called()
+
+    def test_recognized_lyrics_are_not_reused_as_stored_lyrics(self) -> None:
+        lyrics = whisper.whisperResultToLyrics(self.result)
+        whisper.writeWhisperLyrics(self.song, 'tiny', self.result)
+        with patch.object(models, 'LYRIC_DATA_DIR', self.temp.name):
+            self.song.writeLyrics(lyrics['lyric'], '', lyrics['yrc_lyric'])
+            self.assertEqual(self.song.getLyrics()['lyric'], '')
+            self.assertEqual(self.song.getStoredLyrics()['yrc_lyric'], '')
+            cfg.whisper_model = 'base'
+            self.assertEqual(self.song.getStoredLyrics()['yrc_lyric'], '')
+
+    def test_unrelated_stored_lyrics_survive_disabled_recognition(self) -> None:
+        whisper.writeWhisperLyrics(self.song, 'tiny', self.result)
+        with patch.object(models, 'LYRIC_DATA_DIR', self.temp.name):
+            self.song.writeLyrics('[00:04.000]Online line', '', '')
+            self.assertEqual(self.song.getLyrics()['lyric'], '[00:04.000]Online line')
 
     def test_offline_mode_does_not_start_network_lyric_tasks(self) -> None:
         from core import lyric_sources

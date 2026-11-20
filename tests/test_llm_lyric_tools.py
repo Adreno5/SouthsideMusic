@@ -3,11 +3,15 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
+from core import models as models_module  # noqa: E402
+from core import whisper_lyrics  # noqa: E402
 from core.app_context import AppContext  # noqa: E402
 from core.llm import ONERAD_SYSTEM_PROMPT, TOOL_USAGE  # noqa: E402
 from core.llm_tools import KNOWN_TOOLS, LLMToolRunner, llmToolSchemas  # noqa: E402
@@ -136,6 +140,33 @@ def test_set_current_lyrics_keeps_the_stored_translation() -> None:
         assert song.translated_lyric == TRANSLATED
     finally:
         os.remove(song.getLyricPath())
+
+
+def test_set_current_lyrics_does_not_copy_recognition_timings() -> None:
+    song = _test_song()
+    result = {
+        'segments': [
+            {'words': [{'word': ' hello', 'start': 1.0, 'end': 2.0}]},
+        ]
+    }
+    recognized = whisper_lyrics.whisperResultToLyrics(result)
+    with tempfile.TemporaryDirectory() as temp:
+        with (
+            patch.object(models_module, 'LYRIC_DATA_DIR', temp),
+            patch.object(whisper_lyrics, 'WHISPER_DATA_DIR', Path(temp)),
+        ):
+            whisper_lyrics.writeWhisperLyrics(song, 'tiny', result)
+            song.writeLyrics(recognized['lyric'], '', recognized['yrc_lyric'])
+            assert song.getStoredLyrics()['yrc_lyric'] == ''
+            ctx = _FakeContext(song)
+            runner = LLMToolRunner(
+                cast(AppContext, ctx), allow_actions=True, require_usage=False
+            )
+            runner.runTool('set_current_lyrics', {'lyric': ORIGINAL})
+            stored = song.getStoredLyrics()
+            assert stored['lyric'] == ORIGINAL
+            assert stored['translated_lyric'] == ''
+            assert stored['yrc_lyric'] == ''
 
 
 def main() -> None:

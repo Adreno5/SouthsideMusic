@@ -126,7 +126,7 @@ class CommentCard(QWidget):
         size: int,
     ) -> None:
         avatar_path = (
-            Path(f'.\\data\\image\\u_avatar{publisher.id}').absolute().resolve()
+            Path('data', 'image', f'u_avatar{publisher.id}').absolute().resolve()
         )
         target = QSize(size, size)
 

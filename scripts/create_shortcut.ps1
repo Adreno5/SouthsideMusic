@@ -5,7 +5,7 @@
 # Python would load it through scipy -> ctypes and crash), so this shortcut is
 # the root level entry point instead of a copy of the exe.
 #
-# Run it with the app root as the current directory: build.bat pushes into
+# Run it with the app root as the current directory: build.py pushes into
 # build.result\raw first, and an installed tree under Program Files gets its
 # shortcuts from installer.iss instead.
 #

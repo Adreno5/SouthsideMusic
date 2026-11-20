@@ -17,7 +17,11 @@ sys.path.append(os.path.join(_SRC_DIR, 'utils'))
 sys.path.append(os.path.join(_SRC_DIR, 'views'))
 sys.path.append(os.path.join(_SRC_DIR, 'services'))
 
-from core.crash_handler import installCrashHandler, installQtMessageHandler
+from core.crash_handler import (
+    installCrashHandler,
+    installQtMessageHandler,
+    markCleanExit,
+)
 
 installCrashHandler()
 
@@ -47,7 +51,8 @@ QApplication.setHighDpiScaleFactorRoundingPolicy(
 QApplication.setAttribute(Qt.ApplicationAttribute.AA_CompressHighFrequencyEvents)
 
 app = ProfiledApplication(sys.argv)
-QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseOpenGLES)
+if sys.platform == 'win32':
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseOpenGLES)
 signal.signal(signal.SIGINT, lambda *_: QTimer.singleShot(0, app.quit))
 
 from core.smtc import SmtcController, initAppIdentity
@@ -140,6 +145,7 @@ def atExitListener() -> None:
         ws_server.stop(shutdown_json_sender=True)
         shutdownComputeWorker()
         flushDeferredWrites(2.0)
+        markCleanExit()
         return
 
     playing_manager = context.playing_manager
@@ -168,6 +174,7 @@ def atExitListener() -> None:
     flushDeferredWrites(2.0)
     saveConfig()
     saveFavorites()
+    markCleanExit()
 
 
 atexit.register(atExitListener)

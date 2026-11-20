@@ -122,7 +122,7 @@ class LaunchWindow(QWidget):
                 ],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=(subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0),
             )
             self._process = process
             assert process.stdin is not None
@@ -344,7 +344,8 @@ if __name__ == '__main__':
     window.move(int(sys.argv[1]), int(sys.argv[2]))
     window._background_color = QColor(sys.argv[3])
     window.update()
-    ctypes.windll.user32.AllowSetForegroundWindow(os.getppid())
+    if sys.platform == 'win32':
+        ctypes.windll.user32.AllowSetForegroundWindow(os.getppid())
     window.closeRequested.connect(app.quit)
     theme_timer = QTimer(window)
     theme_timer.timeout.connect(syncSystemThemeColor)

@@ -1,11 +1,15 @@
 import logging
-import winreg
+import sys
 
 from darkdetect import isDark as isDarkDarkdetect
 import darkdetect
 from qfluentwidgets import ThemeColor, qconfig, setThemeColor
 
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QPalette
+from PySide6.QtWidgets import QApplication
+
+if sys.platform == 'win32':
+    import winreg
 
 _logger = logging.getLogger(__name__)
 _is_dark = isDarkDarkdetect()
@@ -20,16 +24,22 @@ setattr(ThemeColor.PRIMARY, 'color', _primaryColor)
 
 
 def readSystemThemeColor() -> QColor | None:
-    try:
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\DWM'
-        ) as key:
-            value, _ = winreg.QueryValueEx(key, 'AccentColor')
-    except OSError as e:
-        _logger.exception(e)
-        return None
+    if sys.platform == 'win32':
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\DWM'
+            ) as key:
+                value, _ = winreg.QueryValueEx(key, 'AccentColor')
+        except OSError as e:
+            _logger.exception(e)
+            return None
+        return QColor(value & 0xFF, (value >> 8) & 0xFF, (value >> 16) & 0xFF)
 
-    return QColor(value & 0xFF, (value >> 8) & 0xFF, (value >> 16) & 0xFF)
+    app = QApplication.instance()
+    if app is None:
+        return None
+    color = app.palette().color(QPalette.ColorRole.Highlight)
+    return color if color.isValid() else None
 
 
 def applySystemThemeColor(color: QColor | None) -> None:

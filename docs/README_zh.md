@@ -2,7 +2,7 @@
 
 # 南方音乐
 
-> 一款精工打造的 Windows 网易云音乐桌面工作站：精准音频控制、实时歌词、可视化工具与深度桌面联动，全部汇聚于一个毫不妥协的播放器。
+> 一款精工打造的网易云音乐桌面工作站：精准音频控制、实时歌词、可视化工具与深度桌面联动，全部汇聚于一个毫不妥协的播放器。
 
 > 能用是及格，值得用才是作品。真正的功夫，都在看不见的时间里。
 
@@ -12,7 +12,7 @@
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Adreno5/SouthsideMusic)
 
-Southside Music 是一款以自研音频引擎为核心的 Windows 专用网易云音乐第三方桌面客户端。它将响度均衡、变速变调、逐字歌词与桌面歌词、手动歌词对轴、频谱与节拍可视化、本地收藏、发现与重新发现、歌曲评论、歌曲与歌词动画导出、Onerad 助手、Windows 媒体联动和 SouthsideClient WebSocket 桥接整合在同一个桌面应用中。
+Southside Music 是一款以自研音频引擎为核心的跨平台网易云音乐第三方桌面客户端。它将响度均衡、变速变调、逐字歌词与桌面歌词、手动歌词对轴、频谱与节拍可视化、本地收藏、发现与重新发现、歌曲评论、歌曲与歌词动画导出、Onerad 助手、系统媒体联动和 SouthsideClient WebSocket 桥接整合在同一个桌面应用中。支持 Windows、macOS 和 Linux；Windows 仍是主要打包目标，原生 SMTC 联动仅支持 Windows。
 
 > 想了解项目一路走来的过程，可以阅读 [SouthsideMusic Story](SouthsideMusic_Story.md)。
 
@@ -101,7 +101,7 @@ Southside Music 是独立、非商业项目，并非网易云音乐官方客户�
 
 - Onerad 助手侧栏，支持流式输出、Markdown 与公式渲染和明确的工具调用确认
 - 支持 OpenAI 兼容 Chat Completions、OpenAI Responses 和 Anthropic 服务，可配置多个服务商与模型映射
-- API Key 使用 Windows 数据保护 API 加密
+- API Key 使用平台密钥保护：Windows 使用 DPAPI，macOS 与 Linux 使用 AES-GCM 和本地密钥文件
 - Windows SMTC 联动：播放信息出现在系统媒体浮出控件中，并响应媒体按键
 - SouthsideClient WebSocket 桥接端口为 `15489`
 - 向 SouthsideClient 发送歌词、封面、歌曲信息、播放进度、状态和 FFT
@@ -123,6 +123,8 @@ Southside Music 是独立、非商业项目，并非网易云音乐官方客户�
 
 ## 安装
 
+### Windows
+
 1. 打开 [Releases 页面](https://github.com/Adreno5/SouthsideMusic/releases)。
 2. 下载最新的 `SouthsideMusic_<版本号>_win64_setup.exe`。
 3. 运行安装程序，然后启动 Southside Music。
@@ -131,7 +133,18 @@ Southside Music 是独立、非商业项目，并非网易云音乐官方客户�
 
 首次启动时会执行依赖检查。如果缺少 FFmpeg，依赖窗口可以自动下载并安装；缺失的 Python 依赖包会由内置 bootstrap 自动补齐。
 
-> Southside Music 目前仅支持 Windows。
+### macOS 与 Linux
+
+从 Releases 下载最新的 `SouthsideMusic_<版本号>_macos_<arch>.dmg`、`SouthsideMusic_<版本号>_linux_<arch>.deb` 或 `SouthsideMusic_<版本号>_linux_<arch>.tar.gz`。如果所用版本没有对应平台的产物，请在有写权限的检出目录中从源码运行：
+
+```bash
+uv sync --frozen
+uv run src/main.py
+```
+
+首次启动前请使用系统包管理器安装 FFmpeg（`brew install ffmpeg`、`sudo apt install ffmpeg` 或等价命令）。依赖检查会识别系统 FFmpeg 并自动配置 `pydub`，在这些平台上不会自动下载替换版本。free-threaded Python 是可选依赖：找不到 `3.14t` 解释器时，重计算任务会回退到主进程执行。
+
+> 系统媒体控制（SMTC）以及 Windows 内置 bootstrap 目前仅支持 Windows。播放、歌词、桌面歌词、歌曲导出、歌词视频导出和 WebSocket 桥接在三个平台上均可工作。
 
 ---
 
@@ -265,9 +278,11 @@ Southside Music 会在本机 `15489` 端口启动 WebSocket 服务。连接会�
 
 ### 环境要求
 
-- Windows
-- Python `>=3.13`（工作区以 `3.14` 校验，打包后的应用运行在 Python `3.14.7` 与 free-threaded `3.14t` worker 上）
+- Windows、macOS 或 Linux
+- Python `>=3.13`（工作区以 `3.14` 校验，Windows 打包版运行在 Python `3.14.7` 与 free-threaded `3.14t` worker 上）
 - [`uv`](https://docs.astral.sh/uv/)
+- FFmpeg 位于 `PATH`（Windows 构建也可以使用或下载内置副本）
+- Linux 需要 PortAudio（`libportaudio2`）以及常规 Qt/OpenGL 运行库
 - 初次搭建环境和下载依赖时需要网络连接
 
 ### 准备工作区
@@ -275,10 +290,10 @@ Southside Music 会在本机 `15489` 端口启动 WebSocket 服务。连接会�
 ```bash
 git clone https://github.com/Adreno5/SouthsideMusic.git
 cd SouthsideMusic
-python setup_workspace.py
+uv sync
 ```
 
-搭建脚本会同步 `uv` 环境，准备 Python 3.14.7 嵌入式运行时，安装 free-threaded `3.14t` worker 环境，创建独立的 Nuitka 构建环境，验证运行时，并按需安装 Inno Setup。
+在 Windows 上，`python setup_workspace.py` 还会准备 Python 3.14.7 嵌入式运行时、free-threaded `3.14t` worker 环境、独立的 Nuitka 构建环境，并按需安装 Inno Setup。这些嵌入式运行时步骤仅适用于 Windows。macOS 与 Linux 只需要 `uv sync`；打包时 `build.py` 会自行下载内置运行时。
 
 ### 从源码运行
 
@@ -305,30 +320,42 @@ uv run python -m unittest discover -s tests
 
 `tests/` 是真实测试目录，基于 `unittest`，不使用 pytest。可以用上面的命令跑全部测试，也可以直接运行单个文件，例如 `uv run python tests/test_lyric_formats.py`。
 
-CI（`.github/workflows/ci.yml`）会在装有 FFmpeg 的 Windows 上执行编译、lint、格式检查和测试。`src/test.py` 是手动 API 探索脚本，不属于测试套件。
+CI（`.github/workflows/ci.yml`）会在装有 FFmpeg 的 Windows 上执行编译、lint、格式、单元测试和 harness，并额外运行一个 Ubuntu 可移植性任务：安装冻结依赖后，在无显示环境下导入全部平台敏感模块。`src/test.py` 是手动 API 探索脚本，不属于测试套件。
 
 ### 构建
+
+Windows：
 
 ```bat
 build.bat
 ```
 
-构建脚本会使用 Nuitka 编译 `launcher.py`，组装嵌入式运行时和应用资源，重新生成图标，并在存在 `ISCC.exe` 时调用 Inno Setup。
+macOS 与 Linux：
 
-```text
-build.result\
-├── raw\          可直接运行的便携目录
-└── installer\    已安装 Inno Setup 时生成带版本号的安装器
+```bash
+uv sync --frozen
+uv run python build.py
 ```
 
-如果没有 Inno Setup，便携构建仍会保留在 `build.result\raw\`。正式发布由 `.github/workflows/` 中的 GitHub Actions 工作流完成，发布说明从 `release-notes/<tag>.md` 读取。
+`build.py` 是这两个入口背后的流程。Windows 上使用 Nuitka 编译 `launcher.py`，组装嵌入式运行时和应用资源，重新生成图标，并在存在 `ISCC.exe` 时调用 Inno Setup（`build.bat` 只是这条流程的包装器）。macOS 上生成带 `.icns` 图标的 `.app` 包和 `.dmg`。Linux 上生成便携 `.tar.gz`，并在存在 `dpkg-deb` 时生成 `.deb`。
+
+```text
+build.result/
+├── raw/                              可直接运行的便携目录
+├── installer/                        已安装 Inno Setup 时生成带版本号的安装器
+├── SouthsideMusic_<tag>_macos_*.dmg  macOS 磁盘映像
+└── SouthsideMusic_<tag>_linux_*      Linux Debian 包和便携归档
+```
+
+Windows 便携 zip 由 GitHub Actions 工作流生成；macOS 与 Linux 归档由 `build.py` 直接生成。正式发布由 `.github/workflows/` 中的工作流完成，发布说明从 `release-notes/<tag>.md` 读取。
 
 ### 项目结构
 
 ```text
-bootstrap.py        首次启动时为内置 Python 运行时补齐依赖
-launcher.py         Nuitka 入口：单实例检查后启动应用
-build.bat           Windows 构建与打包流程
+bootstrap.py        首次启动时为 Windows 内置 Python 运行时补齐依赖
+launcher.py         全平台通用的单实例启动入口
+build.py            跨平台构建与打包流程
+build.bat           build.py 的 Windows 包装器
 setup_workspace.py  工作区搭建脚本
 src/
   main.py          应用入口和启动生命周期
@@ -357,15 +384,15 @@ config.json        持久化用户配置
 | 网易云 API | 内置 `ncm` 客户端 |
 | 网络 | requests + Tornado WebSocket server |
 | 助手 | OpenAI SDK + Anthropic SDK + markdown-it-py + ziamath |
-| Windows 联动 | winrt（SMTC）+ pywin32（DPAPI）+ psutil |
-| 打包 | Nuitka + Inno Setup |
+| 平台联动 | 各平台通用 Qt 调色板 + psutil；Windows 上使用 winrt SMTC 与 DPAPI |
+| 打包 | Nuitka + Inno Setup（Windows） |
 
 ### 配置与数据
 
 - 持久化设置保存在 `config.json`。
 - 本地收藏、播放次数、听歌记录和运行时缓存保存在 `data/` 下。
 - 旧版 `config.pkl` 数据会迁移并删除。
-- LLM API Key 使用 `CryptProtectData` 为当前 Windows 用户加密。
+- LLM API Key 在 Windows 上使用 `CryptProtectData`，在 macOS 与 Linux 上使用 AES-GCM 和 `data/secret.key`。
 - 可重新下载的缓存可以按文件年龄和总占用空间自动清理。
 - 调试模式下，启动耗时和性能报告会写入 `data/debug/`。
 

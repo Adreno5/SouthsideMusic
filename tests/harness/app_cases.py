@@ -4,6 +4,7 @@ import time
 import base64
 import asyncio
 import json
+import sys
 import threading
 import unittest
 from collections.abc import Callable
@@ -313,6 +314,8 @@ def runCase(
             assert saved['yrc_lyric'] and len(ctx.ymgr.parsed) == 2
             assert ctx.ymgr.parsed[0].chars[1].start > ctx.ymgr.parsed[0].chars[0].start
         elif case_id == 'smtc':
+            if sys.platform != 'win32':
+                raise unittest.SkipTest('SMTC is only available on Windows')
             from winrt.windows.media import SystemMediaTransportControlsButton
 
             waitUntil(
@@ -416,9 +419,9 @@ def runCase(
         ctx.main_window._openFolder(folder)
         page = ctx.favorites_page
         enterText(page.search_input, 'Harness Song 02')
-        waitUntil(lambda: len(page._song_cards) == 1, 'favorite filter')
+        waitUntil(lambda: page.song_viewer.count() == 1, 'favorite filter')
         enterText(page.search_input, '')
-        waitUntil(lambda: len(page._song_cards) == 6, 'favorite list')
+        waitUntil(lambda: page.song_viewer.count() == 6, 'favorite list')
         QTest.mouseClick(page.batch_btn, Qt.MouseButton.LeftButton)
         QTest.mouseClick(page.selectall_btn, Qt.MouseButton.LeftButton)
         assert len(page._selected_song_ids) == 6

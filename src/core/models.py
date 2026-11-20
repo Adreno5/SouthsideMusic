@@ -478,6 +478,31 @@ class SongStorable:
         cache_name = self.lyric_cache_hash or f'{self.id}.json'
         return os.path.join(LYRIC_DATA_DIR, cache_name)
 
+    def getStoredLyrics(self) -> dict[str, str]:
+        self._ensureCacheFields()
+        path = self.getLyricPath()
+        empty = {
+            'lyric': '',
+            'translated_lyric': '',
+            'yrc_lyric': '',
+            'ytlrc_lyric': '',
+        }
+        if not os.path.exists(path):
+            return empty
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        lyrics = {
+            'lyric': data.get('lyric', ''),
+            'translated_lyric': data.get('translated_lyric', ''),
+            'yrc_lyric': data.get('yrc_lyric', ''),
+            'ytlrc_lyric': data.get('ytlrc_lyric', ''),
+        }
+        from core.whisper_lyrics import matchesWhisperLyrics
+
+        if lyrics['yrc_lyric'] and matchesWhisperLyrics(self, lyrics):
+            return empty
+        return lyrics
+
     def getLyrics(self) -> dict[str, str]:
         from core.config import cfg
 
@@ -485,23 +510,7 @@ class SongStorable:
             from core.whisper_lyrics import readWhisperLyrics
 
             return readWhisperLyrics(self)
-        self._ensureCacheFields()
-        path = self.getLyricPath()
-        if not os.path.exists(path):
-            return {
-                'lyric': '',
-                'translated_lyric': '',
-                'yrc_lyric': '',
-                'ytlrc_lyric': '',
-            }
-        with open(path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        return {
-            'lyric': data.get('lyric', ''),
-            'translated_lyric': data.get('translated_lyric', ''),
-            'yrc_lyric': data.get('yrc_lyric', ''),
-            'ytlrc_lyric': data.get('ytlrc_lyric', ''),
-        }
+        return self.getStoredLyrics()
 
     @property
     def lyric(self) -> str:

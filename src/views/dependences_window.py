@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import subprocess
 import sys as _sys
 from threading import Thread
@@ -19,6 +20,9 @@ from core.i18n import bindText, tr
 
 if TYPE_CHECKING:
     from core.app_context import AppContext
+
+_FFMPEG_NAME = 'ffmpeg.exe' if os.name == 'nt' else 'ffmpeg'
+_FFPROBE_NAME = 'ffprobe.exe' if os.name == 'nt' else 'ffprobe'
 
 
 class DependencesWindow(QWidget):
@@ -92,6 +96,13 @@ class DependencesWindow(QWidget):
         from core.downloader import asyncDownload, asyncTask
 
         self.ffmpeg_label.setStyleSheet('')
+
+        if os.name != 'nt':
+            self.ffmpeg_label.setText(tr('dependences_window.ffmpeg_install_required'))
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            return
 
         url = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip'
 
@@ -198,13 +209,19 @@ class DependencesWindow(QWidget):
 
     def _addFfmpegToPath(self, ffmpeg_dir: str) -> None:
         bin_path = os.path.abspath(os.path.join(ffmpeg_dir, 'bin'))
-        ffmpeg_exe = os.path.join(bin_path, 'ffmpeg.exe')
-        ffprobe_exe = os.path.join(bin_path, 'ffprobe.exe')
+        ffmpeg_exe = os.path.join(bin_path, _FFMPEG_NAME)
+        ffprobe_exe = os.path.join(bin_path, _FFPROBE_NAME)
 
         self._configurePydub.emit(ffmpeg_exe, ffprobe_exe)
 
         current_path = os.environ.get('PATH', '')
-        if bin_path.lower() in (p.lower() for p in current_path.split(os.pathsep)):
+        normalized = os.path.normcase(bin_path)
+        if normalized in (
+            os.path.normcase(path) for path in current_path.split(os.pathsep)
+        ):
+            return
+        os.environ['PATH'] = current_path + os.pathsep + bin_path
+        if os.name != 'nt':
             return
 
         try:
@@ -222,15 +239,15 @@ class DependencesWindow(QWidget):
             except FileNotFoundError:
                 user_path = ''
 
-            if bin_path.lower() in (p.lower() for p in user_path.split(os.pathsep)):
+            if normalized in (
+                os.path.normcase(path) for path in user_path.split(os.pathsep)
+            ):
                 key.Close()
                 return
 
             new_path = (user_path + os.pathsep + bin_path) if user_path else bin_path
             winreg.SetValueEx(key, 'PATH', 0, winreg.REG_EXPAND_SZ, new_path)
             key.Close()
-
-            os.environ['PATH'] = current_path + os.pathsep + bin_path
 
             HWND_BROADCAST = 0xFFFF
             WM_SETTINGCHANGE = 0x001A
@@ -295,13 +312,28 @@ class DependencesWindow(QWidget):
             base_dir = os.path.dirname(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             )
-            ffmpeg_exe = os.path.join(base_dir, 'ffmpeg', 'bin', 'ffmpeg.exe')
+            bundled_dir = os.path.join(base_dir, 'ffmpeg')
+            ffmpeg_exe = shutil.which(
+                'ffmpeg',
+                path=os.path.join(bundled_dir, 'bin'),
+            )
+            if ffmpeg_exe is None:
+                ffmpeg_exe = shutil.which('ffmpeg') or ''
+            if not ffmpeg_exe:
+                raise FileNotFoundError('ffmpeg is not installed')
+            ffprobe_exe = shutil.which(
+                'ffprobe',
+                path=os.path.dirname(ffmpeg_exe),
+            )
+            if ffprobe_exe is None:
+                ffprobe_exe = shutil.which('ffprobe') or ''
             output = subprocess.run(
                 [ffmpeg_exe, '-version'],
                 text=True,
                 capture_output=True,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=(subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0),
             )
+            output.check_returncode()
             version = (
                 output.stdout
                 .splitlines()[0]
@@ -309,7 +341,10 @@ class DependencesWindow(QWidget):
                 .split(' ')[0]
             )
             self.logger.info(f'FFmpeg found version: {version}')
-            self._addFfmpegToPath(os.path.join(base_dir, 'ffmpeg'))
+            if os.path.dirname(ffmpeg_exe) == os.path.join(bundled_dir, 'bin'):
+                self._addFfmpegToPath(bundled_dir)
+            else:
+                self._configurePydub.emit(ffmpeg_exe, ffprobe_exe)
             self.checkDone.emit('FFmpeg', True, '')
         except Exception as e:
             self.logger.warning(f'FFmpeg not found: {e}')

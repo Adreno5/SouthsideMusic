@@ -16,12 +16,14 @@ import time
 import tomllib
 import traceback
 import zipfile
-from ctypes import wintypes
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
 from logging.handlers import RotatingFileHandler
 from types import TracebackType
 from typing import Any, TextIO
+
+if os.name == 'nt':
+    from ctypes import wintypes
 
 _logger = logging.getLogger(__name__)
 _session_dir: str | None = None
@@ -49,6 +51,18 @@ _EXIT_REASONS = {
 
 def nativeLogActive() -> bool:
     return _native_file is not None
+
+
+def markCleanExit() -> None:
+    if _session_dir is None:
+        return
+    try:
+        with open(
+            os.path.join(_session_dir, 'clean.exit'), 'w', encoding='utf-8'
+        ) as file:
+            file.write('1')
+    except OSError:
+        pass
 
 
 def installCrashHandler(report_root: str | None = None) -> str:
@@ -93,16 +107,17 @@ def installCrashHandler(report_root: str | None = None) -> str:
     threading.excepthook = _threadExceptionHook
     sys.unraisablehook = _unraisableHook
 
-    import msvcrt
+    if os.name == 'nt':
+        import msvcrt
 
-    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
-    kernel32.SetStdHandle.argtypes = (wintypes.DWORD, wintypes.HANDLE)
-    kernel32.SetStdHandle.restype = wintypes.BOOL
-    if not kernel32.SetStdHandle(
-        STD_ERROR_HANDLE, msvcrt.get_osfhandle(native_file.fileno())
-    ):
-        _logger.warning('Unable to redirect Windows stderr: %s', ctypes.WinError())
-    kernel32.SetErrorMode(kernel32.GetErrorMode() | SEM_NOGPFAULTERRORBOX)
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel32.SetStdHandle.argtypes = (wintypes.DWORD, wintypes.HANDLE)
+        kernel32.SetStdHandle.restype = wintypes.BOOL
+        if not kernel32.SetStdHandle(
+            STD_ERROR_HANDLE, msvcrt.get_osfhandle(native_file.fileno())
+        ):
+            _logger.warning('Unable to redirect Windows stderr: %s', ctypes.WinError())
+        kernel32.SetErrorMode(kernel32.GetErrorMode() | SEM_NOGPFAULTERRORBOX)
 
     app_version = 'unknown'
     try:
@@ -144,7 +159,7 @@ def installCrashHandler(report_root: str | None = None) -> str:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             cwd=app_root,
-            creationflags=subprocess.CREATE_NO_WINDOW,
+            creationflags=(subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0),
         )
         deadline = time.monotonic() + 10
         while not os.path.exists(os.path.join(session_dir, 'monitor.ready')):
@@ -300,6 +315,81 @@ def writeReport(session_dir: str, exit_code: int | None = None) -> str:
 
 
 def _watchProcess(pid: int, session_dir: str) -> None:
+    if os.name == 'nt':
+        _watchProcessWindows(pid, session_dir)
+    else:
+        _watchProcessPosix(pid, session_dir)
+
+
+def _watchProcessPosix(pid: int, session_dir: str) -> None:
+    import psutil
+
+    process = psutil.Process(pid)
+    viewer: subprocess.Popen[bytes] | None = None
+    exception_path = os.path.join(session_dir, 'exceptions.log')
+    last_exception_size = 0
+    report_path = os.path.join(session_dir, 'report.txt')
+    exited = False
+    try:
+        with open(
+            os.path.join(session_dir, 'monitor.ready.tmp'), 'w', encoding='utf-8'
+        ) as file:
+            file.write(str(os.getpid()))
+        os.replace(
+            os.path.join(session_dir, 'monitor.ready.tmp'),
+            os.path.join(session_dir, 'monitor.ready'),
+        )
+        while True:
+            try:
+                exception_size = os.path.getsize(exception_path)
+            except FileNotFoundError:
+                exception_size = 0
+            pending = exception_size != last_exception_size
+            last_exception_size = exception_size
+            if pending:
+                writeReport(session_dir)
+                if viewer is None or viewer.poll() is not None:
+                    viewer = _startViewer(report_path)
+            try:
+                running = (
+                    process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+                )
+            except psutil.NoSuchProcess:
+                running = False
+            if running:
+                time.sleep(0.25)
+                continue
+            exited = True
+            clean = os.path.exists(os.path.join(session_dir, 'clean.exit'))
+            if not pending and not clean:
+                writeReport(session_dir)
+                if viewer is None or viewer.poll() is not None:
+                    viewer = _startViewer(report_path)
+            if viewer is not None and viewer.wait() != 0:
+                _nativeMessage(report_path)
+            return
+    finally:
+        if exited and not os.path.exists(report_path):
+            for name in (
+                'native.log',
+                'application.log',
+                'application.log.1',
+                'application.log.2',
+                'session.json',
+                'monitor.ready',
+                'clean.exit',
+            ):
+                try:
+                    os.remove(os.path.join(session_dir, name))
+                except OSError:
+                    pass
+            try:
+                os.rmdir(session_dir)
+            except OSError:
+                pass
+
+
+def _watchProcessWindows(pid: int, session_dir: str) -> None:
     kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
     kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
     kernel32.OpenProcess.restype = wintypes.HANDLE
@@ -371,6 +461,7 @@ def _watchProcess(pid: int, session_dir: str) -> None:
                 'application.log.2',
                 'session.json',
                 'monitor.ready',
+                'clean.exit',
             ):
                 try:
                     os.remove(os.path.join(session_dir, name))
@@ -396,7 +487,7 @@ def _startViewer(report_path: str) -> subprocess.Popen[bytes]:
             stderr=output,
             env=env,
             cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')),
-            creationflags=subprocess.CREATE_NO_WINDOW,
+            creationflags=(subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0),
         )
 
 
@@ -407,11 +498,31 @@ def _nativeMessage(report_path: str) -> None:
     except OSError as error:
         summary = str(error)
     message = f'{summary}\n\n完整报告 / Full report:\n{report_path}\n\n打开完整报告？ / Open full report?'
-    if (
-        ctypes.windll.user32.MessageBoxW(None, message, 'Southside Music — Crash', 0x14)
-        == 6
-    ):
-        os.startfile(report_path)
+    if os.name == 'nt':
+        if (
+            ctypes.windll.user32.MessageBoxW(
+                None, message, 'Southside Music — Crash', 0x14
+            )
+            == 6
+        ):
+            os.startfile(report_path)
+        return
+    print(message, file=sys.stderr)
+    zenity = shutil.which('zenity')
+    if zenity is None:
+        return
+    try:
+        answer = subprocess.run(
+            [zenity, '--question', '--title', 'Southside Music', '--text', message],
+            check=False,
+        )
+    except OSError:
+        return
+    if answer.returncode != 0:
+        return
+    opener = 'open' if sys.platform == 'darwin' else shutil.which('xdg-open')
+    if opener is not None:
+        subprocess.Popen([opener, report_path])
 
 
 def _showReport(report_path: str) -> None:

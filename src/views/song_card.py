@@ -7,6 +7,8 @@ import threading
 import weakref
 from typing import Callable, TYPE_CHECKING, Literal
 
+from shiboken6 import isValid
+
 if TYPE_CHECKING:
     from views.main_window import MainWindow
     from views.playlist_page import PlaylistPage
@@ -17,7 +19,7 @@ from PySide6.QtGui import Qt
 from PySide6.QtWidgets import QSizePolicy, QSpacerItem
 from core.i18n import bindText, tr
 from services.events import Events, event_bus
-from PySide6.QtGui import QImage, QMouseEvent, QPixmap
+from PySide6.QtGui import QImage, QMouseEvent, QPixmap, QPixmapCache
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -503,7 +505,7 @@ class _SongCardItem(QWidget):
             order_layout.addWidget(self.move_down_btn)
             layout.addLayout(order_layout)
 
-        self.img_label = SImageLabel()
+        self.img_label = QLabel()
         self.img_label.setFixedSize(50, 50)
         self.img_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         layout.addWidget(self.img_label)
@@ -515,6 +517,7 @@ class _SongCardItem(QWidget):
             QSpacerItem(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         )
         title_label = SubtitleLabel(storable.name)
+        title_label.setToolTip(storable.name)
         title_label.setSizePolicy(
             QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
         )
@@ -523,6 +526,7 @@ class _SongCardItem(QWidget):
         artists_label = QLabel(
             '、'.join(obj.name for obj in storable.artists if obj.name)
         )
+        artists_label.setToolTip(artists_label.text())
         artists_label.setSizePolicy(
             QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
         )
@@ -545,14 +549,7 @@ class _SongCardItem(QWidget):
         layout.addWidget(suffix_label)
 
         if not lazy:
-            self.load = True
-            self.loadImage()
-            if self._dp:
-                self._subscribeImageAsset()
-            if self.img_label.pixmap() is None or self.img_label.pixmap().isNull():
-                threading.Thread(
-                    target=self._auto_download_missing_image, daemon=True
-                ).start()
+            self.loadDetailAndImage()
 
         self._subscribeStorableCount()
         if self._sortable:
@@ -615,19 +612,9 @@ class _SongCardItem(QWidget):
         if self.load or self._released:
             return
         self.load = True
-        self.loadImage()
         if self._dp:
             self._subscribeImageAsset()
-        try:
-            needs_download = (
-                self.img_label.pixmap() is None or self.img_label.pixmap().isNull()
-            )
-        except RuntimeError:
-            return
-        if needs_download:
-            threading.Thread(
-                target=self._auto_download_missing_image, daemon=True
-            ).start()
+        self.loadImage()
 
     def _on_image_asset_persisted(self, storable: SongStorable) -> None:
         if self._released or not self.load:
@@ -680,14 +667,7 @@ class _SongCardItem(QWidget):
                 return
             storable._writeCache(image_bytes, IMAGE_DATA_DIR, 'image_cache_hash')
             favorites_manager._saveAsync()
-            if self._released:
-                return
-            if self._mwindow:
-                self._mwindow.ctx.addScheduledTask(
-                    lambda s=storable: event_bus.emit(Events.IMAGE_ASSET_PERSISTED, s)
-                )
-            else:
-                event_bus.emitInMainThread(Events.IMAGE_ASSET_PERSISTED, storable)
+            event_bus.emitInMainThread(Events.IMAGE_ASSET_PERSISTED, storable)
         finally:
             lock.release()
 
@@ -701,42 +681,47 @@ class _SongCardItem(QWidget):
         load_image_seq = self._load_image_seq
         card_ref = weakref.ref(self)
         storable = self.storable
-        mwindow = self._mwindow
+        ctx = self._mwindow.ctx
         image_size = self.img_label.size()
-        result: dict[str, QImage] = {}
+        cache_key = (
+            f'southside-song-cover:{storable.image_cache_hash}:'
+            f'{image_size.width()}x{image_size.height()}'
+            if storable.image_cache_hash
+            else ''
+        )
+        if cache_key:
+            pixmap = QPixmapCache.find(cache_key)
+            if pixmap is not None:
+                self.img_label.setPixmap(pixmap)
+                return
 
         def _decode() -> None:
+            card = card_ref()
+            if card is None or card._released or card._load_image_seq != load_image_seq:
+                return
             try:
                 image_bytes = storable.getImageBytes()
-            except (FileNotFoundError, PermissionError):
+            except FileNotFoundError:
+                card._auto_download_missing_image()
                 return
-            image = QImage.fromData(image_bytes)
-            if image.isNull():
+            except PermissionError:
                 return
-            result['image'] = image.scaled(
-                image_size,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
+            image = loadImageFromBytes(image_bytes, image_size)
+            if not image.isNull():
+                ctx.addScheduledTask(_finish, image)
 
-        def _finish() -> None:
+        def _finish(image: QImage) -> None:
             card = card_ref()
-            if card is None or card._released:
+            if card is None or card._released or not isValid(card):
                 return
-            if card._load_image_seq != load_image_seq:
+            if card._load_image_seq != load_image_seq or not card.load:
                 return
-            image = result.get('image')
-            if image is None or not card.load:
-                return
-            try:
-                card.img_label.setPixmap(QPixmap.fromImage(image))
-            except RuntimeError:
-                return
+            pixmap = QPixmap.fromImage(image)
+            if cache_key:
+                QPixmapCache.insert(cache_key, pixmap)
+            card.img_label.setPixmap(pixmap)
 
-        try:
-            asyncTask(_decode, (), mwindow, _finish)
-        except Exception:
-            pass
+        threading.Thread(target=_decode, daemon=True).start()
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:

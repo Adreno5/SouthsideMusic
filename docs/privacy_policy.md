@@ -34,9 +34,10 @@ The Application stores the following on your own computer. The developer has no 
 
 - **NetEase login** - your `MUSIC_U` cookie and related session data are stored locally in
   `config.json` so you stay logged in.
-- **LLM API keys** - keys you enter for Onerad assistant providers are encrypted with the
-  Windows Data Protection API (DPAPI) before being written to `config.json`. They are decrypted
-  only in memory on your device when needed.
+- **LLM API keys** - keys you enter for Onerad assistant providers are encrypted before being
+  written to `config.json`: Windows uses the Data Protection API (DPAPI), while macOS and Linux
+  use AES-GCM with a per-installation key stored in `data/secret.key` (mode `0600`). They are
+  decrypted only in memory on your device when needed.
 - Neither the developer nor anyone else receives these secrets. You are responsible for the
   physical and account security of your own machine.
 
@@ -85,9 +86,10 @@ Application if you are not old enough to consent to these services.
 
 ## 9. Security
 
-The Application relies on Windows DPAPI for API-key protection and on your operating system for
-file and account security. No method of storage or transmission is perfectly secure. You should
-keep your system updated and protect your user account.
+The Application relies on DPAPI on Windows and on AES-GCM with a local key file on macOS and
+Linux for API-key protection, and on your operating system for file and account security. No
+method of storage or transmission is perfectly secure. You should keep your system updated and
+protect your user account.
 
 ## 10. International Transfers
 
@@ -151,8 +153,9 @@ Questions about this policy can be raised through the project's public issue tra
 
 - **网易登录** - 你的 `MUSIC_U` Cookie 及相关会话数据存储在本地 `config.json` 中，以便
   保持登录状态。
-- **LLM API Key** - 你为 Onerad 助手服务商输入的 Key，在写入 `config.json` 前会使用
-  Windows 数据保护 API（DPAPI）加密，仅在需要时于你设备的内存中解密。
+- **LLM API Key** - 你为 Onerad 助手服务商输入的 Key，在写入 `config.json` 前会加密：
+  Windows 使用数据保护 API（DPAPI），macOS 与 Linux 使用 AES-GCM 和保存在
+  `data/secret.key`（权限 `0600`）中的本地密钥。仅在需要时于你设备的内存中解密。
 - 开发者或其他任何人都无法获取这些机密。你有责任保障自己机器的物理与账号安全。
 
 ## 5. 离开你设备的数据
@@ -195,8 +198,9 @@ Questions about this policy can be raised through the project's public issue tra
 
 ## 9. 安全
 
-本应用依赖 Windows DPAPI 保护 API Key，并依赖你的操作系统保障文件与账号安全。没有任何
-存储或传输方式是绝对安全的。你应当保持系统更新并保护好自己的用户账号。
+本应用在 Windows 上依赖 DPAPI、在 macOS 与 Linux 上依赖 AES-GCM 和本地密钥文件保护
+API Key，并依赖你的操作系统保障文件与账号安全。没有任何存储或传输方式是绝对安全的。
+你应当保持系统更新并保护好自己的用户账号。
 
 ## 10. 国际传输
 

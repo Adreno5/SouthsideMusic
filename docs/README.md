@@ -2,7 +2,7 @@
 
 # Southside Music
 
-> A refined Windows music workstation for NetEase CloudMusic: precision audio control, live lyrics, visual performance tools, and deep desktop integration in one uncompromising player.
+> A refined desktop music workstation for NetEase CloudMusic: precision audio control, live lyrics, visual performance tools, and deep desktop integration in one uncompromising player.
 
 > In an age drowning in things that merely work, what's worth using is what earns the name of a real work. True craft lives in the hours no one sees.
 
@@ -12,7 +12,7 @@
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Adreno5/SouthsideMusic)
 
-Southside Music is a Windows-only third-party NetEase CloudMusic desktop client built around a custom audio engine. It combines loudness normalization, speed and pitch control, word-by-word and desktop lyrics, a manual lyric timing editor, spectrum and beat visualization, local favorites, discovery and rediscovery tools, comments, song and lyric-video export, the Onerad assistant, Windows media integration, and the SouthsideClient WebSocket bridge.
+Southside Music is a cross-platform third-party NetEase CloudMusic desktop client built around a custom audio engine. It combines loudness normalization, speed and pitch control, word-by-word and desktop lyrics, a manual lyric timing editor, spectrum and beat visualization, local favorites, discovery and rediscovery tools, comments, song and lyric-video export, the Onerad assistant, system media integration, and the SouthsideClient WebSocket bridge. Windows, macOS, and Linux are supported; Windows remains the primary packaged target and native SMTC integration is Windows-only.
 
 > For the story behind the project, read [SouthsideMusic Story](SouthsideMusic_Story.md).
 
@@ -101,7 +101,7 @@ Southside Music is an independent, non-commercial project and is not an official
 
 - Onerad assistant panel with streaming output, Markdown and math rendering, and explicit tool-call confirmation
 - OpenAI-compatible Chat Completions, OpenAI Responses, and Anthropic providers, with multiple configured providers and model mappings
-- API keys encrypted with the Windows Data Protection API
+- API keys encrypted with the platform keystore: DPAPI on Windows, AES-GCM with a per-installation key file on macOS and Linux
 - Windows SMTC integration: playback appears in the system media overlay and responds to media keys
 - SouthsideClient WebSocket bridge on port `15489`
 - Lyrics, cover, song information, position, play state, and FFT streaming to SouthsideClient
@@ -123,6 +123,8 @@ Southside Music is an independent, non-commercial project and is not an official
 
 ## Installation
 
+### Windows
+
 1. Open the [Releases page](https://github.com/Adreno5/SouthsideMusic/releases).
 2. Download the latest `SouthsideMusic_<version>_win64_setup.exe`.
 3. Run the installer and launch Southside Music.
@@ -131,7 +133,18 @@ The installer writes to its own application folder and requires administrator ri
 
 The first launch performs a dependency check. If FFmpeg is missing, the dependency window can download and install it for you, and missing Python packages are repaired automatically by the bundled bootstrap.
 
-> Southside Music currently supports Windows only.
+### macOS and Linux
+
+Download the latest `SouthsideMusic_<version>_macos_<arch>.dmg`, `SouthsideMusic_<version>_linux_<arch>.deb`, or `SouthsideMusic_<version>_linux_<arch>.tar.gz` from Releases. If the release you are using has no asset for your platform, run the application from source in a writable checkout:
+
+```bash
+uv sync --frozen
+uv run src/main.py
+```
+
+Install FFmpeg with the system package manager (`brew install ffmpeg`, `sudo apt install ffmpeg`, or the equivalent) before the first launch. The dependency check detects a system FFmpeg and configures `pydub` automatically; on these platforms it does not download a replacement. Free-threaded Python is optional: when no `3.14t` interpreter is available, the heavy compute work falls back to the main process.
+
+> System media controls (SMTC) and the Windows bootstrap are currently Windows-only. Playback, lyrics, desktop lyrics, audio export, lyrics-video export, and the WebSocket bridge work on all three platforms.
 
 ---
 
@@ -265,9 +278,11 @@ Settings use a compact default view. Enable **Advanced Settings** to expose deta
 
 ### Requirements
 
-- Windows
-- Python `>=3.13` (the workspace is validated against `3.14`, and the packaged app runs on Python `3.14.7` plus a free-threaded `3.14t` worker)
+- Windows, macOS, or Linux
+- Python `>=3.13` (the workspace is validated against `3.14`, and the packaged Windows app runs on Python `3.14.7` plus a free-threaded `3.14t` worker)
 - [`uv`](https://docs.astral.sh/uv/)
+- FFmpeg on `PATH` (the Windows build can also use or download its bundled copy)
+- On Linux: PortAudio (`libportaudio2`) and the usual Qt/OpenGL runtime libraries
 - Internet access for initial environment and dependency downloads
 
 ### Prepare the Workspace
@@ -275,10 +290,10 @@ Settings use a compact default view. Enable **Advanced Settings** to expose deta
 ```bash
 git clone https://github.com/Adreno5/SouthsideMusic.git
 cd SouthsideMusic
-python setup_workspace.py
+uv sync
 ```
 
-The setup script synchronizes the `uv` environment, prepares the Python 3.14.7 embedded runtime, installs a free-threaded `3.14t` worker environment, creates the isolated Nuitka build environment, validates the runtime, and can install Inno Setup.
+On Windows, `python setup_workspace.py` additionally prepares the embedded Python 3.14.7 runtime, the free-threaded `3.14t` worker environment, the isolated Nuitka build environment, and Inno Setup. Those embedded-runtime steps are Windows-only. macOS and Linux need only `uv sync`; `build.py` downloads its own bundled runtimes when packaging.
 
 ### Run from Source
 
@@ -305,30 +320,42 @@ uv run python -m unittest discover -s tests
 
 `tests/` is the real suite and runs on `unittest`; pytest is not used. Run everything with the discovery command above, or run a single file directly, for example `uv run python tests/test_lyric_formats.py`.
 
-CI (`.github/workflows/ci.yml`) runs the compile, lint, format check, and test steps on Windows with FFmpeg installed. `src/test.py` is a manual API exploration script, not part of the suite.
+CI (`.github/workflows/ci.yml`) runs the Windows compile, lint, format, unit, and harness jobs, plus an Ubuntu portability job that installs the frozen dependencies and imports every platform-sensitive module without a display. `src/test.py` is a manual API exploration script, not part of the suite.
 
 ### Build
+
+Windows:
 
 ```bat
 build.bat
 ```
 
-The build compiles `launcher.py` with Nuitka, assembles the embedded runtimes and application resources, regenerates the icon, and invokes Inno Setup when `ISCC.exe` is available.
+macOS and Linux:
 
-```text
-build.result\
-├── raw\          Runnable portable directory
-└── installer\    Versioned installer, when Inno Setup is available
+```bash
+uv sync --frozen
+uv run python build.py
 ```
 
-If Inno Setup is unavailable, the portable build remains in `build.result\raw\`. Releases are produced by the GitHub Actions workflows in `.github/workflows/`, which read their release notes from `release-notes/<tag>.md`.
+`build.py` is the flow behind both entries. On Windows it runs Nuitka on `launcher.py`, assembles the embedded runtimes and application resources, regenerates the icon, and invokes Inno Setup when `ISCC.exe` is available (`build.bat` is a thin wrapper for this). On macOS it assembles a `.app` bundle with an `.icns` icon and produces a `.dmg`. On Linux it produces a portable `.tar.gz` and, when `dpkg-deb` is available, a `.deb`.
+
+```text
+build.result/
+├── raw/                              Runnable portable directory
+├── installer/                        Windows installer, when Inno Setup is available
+├── SouthsideMusic_<tag>_macos_*.dmg  macOS disk image
+└── SouthsideMusic_<tag>_linux_*      Linux Debian package and portable archive
+```
+
+The Windows portable zip is produced by the GitHub Actions workflow; the macOS and Linux archives are produced by `build.py` directly. Releases are produced by the workflows in `.github/workflows/`, which read their release notes from `release-notes/<tag>.md`.
 
 ### Project Layout
 
 ```text
-bootstrap.py        First-launch repair for the bundled Python runtime
-launcher.py         Nuitka entry point: single instance, then start the app
-build.bat           Windows build and packaging flow
+bootstrap.py        First-launch repair for the bundled Windows runtime
+launcher.py         Single-instance entry point for every platform
+build.py            Cross-platform build and packaging flow
+build.bat           Windows wrapper for build.py
 setup_workspace.py  Workspace bootstrap
 src/
   main.py           Application entry and startup lifecycle
@@ -357,15 +384,15 @@ config.json         Persistent user configuration
 | NetEase API | Bundled `ncm` client |
 | Networking | requests + Tornado WebSocket server |
 | Assistant | OpenAI SDK + Anthropic SDK + markdown-it-py + ziamath |
-| Windows integration | winrt (SMTC) + pywin32 (DPAPI) + psutil |
-| Packaging | Nuitka + Inno Setup |
+| Platform integration | Qt palette + psutil everywhere; winrt SMTC and DPAPI on Windows |
+| Packaging | Nuitka + Inno Setup (Windows) |
 
 ### Configuration and Data
 
 - Persistent settings are stored in `config.json`.
 - Local favorites, playback counts, listening history, and runtime caches are stored under `data/`.
 - Legacy `config.pkl` data is migrated and removed.
-- LLM API keys are encrypted for the current Windows user with `CryptProtectData`.
+- LLM API keys use `CryptProtectData` on Windows and AES-GCM with `data/secret.key` on macOS and Linux.
 - Downloadable caches can be cleaned automatically by age and total size.
 - Debug builds write startup timing and performance reports under `data/debug/`.
 

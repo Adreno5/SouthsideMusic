@@ -4,17 +4,13 @@ on:
     outputs:
       tag:
         description: '本次构建的版本号, 例如 v51'
-        value: ${{ jobs.build.outputs.tag }}
+        value: ${{ jobs.version.outputs.tag }}
   workflow_dispatch:
-  
-jobs:
-  quality:
-    uses: ./.github/workflows/ci.yml
 
-  build:
-    needs: quality
-    runs-on: windows-latest
-    timeout-minutes: 240
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       tag: ${{ steps.version.outputs.tag }}
     steps:
@@ -45,7 +41,27 @@ jobs:
           }
 
           "tag=$tag" >> $env:GITHUB_OUTPUT
-        
+
+  quality:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: [quality, version]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+          - os: ubuntu-latest
+            platform: linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
@@ -57,6 +73,7 @@ jobs:
           enable-cache: true
 
       - name: Cache build inputs
+        if: runner.os == 'Windows'
         uses: actions/cache@v6
         with:
           path: |
@@ -64,24 +81,42 @@ jobs:
             freethreaded_python
             build_venv
           key: build-inputs-${{ runner.os }}-${{ hashFiles('.requirements_sha256', 'embed_python_requirements.txt', '.python-version') }}
-          
+
       - name: Install icon tooling
+        if: runner.os == 'Windows'
         run: python -m pip install --disable-pip-version-check pillow
 
       - name: Prepare build environment
+        if: runner.os == 'Windows'
         shell: cmd
         env:
           PIP_INDEX_URL: https://pypi.org/simple/
         run: python setup_workspace.py --build-only < nul
-        
+
+      - name: Install project environment
+        if: runner.os != 'Windows'
+        run: uv sync --frozen
+
+      - name: Install Linux runtime libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libportaudio2 libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0
+
       - name: Build
+        if: runner.os == 'Windows'
         shell: cmd
         run: build.bat < nul
-        
-      - name: Verify build output
+
+      - name: Build
+        if: runner.os != 'Windows'
+        run: uv run --frozen python build.py --platform ${{ matrix.platform }}
+
+      - name: Verify Windows output
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $tag = '${{ steps.version.outputs.tag }}'
+          $tag = '${{ needs.version.outputs.tag }}'
           $root = (Get-Location).Path
           $exe = Join-Path $root "build.result\installer\SouthsideMusic_${tag}_win64_setup.exe"
           $required = @(
@@ -97,11 +132,12 @@ jobs:
           }
           Get-Item $exe | Select-Object Name, @{n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) }}
           Get-ChildItem 'build.result\raw' | Select-Object Name
-          
+
       - name: Package portable zip
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $tag = '${{ steps.version.outputs.tag }}'
+          $tag = '${{ needs.version.outputs.tag }}'
           $root = (Get-Location).Path
           $zip = Join-Path $root "build.result\Southside_${tag}_Portable.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }
@@ -124,18 +160,72 @@ jobs:
           Write-Output "portable entries: $($names.Count)"
           Get-Item $zip | Select-Object Name, @{n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) }}
 
-      - name: Upload installer
+      - name: Verify macOS output
+        if: runner.os == 'macOS'
+        shell: pwsh
+        run: |
+          $app = Join-Path (Get-Location).Path 'build.result/SouthsideMusic.app'
+          $required = @(
+            (Join-Path $app 'Contents/MacOS/SouthsideMusic'),
+            (Join-Path $app 'Contents/Info.plist'),
+            (Join-Path $app 'Contents/Resources/app/src/main.py'),
+            (Join-Path $app 'Contents/Resources/app/python/bin/python3'),
+            (Join-Path $app 'Contents/Resources/app/launcher/Launch')
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) { throw "缺少产物: $path" }
+          }
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          & (Join-Path $app 'Contents/Resources/app/python/bin/python3') -c "import PySide6.QtWidgets, numpy, scipy, sounddevice; print('runtime imports ok')"
+          if ($LASTEXITCODE -ne 0) { throw '打包运行时导入失败' }
+          $dmg = Get-ChildItem build.result -Filter '*_macos_*.dmg' | Select-Object -First 1
+          if (-not $dmg) { throw '缺少 macOS dmg' }
+          Get-Item $dmg.FullName | Select-Object Name, @{n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) }}
+
+      - name: Verify Linux output
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          test -x build.result/raw/python/bin/python3
+          test -f build.result/raw/src/main.py
+          test -x build.result/raw/launcher/Launch
+          QT_QPA_PLATFORM=offscreen build.result/raw/python/bin/python3 -c "import PySide6.QtWidgets, numpy, scipy, sounddevice; print('runtime imports ok')"
+          if [ -x build.result/raw/freethreaded_python/bin/python3 ]; then
+            build.result/raw/freethreaded_python/bin/python3 -c "import sys, numpy, scipy; assert not sys._is_gil_enabled(); print('worker imports ok')"
+          fi
+          deb=$(ls build.result/*_linux_*.deb | head -n1)
+          archive=$(ls build.result/*_linux_*.tar.gz | head -n1)
+          dpkg-deb --info "$deb"
+          tar -tzf "$archive" | grep -qx 'SouthsideMusic/src/main.py'
+          ls -lh build.result
+
+      - name: Upload Windows artifacts
+        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v7
         with:
-          name: SouthsideMusic-${{ steps.version.outputs.tag }}-installer
-          path: build.result/installer/*.exe
+          name: SouthsideMusic-${{ needs.version.outputs.tag }}-windows
+          path: |
+            build.result/installer/*.exe
+            build.result/Southside_*_Portable.zip
           if-no-files-found: error
           retention-days: 7
 
-      - name: Upload portable zip
+      - name: Upload macOS artifacts
+        if: runner.os == 'macOS'
         uses: actions/upload-artifact@v7
         with:
-          name: SouthsideMusic-${{ steps.version.outputs.tag }}-portable
-          path: build.result/Southside_*_Portable.zip
+          name: SouthsideMusic-${{ needs.version.outputs.tag }}-macos
+          path: build.result/*_macos_*.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Linux artifacts
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: SouthsideMusic-${{ needs.version.outputs.tag }}-linux
+          path: |
+            build.result/*_linux_*.deb
+            build.result/*_linux_*.tar.gz
           if-no-files-found: error
           retention-days: 7

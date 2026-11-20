@@ -12,7 +12,7 @@ import sys
 import tempfile
 import threading
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -610,6 +610,50 @@ def _readLyricCache(
         return {**lyrics, 'lyric': toLrc(lines), 'yrc_lyric': toYrc(lines)}
     except (OSError, ValueError, KeyError, TypeError):
         return None
+
+
+@lru_cache(maxsize=64)
+def _whisperCacheYrc(
+    path: str,
+    mtime_ns: int,
+    size: int,
+    song_id: str,
+) -> str:
+    try:
+        data = json.loads(Path(path).read_text(encoding='utf-8'))
+        if (
+            data['pipeline'] != WHISPER_PIPELINE_VERSION
+            or data['song_id'] != song_id
+            or not isinstance(data['lyrics']['yrc_lyric'], str)
+        ):
+            return ''
+        lines = _splitWhisperLines(parseYrc(data['lyrics']['yrc_lyric']))
+        return toYrc(lines)
+    except (OSError, ValueError, KeyError, TypeError):
+        return ''
+
+
+def matchesWhisperLyrics(song: SongStorable, lyrics: Mapping[str, str]) -> bool:
+    yrc = (lyrics.get('yrc_lyric') or '').strip()
+    if not yrc:
+        return False
+    for model in WHISPER_MODELS:
+        path = _lyricCachePath(song, model.name)
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        if (
+            _whisperCacheYrc(
+                str(path),
+                stat.st_mtime_ns,
+                stat.st_size,
+                str(song.id),
+            ).strip()
+            == yrc
+        ):
+            return True
+    return False
 
 
 def hasWhisperLyrics(song: SongStorable, model_name: str | None = None) -> bool:

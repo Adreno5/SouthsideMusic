@@ -15,6 +15,7 @@ from urllib.parse import quote as _url_quote
 
 import requests
 from qfluentwidgets import MessageBox
+from core.crash_handler import markCleanExit
 from core.i18n import tr
 from services.events import Events, event_bus
 
@@ -271,4 +272,5 @@ def _restart_app() -> None:
         )
     else:
         subprocess.Popen(args, start_new_session=True, close_fds=True)
+    markCleanExit()
     os._exit(0)

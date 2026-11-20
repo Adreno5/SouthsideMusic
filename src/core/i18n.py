@@ -122,6 +122,10 @@ TRANSLATIONS: dict[str, list[str]] = {
         'FFmpeg: Extraction failed',
         'FFmpeg：解压失败',
     ],
+    'dependences_window.ffmpeg_install_required': [
+        'FFmpeg: Install ffmpeg with your package manager',
+        'FFmpeg：请使用系统包管理器安装 ffmpeg',
+    ],
     'dependences_window.name_status_detail': [
         '{name}: {status} ({detail})',
         '{name}：{status}（{detail}）',

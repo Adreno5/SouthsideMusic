@@ -198,7 +198,8 @@ jobs:
           deb=$(ls build.result/*_linux_*.deb | head -n1)
           archive=$(ls build.result/*_linux_*.tar.gz | head -n1)
           dpkg-deb --info "$deb"
-          tar -tzf "$archive" | grep -qx 'SouthsideMusic/src/main.py'
+          tar -tzf "$archive" > "$RUNNER_TEMP/linux-archive.txt"
+          grep -qx 'SouthsideMusic/src/main.py' "$RUNNER_TEMP/linux-archive.txt"
           ls -lh build.result
 
       - name: Upload Windows artifacts

@@ -6,6 +6,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 import wave
@@ -275,9 +276,18 @@ class Sandbox:
             self.environment['SOUTHSIDE_FREE_THREADED_PYTHON'] = worker
             self.environment['NO_PROXY'] = '127.0.0.1,localhost'
             self.environment['QT_SCALE_FACTOR'] = '1'
-            self.environment['QT_OPENGL'] = 'software' if not native else 'desktop'
+            if sys.platform == 'darwin' or native:
+                self.environment['QT_OPENGL'] = 'desktop'
+            else:
+                self.environment['QT_OPENGL'] = 'software'
             if os.name != 'nt':
-                self.environment.setdefault('QT_QPA_PLATFORM', 'offscreen')
+                if sys.platform == 'darwin':
+                    platform = 'cocoa'
+                elif self.environment.get('DISPLAY'):
+                    platform = 'xcb'
+                else:
+                    platform = 'offscreen'
+                self.environment.setdefault('QT_QPA_PLATFORM', platform)
             self.environment['PYTHONUNBUFFERED'] = '1'
             self.environment.pop('PYTHON_GIL', None)
             self.environment['TEMP'] = str(self.root / 'temp')

@@ -68,7 +68,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libportaudio2 libegl1 libgl1 libxkbcommon-x11-0
+          sudo apt-get install -y ffmpeg libportaudio2 libegl1 libgl1 libgl1-mesa-dri libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 xauth xvfb
 
       - name: Start Linux audio server
         if: runner.os == 'Linux'
@@ -107,8 +107,16 @@ jobs:
         run: uv run --frozen python scripts/test_harness.py unit --report-dir .harness-results/unit
 
       - name: Harness
+        if: runner.os != 'Linux'
         timeout-minutes: 35
         run: uv run --frozen python scripts/test_harness.py run --group core --group online --report-dir .harness-results/run
+
+      - name: Harness (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 35
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: xvfb-run -a -s "-screen 0 1280x800x24" uv run --frozen python scripts/test_harness.py run --group core --group online --report-dir .harness-results/run
 
       - name: Summary
         if: always()

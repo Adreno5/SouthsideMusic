@@ -85,6 +85,8 @@ class SearchLineEditTests(unittest.TestCase):
 
         self.edit.clear()
         QTest.qWait(400)
+        self.edit.update()
+        QTest.qWait(50)
         self.assertAlmostEqual(
             self.edit.textMargins().left(), collapsed.left(), delta=1
         )

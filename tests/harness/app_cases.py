@@ -498,6 +498,14 @@ def runCase(
                 for folder in saved
             )
         elif case_id == 'llm_lyrics':
+            waitUntil(
+                lambda: (
+                    'Harness edited' in ctx.mgr.cur
+                    and '测试歌词' in ctx.transmgr.cur
+                    and 'Harness edited' in ctx.ymgr.cur
+                ),
+                'edited lyrics',
+            )
             assert 'Harness edited' in ctx.mgr.cur
             assert '测试歌词' in ctx.transmgr.cur
             assert 'Harness edited' in ctx.ymgr.cur

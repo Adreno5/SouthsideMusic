@@ -769,12 +769,17 @@ class LLMToolRunner:
         )
 
         def _apply() -> None:
-            if pm.current_song is song and isinstance(payload, dict):
+            current = pm.current_song
+            if (
+                current is not None
+                and (current is song or current.id == song.id)
+                and isinstance(payload, dict)
+            ):
                 self._apply_parsed_lyrics(payload)
             scheduleFavoritesSave()
             event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song)
 
-        self.ctx.addScheduledTask(_apply)
+        self._run_main_thread(_apply)
         return {
             'updated': True,
             'title': song.name,

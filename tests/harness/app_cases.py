@@ -296,13 +296,6 @@ def runCase(
             ctx.desktop_lyrics_page.onResetPos()
             assert ctx.config.desktop_lyrics_x == 0 and ctx.config.desktop_lyrics_y == 0
         elif case_id == 'lyric_editor':
-            from services.events import Events, event_bus
-
-            applied: list[bool] = []
-
-            def _onLyricsUpdated(*_args: object) -> None:
-                applied.append(True)
-
             editor = ctx.lyric_editor_page
             editor.openForCurrentSong()
             ctx.main_window.contents_widget.setCurrentWidget(editor)
@@ -315,12 +308,8 @@ def runCase(
                 QTest.qWait(90)
                 QTest.keyRelease(editor.beat_page, Qt.Key.Key_Space)
                 QTest.qWait(40)
-            event_bus.subscribe(Events.PLAYBACK_LYRICS_UPDATED, _onLyricsUpdated)
-            try:
-                QTest.mouseClick(editor.save_button, Qt.MouseButton.LeftButton)
-                waitUntil(lambda: bool(applied), 'lyrics applied')
-            finally:
-                event_bus.unsubscribe(Events.PLAYBACK_LYRICS_UPDATED, _onLyricsUpdated)
+            QTest.mouseClick(editor.save_button, Qt.MouseButton.LeftButton)
+            waitUntil(lambda: 'Alpha beta' in ctx.mgr.cur, 'lyrics applied')
             waitUntil(
                 lambda: (
                     'Alpha beta' in pm.current_song.getLyrics()['lyric']

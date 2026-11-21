@@ -911,7 +911,7 @@ def _install_embed_requirements() -> None:
     print('\n[5/6] Installing requirements into embedded Python...')
     _validate_requirements_file(REQUIREMENTS)
 
-    if not _requirements_changed():
+    if not _requirements_changed() and _embed_requirements_ok(embed_exe):
         print('  requirements.txt unchanged, skipping install.')
         return
 
@@ -1003,6 +1003,21 @@ def _requirements_changed() -> bool:
         return stored != current
     except (OSError, FileNotFoundError):
         return True
+
+
+def _embed_requirements_ok(embed_exe: str) -> bool:
+    try:
+        run(
+            [
+                embed_exe,
+                '-c',
+                'import PySide6, shiboken6, numpy, scipy, sounddevice, qfluentwidgets',
+            ],
+            capture_output=True,
+        )
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
 
 
 def _save_requirements_hash() -> None:

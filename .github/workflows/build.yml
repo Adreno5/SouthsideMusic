@@ -101,7 +101,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libportaudio2 libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0
+          sudo apt-get install -y libportaudio2 libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 pulseaudio
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=ci
 
       - name: Build
         if: runner.os == 'Windows'

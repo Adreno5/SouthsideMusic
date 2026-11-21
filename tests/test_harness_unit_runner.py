@@ -12,7 +12,7 @@ from functools import partial
 from pathlib import Path
 from textwrap import dedent
 from typing import Any, override
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import psutil
 
@@ -344,6 +344,20 @@ class UnitRunnerTests(unittest.TestCase):
             self.fail('Timeout left a descendant running')
         suite = ET.parse(self.report_dir / 'unit-results.xml').getroot()
         self.assertEqual(suite.get('errors'), '1')
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX process groups')
+    def testStopProcessIgnoresPermissionErrorFromGroupKill(self) -> None:
+        process = Mock()
+        process.poll.return_value = None
+        process.pid = 12345
+        with patch.object(
+            unit_runner.os,
+            'killpg',
+            side_effect=PermissionError(1, 'Operation not permitted'),
+        ):
+            unit_runner._stopProcess(process)
+        process.kill.assert_called_once_with()
+        process.wait.assert_called_once_with(timeout=5)
 
     def testDefaultFileTimeoutIs180Seconds(self) -> None:
         self.assertEqual(

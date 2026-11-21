@@ -93,7 +93,7 @@ def _stopProcess(process: subprocess.Popen[bytes]) -> None:
     else:
         try:
             os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
+        except OSError:
             pass
     if process.poll() is None:
         process.kill()

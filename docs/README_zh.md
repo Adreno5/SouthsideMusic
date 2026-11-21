@@ -320,7 +320,7 @@ uv run python -m unittest discover -s tests
 
 `tests/` 是真实测试目录，基于 `unittest`，不使用 pytest。可以用上面的命令跑全部测试，也可以直接运行单个文件，例如 `uv run python tests/test_lyric_formats.py`。
 
-CI（`.github/workflows/ci.yml`）会在装有 FFmpeg 的 Windows 上执行编译、lint、格式、单元测试和 harness，并额外运行一个 Ubuntu 可移植性任务：安装冻结依赖后，在无显示环境下导入全部平台敏感模块。`src/test.py` 是手动 API 探索脚本，不属于测试套件。
+CI（`.github/workflows/ci.yml`）在 Ubuntu 上执行编译、lint 和格式检查，并在 Linux、Windows、macOS 上并行运行完整单元测试与 core/online harness。`src/test.py` 是手动 API 探索脚本，不属于测试套件。
 
 ### 构建
 

@@ -320,7 +320,7 @@ uv run python -m unittest discover -s tests
 
 `tests/` is the real suite and runs on `unittest`; pytest is not used. Run everything with the discovery command above, or run a single file directly, for example `uv run python tests/test_lyric_formats.py`.
 
-CI (`.github/workflows/ci.yml`) runs the Windows compile, lint, format, unit, and harness jobs, plus an Ubuntu portability job that installs the frozen dependencies and imports every platform-sensitive module without a display. `src/test.py` is a manual API exploration script, not part of the suite.
+CI (`.github/workflows/ci.yml`) runs the compile, lint, and format checks on Ubuntu, and runs the complete unit suite plus the core/online harness on Linux, Windows, and macOS in parallel. `src/test.py` is a manual API exploration script, not part of the suite.
 
 ### Build
 

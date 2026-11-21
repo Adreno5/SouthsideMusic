@@ -1,8 +1,7 @@
 # Testing SouthsideMusic
 
-Run these commands in the repository root. The full harness is Windows-oriented;
-macOS and Linux can run the platform-neutral unit files and the portability import
-check described below. Use the existing lockfile:
+Run these commands in the repository root. The harness runs on Windows, macOS, and
+Linux; non-Windows hosts use Qt's offscreen platform. Use the existing lockfile:
 
 ```powershell
 uv sync --frozen
@@ -255,21 +254,19 @@ when configuring a client.
 ## CI and build gate
 
 `.github/workflows/ci.yml` retains push-to-master, pull-request, and manual
-triggers, and is also reusable through `workflow_call`. Its check job keeps the
-compile, Ruff lint, and formatting checks, then runs the complete `unit` command.
-A free-threaded worker is prepared for the unit suite's worker memory checks.
-A separate Windows harness job installs the frozen dependencies and FFmpeg,
-creates the free-threaded worker in `RUNNER_TEMP`, and runs `core` plus `online`.
-An Ubuntu portability job installs the frozen dependencies with the Windows-only
-markers excluded, then imports every platform-sensitive module under an offscreen
-Qt platform; it does not start the GUI or run the Windows harness.
+triggers, and is also reusable through `workflow_call`. An Ubuntu check job runs
+the compile, Ruff lint, and formatting checks. A test job runs the complete
+`unit` suite and the `core` plus `online` harness on Ubuntu, Windows, and macOS
+in parallel with `fail-fast: false`; each runner installs FFmpeg and the
+platform's audio/Qt runtime libraries, installs the frozen dependencies, and
+prepares the free-threaded worker before running the tests.
 
-Both jobs attempt report uploads and GitHub step summaries even after a failed
+Every job attempts report uploads and GitHub step summaries even after a failed
 step. Unit artifacts include only the JSON/XML reports, summary, and per-file
 logs from `.harness-results/unit`. Harness artifacts come from
 `.harness-results/run`; copied source/assets and worker environments are
-excluded. Both artifacts retain files for 14 days and have separate names.
-Summaries read `.harness-results/unit/unit-summary.md` and
+excluded. Artifacts are named per operating system and retain files for 14 days.
+Summaries combine `.harness-results/unit/unit-summary.md` and
 `.harness-results/run/summary.md`. Local reports are ignored by Git through
 `/.harness-results/`.
 

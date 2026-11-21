@@ -3,6 +3,7 @@ from __future__ import annotations
 import errno
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -100,10 +101,18 @@ class WriteFrameTest(unittest.TestCase):
 class ParallelExportTest(unittest.TestCase):
     def testExportsSegmentsAndAudioInDestinationDirectory(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        ffmpeg = root / 'ffmpeg' / 'bin' / 'ffmpeg.exe'
-        ffprobe = root / 'ffmpeg' / 'bin' / 'ffprobe.exe'
+        binary_dir = root / 'ffmpeg' / 'bin'
+        names = (
+            ('ffmpeg.exe', 'ffprobe.exe') if os.name == 'nt' else ('ffmpeg', 'ffprobe')
+        )
+        ffmpeg = binary_dir / names[0]
+        ffprobe = binary_dir / names[1]
+        if not ffmpeg.is_file():
+            ffmpeg = Path(shutil.which('ffmpeg') or ffmpeg)
+        if not ffprobe.is_file():
+            ffprobe = Path(shutil.which('ffprobe') or ffprobe)
         if not ffmpeg.is_file() or not ffprobe.is_file():
-            self.skipTest('Bundled FFmpeg and FFprobe are required')
+            self.skipTest('FFmpeg and FFprobe are required')
         app = QApplication.instance() or QApplication([])
         self.assertIsNotNone(app)
         with tempfile.TemporaryDirectory(prefix='歌词导出 ', dir=root) as directory:

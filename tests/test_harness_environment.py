@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -20,6 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from harness import environment, session
 from harness.media_server import MediaServer
 
+_CREATIONFLAGS = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+
 
 class HarnessEnvironmentTests(unittest.TestCase):
     @override
@@ -35,7 +38,10 @@ class HarnessEnvironmentTests(unittest.TestCase):
         (self.root / '.python-version').write_text('3.14\n', encoding='utf-8')
         self.binary = self.root / 'ffmpeg' / 'bin'
         self.binary.mkdir(parents=True)
-        for name in ('ffmpeg.exe', 'ffprobe.exe'):
+        names = (
+            ('ffmpeg.exe', 'ffprobe.exe') if os.name == 'nt' else ('ffmpeg', 'ffprobe')
+        )
+        for name in names:
             (self.binary / name).write_bytes(b'fixture')
         self.output = Path(temporary.name) / 'reports'
         self.sandboxes: list[environment.Sandbox] = []
@@ -405,7 +411,7 @@ class HarnessEnvironmentTests(unittest.TestCase):
             cwd=root,
             stdout=subprocess.PIPE,
             text=True,
-            creationflags=subprocess.CREATE_NO_WINDOW,
+            creationflags=_CREATIONFLAGS,
         )
         self.addCleanup(process.kill)
         self.addCleanup(process.stdout.close)
@@ -431,7 +437,7 @@ class HarnessEnvironmentTests(unittest.TestCase):
             time.sleep(0.2)
             viewer = subprocess.Popen(
                 [sys.executable, '-c', 'import time; time.sleep(60)'],
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
             )
             (root / 'fixture-state.json').write_text(json.dumps({
                 'monitor': os.getpid(), 'viewer': viewer.pid,
@@ -445,7 +451,7 @@ class HarnessEnvironmentTests(unittest.TestCase):
             startup=(
                 f"(root / 'monitor.py').write_text({monitor!r})\n"
                 "subprocess.Popen([sys.executable, str(root / 'monitor.py'), str(root)], "
-                'creationflags=subprocess.CREATE_NO_WINDOW)\n'
+                "creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))\n"
                 "while not (root / 'monitor.ready').exists():\n"
                 '    time.sleep(0.01)\n'
             ),

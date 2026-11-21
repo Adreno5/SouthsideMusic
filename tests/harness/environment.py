@@ -201,15 +201,14 @@ def userFingerprint(root: Path) -> dict[str, str]:
 
 class Sandbox:
     def __init__(self, root: Path, gateway_url: str, native: bool = False) -> None:
-        ffmpeg = shutil.which('ffmpeg')
-        if not ffmpeg:
-            candidate = root / 'ffmpeg' / 'bin' / _FFMPEG_NAME
-            ffmpeg = str(candidate) if candidate.is_file() else None
-        if not ffmpeg:
+        bundled = root / 'ffmpeg' / 'bin'
+        ffmpeg = shutil.which('ffmpeg') or str(bundled / _FFMPEG_NAME)
+        if not Path(ffmpeg).is_file():
             raise RuntimeError('FFmpeg is required; install it before running core')
-        ffprobe = shutil.which('ffprobe')
-        if ffprobe is None and not (Path(ffmpeg).parent / _FFPROBE_NAME).is_file():
+        ffprobe = shutil.which('ffprobe') or str(bundled / _FFPROBE_NAME)
+        if not Path(ffprobe).is_file():
             raise RuntimeError('FFprobe is required')
+        binaries = (Path(ffmpeg), Path(ffprobe))
         worker = findWorker(root)
         if not worker:
             raise RuntimeError(
@@ -239,7 +238,12 @@ class Sandbox:
             for name in ('pyproject.toml', '.python-version'):
                 shutil.copy2(root / name, self.root / name)
             binary_dir = self.root / 'ffmpeg' / 'bin'
-            shutil.copytree(Path(ffmpeg).parent, binary_dir)
+            if binaries[0].parent == bundled.resolve():
+                shutil.copytree(binaries[0].parent, binary_dir)
+            else:
+                binary_dir.mkdir(parents=True)
+                for binary in binaries:
+                    shutil.copy2(binary, binary_dir / binary.name)
             self.environment['PATH'] = (
                 str(binary_dir) + os.pathsep + self.environment['PATH']
             )
@@ -247,6 +251,8 @@ class Sandbox:
             self.environment['NO_PROXY'] = '127.0.0.1,localhost'
             self.environment['QT_SCALE_FACTOR'] = '1'
             self.environment['QT_OPENGL'] = 'software' if not native else 'desktop'
+            if os.name != 'nt':
+                self.environment.setdefault('QT_QPA_PLATFORM', 'offscreen')
             self.environment['PYTHONUNBUFFERED'] = '1'
             self.environment.pop('PYTHON_GIL', None)
             self.environment['TEMP'] = str(self.root / 'temp')

@@ -216,6 +216,9 @@ def runApplication(
         except requests.RequestException as error:
             self.checkDone.emit('Network', False, str(error))
 
+    def openGLCheck(self: Any) -> None:
+        self.checkDone.emit('OpenGL', True, 'Harness offscreen')
+
     with socket.socket() as port_probe:
         port_probe.bind(('127.0.0.1', 0))
         ws_module.ws_server.port = port_probe.getsockname()[1]
@@ -231,6 +234,7 @@ def runApplication(
         patch.object(tool_module, 'iterLyricUpdates', fixtureLyrics),
         patch.object(update_module, 'startUpdateCheck', return_value=None),
         patch.object(dependency_module.DependencesWindow, 'checkNetwork', networkCheck),
+        patch.object(dependency_module.DependencesWindow, 'checkOpenGL', openGLCheck),
         patch.object(window_module.MainWindow, '__init__', windowInit),
         patch.object(error_module.ErrorPopupWindow, '__init__', errorInit),
     ]

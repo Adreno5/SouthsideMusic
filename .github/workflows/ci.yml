@@ -107,6 +107,7 @@ jobs:
         run: uv run --frozen python scripts/test_harness.py unit --report-dir .harness-results/unit
 
       - name: Harness
+        timeout-minutes: 35
         run: uv run --frozen python scripts/test_harness.py run --group core --group online --report-dir .harness-results/run
 
       - name: Summary

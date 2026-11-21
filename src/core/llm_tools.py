@@ -775,7 +775,7 @@ class LLMToolRunner:
                 and (current is song or current.id == song.id)
                 and isinstance(payload, dict)
             ):
-                self._apply_parsed_lyrics(payload)
+                pm.applyCurrentLyrics(payload)
             scheduleFavoritesSave()
             event_bus.emit(Events.PLAYBACK_LYRICS_UPDATED, song)
 

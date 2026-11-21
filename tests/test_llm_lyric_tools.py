@@ -15,7 +15,7 @@ from core import whisper_lyrics  # noqa: E402
 from core.app_context import AppContext  # noqa: E402
 from core.llm import ONERAD_SYSTEM_PROMPT, TOOL_USAGE  # noqa: E402
 from core.llm_tools import KNOWN_TOOLS, LLMToolRunner, llmToolSchemas  # noqa: E402
-from core.lyrics import LRCLyricParser, YRCLyricParser  # noqa: E402
+from core.lyrics import LyricManager  # noqa: E402
 from core.models import ArtistInfo, SongInfo, SongStorable  # noqa: E402
 from services.events.event_bus import event_bus  # noqa: E402
 from services.events import Events  # noqa: E402
@@ -33,17 +33,22 @@ TRANSLATED = '[00:01.000]你好世界\n[00:03.000]第二行\n'
 
 
 class _FakePlayingManager:
-    def __init__(self, song: SongStorable) -> None:
+    def __init__(self, song: SongStorable, lyrics_manager: LyricManager) -> None:
         self.current_song = song
         self.playlist: list[SongStorable] = []
+        self.lyrics_manager = lyrics_manager
+
+    def applyCurrentLyrics(self, payload: dict[str, object]) -> None:
+        self.lyrics_manager.applyParsedLyrics(payload, 0)
 
 
 class _FakeContext:
     def __init__(self, song: SongStorable) -> None:
-        self.playing_manager = _FakePlayingManager(song)
-        self.mgr = LRCLyricParser()
-        self.ymgr = YRCLyricParser()
-        self.transmgr = LRCLyricParser()
+        self.lyrics_manager = LyricManager()
+        self.playing_manager = _FakePlayingManager(song, self.lyrics_manager)
+        self.mgr = self.lyrics_manager.lrc
+        self.ymgr = self.lyrics_manager.yrc
+        self.transmgr = self.lyrics_manager.translation
         self.player = None
         self.llm_song_handles: dict[str, Any] = {}
         self.llm_folder_handles: dict[str, Any] = {}

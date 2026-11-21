@@ -3044,6 +3044,10 @@ class PlayingManager(QObject):
 
         threading.Thread(target=_compute_and_apply, daemon=True).start()
 
+    def applyCurrentLyrics(self, payload: dict[str, object]) -> None:
+        self._lyrics_parse_seq += 1
+        self.ctx.lyrics_manager.applyParsedLyrics(payload, self.total_length)
+
     def _applyLyricTextsAsync(
         self,
         song: SongStorable,

@@ -24,6 +24,7 @@ def waitUntil(
     while not predicate():
         if time.monotonic() >= end:
             raise AssertionError('Timed out waiting for ' + description)
+        QApplication.processEvents()
         QTest.qWait(25)
 
 

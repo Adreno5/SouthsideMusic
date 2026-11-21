@@ -174,6 +174,10 @@ class SettingPageTests(unittest.TestCase):
         self.assertTrue(cfg.setting_section_expanded['setting_page.beat'])
         QTest.mouseClick(section.expand_button, Qt.MouseButton.LeftButton)
         QTest.qWait(400)
+        for _ in range(100):
+            if section.content_view.height() == 0:
+                break
+            QTest.qWait(10)
         self.assertFalse(section.isExpanded())
         self.assertEqual(section.content_view.height(), 0)
         self.assertEqual(

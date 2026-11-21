@@ -51,7 +51,7 @@ def runApplication(
             channel.flush()
 
     reply({'token': token})
-    from PySide6.QtCore import QTimer
+    from PySide6.QtCore import QObject, Qt, QTimer, Signal
     from PySide6.QtTest import QTest
     import shiboken6
     import sounddevice
@@ -166,10 +166,16 @@ def runApplication(
                 holder['ctx'].main_window.grab().save(str(output / 'failure.png'))
             reply({'ok': False, 'error': detail})
 
+    class CommandDispatcher(QObject):
+        requested = Signal(object)
+
+    dispatcher = CommandDispatcher()
+    dispatcher.requested.connect(command, Qt.ConnectionType.QueuedConnection)
+
     def receive() -> None:
         try:
             for line in channel:
-                holder['ctx'].addScheduledTask(command, json.loads(line))
+                dispatcher.requested.emit(json.loads(line))
         except (OSError, ValueError):
             pass
 

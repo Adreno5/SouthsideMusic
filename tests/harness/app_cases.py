@@ -77,13 +77,19 @@ def performAction(ctx: Any, operation: str, data: dict[str, Any], backend: Any) 
         return {'path': overlay._savePerformanceReport(frames, context)}
 
     if operation == 'play':
+        index = int(data.get('index', 0))
+        paused = bool(data.get('paused'))
         ctx.playing_manager.setPlaylist(backend.songs[:3])
-        ctx.playing_manager.playSongAtIndex(int(data.get('index', 0)))
+        if paused:
+            ctx.playing_manager.playStorable(
+                backend.songs[index], pause_after_load=True
+            )
+        else:
+            ctx.playing_manager.playSongAtIndex(index)
         waitUntil(
             lambda: (
-                ctx.playing_manager.current_song
-                is backend.songs[int(data.get('index', 0))]
-                and ctx.player.isPlaying()
+                ctx.playing_manager.current_song is backend.songs[index]
+                and (not ctx.player.isPlaying() if paused else ctx.player.isPlaying())
                 and ctx.player.getLength() > 0
             ),
             'decoded current song',
@@ -455,8 +461,7 @@ def runCase(
         box.setChecked(previous)
     elif case_id.startswith('llm_'):
         if case_id == 'llm_lyrics':
-            performAction(ctx, 'play', {}, backend)
-            ctx.player.pause()
+            performAction(ctx, 'play', {'paused': True}, backend)
         provider = {
             'llm_responses': 'Harness Responses',
             'llm_responses_tools': 'Harness Responses',

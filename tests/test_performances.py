@@ -426,6 +426,7 @@ class PerformanceOverlayTests(unittest.TestCase):
         self.assertEqual(self.overlay._memory_details, details)
         self.assertFalse(self.overlay._memory_sampling)
 
+    @unittest.skipUnless(os.name == 'nt', 'Windows resident memory APIs')
     def testRealResidentSamplingRunsInBackground(self) -> None:
         self.overlay.memory_timer.stop()
         with patch('views.performances._residentMemory', _residentMemory):
@@ -437,6 +438,7 @@ class PerformanceOverlayTests(unittest.TestCase):
             any(name.startswith('DLL / ') for name in self.overlay.mem_values)
         )
 
+    @unittest.skipUnless(os.name == 'nt', 'Windows resident memory APIs')
     def testNativeResidentPagesMatchRealBuffer(self) -> None:
         samples = np.ones(4 * 1024**2, dtype=np.uint8)
         values, details = _residentMemory(

@@ -4,6 +4,7 @@ import functools
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from socketserver import TCPServer
 from typing import Any, BinaryIO, override
 
 
@@ -63,10 +64,18 @@ class MediaHandler(SimpleHTTPRequestHandler):
             remaining -= len(chunk)
 
 
+class _Server(ThreadingHTTPServer):
+    @override
+    def server_bind(self) -> None:
+        TCPServer.server_bind(self)
+        self.server_name = '127.0.0.1'
+        self.server_port = self.server_address[1]
+
+
 class MediaServer:
     def __init__(self, root: Path) -> None:
         handler = functools.partial(MediaHandler, directory=str(root))
-        self.server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+        self.server = _Server(('127.0.0.1', 0), handler)
         self.url = f'http://127.0.0.1:{self.server.server_port}'
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 

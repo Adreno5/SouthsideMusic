@@ -9,6 +9,7 @@ import uuid
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from socketserver import TCPServer
 from typing import Any, cast, override
 from urllib.parse import urlsplit
 
@@ -144,6 +145,12 @@ class Gateway:
 
 class _Server(ThreadingHTTPServer):
     daemon_threads = False
+
+    @override
+    def server_bind(self) -> None:
+        TCPServer.server_bind(self)
+        self.server_name = '127.0.0.1'
+        self.server_port = self.server_address[1]
 
     def __init__(self, gateway: Gateway) -> None:
         self.gateway = gateway

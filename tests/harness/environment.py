@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -94,10 +95,22 @@ def _kill(process: psutil.Process) -> None:
         pass
 
 
+def _groupMembers(group: int) -> list[psutil.Process]:
+    members: list[psutil.Process] = []
+    for process in psutil.process_iter():
+        try:
+            if os.getpgid(process.pid) == group:
+                members.append(process)
+        except (psutil.Error, OSError):
+            continue
+    return members
+
+
 def stopProcessTree(
     process: subprocess.Popen[Any],
     descendants: list[psutil.Process] | None = None,
     timeout: float = 3,
+    group: int | None = None,
 ) -> None:
     known: dict[int, psutil.Process] = {}
     for child in descendants or []:
@@ -130,6 +143,18 @@ def stopProcessTree(
     for child in alive:
         _kill(child)
     survivors = _waitSurvivors([child for child in alive if _isRunning(child)], 5)
+    if group is not None:
+        try:
+            os.killpg(group, signal.SIGTERM)
+        except OSError:
+            pass
+        members = _groupMembers(group)
+        if _waitSurvivors(members, timeout):
+            try:
+                os.killpg(group, signal.SIGKILL)
+            except OSError:
+                pass
+        survivors += _waitSurvivors(_groupMembers(group), 5)
     if survivors:
         raise RuntimeError(
             'Application descendants survived cleanup: '

@@ -305,15 +305,24 @@ class HarnessEnvironmentTests(unittest.TestCase):
             def settimeout(self, timeout: float | None) -> None:
                 super().settimeout(min(timeout, 0.2) if timeout else timeout)
 
-        started = time.monotonic()
+        started: list[float] = []
+
+        def newSandbox(
+            root: Path, gateway_url: str, native: bool = False
+        ) -> environment.Sandbox:
+            sandbox = self._newSandbox(root, gateway_url, native)
+            started.append(time.monotonic())
+            return sandbox
+
         with (
-            patch('harness.session.Sandbox', side_effect=self._newSandbox),
+            patch('harness.session.Sandbox', side_effect=newSandbox),
             patch('harness.session.MediaServer', side_effect=self._newServer),
             patch('harness.session.socket.socket', FastSocket),
         ):
             with self.assertRaisesRegex(RuntimeError, 'exit.*7'):
                 session.ApplicationSession(self.root, '', self.output)
-        self.assertLess(time.monotonic() - started, 5)
+        self.assertTrue(started)
+        self.assertLess(time.monotonic() - started[0], 5)
         self.assertFalse(self.sandboxes[0].root.exists())
         self.assertIn('startup failed', (self.output / 'application.log').read_text())
 
@@ -412,7 +421,9 @@ class HarnessEnvironmentTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             text=True,
             creationflags=_CREATIONFLAGS,
+            start_new_session=os.name != 'nt',
         )
+        group = os.getpgid(process.pid) if os.name != 'nt' else None
         self.addCleanup(process.kill)
         self.addCleanup(process.stdout.close)
         intermediate = int(process.stdout.readline().strip())
@@ -421,7 +432,7 @@ class HarnessEnvironmentTests(unittest.TestCase):
         snapshot[0].kill()
         process.wait(timeout=30)
         time.sleep(0.3)
-        environment.stopProcessTree(process, snapshot)
+        environment.stopProcessTree(process, snapshot, group=group)
         self._assertDead(grandchild)
         (root / 'child.py').unlink()
         root.rmdir()

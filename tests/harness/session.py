@@ -42,6 +42,7 @@ class ApplicationSession:
         self._children: set[psutil.Process] = set()
         self._tracker: threading.Thread | None = None
         self._parent: psutil.Process | None = None
+        self._group: int | None = None
         listener: socket.socket | None = None
         try:
             output.mkdir(parents=True, exist_ok=True)
@@ -80,10 +81,13 @@ class ApplicationSession:
                 stdout=self.log,
                 stderr=subprocess.STDOUT,
                 creationflags=(subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0),
+                start_new_session=os.name != 'nt',
             )
             try:
                 self._parent = psutil.Process(self.process.pid)
-            except psutil.NoSuchProcess:
+                if os.name != 'nt':
+                    self._group = os.getpgid(self.process.pid)
+            except (psutil.NoSuchProcess, ProcessLookupError):
                 pass
             self._tracker = threading.Thread(target=self._trackProcesses, daemon=True)
             self._tracker.start()
@@ -204,7 +208,7 @@ class ApplicationSession:
             with self._children_lock:
                 children = list(self._children)
             try:
-                stopProcessTree(self.process, children)
+                stopProcessTree(self.process, children, group=self._group)
             except Exception as error:
                 errors.append(error)
         self._stop_tracking.set()

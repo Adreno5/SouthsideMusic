@@ -15,7 +15,6 @@ import sys
 import tempfile
 import threading
 import time
-import winreg
 import zipfile
 import zlib
 from collections.abc import Callable
@@ -2963,13 +2962,15 @@ class BootstrapWindow(QWidget):
 
     def _refreshTheme(self) -> None:
         try:
+            import winreg
+
             with winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER,
                 r'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize',
             ) as key:
                 light_theme, _ = winreg.QueryValueEx(key, 'AppsUseLightTheme')
             dark = light_theme == 0
-        except OSError:
+        except (ImportError, OSError):
             dark = QApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
         if self._theme_dark == dark:
             return

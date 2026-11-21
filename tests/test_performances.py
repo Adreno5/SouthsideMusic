@@ -75,6 +75,7 @@ class FrameProfilerTests(unittest.TestCase):
         self.assertFalse(profiler.enabled)
 
 
+@unittest.skipUnless(os.name == 'nt', 'Windows resident memory APIs')
 class ResidentMemoryTests(unittest.TestCase):
     def testResidentCategoriesAndSharedPages(self) -> None:
         regions = (

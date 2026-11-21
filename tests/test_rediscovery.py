@@ -372,7 +372,8 @@ class RediscoveryTests(unittest.TestCase):
     def test_controls_wrap_in_a_narrow_window(self) -> None:
         page = self.page([self.song(i) for i in range(10)])
         window = page.window()
-        window.resize(370, 500)
+        window.setMinimumSize(300, 500)
+        window.resize(300, 500)
         window.show()
         self.app.processEvents()
         buttons = (page.mode_box, page.play_button, page.refresh_button)
